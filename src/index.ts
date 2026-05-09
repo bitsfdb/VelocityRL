@@ -3,7 +3,7 @@ import { Command } from 'commander';
 import axios from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
-import { execSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import inquirer from 'inquirer';
 import { UPKFile } from './upk.js';
 import { resolvePackagePath, searchAssets, getClosestFiles, ASSET_MAP } from './assets.js';
@@ -100,11 +100,29 @@ async function runInteractiveWizard() {
 
                 const pythonScriptPath = path.resolve(__dirname, '../python/rl_asset_swapper.py');
                 backupFile(target.path);
-                
-                const cmd = `python "${pythonScriptPath}" --no-gui --target "${target.item.name}" --donor "${source.item.name}" --no-preserve-header-offsets --overwrite --donor-dir "${cookedDir}" --output-dir "${cookedDir}"`;
+
                 console.log(`\nExecuting Python offset-shifter...`);
-                execSync(cmd, { stdio: 'inherit' });
-                
+                const result = spawnSync('python', [
+                    pythonScriptPath,
+                    '--no-gui',
+                    '--target', target.item.name,
+                    '--donor', source.item.name,
+                    '--no-preserve-header-offsets',
+                    '--overwrite',
+                    '--donor-dir', cookedDir,
+                    '--output-dir', cookedDir
+                ], { stdio: ['inherit', 'inherit', 'pipe'], encoding: 'utf8' });
+
+                if (result.stderr && result.stderr.trim()) {
+                    console.error('\n--- Python Error Output ---');
+                    console.error(result.stderr.trim());
+                    console.error('---------------------------');
+                }
+
+                if (result.status !== 0) {
+                    throw new Error(`Python script exited with code ${result.status}`);
+                }
+
                 console.log('SUCCESS: Visual Swap complete! Restart your game to see your new item.');
             } catch (e: any) {
                 console.error(`Failed: ${e.message}`);
