@@ -17,13 +17,13 @@ const program = new Command();
 program
   .name('RLItemMod')
   .description('Rocket League Surgical UPK Patcher')
-  .version('1.0.4');
+  .version('1.0.5');
 
 async function checkVersion() {
     try {
         const res = await axios.get('https://registry.npmjs.org/rl-item-mod/latest', { timeout: 2000 });
         const latest = res.data.version;
-        const current = '1.0.4';
+        const current = '1.0.5';
         if (latest !== current) {
             console.log('\x1b[33m%s\x1b[0m', `\n[!] Update Available: A newer version of RLItemMod is available (${latest}).`);
             console.log('\x1b[33m%s\x1b[0m', `    Run 'npm install -g rl-item-mod' to update.\n`);
@@ -160,7 +160,7 @@ async function runInteractiveWizard() {
                     console.log('No backups found.');
                 } else {
                     const { restoreChoice } = await inquirer.prompt([{
-                        type: 'rawlist',
+                        type: 'list',
                         name: 'restoreChoice',
                         message: 'Select an option:',
                         choices: [
