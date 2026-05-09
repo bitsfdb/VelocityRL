@@ -67,6 +67,13 @@ npx rl-item-mod@latest
 
 Massive credits to [CrunchyRL/RLUPKTools](https://github.com/CrunchyRL/RLUPKTools) for making this repository possible. The advanced Python engineering for parsing and shifting Unreal Engine 3 UPK binaries was instrumental in making this project work safely.
 
+
+## Support
+
+Contact me on discord: @sfdb
+Or on the support server https://discord.gg/nP4GJKmnWE
+
+
 ## License
 
 MIT
