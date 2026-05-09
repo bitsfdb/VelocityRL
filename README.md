@@ -36,6 +36,9 @@ A powerful, user-friendly Node.js CLI tool for performing visual asset swaps in 
 npm install -g rl-item-mod
 ```
 
+```bash
+pip install cryptography
+```
 ### Local Development
 
 ```bash
