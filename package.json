@@ -1,0 +1,40 @@
+{
+  "name": "rl-item-mod",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A comprehensive CLI tool for safely applying visual asset swaps to Rocket League UPK files with full encryption and binary offset handling.",
+  "main": "dist/index.js",
+  "bin": {
+    "rl-item-mod": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "python"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "ts-node index.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "rocket-league",
+    "upk",
+    "modding",
+    "asset-swapper"
+  ],
+  "author": "RLItemMod",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.16.0",
+    "commander": "^14.0.3",
+    "inquirer": "^13.4.2",
+    "string-similarity": "^4.0.4"
+  },
+  "devDependencies": {
+    "@types/inquirer": "^9.0.9",
+    "@types/node": "^25.6.0",
+    "@types/string-similarity": "^4.0.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3"
+  }
+}
