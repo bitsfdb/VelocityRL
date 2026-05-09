@@ -17,7 +17,21 @@ const program = new Command();
 program
   .name('RLItemMod')
   .description('Rocket League Surgical UPK Patcher')
-  .version('1.3.0');
+  .version('1.0.3');
+
+async function checkVersion() {
+    try {
+        const res = await axios.get('https://registry.npmjs.org/rl-item-mod/latest', { timeout: 2000 });
+        const latest = res.data.version;
+        const current = '1.0.3';
+        if (latest !== current) {
+            console.log('\x1b[33m%s\x1b[0m', `\n[!] Update Available: A newer version of RLItemMod is available (${latest}).`);
+            console.log('\x1b[33m%s\x1b[0m', `    Run 'npm install -g rl-item-mod' to update.\n`);
+        }
+    } catch (e) {
+        // Silently fail version check if offline
+    }
+}
 
 const API_ENDPOINT = 'https://dank/rlapi';
 const DEFAULT_COOKED_DIR = 'E:\\games\\rocketleague\\TAGame\\CookedPCConsole';
@@ -313,6 +327,7 @@ process.on('SIGINT', () => {
 
 async function runSafeWizard() {
     try {
+        await checkVersion();
         await runInteractiveWizard();
     } catch (e: any) {
         if (e.name === 'ExitPromptError') {
