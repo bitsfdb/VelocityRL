@@ -13,6 +13,16 @@ A powerful, user-friendly Node.js CLI tool for performing visual asset swaps in 
 - **Automated Backups**: Automatically backs up original game assets before patching, with a one-click CLI restore feature.
 - **Item Database**: Uses a built-in `items.json` database for fuzzy-searching and mapping in-game item names directly to their underlying UPK files.
 
+## ⚠️ Warning - Some Swaps Will Crash the Game
+
+> **Swapping certain asset types is not yet fully supported and will cause Rocket League to crash on load.** This is a known limitation of the current version and is being worked on. Until a fix is released, avoid swapping the following:
+
+> Thumbnails in general cause a lot of crashes, as well as bodies and goal explosions.
+
+> If a swap you attempt causes a crash, you should validate game files, and when a crash occurs on an item use the **Restore backups** as shown in this screenshot
+
+<img width="571" height="298" alt="image" src="https://github.com/user-attachments/assets/e09d09eb-1e0e-499c-9ddd-74fea68163d0" />
+
 ## Installation
 
 ### Prerequisites
