@@ -17,13 +17,13 @@ const program = new Command();
 program
   .name('RLItemMod')
   .description('Rocket League Surgical UPK Patcher')
-  .version('1.0.3');
+  .version('1.0.4');
 
 async function checkVersion() {
     try {
         const res = await axios.get('https://registry.npmjs.org/rl-item-mod/latest', { timeout: 2000 });
         const latest = res.data.version;
-        const current = '1.0.3';
+        const current = '1.0.4';
         if (latest !== current) {
             console.log('\x1b[33m%s\x1b[0m', `\n[!] Update Available: A newer version of RLItemMod is available (${latest}).`);
             console.log('\x1b[33m%s\x1b[0m', `    Run 'npm install -g rl-item-mod' to update.\n`);
@@ -150,21 +150,49 @@ async function runInteractiveWizard() {
             const cookedDir = (global as any).COOKED_DIR || DEFAULT_COOKED_DIR;
             console.log('\n--- Restoring Backups ---');
             try {
+                if (!fs.existsSync(cookedDir)) {
+                    throw new Error(`Directory not found: ${cookedDir}`);
+                }
                 const files = fs.readdirSync(cookedDir);
                 const backups = files.filter(f => f.endsWith('.bak'));
+                
                 if (backups.length === 0) {
                     console.log('No backups found.');
                 } else {
-                    for (const bak of backups) {
+                    const { restoreChoice } = await inquirer.prompt([{
+                        type: 'rawlist',
+                        name: 'restoreChoice',
+                        message: 'Select an option:',
+                        choices: [
+                            { name: 'Restore ALL items', value: 'all' },
+                            ...backups.map(b => ({ name: `Restore ${b.replace('.bak', '')}`, value: b })),
+                            { name: 'Cancel', value: 'cancel' }
+                        ]
+                    }]);
+
+                    if (restoreChoice === 'cancel') {
+                        // Do nothing
+                    } else if (restoreChoice === 'all') {
+                        for (const bak of backups) {
+                            const original = bak.replace('.bak', '');
+                            const bakPath = path.join(cookedDir, bak);
+                            const originalPath = path.join(cookedDir, original);
+                            console.log(`Restoring ${original}...`);
+                            fs.copyFileSync(bakPath, originalPath);
+                            fs.unlinkSync(bakPath);
+                        }
+                        console.log('SUCCESS: All backups restored.');
+                    } else {
+                        // Individual file
+                        const bak = restoreChoice;
                         const original = bak.replace('.bak', '');
                         const bakPath = path.join(cookedDir, bak);
                         const originalPath = path.join(cookedDir, original);
-                        
                         console.log(`Restoring ${original}...`);
                         fs.copyFileSync(bakPath, originalPath);
                         fs.unlinkSync(bakPath);
+                        console.log(`SUCCESS: ${original} restored.`);
                     }
-                    console.log('SUCCESS: All backups restored.');
                 }
             } catch (e: any) {
                 console.error(`Failed: ${e.message}`);

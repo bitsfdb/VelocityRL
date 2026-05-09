@@ -1,6 +1,6 @@
 {
   "name": "rl-item-mod",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "type": "module",
   "description": "A comprehensive CLI tool for safely applying visual asset swaps to Rocket League UPK files with full encryption and binary offset handling.",
   "main": "dist/index.js",
