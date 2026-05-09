@@ -105,8 +105,8 @@ async function runInteractiveWizard() {
                 const result = spawnSync('python', [
                     pythonScriptPath,
                     '--no-gui',
-                    '--target', target.item.name,
-                    '--donor', source.item.name,
+                    '--target', target.item.packageName,
+                    '--donor', source.item.packageName,
                     '--no-preserve-header-offsets',
                     '--overwrite',
                     '--donor-dir', cookedDir,
