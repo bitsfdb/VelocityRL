@@ -7,7 +7,6 @@ import { execSync } from 'child_process';
 import inquirer from 'inquirer';
 import { UPKFile } from './upk.js';
 import { resolvePackagePath, searchAssets, getClosestFiles, ASSET_MAP } from './assets.js';
-import { UPKSwapper } from './swapper.js';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -59,7 +58,7 @@ async function runInteractiveWizard() {
                 default: (global as any).COOKED_DIR || DEFAULT_COOKED_DIR
             }]);
             (global as any).COOKED_DIR = newDir;
-            console.log(`✅ Game directory updated to: ${newDir}`);
+            console.log(`Game directory updated to: ${newDir}`);
             await inquirer.prompt([{ type: 'input', name: 'pause', message: 'Press Enter to continue...' }]);
             continue;
         }
@@ -95,7 +94,7 @@ async function runInteractiveWizard() {
                 continue;
             }
 
-            console.log(`\n🔄 Swapping ${target.item.name} for ${source.item.name}...`);
+            console.log(`\nSwapping ${target.item.name} for ${source.item.name}...`);
             const targetUpk = new UPKFile(target.path);
             try {
 
@@ -103,12 +102,12 @@ async function runInteractiveWizard() {
                 backupFile(target.path);
                 
                 const cmd = `python "${pythonScriptPath}" --no-gui --target "${target.item.name}" --donor "${source.item.name}" --no-preserve-header-offsets --overwrite --donor-dir "${cookedDir}" --output-dir "${cookedDir}"`;
-                console.log(`\n⚙️ Executing advanced Python offset-shifter...`);
+                console.log(`\nExecuting Python offset-shifter...`);
                 execSync(cmd, { stdio: 'inherit' });
                 
-                console.log('✅ SUCCESS: Visual Swap complete! please restart your game and view your new item!');
+                console.log('SUCCESS: Visual Swap complete! Restart your game to see your new item.');
             } catch (e: any) {
-                console.error(`❌ Failed: ${e.message}`);
+                console.error(`Failed: ${e.message}`);
             }
 
             await inquirer.prompt([{ type: 'input', name: 'pause', message: 'Press Enter to continue...' }]);
@@ -122,21 +121,21 @@ async function runInteractiveWizard() {
                 const files = fs.readdirSync(cookedDir);
                 const backups = files.filter(f => f.endsWith('.bak'));
                 if (backups.length === 0) {
-                    console.log('💡 No backups found.');
+                    console.log('No backups found.');
                 } else {
                     for (const bak of backups) {
                         const original = bak.replace('.bak', '');
                         const bakPath = path.join(cookedDir, bak);
                         const originalPath = path.join(cookedDir, original);
                         
-                        console.log(`🔄 Restoring ${original}...`);
+                        console.log(`Restoring ${original}...`);
                         fs.copyFileSync(bakPath, originalPath);
                         fs.unlinkSync(bakPath);
                     }
-                    console.log('✅ SUCCESS: All backups restored!');
+                    console.log('SUCCESS: All backups restored.');
                 }
             } catch (e: any) {
-                console.error(`❌ Failed: ${e.message}`);
+                console.error(`Failed: ${e.message}`);
             }
             await inquirer.prompt([{ type: 'input', name: 'pause', message: 'Press Enter to continue...' }]);
             continue;
@@ -158,7 +157,7 @@ async function promptForItemAndUPK(message: string, cookedDir: string) {
 
     const matches = searchAssets(searchTerm);
     if (matches.length === 0) {
-        console.error(`❌ No items found matching "${searchTerm}".`);
+        console.error(`No items found matching "${searchTerm}".`);
         return null;
     }
 
@@ -176,7 +175,7 @@ async function promptForItemAndUPK(message: string, cookedDir: string) {
     const result = await resolvePackagePath(owned, cookedDir);
 
     if (!result) {
-        console.error(`❌ Could not resolve "${owned}".`);
+        console.error(`Could not resolve "${owned}".`);
         return null;
     }
 
@@ -184,7 +183,7 @@ async function promptForItemAndUPK(message: string, cookedDir: string) {
     if ('candidates' in result) {
         let currentCandidates = result.candidates;
         while (currentCandidates.length > 20) {
-            console.log(`💡 Found ${currentCandidates.length} potential matches.`);
+            console.log(`Found ${currentCandidates.length} potential matches.`);
             const { refine } = await inquirer.prompt([{
                 type: 'input',
                 name: 'refine',
@@ -211,7 +210,7 @@ async function promptForItemAndUPK(message: string, cookedDir: string) {
 
 async function executePatch(upkPath: string, data: string | Buffer, exportIndex: number) {
     try {
-        console.log(`🚀 Patching ${upkPath}...`);
+        console.log(`Patching ${upkPath}...`);
         backupFile(upkPath);
         const upk = new UPKFile(upkPath);
         
@@ -221,21 +220,21 @@ async function executePatch(upkPath: string, data: string | Buffer, exportIndex:
         if (exportIndex === -1) {
             exportIndex = upk.exports.reduce((maxIdx, curr, idx, arr) => 
                 curr.serialSize > arr[maxIdx].serialSize ? idx : maxIdx, 0);
-            console.log(`💡 Auto-selected Export[${exportIndex}] (Size: ${upk.exports[exportIndex].serialSize} bytes)`);
+            console.log(`Auto-selected Export[${exportIndex}] (Size: ${upk.exports[exportIndex].serialSize} bytes)`);
         }
 
         const newHex = (typeof data === 'string') ? fs.readFileSync(data) : data;
         upk.patchExport(exportIndex, newHex);
-        console.log('✅ SUCCESS: Patch complete!');
+        console.log('SUCCESS: Patch complete.');
     } catch (error: any) {
-        console.error('❌ CRITICAL FAILURE:', error.message);
+        console.error('CRITICAL FAILURE:', error.message);
     }
 }
 
 function backupFile(filePath: string) {
     const backupPath = `${filePath}.bak`;
     if (!fs.existsSync(backupPath)) {
-        console.log(`💾 Creating backup: ${path.basename(backupPath)}`);
+        console.log(`Creating backup: ${path.basename(backupPath)}`);
         fs.copyFileSync(filePath, backupPath);
     }
 }
@@ -271,7 +270,7 @@ program
       let cookedDir = options.dir;
 
       if (!fs.existsSync(cookedDir)) {
-          console.error(`❌ Error: CookedPCConsole directory not found at: ${cookedDir}`);
+          console.error(`Error: CookedPCConsole directory not found at: ${cookedDir}`);
           console.log('Use --dir <path> to specify the correct game directory.');
           return;
       }
@@ -282,7 +281,7 @@ program
       }
 
       if (!upkPath) {
-          console.error(`❌ Error: Could not resolve item "${options.owned}" in ${cookedDir}.`);
+          console.error(`Error: Could not resolve item "${options.owned}" in ${cookedDir}.`);
           return;
       }
       await executePatch(upkPath, options.target, options.export ? parseInt(options.export) : -1);
@@ -290,7 +289,7 @@ program
 
 // Handle Ctrl+C gracefully
 process.on('SIGINT', () => {
-    console.log('\n👋 Exiting RLItemMod. See you next time!');
+    console.log('\nExiting RLItemMod.');
     process.exit(0);
 });
 
@@ -299,9 +298,9 @@ async function runSafeWizard() {
         await runInteractiveWizard();
     } catch (e: any) {
         if (e.name === 'ExitPromptError') {
-            console.log('\n👋 Goodbye!');
+            console.log('\nGoodbye!');
         } else {
-            console.error('\n💥 An unexpected error occurred:', e.message);
+            console.error('\nAn unexpected error occurred:', e.message);
         }
         process.exit(0);
     }
