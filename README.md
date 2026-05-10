@@ -35,10 +35,6 @@ A powerful, user-friendly Typescript CLI tool for performing visual asset swaps 
 ```bash
 npm install -g rl-item-mod
 ```
-
-```bash
-pip install cryptography
-```
 ### Local Development
 
 ```bash
