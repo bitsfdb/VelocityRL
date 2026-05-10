@@ -1,6 +1,6 @@
 {
   "name": "rl-item-mod",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "type": "module",
   "description": "A comprehensive CLI tool for safely applying visual asset swaps to Rocket League UPK files with full encryption and binary offset handling.",
   "main": "dist/index.js",
@@ -13,7 +13,7 @@
   ],
   "scripts": {
     "build": "tsc",
-    "start": "ts-node src/index.ts",
+    "start": "node --loader ts-node/esm src/index.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [

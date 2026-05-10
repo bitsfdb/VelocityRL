@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import axios from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { spawnSync } from 'child_process';
 import inquirer from 'inquirer';
 import { UPKFile } from './upk.js';
@@ -12,21 +13,81 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf8'));
+const APP_VERSION = pkg.version;
+
 const program = new Command();
 
 program
   .name('RLItemMod')
   .description('Rocket League Surgical UPK Patcher')
-  .version('1.0.5');
+  .version(APP_VERSION);
+
+console.log(`\nRLItemMod | Current Version: ${APP_VERSION}`);
+
+let updateMessage: string | null = null;
+const CONFIG_PATH = path.join(os.homedir(), '.rlitemmod.json');
+
+function loadConfig() {
+    try {
+        if (fs.existsSync(CONFIG_PATH)) {
+            return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+        }
+    } catch (e) {}
+    return {};
+}
+
+function saveConfig(config: any) {
+    try {
+        fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+    } catch (e) {}
+}
+
+async function ensurePythonDependencies() {
+    process.stdout.write('Checking Python dependencies (cryptography)... ');
+    const check = spawnSync('python', ['-c', 'import cryptography'], { encoding: 'utf8' });
+    
+    if (check.status !== 0) {
+        // If simple check fails, try a more thorough install/sync
+        console.log('\n[!] Missing or broken "cryptography" library. Attempting to repair...');
+        
+        // Use python -m pip to ensure we're targeting the correct interpreter
+        const install = spawnSync('python', ['-m', 'pip', 'install', '--upgrade', 'cryptography'], { stdio: 'inherit', shell: true });
+        
+        if (install.status !== 0) {
+            console.log('[!] python -m pip failed, trying python3...');
+            spawnSync('python3', ['-m', 'pip', 'install', '--upgrade', 'cryptography'], { stdio: 'inherit', shell: true });
+        } else {
+            // Re-verify after install
+            const recheck = spawnSync('python', ['-c', 'import cryptography']);
+            if (recheck.status === 0) {
+                console.log('SUCCESS: Dependency repaired.');
+            } else {
+                console.log('WARNING: Library is installed but still failing to import. You may need to restart your terminal.');
+            }
+        }
+    } else {
+        console.log('OK');
+    }
+}
 
 async function checkVersion() {
     try {
         const res = await axios.get('https://registry.npmjs.org/rl-item-mod/latest', { timeout: 2000 });
         const latest = res.data.version;
-        const current = '1.0.5';
-        if (latest !== current) {
-            console.log('\x1b[33m%s\x1b[0m', `\n[!] Update Available: A newer version of RLItemMod is available (${latest}).`);
-            console.log('\x1b[33m%s\x1b[0m', `    Run 'npm install -g rl-item-mod' to update.\n`);
+        
+        // Simple semver check
+        const l = latest.split('.').map(Number);
+        const c = APP_VERSION.split('.').map(Number);
+        let isNewer = false;
+        for (let i = 0; i < 3; i++) {
+            if (l[i] > (c[i] || 0)) { isNewer = true; break; }
+            if (l[i] < (c[i] || 0)) break;
+        }
+
+        if (isNewer) {
+            updateMessage = `\x1b[33m[!] UPDATE AVAILABLE: Version ${latest} is ready! (Current: ${APP_VERSION})\x1b[0m\n` +
+                            `\x1b[33m    Run 'npm install -g rl-item-mod' to update.\x1b[0m\n`;
         }
     } catch (e) {
         // Silently fail version check if offline
@@ -42,9 +103,12 @@ const DEFAULT_COOKED_DIR = 'E:\\games\\rocketleague\\TAGame\\CookedPCConsole';
 async function runInteractiveWizard() {
     let active = true;
     while (active) {
-        console.clear();
-        console.log('Welcome to RLItemMod, What would you like to do?');
-        console.log('-------------------------------------------------');
+        console.log('\n=================================================');
+        if (updateMessage) {
+            console.log(updateMessage);
+        }
+        console.log(`RLItemMod | Current Version: ${APP_VERSION}`);
+        console.log('=================================================');
 
         const { action } = await inquirer.prompt([{
             type: 'rawlist',
@@ -72,6 +136,7 @@ async function runInteractiveWizard() {
                 default: (global as any).COOKED_DIR || DEFAULT_COOKED_DIR
             }]);
             (global as any).COOKED_DIR = newDir;
+            saveConfig({ cookedDir: newDir });
             console.log(`Game directory updated to: ${newDir}`);
             await inquirer.prompt([{ type: 'input', name: 'pause', message: 'Press Enter to continue...' }]);
             continue;
@@ -148,7 +213,8 @@ async function runInteractiveWizard() {
 
         if (action === 'restore') {
             const cookedDir = (global as any).COOKED_DIR || DEFAULT_COOKED_DIR;
-            console.log('\n--- Restoring Backups ---');
+            console.log(`\n=== BACKUP RESTORE UTILITY ===`);
+            console.log(`Searching in: ${cookedDir}`);
             try {
                 if (!fs.existsSync(cookedDir)) {
                     throw new Error(`Directory not found: ${cookedDir}`);
@@ -156,11 +222,13 @@ async function runInteractiveWizard() {
                 const files = fs.readdirSync(cookedDir);
                 const backups = files.filter(f => f.endsWith('.bak'));
                 
+                console.log(`Found ${backups.length} backup file(s).`);
+
                 if (backups.length === 0) {
-                    console.log('No backups found.');
+                    console.log('No backups found in this directory.');
                 } else {
                     const { restoreChoice } = await inquirer.prompt([{
-                        type: 'list',
+                        type: 'rawlist',
                         name: 'restoreChoice',
                         message: 'Select an option:',
                         choices: [
@@ -173,25 +241,34 @@ async function runInteractiveWizard() {
                     if (restoreChoice === 'cancel') {
                         // Do nothing
                     } else if (restoreChoice === 'all') {
+                        let count = 0;
                         for (const bak of backups) {
+                            try {
+                                const original = bak.replace('.bak', '');
+                                const bakPath = path.join(cookedDir, bak);
+                                const originalPath = path.join(cookedDir, original);
+                                fs.copyFileSync(bakPath, originalPath);
+                                fs.unlinkSync(bakPath);
+                                console.log(`[OK] Restored ${original}`);
+                                count++;
+                            } catch (err: any) {
+                                console.error(`[ERR] Failed to restore ${bak}: ${err.message}`);
+                            }
+                        }
+                        console.log(`\nSUCCESS: ${count} backups restored.`);
+                    } else {
+                        // Individual file
+                        try {
+                            const bak = restoreChoice;
                             const original = bak.replace('.bak', '');
                             const bakPath = path.join(cookedDir, bak);
                             const originalPath = path.join(cookedDir, original);
-                            console.log(`Restoring ${original}...`);
                             fs.copyFileSync(bakPath, originalPath);
                             fs.unlinkSync(bakPath);
+                            console.log(`SUCCESS: ${original} restored.`);
+                        } catch (err: any) {
+                            console.error(`FAILED: ${err.message}`);
                         }
-                        console.log('SUCCESS: All backups restored.');
-                    } else {
-                        // Individual file
-                        const bak = restoreChoice;
-                        const original = bak.replace('.bak', '');
-                        const bakPath = path.join(cookedDir, bak);
-                        const originalPath = path.join(cookedDir, original);
-                        console.log(`Restoring ${original}...`);
-                        fs.copyFileSync(bakPath, originalPath);
-                        fs.unlinkSync(bakPath);
-                        console.log(`SUCCESS: ${original} restored.`);
                     }
                 }
             } catch (e: any) {
@@ -355,7 +432,11 @@ process.on('SIGINT', () => {
 
 async function runSafeWizard() {
     try {
+        const config = loadConfig();
+        if (config.cookedDir) (global as any).COOKED_DIR = config.cookedDir;
+
         await checkVersion();
+        await ensurePythonDependencies();
         await runInteractiveWizard();
     } catch (e: any) {
         if (e.name === 'ExitPromptError') {
