@@ -1,6 +1,6 @@
 # RLItemMod
 
-A powerful, user-friendly Node.js CLI tool for performing visual asset swaps in Rocket League.
+A powerful, user-friendly Typescript CLI tool for performing visual asset swaps in Rocket League.
 
 ## Overview
 
@@ -36,6 +36,10 @@ A powerful, user-friendly Node.js CLI tool for performing visual asset swaps in 
 npm install -g rl-item-mod
 ```
 
+```bash
+pip install cryptography
+```
+
 ### Local Development
 
 ```bash
@@ -63,6 +67,11 @@ npx rl-item-mod@latest
 ## Credits
 
 Massive credits to [CrunchyRL/RLUPKTools](https://github.com/CrunchyRL/RLUPKTools) for making this repository possible. The advanced Python engineering for parsing and shifting Unreal Engine 3 UPK binaries was instrumental in making this project work safely.
+
+## Support
+
+Contact me on discord: @sfdb
+Or on the support server https://discord.gg/2HhBNbrGMj
 
 ## License
 
