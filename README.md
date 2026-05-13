@@ -28,11 +28,13 @@ VelocityRL is maintained in two flavors to suit your workflow:
 ## 🛠️ Installation & Setup
 
 ### 🖥️ Desktop App (Recommended)
+
 1. Download the latest installer (`.msi` or `.exe`) from the [Releases](https://github.com/bitsfdb/RLItemMod/releases) page.
 2. Run the installer and launch **VelocityRL**.
 3. Point the app to your Rocket League data directory in **Settings**.
 
 ### ⌨️ CLI Version
+
 ```bash
 # Install globally
 npm install -g velocityrl
@@ -46,10 +48,13 @@ pip install cryptography
 ## 🚀 Usage
 
 ### Desktop
+
 Simply launch the app, select your **Owned Item**, select your **Target Asset**, and click **Initialize Swap**.
 
 ### CLI
+
 Run the interactive wizard from your terminal:
+
 ```bash
 velocityrl
 ```
@@ -59,7 +64,8 @@ velocityrl
 ## ⚠️ Important Considerations
 
 ### Supported Categories
-VelocityRL supports most item categories (Decals, Wheels, Boosts, etc.). 
+
+VelocityRL supports most item categories (Decals, Wheels, Boosts, etc.).
 
 > [!WARNING]
 > **Bodies and Goal Explosions** are currently in beta. Swapping these items may cause instability or crashes. Use the **Restore** feature if you encounter issues.
@@ -75,4 +81,5 @@ VelocityRL supports most item categories (Decals, Wheels, Boosts, etc.).
 ---
 
 ## 📜 License
+
 MIT
