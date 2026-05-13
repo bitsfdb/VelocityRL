@@ -144,9 +144,23 @@ def find_item(items: Sequence[Item], value: str, slot: str = "") -> Item:
     if not matches:
         raise ValueError(f"No item matched {value!r}" + (f" in slot {slot!r}" if slot else ""))
     if len(matches) > 1:
-        exact = [x for x in matches if x.product.lower() == value.lower() or x.asset_package.lower() == value.lower()]
+        # 1. Try exact matches on product name or package (handle .upk suffix)
+        exact = []
+        for x in matches:
+            p_low = x.product.lower()
+            pkg_low = x.asset_package.lower()
+            val_low = value.lower()
+            if p_low == val_low or pkg_low == val_low or pkg_low.removesuffix(".upk") == val_low:
+                exact.append(x)
+        
         if len(exact) == 1:
             return exact[0]
+            
+        # 2. If still ambiguous, check if they are all functionally identical (same package & path)
+        unique_assets = {(x.asset_package.lower(), x.asset_path.lower()) for x in (exact if exact else matches)}
+        if len(unique_assets) == 1:
+            return (exact if exact else matches)[0]
+
         raise ValueError("Ambiguous item match:\n" + "\n".join(x.label for x in matches[:20]))
     return matches[0]
 
@@ -311,6 +325,12 @@ def apply_name_pairs(upk, package, pairs: Sequence[Tuple[str, str]], preserve_he
         colliding_indices, _ = find_name_indices(current, new)
         for c_idx in colliding_indices:
             dummy_name = f"FREEDNAME{c_idx}" # No underscores, engine treats as pure base name
+            if preserve_header_offsets:
+                fixed, pad = fixed_rename_name_entry(upk, current, c_idx, dummy_name)
+                if fixed is not None:
+                    current = fixed
+                    log.append(f"FREED(FIXED): name[{c_idx}] freed to {dummy_name} in-place; pad={pad}.")
+                    continue
             try:
                 current = upk.rename_name_entry(current, c_idx, dummy_name)
                 log.append(f"FREED: Renamed colliding name at index {c_idx} to {dummy_name}")
@@ -441,6 +461,10 @@ def build_reencrypted_package_with_output_key(upk, original_encrypted_path: Path
     upk.patch_i32_le(prefix, meta_offsets["compressed_chunks_offset_offset"], new_chunk_table_offset)
     if rebuilt_chunks:
         upk.patch_i32_le(prefix, meta_offsets["last_block_size_offset"], rebuilt_chunks[-1].uncompressed_size)
+
+    print(f"[DEBUG] Re-encrypting: name_off={modified_summary.name_offset}, dep_off={modified_summary.depends_offset}, total_header={new_total_header_size}")
+    if modified_summary.name_offset != summary.name_offset:
+        print(f"[DEBUG] WARNING: name_offset SHIFTED from {summary.name_offset} to {modified_summary.name_offset}")
 
     output = bytearray()
     output += prefix

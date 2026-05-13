@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VelocityRL</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div id="app" class="layout-sidebar">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="sidebar-top">
+                <img src="logo.svg" alt="VelocityRL" class="sidebar-logo">
+                <div class="nav-links">
+                    <button class="nav-item active" data-tab="tab-swap">
+                        <i class="fa-solid fa-right-left"></i>
+                        <span>Swapper</span>
+                    </button>
+                    <button class="nav-item" data-tab="tab-restore">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                        <span>Restore</span>
+                    </button>
+                </div>
+            </div>
+            <div class="sidebar-bottom">
+                <button id="settings-btn" class="nav-item">
+                    <i class="fa-solid fa-cog"></i>
+                    <span>Settings</span>
+                </button>
+                <a href="https://discord.gg/2HhBNbrGMj" target="_blank" class="nav-item support-link">
+                    <i class="fa-brands fa-discord"></i>
+                    <span>Support</span>
+                </a>
+            </div>
+        </nav>
+
+        <!-- Main Content Area -->
+        <div class="content-wrapper">
+            <header>
+                <div>
+                    <h1>VelocityRL</h1>
+                    <p id="system-warning" class="warning-text hidden">⚠️ Bodies & Goal Explosions are currently unsupported</p>
+                </div>
+            </header>
+
+            <main>
+                <!-- Tab: Swapper -->
+                <div id="tab-swap" class="tab-content active">
+                    <div class="category-row" id="category-filter">
+                        <button class="cat-btn active" data-slot="All">All Items</button>
+                        <button class="cat-btn" data-slot="Body">Bodies</button>
+                        <button class="cat-btn" data-slot="Decal">Decals</button>
+                        <button class="cat-btn" data-slot="Wheels">Wheels</button>
+                        <button class="cat-btn" data-slot="Boost">Boosts</button>
+                        <button class="cat-btn" data-slot="Antenna">Antennas</button>
+                        <button class="cat-btn" data-slot="Topper">Toppers</button>
+                        <button class="cat-btn" data-slot="Goal Explosion">Explosions</button>
+                    </div>
+
+                    <div class="grid-layout">
+                        <section class="module-card">
+                            <div class="module-header"><label>Your Inventory</label></div>
+                            <div class="search-container">
+                                <i class="fa-solid fa-search"></i>
+                                <input type="text" id="owned-search" class="minimal-input" placeholder="Search item...">
+                                <div id="owned-results" class="results-flyout"></div>
+                            </div>
+                            <div style="margin-top: 24px;" class="preview-box" id="owned-selected">
+                                <i class="fa-solid fa-cube fa-2x" style="color: var(--border-subtle)"></i>
+                                <p style="color: var(--text-secondary); font-size: 14px;">Select an item from your collection</p>
+                            </div>
+                        </section>
+
+                        <div class="central-connector">
+                            <i class="fa-solid fa-chevron-right connector-icon"></i>
+                        </div>
+
+                        <section class="module-card">
+                            <div class="module-header"><label>Target Asset</label></div>
+                            <div class="search-container">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i>
+                                <input type="text" id="wanted-search" class="minimal-input" placeholder="Search desired asset...">
+                                <div id="wanted-results" class="results-flyout"></div>
+                            </div>
+                            <div style="margin-top: 24px;" class="preview-box" id="wanted-selected">
+                                <i class="fa-solid fa-sparkles fa-2x" style="color: var(--border-subtle)"></i>
+                                <p style="color: var(--text-secondary); font-size: 14px;">Select the target visual asset</p>
+                            </div>
+                        </section>
+                    </div>
+
+                    <div class="main-actions">
+                        <button id="apply-swap" class="btn-base btn-solid" disabled>Initialize Swap</button>
+                    </div>
+                </div>
+
+                <!-- Tab: Restore -->
+                <div id="tab-restore" class="tab-content">
+                    <section class="module-card restore-card">
+                        <div class="restore-icon-container">
+                            <i class="fa-solid fa-shield-halved fa-4x" style="color: var(--accent-blue)"></i>
+                        </div>
+                        <h2 style="margin-bottom: 12px;">Restoration Center</h2>
+                        <p style="color: var(--text-secondary); margin-bottom: 32px; max-width: 400px;">
+                            Revert all modifications and restore your Rocket League game files to their original state. 
+                            Backups are automatically created before every swap.
+                        </p>
+                        <button id="restore-btn" class="btn-base btn-solid" style="max-width: 300px;">Run Full Restoration</button>
+                    </section>
+                </div>
+            </main>
+
+            <div class="status-line">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <a href="https://github.com/bitsfdb/RLItemMod" target="_blank" id="status-text" class="status-link">bitsfdb</a>
+                </div>
+                <div id="progress-bar-container" class="progress-track hidden">
+                    <div id="progress-fill" class="progress-bar"></div>
+                </div>
+                <div class="version">v1.1.0</div>
+            </div>
+        </div>
+
+        <!-- Settings Modal -->
+        <div id="settings-modal" class="scrim">
+            <div class="settings-panel">
+                <h2 class="panel-title">System Settings</h2>
+                <div class="input-group">
+                    <label>Rocket League Data Path</label>
+                    <div class="flex-row">
+                        <input type="text" id="game-dir" class="minimal-input" readonly style="padding-left: 12px; background: #000;">
+                        <button id="browse-dir" class="tool-btn"><i class="fa-solid fa-folder"></i></button>
+                    </div>
+                </div>
+                <div style="margin-top: 32px;">
+                    <button id="close-settings" class="btn-base btn-solid" style="width: 100%;">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="main.js" type="module"></script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "VelocityRL",
+  "version": "1.1.0",
+  "identifier": "com.velocityrl.app",
+  "build": {
+    "frontendDist": "../ui",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "echo dev",
+    "beforeBuildCommand": "echo build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "VelocityRL",
+        "width": 800,
+        "height": 600,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    },
+    "withGlobalTauri": true
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [
+      "../python/**/*"
+    ],
+    "android": {
+      "debugApplicationIdSuffix": ".debug"
+    },
+    "plugins": {
+      "updater": {
+        "pubkey": "DWY+...",
+        "endpoints": [
+          "https://github.com/bitsfdb/RLItemMod/releases/latest/download/latest.json"
+        ]
+      }
+    }
+  }
+}

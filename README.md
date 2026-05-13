@@ -1,6 +1,7 @@
 # RLItemMod
 
 A powerful, user-friendly Typescript CLI tool for performing visual asset swaps in Rocket League.
+A powerful, user-friendly Typescript CLI tool for performing visual asset swaps in Rocket League.
 
 ## Overview
 

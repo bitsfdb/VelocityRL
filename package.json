@@ -1,11 +1,12 @@
 {
-  "name": "rl-item-mod",
-  "version": "1.0.6",
+  "name": "velocity-rl",
+  "version": "1.1.0",
   "type": "module",
-  "description": "A comprehensive CLI tool for safely applying visual asset swaps to Rocket League UPK files with full encryption and binary offset handling.",
+  "description": "VelocityRL Asset Swapping Tool",
   "main": "dist/index.js",
   "bin": {
-    "rl-item-mod": "dist/index.js"
+    "rl-item-mod": "./dist/index.js",
+    "velocityrl": "./dist/index.js"
   },
   "files": [
     "dist",
@@ -14,7 +15,8 @@
   "scripts": {
     "build": "tsc",
     "start": "node --loader ts-node/esm src/index.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "tauri": "tauri"
   },
   "keywords": [
     "rocket-league",
@@ -28,9 +30,11 @@
     "axios": "^1.16.0",
     "commander": "^14.0.3",
     "inquirer": "^13.4.2",
+    "rl-item-mod": "^1.0.6",
     "string-similarity": "^4.0.4"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0",
     "@types/inquirer": "^9.0.9",
     "@types/node": "^25.6.0",
     "@types/string-similarity": "^4.0.2",

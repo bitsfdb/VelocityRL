@@ -94,8 +94,7 @@ async function checkVersion() {
     }
 }
 
-const API_ENDPOINT = 'https://dank/rlapi';
-const DEFAULT_COOKED_DIR = 'E:\\games\\rocketleague\\TAGame\\CookedPCConsole';
+const DEFAULT_COOKED_DIR = 'C:\\Program Files\\Epic Games\\RocketLeague\\TAGame\\CookedPCConsole';
 
 /**
  * Interactive Wizard Flow
@@ -184,9 +183,8 @@ async function runInteractiveWizard() {
                 const result = spawnSync('python', [
                     pythonScriptPath,
                     '--no-gui',
-                    '--target', target.item.packageName,
-                    '--donor', source.item.packageName,
-                    '--no-preserve-header-offsets',
+                    '--target', target.item.productId?.toString() || target.item.packageName,
+                    '--donor', source.item.productId?.toString() || source.item.packageName,
                     '--overwrite',
                     '--donor-dir', cookedDir,
                     '--output-dir', cookedDir
