@@ -39,14 +39,14 @@
     ],
     "android": {
       "debugApplicationIdSuffix": ".debug"
-    },
-    "plugins": {
-      "updater": {
-        "pubkey": "DWY+...",
-        "endpoints": [
-          "https://github.com/bitsfdb/RLItemMod/releases/latest/download/latest.json"
-        ]
-      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "RWSpu3p8GFkH782nQIgwgBagG4ZXlNOV8nR6rj5ekdEx+xoY76tnrThq",
+      "endpoints": [
+        "https://github.com/bitsfdb/RLItemMod/releases/latest/download/latest.json"
+      ]
     }
   }
 }

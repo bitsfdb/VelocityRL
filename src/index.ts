@@ -19,14 +19,12 @@ const APP_VERSION = pkg.version;
 const program = new Command();
 
 program
-  .name('RLItemMod')
-  .description('Rocket League Surgical UPK Patcher')
+  .name('VelocityRL')
+  .description('VelocityRL | Surgical Rocket League Asset Swapping Engine')
   .version(APP_VERSION);
 
-console.log(`\nRLItemMod | Current Version: ${APP_VERSION}`);
-
 let updateMessage: string | null = null;
-const CONFIG_PATH = path.join(os.homedir(), '.rlitemmod.json');
+const CONFIG_PATH = path.join(os.homedir(), '.velocityrl.json');
 
 function loadConfig() {
     try {
@@ -44,21 +42,17 @@ function saveConfig(config: any) {
 }
 
 async function ensurePythonDependencies() {
-    process.stdout.write('Checking Python dependencies (cryptography)... ');
+    process.stdout.write('Checking Python engine dependencies... ');
     const check = spawnSync('python', ['-c', 'import cryptography'], { encoding: 'utf8' });
     
     if (check.status !== 0) {
-        // If simple check fails, try a more thorough install/sync
         console.log('\n[!] Missing or broken "cryptography" library. Attempting to repair...');
-        
-        // Use python -m pip to ensure we're targeting the correct interpreter
         const install = spawnSync('python', ['-m', 'pip', 'install', '--upgrade', 'cryptography'], { stdio: 'inherit', shell: true });
         
         if (install.status !== 0) {
             console.log('[!] python -m pip failed, trying python3...');
             spawnSync('python3', ['-m', 'pip', 'install', '--upgrade', 'cryptography'], { stdio: 'inherit', shell: true });
         } else {
-            // Re-verify after install
             const recheck = spawnSync('python', ['-c', 'import cryptography']);
             if (recheck.status === 0) {
                 console.log('SUCCESS: Dependency repaired.');
@@ -73,10 +67,14 @@ async function ensurePythonDependencies() {
 
 async function checkVersion() {
     try {
-        const res = await axios.get('https://registry.npmjs.org/rl-item-mod/latest', { timeout: 2000 });
-        const latest = res.data.version;
+        // Checking GitHub Releases for updates
+        const res = await axios.get('https://api.github.com/repos/bitsfdb/RLItemMod/releases/latest', { 
+            timeout: 3000,
+            headers: { 'User-Agent': 'VelocityRL-Updater' }
+        });
+        const latestTag = res.data.tag_name; // e.g., "v1.1.0"
+        const latest = latestTag.replace('v', '');
         
-        // Simple semver check
         const l = latest.split('.').map(Number);
         const c = APP_VERSION.split('.').map(Number);
         let isNewer = false;
@@ -86,19 +84,16 @@ async function checkVersion() {
         }
 
         if (isNewer) {
-            updateMessage = `\x1b[33m[!] UPDATE AVAILABLE: Version ${latest} is ready! (Current: ${APP_VERSION})\x1b[0m\n` +
-                            `\x1b[33m    Run 'npm install -g rl-item-mod' to update.\x1b[0m\n`;
+            updateMessage = `\x1b[33m[!] UPDATE AVAILABLE: VelocityRL ${latestTag} is ready!\x1b[0m\n` +
+                            `\x1b[33m    Download the new version from: https://github.com/bitsfdb/RLItemMod/releases\x1b[0m\n`;
         }
     } catch (e) {
-        // Silently fail version check if offline
+        // Silently fail if offline or rate-limited
     }
 }
 
 const DEFAULT_COOKED_DIR = 'C:\\Program Files\\Epic Games\\RocketLeague\\TAGame\\CookedPCConsole';
 
-/**
- * Interactive Wizard Flow
- */
 async function runInteractiveWizard() {
     let active = true;
     while (active) {
@@ -106,13 +101,13 @@ async function runInteractiveWizard() {
         if (updateMessage) {
             console.log(updateMessage);
         }
-        console.log(`RLItemMod | Current Version: ${APP_VERSION}`);
+        console.log(`VelocityRL | Version: ${APP_VERSION}`);
         console.log('=================================================');
 
         const { action } = await inquirer.prompt([{
             type: 'rawlist',
             name: 'action',
-            message: 'What would you like to do?',
+            message: 'Main Menu',
             choices: [
                 { name: 'Swap Item (Visual & Offset RLing)', value: 'swap' },
                 { name: 'Search Asset Database', value: 'search' },
@@ -153,33 +148,28 @@ async function runInteractiveWizard() {
             continue;
         }
 
-
-
         if (action === 'swap') {
             const cookedDir = (global as any).COOKED_DIR || DEFAULT_COOKED_DIR;
             
-            console.log('\n--- STEP 1: Target Item (The one you OWN) ---');
+            console.log('\n--- STEP 1: Owned Item ---');
             const target = await promptForItemAndUPK('Search for your OWNED item:', cookedDir);
             if (!target) {
                 await inquirer.prompt([{ type: 'input', name: 'pause', message: 'Press Enter to continue...' }]);
                 continue;
             }
 
-            console.log('\n--- STEP 2: Source Item (The one you WANT) ---');
+            console.log('\n--- STEP 2: Target Visual ---');
             const source = await promptForItemAndUPK('Search for the item you WANT:', cookedDir);
             if (!source) {
                 await inquirer.prompt([{ type: 'input', name: 'pause', message: 'Press Enter to continue...' }]);
                 continue;
             }
 
-            console.log(`\nSwapping ${target.item.name} for ${source.item.name}...`);
-            const targetUpk = new UPKFile(target.path);
+            console.log(`\nVelocityRL | Swapping ${target.item.name} -> ${source.item.name}...`);
             try {
-
                 const pythonScriptPath = path.resolve(__dirname, '../python/rl_asset_swapper.py');
                 backupFile(target.path);
 
-                console.log(`\nExecuting Python offset-shifter...`);
                 const result = spawnSync('python', [
                     pythonScriptPath,
                     '--no-gui',
@@ -191,16 +181,16 @@ async function runInteractiveWizard() {
                 ], { stdio: ['inherit', 'inherit', 'pipe'], encoding: 'utf8' });
 
                 if (result.stderr && result.stderr.trim()) {
-                    console.error('\n--- Python Error Output ---');
+                    console.error('\n--- Engine Error Output ---');
                     console.error(result.stderr.trim());
                     console.error('---------------------------');
                 }
 
                 if (result.status !== 0) {
-                    throw new Error(`Python script exited with code ${result.status}`);
+                    throw new Error(`Engine process exited with code ${result.status}`);
                 }
 
-                console.log('SUCCESS: Visual Swap complete! Restart your game to see your new item.');
+                console.log('SUCCESS: Visual Swap complete! Restart your game.');
             } catch (e: any) {
                 console.error(`Failed: ${e.message}`);
             }
@@ -211,7 +201,7 @@ async function runInteractiveWizard() {
 
         if (action === 'restore') {
             const cookedDir = (global as any).COOKED_DIR || DEFAULT_COOKED_DIR;
-            console.log(`\n=== BACKUP RESTORE UTILITY ===`);
+            console.log(`\n=== VelocityRL RESTORE UTILITY ===`);
             console.log(`Searching in: ${cookedDir}`);
             try {
                 if (!fs.existsSync(cookedDir)) {
@@ -220,15 +210,13 @@ async function runInteractiveWizard() {
                 const files = fs.readdirSync(cookedDir);
                 const backups = files.filter(f => f.endsWith('.bak'));
                 
-                console.log(`Found ${backups.length} backup file(s).`);
-
                 if (backups.length === 0) {
-                    console.log('No backups found in this directory.');
+                    console.log('No backups found.');
                 } else {
                     const { restoreChoice } = await inquirer.prompt([{
                         type: 'rawlist',
                         name: 'restoreChoice',
-                        message: 'Select an option:',
+                        message: `Found ${backups.length} backups. Select an option:`,
                         choices: [
                             { name: 'Restore ALL items', value: 'all' },
                             ...backups.map(b => ({ name: `Restore ${b.replace('.bak', '')}`, value: b })),
@@ -236,36 +224,19 @@ async function runInteractiveWizard() {
                         ]
                     }]);
 
-                    if (restoreChoice === 'cancel') {
-                        // Do nothing
-                    } else if (restoreChoice === 'all') {
-                        let count = 0;
-                        for (const bak of backups) {
-                            try {
+                    if (restoreChoice !== 'cancel') {
+                        if (restoreChoice === 'all') {
+                            for (const bak of backups) {
                                 const original = bak.replace('.bak', '');
-                                const bakPath = path.join(cookedDir, bak);
-                                const originalPath = path.join(cookedDir, original);
-                                fs.copyFileSync(bakPath, originalPath);
-                                fs.unlinkSync(bakPath);
+                                fs.copyFileSync(path.join(cookedDir, bak), path.join(cookedDir, original));
+                                fs.unlinkSync(path.join(cookedDir, bak));
                                 console.log(`[OK] Restored ${original}`);
-                                count++;
-                            } catch (err: any) {
-                                console.error(`[ERR] Failed to restore ${bak}: ${err.message}`);
                             }
-                        }
-                        console.log(`\nSUCCESS: ${count} backups restored.`);
-                    } else {
-                        // Individual file
-                        try {
-                            const bak = restoreChoice;
-                            const original = bak.replace('.bak', '');
-                            const bakPath = path.join(cookedDir, bak);
-                            const originalPath = path.join(cookedDir, original);
-                            fs.copyFileSync(bakPath, originalPath);
-                            fs.unlinkSync(bakPath);
+                        } else {
+                            const original = restoreChoice.replace('.bak', '');
+                            fs.copyFileSync(path.join(cookedDir, restoreChoice), path.join(cookedDir, original));
+                            fs.unlinkSync(path.join(cookedDir, restoreChoice));
                             console.log(`SUCCESS: ${original} restored.`);
-                        } catch (err: any) {
-                            console.error(`FAILED: ${err.message}`);
                         }
                     }
                 }
@@ -275,14 +246,9 @@ async function runInteractiveWizard() {
             await inquirer.prompt([{ type: 'input', name: 'pause', message: 'Press Enter to continue...' }]);
             continue;
         }
-
-
     }
 }
 
-/**
- * Helper to handle the "Search -> Refine -> Pick" flow for a UPK item
- */
 async function promptForItemAndUPK(message: string, cookedDir: string) {
     const { searchTerm } = await inquirer.prompt([{
         type: 'input',
@@ -299,41 +265,23 @@ async function promptForItemAndUPK(message: string, cookedDir: string) {
     const { selectedItem } = await inquirer.prompt([{
         type: 'rawlist',
         name: 'selectedItem',
-        message: 'Select the item:',
+        message: 'Select item:',
         choices: matches.map(m => ({ 
-            name: `${m.name} [ID: ${m.productId}] (${m.packageName})`, 
+            name: `${m.name} [${m.packageName}]`, 
             value: m 
         }))
     }]);
 
-    const owned = selectedItem.productId.toString();
-    const result = await resolvePackagePath(owned, cookedDir);
-
-    if (!result) {
-        console.error(`Could not resolve "${owned}".`);
-        return null;
-    }
+    const result = await resolvePackagePath(selectedItem.productId.toString(), cookedDir);
+    if (!result) return null;
 
     let finalUpkPath = '';
     if ('candidates' in result) {
-        let currentCandidates = result.candidates;
-        while (currentCandidates.length > 20) {
-            console.log(`Found ${currentCandidates.length} potential matches.`);
-            const { refine } = await inquirer.prompt([{
-                type: 'input',
-                name: 'refine',
-                message: 'Too many files found! Enter a sub-keyword to narrow it down (or press Enter to see all):'
-            }]);
-            if (!refine) break;
-            const filtered = currentCandidates.filter(c => c.toLowerCase().includes(refine.toLowerCase()));
-            if (filtered.length > 0) currentCandidates = filtered;
-        }
-
         const { selected } = await inquirer.prompt([{
             type: 'rawlist',
             name: 'selected',
-            message: `Multiple matches found. Select one (Showing top ${Math.min(currentCandidates.length, 50)}):`,
-            choices: currentCandidates.slice(0, 50)
+            message: 'Multiple matches found. Select one:',
+            choices: result.candidates.slice(0, 50)
         }]);
         finalUpkPath = path.join(cookedDir, selected);
     } else {
@@ -341,29 +289,6 @@ async function promptForItemAndUPK(message: string, cookedDir: string) {
     }
 
     return { path: finalUpkPath, item: selectedItem };
-}
-
-async function executePatch(upkPath: string, data: string | Buffer, exportIndex: number) {
-    try {
-        console.log(`Patching ${upkPath}...`);
-        backupFile(upkPath);
-        const upk = new UPKFile(upkPath);
-        
-        upk.readSummary();
-        upk.readExportMap();
-
-        if (exportIndex === -1) {
-            exportIndex = upk.exports.reduce((maxIdx, curr, idx, arr) => 
-                curr.serialSize > arr[maxIdx].serialSize ? idx : maxIdx, 0);
-            console.log(`Auto-selected Export[${exportIndex}] (Size: ${upk.exports[exportIndex].serialSize} bytes)`);
-        }
-
-        const newHex = (typeof data === 'string') ? fs.readFileSync(data) : data;
-        upk.patchExport(exportIndex, newHex);
-        console.log('SUCCESS: Patch complete.');
-    } catch (error: any) {
-        console.error('CRITICAL FAILURE:', error.message);
-    }
 }
 
 function backupFile(filePath: string) {
@@ -374,16 +299,6 @@ function backupFile(filePath: string) {
     }
 }
 
-// --- CLI COMMANDS ---
-
-program
-  .command('list')
-  .description('Shows user\'s owned items from the API')
-  .action(async () => {
-    // Existing list logic...
-    console.log('Fetching items... (Placeholder)');
-  });
-
 program
   .command('search')
   .argument('<term>', 'Keyword to search for')
@@ -392,39 +307,8 @@ program
     console.table(results);
   });
 
-program
-  .command('swap')
-  .requiredOption('--owned <itemName>', 'Item name or Product ID')
-  .requiredOption('--target <targetHexFile>', 'Hex file path')
-  .option('--upk <path>', 'Explicit UPK path')
-  .option('--dir <path>', 'Cooked dir', DEFAULT_COOKED_DIR)
-  .option('--export <index>', 'Export index')
-  .action(async (options) => {
-      // Call executePatch with resolved paths...
-      let upkPath = options.upk;
-      let cookedDir = options.dir;
-
-      if (!fs.existsSync(cookedDir)) {
-          console.error(`Error: CookedPCConsole directory not found at: ${cookedDir}`);
-          console.log('Use --dir <path> to specify the correct game directory.');
-          return;
-      }
-
-      if (!upkPath) {
-          const res = await resolvePackagePath(options.owned, cookedDir);
-          if (res && 'path' in res) upkPath = res.path;
-      }
-
-      if (!upkPath) {
-          console.error(`Error: Could not resolve item "${options.owned}" in ${cookedDir}.`);
-          return;
-      }
-      await executePatch(upkPath, options.target, options.export ? parseInt(options.export) : -1);
-  });
-
-// Handle Ctrl+C gracefully
 process.on('SIGINT', () => {
-    console.log('\nExiting RLItemMod.');
+    console.log('\nExiting VelocityRL.');
     process.exit(0);
 });
 
@@ -446,10 +330,8 @@ async function runSafeWizard() {
     }
 }
 
-// Default to wizard if no command is provided
 if (process.argv.length <= 2) {
     runSafeWizard();
 } else {
     program.parse(process.argv);
 }
-

@@ -1,79 +1,78 @@
-# RLItemMod
+# VelocityRL 🚀
 
-A powerful, user-friendly Typescript CLI tool for performing visual asset swaps in Rocket League.
-A powerful, user-friendly Typescript CLI tool for performing visual asset swaps in Rocket League.
+**VelocityRL** is the ultimate visual asset swapping tool for Rocket League. Transform your in-game items instantly with a premium desktop experience or a high-performance CLI.
 
-## Overview
+<p align="center">
+  <img src="logo.svg" width="128" height="128" alt="VelocityRL Logo">
+</p>
 
-`RLItemMod` provides an interactive terminal wizard that allows you to swap in-game items (e.g., swapping a standard boost for Alpha Reward). Under the hood, it seamlessly invokes the advanced `RLUPKTools` Python engine to accurately parse `.upk` encryption, perfectly expand Name Table string offsets, and rebuild the package architecture without causing game crashes.
+## 🌟 Choose Your Version
 
-## Features
+VelocityRL is maintained in two flavors to suit your workflow:
 
-- **Interactive Wizard**: A beautiful command-line interface to search for and select your source and target items.
-- **Python Interop**: Leverages a robust Python backend to handle complex LZO decompression, AES decryption, and binary offset shifting.
-- **Automated Backups**: Automatically backs up original game assets before patching, with a one-click CLI restore feature.
-- **Item Database**: Uses a built-in `items.json` database for fuzzy-searching and mapping in-game item names directly to their underlying UPK files.
+- **Desktop App (main branch)**: A premium, minimalist Windows application built with Tauri 2.0. Features a beautiful dark UI, sidebar navigation, and a dedicated restoration center.
+- **CLI Tool (cli branch)**: A lightweight, interactive terminal wizard for power users who prefer the command line.
 
-## ⚠️ Warning - Some Swaps Will Crash the Game
+---
 
-> **Swapping certain asset types is not yet fully supported and will cause Rocket League to crash on load.** This is a known limitation of the current version and is being worked on. Until a fix is released, avoid swapping the following:
+## ✨ Features
 
-> Thumbnails in general cause a lot of crashes, as well as bodies and goal explosions.
+- **Premium SaaS UI**: A stunning dark-mode dashboard with real-time fuzzy search.
+- **High-Performance Patching**: Leverages an advanced Python engine for precise `.upk` binary manipulation.
+- **Auto-Backups**: Your game files are safe. Backups are created automatically before every modification.
+- **One-Click Restoration**: Revert all changes instantly through the dedicated Restore tab or CLI command.
+- **Extensive Database**: Fuzzy-search thousands of items from the built-in database.
 
-> If a swap you attempt causes a crash, you should validate game files, and when a crash occurs on an item use the **Restore backups** as shown in this screenshot
+---
 
-<img width="571" height="298" alt="image" src="https://github.com/user-attachments/assets/e09d09eb-1e0e-499c-9ddd-74fea68163d0" />
+## 🛠️ Installation & Setup
 
-## Installation
+### 🖥️ Desktop App (Recommended)
+1. Download the latest installer (`.msi` or `.exe`) from the [Releases](https://github.com/bitsfdb/RLItemMod/releases) page.
+2. Run the installer and launch **VelocityRL**.
+3. Point the app to your Rocket League data directory in **Settings**.
 
-### Prerequisites
-
-- Node.js (v18+)
-- Python 3.8+ (must be available in your system PATH)
-
-### Global Install (Recommended)
-
+### ⌨️ CLI Version
 ```bash
-npm install -g rl-item-mod
-```
+# Install globally
+npm install -g velocityrl
 
-```bash
+# Install engine dependencies
 pip install cryptography
 ```
 
-### Local Development
+---
 
+## 🚀 Usage
+
+### Desktop
+Simply launch the app, select your **Owned Item**, select your **Target Asset**, and click **Initialize Swap**.
+
+### CLI
+Run the interactive wizard from your terminal:
 ```bash
-git clone https://github.com/bitsfdb/RLItemMod.git
-cd RLItemMod
-npm install
-npm run build
-npm link
+velocityrl
 ```
 
-## Usage
+---
 
-Simply launch the interactive wizard from your terminal:
+## ⚠️ Important Considerations
 
-```bash
-rl-item-mod
-```
+### Supported Categories
+VelocityRL supports most item categories (Decals, Wheels, Boosts, etc.). 
 
-Or run directly via npx:
+> [!WARNING]
+> **Bodies and Goal Explosions** are currently in beta. Swapping these items may cause instability or crashes. Use the **Restore** feature if you encounter issues.
 
-```bash
-npx rl-item-mod@latest
-```
+---
 
-## Credits
+## 🤝 Credits & Support
 
-Massive credits to [CrunchyRL/RLUPKTools](https://github.com/CrunchyRL/RLUPKTools) for making this repository possible. The advanced Python engineering for parsing and shifting Unreal Engine 3 UPK binaries was instrumental in making this project work safely.
+- **Core Engine**: Massive credits to [CrunchyRL/RLUPKTools](https://github.com/CrunchyRL/RLUPKTools) for the Unreal Engine 3 binary patching logic.
+- **Developer**: bitsfdb (@sfdb)
+- **Discord**: Join our [Support Server](https://discord.gg/2HhBNbrGMj) for updates and help.
 
-## Support
+---
 
-Contact me on discord: @sfdb
-Or on the support server https://discord.gg/2HhBNbrGMj
-
-## License
-
+## 📜 License
 MIT
