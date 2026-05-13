@@ -512,6 +512,7 @@ def build_output(upk, donor_path: Path, target_key_path: Path, modified, provide
 
 def swap_one_package(upk, source_path: Path, output_path: Path, key_source_path: Path, pairs: Sequence[Tuple[str, str]], options: SwapOptions) -> Tuple[Path, List[str]]:
     log: List[str] = []
+    cleanup_old_temp_files(options.output_dir, options.logger)
     if not source_path.exists():
         raise FileNotFoundError(f"Source package not found: {source_path}")
     if output_path.exists() and not options.overwrite:
@@ -583,6 +584,23 @@ def swap_asset(upk, target: Item, donor: Item, options: SwapOptions) -> Tuple[Li
 
     return all_paths, all_log
 
+
+def cleanup_old_temp_files(directory: Path, logger: Optional[Callable[[str], None]] = None) -> None:
+    import time
+    if not directory.exists():
+        return
+    now = time.time()
+    cutoff = 24 * 3600
+    for file in directory.glob("*"):
+        if file.name.endswith(("_decrypted.upk", "_decompressed.upk")):
+            try:
+                mtime = file.stat().st_mtime
+                if now - mtime > cutoff:
+                    file.unlink()
+                    if logger:
+                        logger(f"CLEANUP: Removed old temp file {file.name}")
+            except Exception:
+                pass
 
 def revert_item(target: Item, options: SwapOptions) -> Tuple[List[Path], List[str]]:
     src_dir = options.key_source_dir or options.donor_dir

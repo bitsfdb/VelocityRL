@@ -8,8 +8,33 @@
   "permissions": [
     "core:default",
     "dialog:default",
-    "shell:default",
-    "fs:default",
-    "process:default"
+    "log:default",
+    "process:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "bin/velocity-engine",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-read",
+      "allow": [{ "path": "**" }]
+    },
+    {
+      "identifier": "fs:allow-write",
+      "allow": [{ "path": "**" }]
+    },
+    {
+      "identifier": "fs:allow-read-dir",
+      "allow": [{ "path": "**" }]
+    },
+    {
+      "identifier": "fs:allow-exists",
+      "allow": [{ "path": "**" }]
+    }
   ]
 }

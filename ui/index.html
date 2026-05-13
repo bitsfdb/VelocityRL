@@ -5,141 +5,138 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VelocityRL</title>
     <link rel="stylesheet" href="style.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div id="app" class="layout-sidebar">
-        <!-- Sidebar Navigation -->
-        <nav class="sidebar">
-            <div class="sidebar-top">
-                <img src="logo.svg" alt="VelocityRL" class="sidebar-logo">
-                <div class="nav-links">
-                    <button class="nav-item active" data-tab="tab-swap">
-                        <i class="fa-solid fa-right-left"></i>
-                        <span>Swapper</span>
-                    </button>
-                    <button class="nav-item" data-tab="tab-restore">
-                        <i class="fa-solid fa-clock-rotate-left"></i>
-                        <span>Restore</span>
-                    </button>
-                </div>
+    <aside class="sidebar">
+        <div class="logo-section">
+            <img src="logo.svg" width="32" height="32" alt="VelocityRL Logo">
+            <h1>VelocityRL</h1>
+        </div>
+        
+        <nav class="nav-links">
+            <div class="nav-item active" data-tab="swapper-tab">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5M8 3H3v5M12 21v-4M8 21h8M3 16v5h5M21 16v5h-5"/></svg>
+                Swapper
             </div>
-            <div class="sidebar-bottom">
-                <button id="settings-btn" class="nav-item">
-                    <i class="fa-solid fa-cog"></i>
-                    <span>Settings</span>
-                </button>
-                <a href="https://discord.gg/2HhBNbrGMj" target="_blank" class="nav-item support-link">
-                    <i class="fa-brands fa-discord"></i>
-                    <span>Support</span>
-                </a>
+            <div class="nav-item" data-tab="restore-tab" id="nav-restore">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4l3 3"/></svg>
+                Restore
             </div>
         </nav>
 
-        <!-- Main Content Area -->
-        <div class="content-wrapper">
-            <header>
-                <div>
-                    <h1>VelocityRL</h1>
-                    <p id="system-warning" class="warning-text hidden">⚠️ Bodies & Goal Explosions are currently unsupported</p>
-                </div>
-            </header>
+        <div class="sidebar-footer">
+            <div class="nav-item" id="settings-btn">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                Settings
+            </div>
+        </div>
+    </aside>
 
-            <main>
-                <!-- Tab: Swapper -->
-                <div id="tab-swap" class="tab-content active">
-                    <div class="category-row" id="category-filter">
-                        <button class="cat-btn active" data-slot="All">All Items</button>
-                        <button class="cat-btn" data-slot="Body">Bodies</button>
-                        <button class="cat-btn" data-slot="Decal">Decals</button>
-                        <button class="cat-btn" data-slot="Wheels">Wheels</button>
-                        <button class="cat-btn" data-slot="Boost">Boosts</button>
-                        <button class="cat-btn" data-slot="Antenna">Antennas</button>
-                        <button class="cat-btn" data-slot="Topper">Toppers</button>
-                        <button class="cat-btn" data-slot="Goal Explosion">Explosions</button>
+    <main>
+        <div id="swapper-tab" class="tab-content active">
+            <div class="category-strip">
+                <button class="cat-btn active" data-slot="All">All Items</button>
+                <button class="cat-btn" data-slot="Body">Bodies</button>
+                <button class="cat-btn" data-slot="Decal">Decals</button>
+                <button class="cat-btn" data-slot="Wheels">Wheels</button>
+                <button class="cat-btn" data-slot="Boost">Boosts</button>
+                <button class="cat-btn" data-slot="Antenna">Antennas</button>
+                <button class="cat-btn" data-slot="Topper">Toppers</button>
+                <button class="cat-btn" data-slot="Goal Explosion">Goal Explosions</button>
+            </div>
+
+            <div class="swapper-grid">
+                <div class="card">
+                    <h3>Owned Item</h3>
+                    <div class="search-box">
+                        <input type="text" id="owned-search" placeholder="Search your items...">
+                        <div id="owned-results" class="search-flyout"></div>
                     </div>
-
-                    <div class="grid-layout">
-                        <section class="module-card">
-                            <div class="module-header"><label>Your Inventory</label></div>
-                            <div class="search-container">
-                                <i class="fa-solid fa-search"></i>
-                                <input type="text" id="owned-search" class="minimal-input" placeholder="Search item...">
-                                <div id="owned-results" class="results-flyout"></div>
-                            </div>
-                            <div style="margin-top: 24px;" class="preview-box" id="owned-selected">
-                                <i class="fa-solid fa-cube fa-2x" style="color: var(--border-subtle)"></i>
-                                <p style="color: var(--text-secondary); font-size: 14px;">Select an item from your collection</p>
-                            </div>
-                        </section>
-
-                        <div class="central-connector">
-                            <i class="fa-solid fa-chevron-right connector-icon"></i>
-                        </div>
-
-                        <section class="module-card">
-                            <div class="module-header"><label>Target Asset</label></div>
-                            <div class="search-container">
-                                <i class="fa-solid fa-wand-magic-sparkles"></i>
-                                <input type="text" id="wanted-search" class="minimal-input" placeholder="Search desired asset...">
-                                <div id="wanted-results" class="results-flyout"></div>
-                            </div>
-                            <div style="margin-top: 24px;" class="preview-box" id="wanted-selected">
-                                <i class="fa-solid fa-sparkles fa-2x" style="color: var(--border-subtle)"></i>
-                                <p style="color: var(--text-secondary); font-size: 14px;">Select the target visual asset</p>
-                            </div>
-                        </section>
-                    </div>
-
-                    <div class="main-actions">
-                        <button id="apply-swap" class="btn-base btn-solid" disabled>Initialize Swap</button>
+                    <div id="owned-selected" class="item-selected-view">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                            <circle cx="8.5" cy="8.5" r="1.5"/>
+                            <polyline points="21 15 16 10 5 21"/>
+                        </svg>
+                        <p style="color: var(--text-secondary); margin-top: 12px; font-size: 13px;">No item selected</p>
                     </div>
                 </div>
 
-                <!-- Tab: Restore -->
-                <div id="tab-restore" class="tab-content">
-                    <section class="module-card restore-card">
-                        <div class="restore-icon-container">
-                            <i class="fa-solid fa-shield-halved fa-4x" style="color: var(--accent-blue)"></i>
-                        </div>
-                        <h2 style="margin-bottom: 12px;">Restoration Center</h2>
-                        <p style="color: var(--text-secondary); margin-bottom: 32px; max-width: 400px;">
-                            Revert all modifications and restore your Rocket League game files to their original state. 
-                            Backups are automatically created before every swap.
-                        </p>
-                        <button id="restore-btn" class="btn-base btn-solid" style="max-width: 300px;">Run Full Restoration</button>
-                    </section>
+                <div class="card">
+                    <h3>Target Asset</h3>
+                    <div class="search-box">
+                        <input type="text" id="wanted-search" placeholder="Search target assets...">
+                        <div id="wanted-results" class="search-flyout"></div>
+                    </div>
+                    <div id="wanted-selected" class="item-selected-view">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                            <circle cx="8.5" cy="8.5" r="1.5"/>
+                            <polyline points="21 15 16 10 5 21"/>
+                        </svg>
+                        <p style="color: var(--text-secondary); margin-top: 12px; font-size: 13px;">No item selected</p>
+                    </div>
                 </div>
-            </main>
+            </div>
 
-            <div class="status-line">
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <a href="https://github.com/bitsfdb/RLItemMod" target="_blank" id="status-text" class="status-link">bitsfdb</a>
-                </div>
-                <div id="progress-bar-container" class="progress-track hidden">
-                    <div id="progress-fill" class="progress-bar"></div>
-                </div>
-                <div class="version">v1.1.0</div>
+            <div class="swapper-controls">
+                <p id="system-warning" class="hidden" style="color: var(--danger); font-size: 13px; font-weight: 500;">
+                    ⚠️ Bodies & Goal Explosions are in beta. Stability not guaranteed.
+                </p>
+                <button id="apply-swap" class="action-btn" disabled>Initialize Swap</button>
             </div>
         </div>
 
-        <!-- Settings Modal -->
-        <div id="settings-modal" class="scrim">
-            <div class="settings-panel">
-                <h2 class="panel-title">System Settings</h2>
-                <div class="input-group">
-                    <label>Rocket League Data Path</label>
-                    <div class="flex-row">
-                        <input type="text" id="game-dir" class="minimal-input" readonly style="padding-left: 12px; background: #000;">
-                        <button id="browse-dir" class="tool-btn"><i class="fa-solid fa-folder"></i></button>
+        <div id="restore-tab" class="tab-content">
+            <div class="restoration-grid">
+                <div style="text-align: center; margin-bottom: 32px;">
+                    <div style="background: rgba(59, 130, 246, 0.1); width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px auto;">
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--accent-blue)" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    </div>
+                    <h2 style="font-size: 24px; margin-bottom: 8px;">Restoration Center</h2>
+                    <p style="color: var(--text-secondary); max-width: 400px; margin: 0 auto;">Select specific files to revert or perform a full restoration to clean all modifications.</p>
+                </div>
+
+                <div id="backup-container" class="backup-list">
+                    <div style="padding: 40px; text-align: center; color: var(--text-secondary);">
+                        Scanning for backups...
                     </div>
                 </div>
-                <div style="margin-top: 32px;">
-                    <button id="close-settings" class="btn-base btn-solid" style="width: 100%;">Save Changes</button>
+
+                <button id="restore-btn" class="action-btn" style="background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); margin-top: 24px;">Run Full Restoration</button>
+            </div>
+        </div>
+    </main>
+
+    <div id="settings-modal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>System Settings</h2>
+            </div>
+            <div class="settings-group">
+                <label>Rocket League Data Path</label>
+                <div class="input-row">
+                    <input type="text" id="game-dir" placeholder="C:\Program Files\...\RocketLeague\TAGame\CookedPCConsole">
+                    <div id="browse-dir" class="browse-btn">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                    </div>
                 </div>
             </div>
+            <button id="close-settings" class="action-btn" style="width: 100%;">Save Changes</button>
         </div>
     </div>
-    <script src="main.js" type="module"></script>
+
+    <div class="status-bar">
+        <div style="display: flex; align-items: center; gap: 16px;">
+            <span id="status-text">bitsfdb</span>
+            <div id="progress-bar-container" class="progress-container hidden">
+                <div id="progress-fill" class="progress-fill"></div>
+            </div>
+        </div>
+        <div>VelocityRL v1.1.0</div>
+    </div>
+
+    <script src="main.js"></script>
 </body>
 </html>

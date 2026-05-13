@@ -26,7 +26,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi"],
+    "targets": "all",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -35,15 +35,23 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "../python/rl_asset_swapper.py",
-      "../python/rl_injector.py",
-      "../python/rl_memory_patcher.py",
-      "../python/rl_upk_editor.py",
       "../python/items.json",
-      "../python/keys.txt"
-    ]
+      "../python/keys.txt",
+      "../python/engine.sha256"
+    ],
+    "externalBin": [
+      "bin/velocity-engine"
+    ],
+    "android": {
+      "debugApplicationIdSuffix": ".debug"
+    }
   },
   "plugins": {
+    "shell": {
+      "sidecar": [
+        "bin/velocity-engine"
+      ]
+    },
     "updater": {
       "pubkey": "RWSpu3p8GFkH782nQIgwgBagG4ZXlNOV8nR6rj5ekdEx+xoY76tnrThq",
       "endpoints": [
