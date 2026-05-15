@@ -17,8 +17,12 @@ import zipfile
 from pathlib import Path
 from typing import BinaryIO, Dict, List, Optional, Tuple
 
-import tkinter as tk
-from tkinter import filedialog, messagebox, simpledialog, ttk
+try:
+    import tkinter as tk
+    from tkinter import filedialog, messagebox, simpledialog, ttk
+    HAS_GUI = True
+except ImportError:
+    HAS_GUI = False
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes

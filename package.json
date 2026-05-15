@@ -2,6 +2,10 @@
   "name": "velocity-rl",
   "version": "1.1.0",
   "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "rl-item-mod": "dist/index.js"
+  },
   "description": "VelocityRL Asset Swapping Tool",
   "scripts": {
     "build": "echo 'Building UI...'; node -v",

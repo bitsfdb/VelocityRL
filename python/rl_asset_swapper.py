@@ -6,18 +6,28 @@ import importlib.util
 import io
 import json
 import os
-import queue
 import shutil
 import struct
 import sys
-import threading
 import traceback
+import hashlib
+import hmac
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
-import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+
+# Dummy imports for PyInstaller to include dependencies of dynamically loaded rl_upk_editor
+if False:
+    import concurrent.futures
+    import ctypes
+    import hashlib
+    import zlib
+    import re
+    import zipfile
+    from cryptography.hazmat.backends import default_backend
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
 
 
 @dataclass(frozen=True)
@@ -75,9 +85,23 @@ def script_dir() -> Path:
 def default_path(names: Sequence[str]) -> Path:
     here = script_dir()
     for name in names:
-        p = here / name
-        if p.exists():
-            return p
+        candidates = [
+            here / name,
+            here.parent / "python" / name,
+            here.parent / "resources" / "python" / name,
+            here.parent / "resources" / name,
+            here.parent.parent / "python" / name,
+            here.parent.parent / "resources" / "python" / name,
+            Path.cwd() / name,
+            Path.cwd() / "python" / name,
+            Path.cwd() / "resources" / "python" / name,
+        ]
+        if getattr(sys, "_MEIPASS", None):
+            candidates.insert(0, Path(sys._MEIPASS) / name)
+            
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
     return here / names[0]
 
 
@@ -88,24 +112,43 @@ def import_rl_upk_editor():
         pass
 
     here = script_dir()
-    candidates = [
-        here / "rl_upk_editor.py",
-        here / "rl_upk_editor(1).py",
-        Path.cwd() / "rl_upk_editor.py",
-        Path.cwd() / "rl_upk_editor(1).py",
-    ]
+    names = ["rl_upk_editor.py", "rl_upk_editor(1).py"]
+    candidates = []
+    
+    for name in names:
+        candidates.extend([
+            here / name,
+            here.parent / "python" / name,
+            here.parent / "resources" / "python" / name,
+            here.parent / "resources" / name,
+            here.parent.parent / "python" / name,
+            here.parent.parent / "resources" / "python" / name,
+            Path.cwd() / name,
+            Path.cwd() / "python" / name,
+            Path.cwd() / "resources" / "python" / name,
+        ])
+        if getattr(sys, "_MEIPASS", None):
+            candidates.insert(0, Path(sys._MEIPASS) / name)
+
+    last_err = None
     for candidate in candidates:
         if not candidate.exists():
             continue
-        spec = importlib.util.spec_from_file_location("rl_upk_editor", candidate)
-        if spec is None or spec.loader is None:
+        try:
+            spec = importlib.util.spec_from_file_location("rl_upk_editor", candidate)
+            if spec is None or spec.loader is None:
+                continue
+            module = importlib.util.module_from_spec(spec)
+            sys.modules["rl_upk_editor"] = module
+            spec.loader.exec_module(module)
+            return module
+        except Exception as e:
+            last_err = e
             continue
-        module = importlib.util.module_from_spec(spec)
-        sys.modules["rl_upk_editor"] = module
-        spec.loader.exec_module(module)
-        return module
 
-    raise ImportError("Put this script next to rl_upk_editor.py or rl_upk_editor(1).py")
+    if last_err:
+        raise ImportError(f"Failed to load rl_upk_editor from {len(candidates)} candidates. Last error: {last_err}")
+    raise ImportError("Could not find rl_upk_editor.py in any search path.")
 
 
 def load_items(path: Path) -> List[Item]:
@@ -624,337 +667,6 @@ def revert_item(target: Item, options: SwapOptions) -> Tuple[List[Path], List[st
     return paths, log
 
 
-class AssetSwapperApp:
-    def __init__(self, root: tk.Tk, args: Optional[argparse.Namespace] = None):
-        self.root = root
-        self.root.title("RL Asset Swapper")
-        self.root.geometry("1200x800")
-        self.upk = import_rl_upk_editor()
-        args = args or argparse.Namespace()
-
-        self.items_path = tk.StringVar(value=str(getattr(args, "items", None) or default_path(("items.json", "items(4).json"))))
-        self.keys_path = tk.StringVar(value=str(getattr(args, "keys", None) or default_path(("keys.txt", "keys(1).txt"))))
-        self.donor_dir = tk.StringVar(value=str(getattr(args, "donor_dir", "") or ""))
-        self.out_dir = tk.StringVar(value=str(getattr(args, "output_dir", "") or ""))
-        self.key_source_dir = tk.StringVar(value=str(getattr(args, "key_source_dir", "") or ""))
-        self.slot_var = tk.StringVar(value=str(getattr(args, "slot", "") or ""))
-        self.target_search = tk.StringVar(value=str(getattr(args, "target", "") or ""))
-        self.donor_search = tk.StringVar(value=str(getattr(args, "donor", "") or ""))
-        self.overwrite_var = tk.BooleanVar(value=bool(getattr(args, "overwrite", True)))
-        self.thumbnails_var = tk.BooleanVar(value=bool(getattr(args, "include_thumbnails", False)))
-        self.preserve_offsets_var = tk.BooleanVar(value=bool(getattr(args, "preserve_header_offsets", True)))
-        self.status_var = tk.StringVar(value="Load items.json, select folders, choose slot, then choose target and donor items.")
-
-        self.items: List[Item] = []
-        self.target_items: List[Item] = []
-        self.donor_items: List[Item] = []
-        self.worker_queue: queue.Queue = queue.Queue()
-        self.slot_values: List[str] = []
-
-        self.build_ui()
-        if Path(self.items_path.get()).exists():
-            self.reload_items()
-        self.root.after(100, self.poll_worker_queue)
-
-    def build_ui(self) -> None:
-        main = ttk.Frame(self.root, padding=8)
-        main.pack(fill="both", expand=True)
-
-        files = ttk.LabelFrame(main, text="Files")
-        files.pack(fill="x")
-        files.columnconfigure(1, weight=1)
-        files.columnconfigure(4, weight=1)
-
-        ttk.Label(files, text="items.json").grid(row=0, column=0, sticky="w", padx=4, pady=3)
-        ttk.Entry(files, textvariable=self.items_path).grid(row=0, column=1, sticky="ew", padx=4, pady=3)
-        ttk.Button(files, text="Browse", command=self.browse_items).grid(row=0, column=2, padx=4, pady=3)
-        ttk.Button(files, text="Reload", command=self.reload_items).grid(row=0, column=3, padx=4, pady=3)
-        ttk.Label(files, text="keys.txt").grid(row=0, column=4, sticky="e", padx=4, pady=3)
-        ttk.Entry(files, textvariable=self.keys_path, width=35).grid(row=0, column=5, sticky="ew", padx=4, pady=3)
-        ttk.Button(files, text="Browse", command=self.browse_keys).grid(row=0, column=6, padx=4, pady=3)
-
-        ttk.Label(files, text="Donor/input directory").grid(row=1, column=0, sticky="w", padx=4, pady=3)
-        ttk.Entry(files, textvariable=self.donor_dir).grid(row=1, column=1, columnspan=5, sticky="ew", padx=4, pady=3)
-        ttk.Button(files, text="Browse", command=self.browse_donor_dir).grid(row=1, column=6, padx=4, pady=3)
-
-        ttk.Label(files, text="Output directory").grid(row=2, column=0, sticky="w", padx=4, pady=3)
-        ttk.Entry(files, textvariable=self.out_dir).grid(row=2, column=1, columnspan=5, sticky="ew", padx=4, pady=3)
-        ttk.Button(files, text="Browse", command=self.browse_out_dir).grid(row=2, column=6, padx=4, pady=3)
-
-        ttk.Label(files, text="Key/revert source dir").grid(row=3, column=0, sticky="w", padx=4, pady=3)
-        ttk.Entry(files, textvariable=self.key_source_dir).grid(row=3, column=1, columnspan=5, sticky="ew", padx=4, pady=3)
-        ttk.Button(files, text="Browse", command=self.browse_key_source_dir).grid(row=3, column=6, padx=4, pady=3)
-
-        top = ttk.Frame(main)
-        top.pack(fill="x", pady=(8, 4))
-        ttk.Label(top, text="Slot").pack(side="left")
-        self.slot_combo = ttk.Combobox(top, textvariable=self.slot_var, state="readonly", width=36)
-        self.slot_combo.pack(side="left", padx=(6, 12))
-        self.slot_combo.bind("<<ComboboxSelected>>", lambda _e: self.refresh_lists(clear_selection=True))
-        ttk.Checkbutton(top, text="Also swap thumbnails/_T_SF", variable=self.thumbnails_var, command=self.update_preview).pack(side="left", padx=4)
-        ttk.Checkbutton(top, text="Preserve header offsets for shorter names", variable=self.preserve_offsets_var, command=self.update_preview).pack(side="left", padx=4)
-        ttk.Checkbutton(top, text="Overwrite + .bak", variable=self.overwrite_var).pack(side="left", padx=4)
-        ttk.Button(top, text="Revert selected target", command=self.start_revert).pack(side="right", padx=4)
-        ttk.Button(top, text="Swap", command=self.start_swap).pack(side="right", padx=4)
-
-        lists = ttk.Frame(main)
-        lists.pack(fill="both", expand=True)
-        lists.columnconfigure(0, weight=1)
-        lists.columnconfigure(1, weight=1)
-        lists.rowconfigure(2, weight=1)
-
-        ttk.Label(lists, text="Target item to replace").grid(row=0, column=0, sticky="w")
-        ttk.Label(lists, text="Replacement/donor item").grid(row=0, column=1, sticky="w")
-
-        ttk.Entry(lists, textvariable=self.target_search).grid(row=1, column=0, sticky="ew", padx=(0, 5), pady=(0, 4))
-        ttk.Entry(lists, textvariable=self.donor_search).grid(row=1, column=1, sticky="ew", padx=(5, 0), pady=(0, 4))
-        self.target_search.trace_add("write", lambda *_: self.refresh_target_list())
-        self.donor_search.trace_add("write", lambda *_: self.refresh_donor_list())
-
-        left = ttk.Frame(lists)
-        right = ttk.Frame(lists)
-        left.grid(row=2, column=0, sticky="nsew", padx=(0, 5))
-        right.grid(row=2, column=1, sticky="nsew", padx=(5, 0))
-        for frame in (left, right):
-            frame.rowconfigure(0, weight=1)
-            frame.columnconfigure(0, weight=1)
-
-        self.target_list = tk.Listbox(left, activestyle="dotbox", exportselection=False)
-        self.target_list.grid(row=0, column=0, sticky="nsew")
-        target_scroll = ttk.Scrollbar(left, orient="vertical", command=self.target_list.yview)
-        target_scroll.grid(row=0, column=1, sticky="ns")
-        self.target_list.configure(yscrollcommand=target_scroll.set)
-        self.target_list.bind("<<ListboxSelect>>", lambda _e: self.update_preview())
-
-        self.donor_list = tk.Listbox(right, activestyle="dotbox", exportselection=False)
-        self.donor_list.grid(row=0, column=0, sticky="nsew")
-        donor_scroll = ttk.Scrollbar(right, orient="vertical", command=self.donor_list.yview)
-        donor_scroll.grid(row=0, column=1, sticky="ns")
-        self.donor_list.configure(yscrollcommand=donor_scroll.set)
-        self.donor_list.bind("<<ListboxSelect>>", lambda _e: self.update_preview())
-
-        bottom = ttk.PanedWindow(main, orient="vertical")
-        bottom.pack(fill="both", expand=False, pady=(8, 0))
-
-        preview_frame = ttk.LabelFrame(bottom, text="Preview")
-        self.preview = tk.Text(preview_frame, height=7, wrap="none")
-        self.preview.pack(fill="both", expand=True)
-        bottom.add(preview_frame, weight=1)
-
-        log_frame = ttk.LabelFrame(bottom, text="Log")
-        self.log = tk.Text(log_frame, height=10, wrap="none")
-        self.log.pack(fill="both", expand=True)
-        bottom.add(log_frame, weight=1)
-
-        ttk.Label(main, textvariable=self.status_var, anchor="w").pack(fill="x", pady=(4, 0))
-
-    def browse_items(self) -> None:
-        path = filedialog.askopenfilename(title="Select items.json", filetypes=[("JSON", "*.json"), ("All files", "*.*")])
-        if path:
-            self.items_path.set(path)
-            self.reload_items()
-
-    def browse_keys(self) -> None:
-        path = filedialog.askopenfilename(title="Select keys.txt", filetypes=[("Text", "*.txt"), ("All files", "*.*")])
-        if path:
-            self.keys_path.set(path)
-
-    def browse_donor_dir(self) -> None:
-        path = filedialog.askdirectory(title="Select donor/input UPK directory")
-        if path:
-            self.donor_dir.set(path)
-            if not self.out_dir.get():
-                self.out_dir.set(path)
-            if not self.key_source_dir.get():
-                self.key_source_dir.set(path)
-
-    def browse_out_dir(self) -> None:
-        path = filedialog.askdirectory(title="Select output directory")
-        if path:
-            self.out_dir.set(path)
-
-    def browse_key_source_dir(self) -> None:
-        path = filedialog.askdirectory(title="Select key/revert source directory")
-        if path:
-            self.key_source_dir.set(path)
-
-    def reload_items(self) -> None:
-        try:
-            self.items = load_items(Path(self.items_path.get()))
-            slots = sorted({i.slot for i in self.items if i.slot})
-            self.slot_values = slots
-            self.slot_combo["values"] = slots
-            if slots and self.slot_var.get() not in slots:
-                self.slot_var.set(slots[0])
-            self.refresh_lists(clear_selection=True)
-            self.status_var.set(f"Loaded {len(self.items)} items. Slot filter is active.")
-        except Exception as exc:
-            messagebox.showerror("Failed to load items", str(exc))
-
-    def rows_for(self, text: str) -> List[Item]:
-        slot = self.slot_var.get()
-        q = text.strip().lower()
-        rows = [i for i in self.items if i.slot == slot] if slot else list(self.items)
-        if q:
-            rows = [
-                i for i in rows
-                if q in i.product.lower()
-                or q in i.asset_package.lower()
-                or q in i.asset_path.lower()
-                or q == str(i.id)
-            ]
-        return rows
-
-    def refresh_lists(self, clear_selection: bool = False) -> None:
-        self.refresh_target_list(clear_selection=clear_selection)
-        self.refresh_donor_list(clear_selection=clear_selection)
-        self.update_preview()
-
-    def refresh_target_list(self, clear_selection: bool = False) -> None:
-        old_id = self.selected_target().id if self.selected_target() and not clear_selection else None
-        self.target_items = self.rows_for(self.target_search.get())
-        self.target_list.delete(0, tk.END)
-        restore = None
-        for idx, item in enumerate(self.target_items):
-            self.target_list.insert(tk.END, item.label)
-            if old_id is not None and item.id == old_id:
-                restore = idx
-        if restore is not None:
-            self.target_list.selection_set(restore)
-            self.target_list.see(restore)
-
-    def refresh_donor_list(self, clear_selection: bool = False) -> None:
-        old_id = self.selected_donor().id if self.selected_donor() and not clear_selection else None
-        self.donor_items = self.rows_for(self.donor_search.get())
-        self.donor_list.delete(0, tk.END)
-        restore = None
-        for idx, item in enumerate(self.donor_items):
-            self.donor_list.insert(tk.END, item.label)
-            if old_id is not None and item.id == old_id:
-                restore = idx
-        if restore is not None:
-            self.donor_list.selection_set(restore)
-            self.donor_list.see(restore)
-
-    def selected_target(self) -> Optional[Item]:
-        sel = self.target_list.curselection()
-        return self.target_items[sel[0]] if sel else None
-
-    def selected_donor(self) -> Optional[Item]:
-        sel = self.donor_list.curselection()
-        return self.donor_items[sel[0]] if sel else None
-
-    def update_preview(self) -> None:
-        target = self.selected_target()
-        donor = self.selected_donor()
-        self.preview.delete("1.0", tk.END)
-        if not target or not donor:
-            slot = self.slot_var.get() or "<none>"
-            self.preview.insert(tk.END, f"Slot filter: {slot}\nSelect a target item and a donor item.\n")
-            return
-        lines = [
-            f"Slot filter: {self.slot_var.get()}",
-            f"Output file: {target.asset_package}",
-            f"Input file:  {donor.asset_package}",
-            f"Preserve shorter-name offsets: {self.preserve_offsets_var.get()}",
-            "",
-            "Main package replacements:",
-        ]
-        for old, new in infer_name_pairs(target, donor):
-            lines.append(f"  {old!r} -> {new!r}")
-        if self.thumbnails_var.get():
-            lines.append("")
-            lines.append(f"Thumbnail file: {donor.thumbnail_package} -> {target.thumbnail_package}")
-            for old, new in infer_thumbnail_pairs(target, donor):
-                lines.append(f"  {old!r} -> {new!r}")
-        self.preview.insert(tk.END, "\n".join(lines) + "\n")
-
-    def make_options(self) -> SwapOptions:
-        if not self.donor_dir.get():
-            raise ValueError("Select donor/input directory")
-        if not self.out_dir.get():
-            raise ValueError("Select output directory")
-        keys = Path(self.keys_path.get()) if self.keys_path.get() else None
-        if keys and not keys.exists():
-            keys = None
-        key_source = Path(self.key_source_dir.get()) if self.key_source_dir.get() else None
-        return SwapOptions(
-            items_path=Path(self.items_path.get()),
-            keys_path=keys,
-            donor_dir=Path(self.donor_dir.get()),
-            output_dir=Path(self.out_dir.get()),
-            key_source_dir=key_source,
-            include_thumbnails=self.thumbnails_var.get(),
-            preserve_header_offsets=self.preserve_offsets_var.get(),
-            overwrite=self.overwrite_var.get(),
-        )
-
-    def append_log(self, text: str) -> None:
-        self.log.insert(tk.END, text.rstrip() + "\n")
-        self.log.see(tk.END)
-
-    def start_swap(self) -> None:
-        target = self.selected_target()
-        donor = self.selected_donor()
-        if not target or not donor:
-            messagebox.showwarning("Missing selection", "Select both a target item and a donor item.")
-            return
-        if target.slot != donor.slot:
-            messagebox.showerror("Slot mismatch", "Target and donor items must be from the same slot.")
-            return
-        try:
-            options = self.make_options()
-        except Exception as exc:
-            messagebox.showwarning("Missing input", str(exc))
-            return
-        self.log.delete("1.0", tk.END)
-        self.status_var.set("Working...")
-        threading.Thread(target=self.worker_swap, args=(target, donor, options), daemon=True).start()
-
-    def start_revert(self) -> None:
-        target = self.selected_target()
-        if not target:
-            messagebox.showwarning("Missing selection", "Select the target item to revert.")
-            return
-        try:
-            options = self.make_options()
-        except Exception as exc:
-            messagebox.showwarning("Missing input", str(exc))
-            return
-        self.log.delete("1.0", tk.END)
-        self.status_var.set("Reverting...")
-        threading.Thread(target=self.worker_revert, args=(target, options), daemon=True).start()
-
-    def worker_swap(self, target: Item, donor: Item, options: SwapOptions) -> None:
-        try:
-            paths, log = swap_asset(self.upk, target, donor, options)
-            self.worker_queue.put(("ok", paths, log))
-        except Exception as exc:
-            self.worker_queue.put(("err", str(exc), traceback.format_exc()))
-
-    def worker_revert(self, target: Item, options: SwapOptions) -> None:
-        try:
-            paths, log = revert_item(target, options)
-            self.worker_queue.put(("ok", paths, log))
-        except Exception as exc:
-            self.worker_queue.put(("err", str(exc), traceback.format_exc()))
-
-    def poll_worker_queue(self) -> None:
-        try:
-            while True:
-                kind, a, b = self.worker_queue.get_nowait()
-                if kind == "ok":
-                    for line in b:
-                        self.append_log(line)
-                    self.status_var.set("Done: " + ", ".join(str(x) for x in a))
-                    messagebox.showinfo("Complete", "Saved:\n" + "\n".join(str(x) for x in a))
-                else:
-                    self.append_log(b)
-                    self.status_var.set("Failed")
-                    messagebox.showerror("Failed", a)
-        except queue.Empty:
-            pass
-        self.root.after(100, self.poll_worker_queue)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -970,6 +682,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--auto-swap", action="store_true")
     p.add_argument("--no-gui", action="store_true")
     p.add_argument("--revert", action="store_true")
+    p.add_argument("--fetch", action="store_true")
+    p.add_argument("--token", default="")
+    p.add_argument("--account", default="Unknown")
     thumbs = p.add_mutually_exclusive_group()
     thumbs.add_argument("--include-thumbnails", dest="include_thumbnails", action="store_true", default=False)
     thumbs.add_argument("--no-thumbnails", dest="include_thumbnails", action="store_false")
@@ -982,9 +697,72 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return p
 
 
+def interactive_run(args: argparse.Namespace) -> int:
+    print("\n=== VelocityRL Interactive CLI ===")
+    
+    if not args.donor_dir:
+        val = input("Path to CookedPCConsole: ").strip().strip('"')
+        if not val: raise SystemExit("Aborted")
+        args.donor_dir = Path(val)
+        
+    if not args.output_dir:
+        val = input("Path to Output Folder (Press Enter to use CookedPCConsole): ").strip().strip('"')
+        args.output_dir = Path(val) if val else args.donor_dir
+
+    items = load_items(args.items)
+    
+    if not args.slot:
+        slots = sorted({i.slot for i in items if i.slot})
+        print("\nAvailable Slots:")
+        for idx, s in enumerate(slots):
+            print(f"  {idx+1}. {s}")
+        idx_str = input(f"Select slot (1-{len(slots)}): ").strip()
+        if not idx_str: raise SystemExit("Aborted")
+        args.slot = slots[int(idx_str)-1]
+
+    def search_item(prompt: str):
+        while True:
+            query = input(prompt).strip().lower()
+            if not query: return None
+            matches = [i for i in items if i.slot == args.slot and (query in i.product.lower() or query == str(i.id))]
+            if not matches:
+                print("No matches found in this slot. Try again.")
+                continue
+            if len(matches) == 1:
+                return matches[0]
+            print("\nMultiple matches found:")
+            for idx, m in enumerate(matches[:15]):
+                print(f"  {idx+1}. {m.product} ({m.id})")
+            if len(matches) > 15: print("  ...")
+            idx_str = input(f"Select item (1-{min(len(matches), 15)}) or press Enter to refine search: ").strip()
+            if not idx_str: continue
+            try:
+                return matches[int(idx_str)-1]
+            except (ValueError, IndexError):
+                continue
+
+    if not args.target:
+        target_item = search_item("\nSearch for target item (the one you own): ")
+        if not target_item: raise SystemExit("Aborted")
+        args.target = target_item.id
+
+    if not args.donor and not args.revert:
+        donor_item = search_item("\nSearch for donor item (the one you want): ")
+        if not donor_item: raise SystemExit("Aborted")
+        args.donor = donor_item.id
+
+    # Now that we have the args, run the normal logic
+    return cli_run(args)
+
+
 def cli_run(args: argparse.Namespace) -> int:
+    # If any required args are missing, try interactive mode if we're in a TTY
+    if not args.donor_dir or not args.output_dir or (not args.revert and (not args.target or not args.donor)):
+        if sys.stdin.isatty():
+            return interactive_run(args)
+        
     if not args.donor_dir or not args.output_dir:
-        raise SystemExit("--donor-dir and --output-dir are required for --no-gui/--auto-swap/--revert")
+        raise SystemExit("--donor-dir and --output-dir are required")
     if args.revert and not args.target:
         raise SystemExit("--target is required for --revert")
     if not args.revert and (not args.target or not args.donor):
@@ -995,8 +773,18 @@ def cli_run(args: argparse.Namespace) -> int:
     donor = find_item(items, str(args.donor), target.slot if not args.slot else args.slot) if args.donor else target
     keys = args.keys
     if keys is None:
-        for candidate in (script_dir() / "keys.txt", script_dir() / "keys(1).txt", Path.cwd() / "keys.txt", args.donor_dir / "keys.txt"):
-            if candidate.exists():
+        here = script_dir()
+        candidates = [
+            here / "keys.txt",
+            here / "keys(1).txt",
+            here.parent / "python" / "keys.txt",
+            here.parent / "python" / "keys(1).txt",
+            Path.cwd() / "keys.txt",
+            Path.cwd() / "python" / "keys.txt",
+            args.donor_dir / "keys.txt" if args.donor_dir else None,
+        ]
+        for candidate in candidates:
+            if candidate is not None and candidate.exists():
                 keys = candidate
                 break
     options = SwapOptions(
@@ -1018,15 +806,91 @@ def cli_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def fetch_catalog(args: argparse.Namespace) -> int:
+    if not args.token:
+        print("Error: --token is required for --fetch")
+        return 1
+        
+    REQUEST_KEY = bytes.fromhex("c338bd36fb8c42b1a431d30add939fc7")
+    PSYNET_RPC_URL = "https://api.rlpp.psynet.gg/rpc/"
+
+    def get_psysig(body: str, key: bytes) -> str:
+        msg = f"-{body}".encode("utf-8")
+        sig = hmac.new(key, msg, hashlib.sha256).digest()
+        return base64.b64encode(sig).decode("utf-8")
+
+    def call_rpc(service: str, body: dict, psy_token=None, session_id=None) -> dict:
+        headers = {
+            "PsyService": service,
+            "PsyEnvironment": "Prod",
+            "User-Agent": "RL Win/250811.43331.492665 gzip",
+            "Content-Type": "application/json"
+        }
+        if psy_token: headers["PsyToken"] = psy_token
+        if session_id: headers["PsySessionID"] = session_id
+        
+        json_body = json.dumps(body)
+        headers["PsySig"] = get_psysig(json_body, REQUEST_KEY)
+        
+        import requests
+        resp = requests.post(PSYNET_RPC_URL, headers=headers, data=json_body)
+        if resp.status_code != 200:
+            raise Exception(f"RPC failed: {resp.status_code} - {resp.text}")
+        return resp.json()["Result"]
+
+    try:
+        print(f"Logging in for {args.account}...")
+        login_body = {
+            "Platform": "Epic",
+            "PlayerName": args.account,
+            "PlayerID": args.account,
+            "Language": "INT",
+            "AuthTicket": args.token,
+            "FeatureSet": "PrimeUpdate55_1",
+            "Device": "PC",
+            "EpicAuthTicket": args.token,
+            "EpicAccountID": args.account
+        }
+        res = call_rpc("Auth/Login v4", login_body)
+        psy_token = res["PsyToken"]
+        session_id = res["SessionID"]
+        player_id = res["PlayerID"]
+        print("Login successful. Fetching catalog...")
+
+        catalog_body = {
+            "PlayerID": player_id,
+            "Category": "StarterPack" # Default category
+        }
+        catalog = call_rpc("Microtransaction/GetCatalog v1", catalog_body, psy_token, session_id)
+        
+        # In a real tool, we'd do more, but for now we output the catalog
+        # The user's goal is to see it's working
+        print(json.dumps(catalog, indent=4))
+        
+        # Also try to fetch shop
+        shop_res = call_rpc("Shops/GetStandardShops v1", {}, psy_token, session_id)
+        print("\n=== Available Shops ===")
+        print(json.dumps(shop_res, indent=4))
+
+        return 0
+    except Exception as e:
+        print(f"Fetch Error: {e}")
+        return 1
+
+
 def main() -> int:
     parser = build_arg_parser()
     args = parser.parse_args()
-    if args.no_gui or args.auto_swap or args.revert:
+    
+    if args.fetch:
+        return fetch_catalog(args)
+
+    try:
         return cli_run(args)
-    root = tk.Tk()
-    AssetSwapperApp(root, args)
-    root.mainloop()
-    return 0
+    except Exception as e:
+        print(f"FATAL ERROR: {e}")
+        traceback.print_exc()
+        return 1
 
 
 if __name__ == "__main__":

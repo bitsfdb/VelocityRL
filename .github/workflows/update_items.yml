@@ -1,0 +1,36 @@
+name: Update Item Database
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Run daily at midnight
+  workflow_dispatch: # Allow manual triggers
+
+jobs:
+  update-db:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Fetch and Merge Catalog
+        env:
+          EPIC_TOKEN: ${{ secrets.EPIC_TOKEN }}
+          EPIC_ACCOUNT: ${{ secrets.EPIC_ACCOUNT }}
+        run: |
+          python python/rl_catalog_fetcher.py --output items.json --merge items.json
+
+      - name: Commit and Push
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add items.json
+          git commit -m "chore: auto-update items.json from Psynet" || echo "No changes to commit"
+          git push

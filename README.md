@@ -1,85 +1,38 @@
 # VelocityRL 🚀
 
-**VelocityRL** is the ultimate visual asset swapping tool for Rocket League. Transform your in-game items instantly with a premium desktop experience or a high-performance CLI.
+**VelocityRL** is an asset swapping tool for Rocket League. Swap your in-game items with a desktop app or CLI.
 
-<p align="center">
-  <img src="logo.svg" width="128" height="128" alt="VelocityRL Logo">
-</p>
+## Choose Your Version
 
-## 🌟 Choose Your Version
+- **Desktop App (main branch)**: Windows application built with Tauri. Features a dark UI and a restoration center.
+- **CLI Tool (cli branch)**: Interactive terminal for power users.
 
-VelocityRL is maintained in two flavors to suit your workflow:
+## Features
 
-- **Desktop App (main branch)**: A premium, minimalist Windows application built with Tauri 2.0. Features a beautiful dark UI, sidebar navigation, and a dedicated restoration center.
-- **CLI Tool (cli branch)**: A lightweight, interactive terminal wizard for power users who prefer the command line.
+- **UI**: Dashboard with search.
+- **Auto-Backups**: Backups are created before every modification.
+- **One-Click Restoration**: Revert changes instantly through the Restore tab or CLI.
 
----
+## Installation
 
-## ✨ Features
+### Desktop App
 
-- **Premium SaaS UI**: A stunning dark-mode dashboard with real-time fuzzy search.
-- **High-Performance Patching**: Leverages an advanced Python engine for precise `.upk` binary manipulation.
-- **Auto-Backups**: Your game files are safe. Backups are created automatically before every modification.
-- **One-Click Restoration**: Revert all changes instantly through the dedicated Restore tab or CLI command.
-- **Extensive Database**: Fuzzy-search thousands of items from the built-in database.
-
----
-
-## 🛠️ Installation & Setup
-
-### 🖥️ Desktop App (Recommended)
-
-1. Download the latest installer (`.msi` or `.exe`) from the [Releases](https://github.com/bitsfdb/RLItemMod/releases) page.
-2. Run the installer and launch **VelocityRL**.
-3. Point the app to your Rocket League data directory in **Settings**.
-
-### ⌨️ CLI Version
-
-```bash
-# Install globally
-npm install -g velocityrl
-
-# Install engine dependencies
-pip install cryptography
-```
-
----
-
-## 🚀 Usage
-
-### Desktop
-
-Simply launch the app, select your **Owned Item**, select your **Target Asset**, and click **Initialize Swap**.
+1. Download the installer from [Releases](https://github.com/bitsfdb/RLItemMod/releases).
+2. Point the app to your Rocket League `CookedPCConsole` directory in **Settings**.
 
 ### CLI
 
-Run the interactive wizard from your terminal:
-
 ```bash
-velocityrl
+npm install -g velocityrl
+pip install cryptography
 ```
 
----
+## Credits & Support
 
-## ⚠️ Important Considerations
+- **Core Engine**: [CrunchyRL/RLUPKTools](https://github.com/CrunchyRL/RLUPKTools)
+- **Developer**: bitsfdb
+- **Discord**: [Join Support Server](https://discord.gg/2HhBNbrGMj)
 
-### Supported Categories
-
-VelocityRL supports most item categories (Decals, Wheels, Boosts, etc.).
-
-> [!WARNING]
-> **Bodies and Goal Explosions** are currently in beta. Swapping these items may cause instability or crashes. Use the **Restore** feature if you encounter issues.
-
----
-
-## 🤝 Credits & Support
-
-- **Core Engine**: Massive credits to [CrunchyRL/RLUPKTools](https://github.com/CrunchyRL/RLUPKTools) for the Unreal Engine 3 binary patching logic.
-- **Developer**: bitsfdb (@sfdb)
-- **Discord**: Join our [Support Server](https://discord.gg/2HhBNbrGMj) for updates and help.
-
----
-
-## 📜 License
+## License
 
 MIT

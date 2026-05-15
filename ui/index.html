@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VelocityRL</title>
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
     <aside class="sidebar">
         <div class="logo-section">
             <img src="logo.svg" width="32" height="32" alt="VelocityRL Logo">
-            <h1>VelocityRL</h1>
+            <h1>VelocityRL <span class="beta-badge">BETA</span></h1>
         </div>
         
         <nav class="nav-links">
@@ -39,7 +39,7 @@
                 <button class="cat-btn active" data-slot="All">All Items</button>
                 <button class="cat-btn" data-slot="Body">Bodies</button>
                 <button class="cat-btn" data-slot="Decal">Decals</button>
-                <button class="cat-btn" data-slot="Wheels">Wheels</button>
+                <button class="cat-btn" data-slot="Wheel">Wheels</button>
                 <button class="cat-btn" data-slot="Boost">Boosts</button>
                 <button class="cat-btn" data-slot="Antenna">Antennas</button>
                 <button class="cat-btn" data-slot="Topper">Toppers</button>
@@ -50,10 +50,13 @@
                 <div class="card">
                     <h3>Owned Item</h3>
                     <div class="search-box">
-                        <input type="text" id="owned-search" placeholder="Search your items...">
+                        <input type="text" id="owned-search" placeholder="Search your items..." autocomplete="off">
                         <div id="owned-results" class="search-flyout"></div>
                     </div>
                     <div id="owned-selected" class="item-selected-view">
+                        <div class="clear-item-btn" id="clear-owned">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        </div>
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.2">
                             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
                             <circle cx="8.5" cy="8.5" r="1.5"/>
@@ -66,10 +69,13 @@
                 <div class="card">
                     <h3>Target Asset</h3>
                     <div class="search-box">
-                        <input type="text" id="wanted-search" placeholder="Search target assets...">
+                        <input type="text" id="wanted-search" placeholder="Search target assets..." autocomplete="off">
                         <div id="wanted-results" class="search-flyout"></div>
                     </div>
                     <div id="wanted-selected" class="item-selected-view">
+                        <div class="clear-item-btn" id="clear-wanted">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        </div>
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.2">
                             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
                             <circle cx="8.5" cy="8.5" r="1.5"/>
@@ -84,7 +90,7 @@
                 <p id="system-warning" class="hidden" style="color: var(--danger); font-size: 13px; font-weight: 500;">
                     ⚠️ Bodies & Goal Explosions are in beta. Stability not guaranteed.
                 </p>
-                <button id="apply-swap" class="action-btn" disabled>Initialize Swap</button>
+                <button id="apply-swap" class="action-btn" disabled>Swap Items</button>
             </div>
         </div>
 
@@ -94,8 +100,8 @@
                     <div style="background: rgba(59, 130, 246, 0.1); width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px auto;">
                         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--accent-blue)" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
                     </div>
-                    <h2 style="font-size: 24px; margin-bottom: 8px;">Restoration Center</h2>
-                    <p style="color: var(--text-secondary); max-width: 400px; margin: 0 auto;">Select specific files to revert or perform a full restoration to clean all modifications.</p>
+                    <h2 style="font-size: 24px; margin-bottom: 8px;">Restore/Revert Items</h2>
+                    <p style="color: var(--text-secondary); max-width: 400px; margin: 0 auto;">Select specific files to revert or perform a full revert to clean all modifications.</p>
                 </div>
 
                 <div id="backup-container" class="backup-list">
@@ -104,7 +110,7 @@
                     </div>
                 </div>
 
-                <button id="restore-btn" class="action-btn" style="background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); margin-top: 24px;">Run Full Restoration</button>
+                <button id="restore-btn" class="action-btn" style="background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); margin-top: 24px;">Restore All Items</button>
             </div>
         </div>
     </main>
@@ -113,15 +119,23 @@
         <div class="modal">
             <div class="modal-header">
                 <h2>System Settings</h2>
+                <div id="cancel-settings" class="close-modal-btn">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </div>
             </div>
             <div class="settings-group">
                 <label>Rocket League Data Path</label>
                 <div class="input-row">
-                    <input type="text" id="game-dir" placeholder="C:\Program Files\...\RocketLeague\TAGame\CookedPCConsole">
+                    <input type="text" id="game-dir" placeholder="                                                          click the folder button -->">
                     <div id="browse-dir" class="browse-btn">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                     </div>
                 </div>
+            </div>
+            <div class="settings-group">
+                <label>Item Database</label>
+                <p style="font-size: 11px; color: var(--text-secondary); margin-bottom: 12px;">Fetch the latest item data from Psynet. Requires Epic Auth Token.</p>
+                <button id="fetch-items-btn" class="action-btn" style="width: 100%; background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); font-size: 13px; padding: 10px;">Update Item Database</button>
             </div>
             <button id="close-settings" class="action-btn" style="width: 100%;">Save Changes</button>
         </div>
@@ -134,9 +148,10 @@
                 <div id="progress-fill" class="progress-fill"></div>
             </div>
         </div>
-        <div>VelocityRL v1.1.0</div>
+        <div>VelocityRL v1.1.0 BETA</div>
     </div>
 
+    <div id="toast-container"></div>
     <script src="main.js"></script>
 </body>
 </html>

@@ -5,16 +5,14 @@
   "identifier": "com.velocityrl.app",
   "build": {
     "frontendDist": "../ui",
-    "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "echo dev",
     "beforeBuildCommand": "echo build"
   },
   "app": {
     "windows": [
       {
         "title": "VelocityRL",
-        "width": 800,
-        "height": 600,
+        "width": 1000,
+        "height": 750,
         "resizable": true,
         "fullscreen": false
       }
@@ -37,7 +35,8 @@
     "resources": [
       "../python/items.json",
       "../python/keys.txt",
-      "../python/engine.sha256"
+      "../python/engine.sha256",
+      "../python/rl_upk_editor.py"
     ],
     "externalBin": [
       "bin/velocity-engine"
@@ -48,9 +47,7 @@
   },
   "plugins": {
     "shell": {
-      "sidecar": [
-        "bin/velocity-engine"
-      ]
+      "open": true
     },
     "updater": {
       "pubkey": "RWSpu3p8GFkH782nQIgwgBagG4ZXlNOV8nR6rj5ekdEx+xoY76tnrThq",
