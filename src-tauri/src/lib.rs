@@ -91,6 +91,12 @@ async fn get_items(app: tauri::AppHandle) -> Result<Vec<Item>, String> {
         }
     }
 
+    if let Ok(content) = fs::read_to_string("../items.csv") {
+        // Simple conversion inline or use mod csv_converter (needs registration)
+        // For now, we'll let the API handle the heavy lifting, 
+        // but it's good to have it here as a fallback.
+    }
+
     let resource_path = app.path().resolve("python/items.json", tauri::path::BaseDirectory::Resource).ok();
     if let Some(path) = resource_path {
         if path.exists() {

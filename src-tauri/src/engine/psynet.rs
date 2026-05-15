@@ -162,6 +162,45 @@ impl PsynetClient {
                 Err(e) => println!("Warning: Failed to fetch category {}: {}", cat, e),
             }
         }
-        Ok(all_products)
+    pub async fn get_player_products(&self, updated_timestamp: i64) -> Result<Vec<serde_json::Value>, String> {
+        let player_id = self.player_id.as_ref().ok_or("Not logged in")?;
+        let body = serde_json::json!({
+            "PlayerID": format!("Epic|{}|0", player_id),
+            "UpdatedTimestamp": updated_timestamp.to_string()
+        });
+        let res: serde_json::Value = self.call_rpc("Products/GetPlayerProducts v2", &body).await?;
+        Ok(res["ProductData"].as_array().cloned().unwrap_or_default())
+    }
+
+    pub async fn get_container_drop_table(&self) -> Result<Vec<serde_json::Value>, String> {
+        let body = serde_json::json!({});
+        let res: serde_json::Value = self.call_rpc("Products/GetContainerDropTable v2", &body).await?;
+        Ok(res["ContainerDrops"].as_array().cloned().unwrap_or_default())
+    }
+
+    pub async fn unlock_container(&self, instance_ids: Vec<String>) -> Result<Vec<serde_json::Value>, String> {
+        let player_id = self.player_id.as_ref().ok_or("Not logged in")?;
+        let body = serde_json::json!({
+            "PlayerID": format!("Epic|{}|0", player_id),
+            "InstanceIDs": instance_ids,
+            "KeyInstanceIDs": []
+        });
+        let res: serde_json::Value = self.call_rpc("Products/UnlockContainer v2", &body).await?;
+        Ok(res["Drops"].as_array().cloned().unwrap_or_default())
+    }
+
+    pub async fn trade_in(&self, product_instances: Vec<String>) -> Result<Vec<serde_json::Value>, String> {
+        let player_id = self.player_id.as_ref().ok_or("Not logged in")?;
+        let body = serde_json::json!({
+            "PlayerID": format!("Epic|{}|0", player_id),
+            "ProductInstances": product_instances
+        });
+        let res: serde_json::Value = self.call_rpc("Products/TradeIn v2", &body).await?;
+        Ok(res["Drops"].as_array().cloned().unwrap_or_default())
+    }
+
+    pub async fn get_cross_entitlement_status(&self) -> Result<serde_json::Value, String> {
+        let body = serde_json::json!({});
+        self.call_rpc("Products/CrossEntitlement/GetProductStatus v1", &body).await
     }
 }
