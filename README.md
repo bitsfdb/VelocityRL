@@ -1,37 +1,79 @@
 # VelocityRL 🚀
 
-**VelocityRL** is an asset swapping tool for Rocket League. Swap your in-game items with a desktop app or CLI.
+A powerful, user-friendly tool for performing visual asset swaps in Rocket League.
 
-## Choose Your Version
+> **Note**: The NPM package for this tool is named `rl-item-mod`.
 
-- **Desktop App (main branch)**: Windows application built with Tauri. Features a dark UI and a restoration center.
-- **CLI Tool (cli branch)**: Interactive terminal for power users.
+## Overview
+
+**VelocityRL** provides an interactive terminal wizard and a premium desktop interface that allows you to swap in-game items (e.g., swapping a standard boost for Alpha Reward). Under the hood, it seamlessly invokes an advanced Python engine to accurately parse `.upk` encryption, perfectly expand Name Table string offsets, and rebuild the package architecture without causing game crashes.
 
 ## Features
 
-- **UI**: Dashboard with search.
-- **Auto-Backups**: Backups are created before every modification.
-- **One-Click Restoration**: Revert changes instantly through the Restore tab or CLI.
+- **Interactive Wizard**: A beautiful command-line interface to search for and select your source and target items.
+- **Python Interop**: Leverages a robust Python backend to handle complex LZO decompression, AES decryption, and binary offset shifting.
+- **Automated Backups**: Automatically backs up original game assets before patching, with a one-click CLI restore feature.
+- **Item Database**: Uses a built-in `items.json` database for fuzzy-searching and mapping in-game item names directly to their underlying UPK files.
+
+## ⚠️ Warning - Some Swaps Will Crash the Game
+
+> **Swapping certain asset types is not yet fully supported and will cause Rocket League to crash on load.** This is a known limitation of the current version and is being worked on. Until a fix is released, avoid swapping the following:
+
+> Thumbnails in general cause a lot of crashes, as well as bodies and goal explosions.
+
+> If a swap you attempt causes a crash, you should validate game files, and when a crash occurs on an item use the **Restore backups** as shown in this screenshot
+
+<img width="571" height="298" alt="image" src="https://github.com/user-attachments/assets/e09d09eb-1e0e-499c-9ddd-74fea68163d0" />
 
 ## Installation
 
-### Desktop App
+### Prerequisites
 
-1. Download the installer from [Releases](https://github.com/bitsfdb/RLItemMod/releases).
-2. Point the app to your Rocket League `CookedPCConsole` directory in **Settings**.
+- Node.js (v18+)
+- Python 3.8+ (must be available in your system PATH)
 
-### CLI
+### Global Install (Recommended)
 
 ```bash
-npm install -g velocityrl
+npm install -g rl-item-mod
+```
+
+```bash
 pip install cryptography
 ```
 
-## Credits & Support
+### Local Development
 
-- **Core Engine**: [CrunchyRL/RLUPKTools](https://github.com/CrunchyRL/RLUPKTools)
-- **Developer**: bitsfdb
-- **Discord**: [Join Support Server](https://discord.gg/2HhBNbrGMj)
+```bash
+git clone https://github.com/bitsfdb/RLItemMod.git
+cd RLItemMod
+npm install
+npm run build
+npm link
+```
+
+## Usage
+
+Simply launch the interactive wizard from your terminal:
+
+```bash
+rl-item-mod
+```
+
+Or run directly via npx:
+
+```bash
+npx rl-item-mod@latest
+```
+
+## Credits
+
+Massive credits to [CrunchyRL/RLUPKTools](https://github.com/CrunchyRL/RLUPKTools) for making this repository possible. The advanced Python engineering for parsing and shifting Unreal Engine 3 UPK binaries was instrumental in making this project work safely.
+
+## Support
+
+Contact me on discord: @sfdb
+Or on the support server https://discord.gg/2HhBNbrGMj
 
 ## License
 
