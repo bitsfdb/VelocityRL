@@ -1,26 +1,44 @@
 mod engine;
 
-use std::env;
-use serde_json::json;
+use axum::{
+    routing::get,
+    Json, Router,
+};
+use std::net::SocketAddr;
+use tower_http::cors::CorsLayer;
+use serde_json::{json, Value};
 
 #[tokio::main]
-async fn main() -> Result<(), String> {
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        println!("Usage: velocity-api <service> [json_body]");
-        return Ok(());
-    }
+async fn main() {
+    let app = Router::new()
+        .route("/items.json", get(handle_get_items))
+        .layer(CorsLayer::permissive());
 
-    let service = &args[1];
-    let body = if args.len() > 2 {
-        serde_json::from_str(&args[2]).map_err(|e| e.to_string())?
-    } else {
-        json!({})
-    };
+    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
+    println!("VelocityRL API Server running on http://{}", addr);
 
-    println!("Calling {}...", service);
-    let result: serde_json::Value = engine::psynet::call_rpc(service, &body, None, None).await?;
-    println!("{}", serde_json::to_string_pretty(&result).unwrap());
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+}
 
-    Ok(())
+async fn handle_get_items() -> Json<Value> {
+    // In a real scenario, this would authenticate and fetch from Psynet.
+    // For now, we return a sample response or attempt a fetch if keys are provided.
+    
+    // Attempt to fetch from Psynet (requires valid session/token logic)
+    // For the hosted API, we'd typically have a background worker updating a cache.
+    
+    let sample = json!({
+        "Items": [
+            {
+                "ID": 1,
+                "Product": "Standard Boost",
+                "AssetPackage": "Standard_Boost",
+                "AssetPath": "Boost_Standard.Standard",
+                "Slot": "Boost"
+            }
+        ]
+    });
+
+    Json(sample)
 }

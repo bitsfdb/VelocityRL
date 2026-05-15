@@ -60,3 +60,11 @@ pub async fn call_rpc<T: serde::de::DeserializeOwned>(
     let data: PsynetResponse<T> = resp.json().await.map_err(|e| e.to_string())?;
     Ok(data.result)
 }
+
+pub async fn get_catalog(psy_token: &str, session_id: &str, player_id: &str, category: &str) -> Result<serde_json::Value, String> {
+    let body = serde_json::json!({
+        "PlayerID": format!("Epic|{}|0", player_id),
+        "Category": category
+    });
+    call_rpc("Microtransaction/GetCatalog v1", &body, Some(psy_token), Some(session_id)).await
+}
