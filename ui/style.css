@@ -584,6 +584,10 @@ input:focus {
     border-left-color: var(--danger);
 }
 
+.toast.warning {
+    border-left-color: #f59e0b;
+}
+
 .toast-content {
     font-size: 14px;
     line-height: 1.5;
