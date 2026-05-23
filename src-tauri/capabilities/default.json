@@ -16,25 +16,21 @@
         {
           "name": "bin/velocity-engine",
           "sidecar": true,
-          "args": true
+          "args": [
+            { "validator": "\\S+" },
+            { "validator": "\\S+" },
+            { "validator": "\\S+" },
+            { "validator": "\\S+" },
+            { "validator": "\\S+" },
+            { "validator": "\\S+" },
+            { "validator": "\\S+" },
+            { "validator": "\\S+" },
+            { "validator": "\\S+" },
+            { "validator": "\\S+" }
+          ]
         }
       ]
     },
-    {
-      "identifier": "fs:allow-read",
-      "allow": [{ "path": "**" }]
-    },
-    {
-      "identifier": "fs:allow-write",
-      "allow": [{ "path": "**" }]
-    },
-    {
-      "identifier": "fs:allow-read-dir",
-      "allow": [{ "path": "**" }]
-    },
-    {
-      "identifier": "fs:allow-exists",
-      "allow": [{ "path": "**" }]
-    }
+    "shell:allow-open"
   ]
 }
