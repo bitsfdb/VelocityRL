@@ -130,7 +130,7 @@ jobs:
         run: |
           sha256sum src-tauri/bin/velocity-engine-x86_64-unknown-linux-gnu \
             | awk '{print $1 "  velocity-engine-x86_64-unknown-linux-gnu"}' \
-            > python/engine-linux.sha256
+            > python/engine.sha256
 
       - name: Install frontend dependencies
         run: npm install
@@ -170,6 +170,6 @@ jobs:
           files: |
             src-tauri/target/release/bundle/appimage/*.sha256
             src-tauri/target/release/bundle/deb/*.sha256
-            python/engine-linux.sha256
+            python/engine.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
