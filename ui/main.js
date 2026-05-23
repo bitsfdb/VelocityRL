@@ -3,6 +3,10 @@ const { open } = window.__TAURI__.dialog;
 
 const API_BASE = 'https://api.sfdb.dev';
 
+function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
 let ownedItem = null;
 let wantedItem = null;
 let items = [];
@@ -104,10 +108,10 @@ async function init() {
             <div class="clear-item-btn" onclick="clearOwned()">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
             </div>
-            ${pImg ? `<img src="${pImg}" class="selected-img" />` : ''}
-            <h2>${pName}</h2>
-            <span class="quality-badge">${pQuality}</span>
-            <p style="margin-top: 16px; font-size: 13px; color: var(--text-secondary)">${pSlot}</p>
+            ${pImg ? `<img src="${escHtml(pImg)}" class="selected-img" />` : ''}
+            <h2>${escHtml(pName)}</h2>
+            <span class="quality-badge">${escHtml(pQuality)}</span>
+            <p style="margin-top: 16px; font-size: 13px; color: var(--text-secondary)">${escHtml(pSlot)}</p>
         `;
         container.classList.add('selected');
         ownedSearch.value = pName;
@@ -126,10 +130,10 @@ async function init() {
             <div class="clear-item-btn" onclick="clearWanted()">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
             </div>
-            ${pImg ? `<img src="${pImg}" class="selected-img" />` : ''}
-            <h2>${pName}</h2>
-            <span class="quality-badge">${pQuality}</span>
-            <p style="margin-top: 16px; font-size: 13px; color: var(--text-secondary)">${pSlot}</p>
+            ${pImg ? `<img src="${escHtml(pImg)}" class="selected-img" />` : ''}
+            <h2>${escHtml(pName)}</h2>
+            <span class="quality-badge">${escHtml(pQuality)}</span>
+            <p style="margin-top: 16px; font-size: 13px; color: var(--text-secondary)">${escHtml(pSlot)}</p>
         `;
         container.classList.add('selected');
         wantedSearch.value = pName;
@@ -198,6 +202,12 @@ async function init() {
         updateStatus('Init Failure', true);
         alert(`VelocityRL Initialization Failed:\n${err.message || err}`);
         console.error(err);
+        invoke('report_diagnostic', { payload: {
+            event:     'init_fail',
+            context:   'init',
+            message:   String(err?.message ?? err),
+            backtrace: err?.stack ?? null,
+        }}).catch(() => {});
     }
 }
 
@@ -251,7 +261,7 @@ async function refreshBackups() {
             div.className = 'backup-item';
             div.innerHTML = `
                 <div>
-                    <div class="backup-name">${file.name}</div>
+                    <div class="backup-name">${escHtml(file.name)}</div>
                     <div class="backup-date">Modified Package</div>
                 </div>
                 <div class="restore-mini-btn" title="Restore this file">
@@ -362,10 +372,10 @@ function renderResults(matches, resultsDiv, selectionHandler) {
         const pImg = item.image_url || item.src || '';
 
         div.innerHTML = `
-            ${pImg ? `<img src="${pImg}" class="flyout-img" />` : '<div class="flyout-img"></div>'}
+            ${pImg ? `<img src="${escHtml(pImg)}" class="flyout-img" />` : '<div class="flyout-img"></div>'}
             <div class="flyout-info">
-                <span class="item-name">${pName}</span>
-                <span style="font-size: 10px; color: var(--text-secondary)">${pSlot}</span>
+                <span class="item-name">${escHtml(pName)}</span>
+                <span style="font-size: 10px; color: var(--text-secondary)">${escHtml(pSlot)}</span>
             </div>
         `;
         div.onclick = () => {
@@ -412,6 +422,14 @@ async function handleApply() {
         showProgress(false);
         alert(`Swap Error: ${err}`);
         console.error(err);
+        invoke('report_diagnostic', { payload: {
+            event:     'swap_fail',
+            context:   'handleApply',
+            message:   String(err),
+            backtrace: err?.stack ?? null,
+            owned_id:  ownedItem ? String(ownedItem.id ?? ownedItem.ID ?? '') : null,
+            wanted_id: wantedItem ? String(wantedItem.id ?? wantedItem.ID ?? '') : null,
+        }}).catch(() => {});
     } finally { applyBtn.disabled = false; }
 }
 

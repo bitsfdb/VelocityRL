@@ -1,9 +1,9 @@
-name: Release
+name: Nightly Dev Build
 
 on:
-  push:
-    tags:
-      - 'v*'
+  schedule:
+    - cron: '0 2 * * *' # 2 AM UTC daily
+  workflow_dispatch:
 
 jobs:
   windows:
@@ -13,6 +13,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: dev
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -21,6 +23,18 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-nightly-
+            ${{ runner.os }}-cargo-
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -43,6 +57,12 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
+      - name: Delete existing nightly release
+        continue-on-error: true
+        run: gh release delete nightly --repo ${{ github.repository }} --yes --cleanup-tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build and publish Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -52,17 +72,17 @@ jobs:
           DIAGNOSTIC_URL: ${{ secrets.DIAGNOSTIC_URL }}
           DIAGNOSTIC_SECRET: ${{ secrets.DIAGNOSTIC_SECRET }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'VelocityRL ${{ github.ref_name }}'
+          tagName: nightly
+          releaseName: 'VelocityRL Nightly'
           releaseBody: |
-            ## VelocityRL ${{ github.ref_name }}
+            Automated nightly build from the `dev` branch. May be unstable.
 
-            **Installation:** Download the `.msi` (Windows Installer) or `.exe` (NSIS setup) below.
+            **This is not a stable release.** For the latest stable version, see the [Releases page](https://github.com/${{ github.repository }}/releases/latest).
 
-            **Auto-update:** If you already have VelocityRL installed, the updater will notify you automatically.
+            **Commit:** ${{ github.sha }}
           releaseDraft: false
-          prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
-          includeUpdaterJson: true
+          prerelease: true
+          includeUpdaterJson: false
 
       - name: Generate installer checksums
         shell: pwsh
@@ -81,7 +101,7 @@ jobs:
       - name: Upload checksums to release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: nightly
           files: |
             src-tauri/target/release/bundle/msi/*.sha256
             src-tauri/target/release/bundle/nsis/*.sha256
@@ -93,9 +113,12 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-22.04
+    needs: windows
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: dev
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -104,6 +127,18 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-nightly-
+            ${{ runner.os }}-cargo-
 
       - name: Install Linux build dependencies
         run: |
@@ -144,17 +179,17 @@ jobs:
           DIAGNOSTIC_URL: ${{ secrets.DIAGNOSTIC_URL }}
           DIAGNOSTIC_SECRET: ${{ secrets.DIAGNOSTIC_SECRET }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'VelocityRL ${{ github.ref_name }}'
+          tagName: nightly
+          releaseName: 'VelocityRL Nightly'
           releaseBody: |
-            ## VelocityRL ${{ github.ref_name }}
+            Automated nightly build from the `dev` branch. May be unstable.
 
-            **Installation (Linux):** Download the `.AppImage` (portable, no install needed) or `.deb` (Debian/Ubuntu) below.
+            **This is not a stable release.** For the latest stable version, see the [Releases page](https://github.com/${{ github.repository }}/releases/latest).
 
-            **Auto-update:** If you already have VelocityRL installed, the updater will notify you automatically.
+            **Commit:** ${{ github.sha }}
           releaseDraft: false
-          prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
-          includeUpdaterJson: true
+          prerelease: true
+          includeUpdaterJson: false
 
       - name: Generate installer checksums
         run: |
@@ -166,7 +201,7 @@ jobs:
       - name: Upload checksums to release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: nightly
           files: |
             src-tauri/target/release/bundle/appimage/*.sha256
             src-tauri/target/release/bundle/deb/*.sha256

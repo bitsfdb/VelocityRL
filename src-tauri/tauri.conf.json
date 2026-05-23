@@ -18,7 +18,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https://api.sfdb.dev data: blob:; connect-src 'self' https://api.sfdb.dev https://velocityrl.me"
     },
     "withGlobalTauri": true
   },
@@ -47,13 +47,7 @@
   },
   "plugins": {
     "shell": {
-      "open": true
-    },
-    "updater": {
-      "pubkey": "RWSpu3p8GFkH782nQIgwgBagG4ZXlNOV8nR6rj5ekdEx+xoY76tnrThq",
-      "endpoints": [
-        "https://github.com/bitsfdb/RLItemMod/releases/latest/download/latest.json"
-      ]
+      "open": "^https://discord\\.gg/"
     }
   }
 }

@@ -7,6 +7,8 @@ on:
 
 jobs:
   update-db:
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -20,17 +22,30 @@ jobs:
       - name: Install dependencies
         run: pip install requests
 
+      - name: Refresh Epic access token
+        id: epic_auth
+        env:
+          EPIC_RTOKEN: ${{ secrets.EPIC_RTOKEN }}
+        run: |
+          RESPONSE=$(curl -s -X POST \
+            "https://account-public-service-prod.ol.epicgames.com/account/api/oauth/token" \
+            -H "Authorization: Basic MzRhMDJjZjhmNDQxNGUyOWIxNTkyMTg3NmRhMzZmOWE6ZGFhZmJjY2M3Mzc3NDUwMzlkZmZlNTNkOTRmYzc2Y2Y=" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "grant_type=refresh_token&refresh_token=${EPIC_RTOKEN}")
+          ACCESS_TOKEN=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+          echo "access_token=$ACCESS_TOKEN" >> "$GITHUB_OUTPUT"
+
       - name: Fetch and Merge Catalog
         env:
-          EPIC_TOKEN: ${{ secrets.EPIC_TOKEN }}
+          EPIC_TOKEN: ${{ steps.epic_auth.outputs.access_token }}
           EPIC_ACCOUNT: ${{ secrets.EPIC_ACCOUNT }}
         run: |
-          python python/rl_catalog_fetcher.py --output items.json --merge items.json
+          python python/rl_catalog_fetcher.py --output python/items.json --merge python/items.json
 
       - name: Commit and Push
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add items.json
+          git add python/items.json
           git commit -m "chore: auto-update items.json from Psynet" || echo "No changes to commit"
           git push

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::fs;
 use std::path::PathBuf;
 use tauri::Manager;
@@ -9,8 +10,6 @@ use hex;
 #[derive(Serialize, Deserialize, Clone)]
 struct Config {
     game_dir: String,
-    #[serde(default)]
-    db_url: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -47,6 +46,35 @@ struct BackupFile {
 
 static ITEMS_CACHE: std::sync::OnceLock<Vec<Item>> = std::sync::OnceLock::new();
 
+const DIAGNOSTIC_URL: Option<&str> = option_env!("DIAGNOSTIC_URL");
+const DIAGNOSTIC_SECRET: Option<&str> = option_env!("DIAGNOSTIC_SECRET");
+
+async fn send_diagnostic(mut payload: serde_json::Value) {
+    let (Some(url), Some(secret)) = (DIAGNOSTIC_URL, DIAGNOSTIC_SECRET) else { return };
+    if let Some(obj) = payload.as_object_mut() {
+        obj.entry("version").or_insert_with(|| json!(env!("CARGO_PKG_VERSION")));
+        obj.entry("os").or_insert_with(|| json!(std::env::consts::OS));
+        obj.entry("arch").or_insert_with(|| json!(std::env::consts::ARCH));
+        obj.entry("timestamp").or_insert_with(|| {
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            json!(ts)
+        });
+    }
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap_or_default();
+    let _ = client
+        .post(url)
+        .header("Authorization", format!("Bearer {}", secret))
+        .json(&payload)
+        .send()
+        .await;
+}
+
 #[tauri::command]
 async fn get_items(app: tauri::AppHandle) -> Result<Vec<Item>, String> {
     if let Some(cached) = ITEMS_CACHE.get() {
@@ -58,7 +86,10 @@ async fn get_items(app: tauri::AppHandle) -> Result<Vec<Item>, String> {
 
     let url = "https://velocityrl.me/items.json";
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| e.to_string())?;
     
     if let Ok(resp) = client.get(url).send().await {
         if let Ok(content) = resp.text().await {
@@ -115,7 +146,7 @@ async fn get_config(app: tauri::AppHandle) -> Result<Config, String> {
         let config: Config = serde_json::from_str(&content).map_err(|e| e.to_string())?;
         Ok(config)
     } else {
-        Ok(Config { game_dir: "".to_string(), db_url: "".to_string() })
+        Ok(Config { game_dir: "".to_string() })
     }
 }
 
@@ -193,7 +224,7 @@ async fn check_integrity(app: tauri::AppHandle) -> Result<bool, String> {
 
     let hash_path = match final_path {
         Some(p) => p,
-        None => return Ok(true),
+        None => return Err("Engine checksum not found — cannot verify integrity".into()),
     };
     
     let expected_hash = fs::read_to_string(hash_path).map_err(|e| e.to_string())?.trim().to_lowercase();
@@ -209,7 +240,7 @@ async fn check_integrity(app: tauri::AppHandle) -> Result<bool, String> {
         .map_err(|e| format!("Could not locate engine: {}", e))?;
 
     if !sidecar_path.exists() {
-        return Ok(true);
+        return Err("Engine binary not found — cannot verify integrity".into());
     }
 
     let file_bytes = fs::read(sidecar_path).map_err(|e| e.to_string())?;
@@ -218,6 +249,13 @@ async fn check_integrity(app: tauri::AppHandle) -> Result<bool, String> {
     let actual_hash = hex::encode(hasher.finalize()).to_lowercase();
     
     if actual_hash != expected_hash {
+        send_diagnostic(json!({
+            "event":    "integrity_fail",
+            "context":  "check_integrity",
+            "message":  "Engine binary hash mismatch — possible tampering or corrupt install",
+            "expected": expected_hash,
+            "actual":   actual_hash,
+        })).await;
         return Err(format!("Integrity mismatch! Engine compromised."));
     }
     Ok(true)
@@ -259,8 +297,8 @@ async fn fetch_catalog(app: tauri::AppHandle, token: String, account: String) ->
     let sidecar = app.shell().sidecar("velocity-engine").map_err(|e| e.to_string())?;
     let output = sidecar
         .arg("--fetch")
-        .arg("--token").arg(token)
         .arg("--account").arg(account)
+        .env("EPIC_TOKEN", token)
         .output().await.map_err(|e| e.to_string())?;
     
     if output.status.success() {
@@ -289,19 +327,48 @@ async fn apply_swap(app: tauri::AppHandle, owned_id: String, wanted_id: String) 
         .arg("--donor-dir").arg(&config.game_dir)
         .arg("--output-dir").arg(&config.game_dir)
         .output().await.map_err(|e| e.to_string())?;
-    if output.status.success() { Ok("Swap completed successfully".to_string()) }
-    else { Err(format!("Engine error: {}", String::from_utf8_lossy(&output.stderr))) }
+    if output.status.success() {
+        Ok("Swap completed successfully".to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let game_dir_name = PathBuf::from(&config.game_dir)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let exit_code = output.status.code().unwrap_or(-1);
+        send_diagnostic(json!({
+            "event":     "swap_fail",
+            "context":   "apply_swap",
+            "message":   format!("Engine exited with code {}", exit_code),
+            "stderr":    stderr,
+            "stdout":    stdout,
+            "owned_id":  owned_id,
+            "wanted_id": wanted_id,
+            "game_dir":  game_dir_name,
+            "exit_code": exit_code,
+        })).await;
+        Err(format!("Engine error: {}", stderr))
+    }
 }
 
 #[tauri::command]
-async fn restore_single_backup(_app: tauri::AppHandle, path: String) -> Result<(), String> {
-    let bak_path = PathBuf::from(&path);
-    if !bak_path.exists() { return Err("Backup file not found".into()); }
-    
+async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let config = get_config(app).await?;
+    if config.game_dir.is_empty() { return Err("Game directory not configured".into()); }
+    let allowed_dir = PathBuf::from(&config.game_dir).canonicalize().map_err(|e| e.to_string())?;
+
+    let bak_path = PathBuf::from(&path).canonicalize().map_err(|_| "Invalid backup path".to_string())?;
+    if !bak_path.starts_with(&allowed_dir) {
+        return Err("Access denied: path is outside the game directory".into());
+    }
+    if bak_path.extension().map_or(true, |ext| ext != "bak") {
+        return Err("Access denied: only .bak files can be restored".into());
+    }
+
     let original_path = bak_path.with_extension("");
     fs::copy(&bak_path, &original_path).map_err(|e| e.to_string())?;
     fs::remove_file(&bak_path).map_err(|e| e.to_string())?;
-    
     Ok(())
 }
 
@@ -324,6 +391,12 @@ async fn restore_backups(app: tauri::AppHandle) -> Result<String, String> {
     Ok(format!("Restored {} backups", count))
 }
 
+#[tauri::command]
+async fn report_diagnostic(payload: serde_json::Value) -> Result<(), String> {
+    send_diagnostic(payload).await;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -342,7 +415,8 @@ pub fn run() {
             restore_single_backup,
             check_integrity,
             cleanup_temp_files,
-            fetch_catalog
+            fetch_catalog,
+            report_diagnostic
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
