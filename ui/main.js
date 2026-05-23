@@ -1,12 +1,40 @@
 const { invoke } = window.__TAURI__.core;
 const { open } = window.__TAURI__.dialog;
 
+const API_BASE = 'https://api.sfdb.dev';
+
 let ownedItem = null;
 let wantedItem = null;
 let items = [];
 let currentCategory = 'All';
 
 let ownedSearch, wantedSearch, ownedResults, wantedResults, applyBtn, statusText, progressBarContainer, progressFill, systemWarning, backupContainer;
+
+async function fetchItemsFromAPI() {
+    const allItems = [];
+    const limit = 200;
+    let offset = 0;
+
+    while (true) {
+        const res = await fetch(`${API_BASE}/v2/rl/products?limit=${limit}&offset=${offset}`);
+        if (!res.ok) throw new Error(`API ${res.status}`);
+        const data = await res.json();
+        for (const p of data.products) {
+            allItems.push({
+                id: p.id,
+                product: p.name,
+                slot: p.category,
+                quality: p.quality,
+                asset_package: p.internal_name,
+                image_url: p.thumbnail_url ? `${API_BASE}${p.thumbnail_url}` : '',
+            });
+        }
+        if (allItems.length >= data.meta.total_filtered || data.products.length < limit) break;
+        offset += limit;
+    }
+
+    return allItems;
+}
 
 function showToast(message, type = 'success') {
     const container = document.getElementById('toast-container');
@@ -130,6 +158,7 @@ async function init() {
 
     applyBtn.onclick = handleApply;
     document.getElementById('restore-btn').onclick = handleRestore;
+    document.getElementById('website-btn').onclick = () => showToast('⚠️ (WIP)', 'warning');
     document.getElementById('settings-btn').onclick = () => document.getElementById('settings-modal').classList.add('active');
     document.getElementById('cancel-settings').onclick = () => document.getElementById('settings-modal').classList.remove('active');
     document.getElementById('close-settings').onclick = handleSaveSettings;
@@ -148,9 +177,10 @@ async function init() {
             throw new Error(`Security Violation: ${e}`);
         });
         updateStatus('Initializing Engine...', false);
-        items = await invoke('get_items').catch(e => { 
-            console.error(e);
-            throw new Error(`Database Error: ${e}`); 
+        items = await invoke('get_items').catch(async (e) => {
+            console.warn('Local item database unavailable, fetching from API...', e);
+            updateStatus('Fetching from API...', false);
+            return await fetchItemsFromAPI();
         });
         const config = await invoke('get_config').catch(e => { console.warn('Config load failed:', e); return { game_dir: '' }; });
         if (config) {
