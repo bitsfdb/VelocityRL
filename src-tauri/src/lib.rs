@@ -49,16 +49,20 @@ static ITEMS_CACHE: std::sync::OnceLock<Vec<Item>> = std::sync::OnceLock::new();
 const DIAGNOSTIC_URL: Option<&str> = option_env!("DIAGNOSTIC_URL");
 const DIAGNOSTIC_SECRET: Option<&str> = option_env!("DIAGNOSTIC_SECRET");
 
-async fn send_diagnostic(event: &str, context: &str, message: &str) {
+async fn send_diagnostic(mut payload: serde_json::Value) {
     let (Some(url), Some(secret)) = (DIAGNOSTIC_URL, DIAGNOSTIC_SECRET) else { return };
-    let payload = json!({
-        "event":   event,
-        "context": context,
-        "message": message,
-        "version": env!("CARGO_PKG_VERSION"),
-        "os":      std::env::consts::OS,
-        "arch":    std::env::consts::ARCH,
-    });
+    if let Some(obj) = payload.as_object_mut() {
+        obj.entry("version").or_insert_with(|| json!(env!("CARGO_PKG_VERSION")));
+        obj.entry("os").or_insert_with(|| json!(std::env::consts::OS));
+        obj.entry("arch").or_insert_with(|| json!(std::env::consts::ARCH));
+        obj.entry("timestamp").or_insert_with(|| {
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            json!(ts)
+        });
+    }
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
         .build()
@@ -245,7 +249,13 @@ async fn check_integrity(app: tauri::AppHandle) -> Result<bool, String> {
     let actual_hash = hex::encode(hasher.finalize()).to_lowercase();
     
     if actual_hash != expected_hash {
-        send_diagnostic("integrity_fail", "check_integrity", "Engine binary hash mismatch").await;
+        send_diagnostic(json!({
+            "event":    "integrity_fail",
+            "context":  "check_integrity",
+            "message":  "Engine binary hash mismatch — possible tampering or corrupt install",
+            "expected": expected_hash,
+            "actual":   actual_hash,
+        })).await;
         return Err(format!("Integrity mismatch! Engine compromised."));
     }
     Ok(true)
@@ -320,9 +330,25 @@ async fn apply_swap(app: tauri::AppHandle, owned_id: String, wanted_id: String) 
     if output.status.success() {
         Ok("Swap completed successfully".to_string())
     } else {
-        let msg = format!("Engine error: {}", String::from_utf8_lossy(&output.stderr));
-        send_diagnostic("swap_fail", "apply_swap", &msg).await;
-        Err(msg)
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let game_dir_name = PathBuf::from(&config.game_dir)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let exit_code = output.status.code().unwrap_or(-1);
+        send_diagnostic(json!({
+            "event":     "swap_fail",
+            "context":   "apply_swap",
+            "message":   format!("Engine exited with code {}", exit_code),
+            "stderr":    stderr,
+            "stdout":    stdout,
+            "owned_id":  owned_id,
+            "wanted_id": wanted_id,
+            "game_dir":  game_dir_name,
+            "exit_code": exit_code,
+        })).await;
+        Err(format!("Engine error: {}", stderr))
     }
 }
 
@@ -366,8 +392,8 @@ async fn restore_backups(app: tauri::AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn report_diagnostic(event: String, context: String, message: String) -> Result<(), String> {
-    send_diagnostic(&event, &context, &message).await;
+async fn report_diagnostic(payload: serde_json::Value) -> Result<(), String> {
+    send_diagnostic(payload).await;
     Ok(())
 }
 
