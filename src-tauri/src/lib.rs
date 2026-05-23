@@ -230,10 +230,13 @@ async fn check_integrity(app: tauri::AppHandle) -> Result<bool, String> {
     let expected_hash = fs::read_to_string(hash_path).map_err(|e| e.to_string())?.trim().to_lowercase();
     
     let sidecar_name = "velocity-engine";
-    #[cfg(target_os = "windows")]
-    let sidecar_file = format!("{}-x86_64-pc-windows-msvc.exe", sidecar_name);
-    #[cfg(not(target_os = "windows"))]
-    let sidecar_file = sidecar_name;
+    let sidecar_file = if cfg!(target_os = "windows") {
+        format!("{}-x86_64-pc-windows-msvc.exe", sidecar_name)
+    } else if cfg!(target_os = "linux") {
+        format!("{}-x86_64-unknown-linux-gnu", sidecar_name)
+    } else {
+        sidecar_name.to_string()
+    };
 
     let sidecar_path = app.path().resolve(format!("bin/{}", sidecar_file), tauri::path::BaseDirectory::Resource)
         .or_else(|_| app.path().resolve(format!("_up_/src-tauri/bin/{}", sidecar_file), tauri::path::BaseDirectory::Resource))
