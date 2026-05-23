@@ -29,6 +29,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      - name: Create stub sidecar (satisfies Tauri resource check in CI)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path src-tauri/bin | Out-Null
+          New-Item -ItemType File -Force -Path "src-tauri/bin/velocity-engine-x86_64-pc-windows-msvc.exe" | Out-Null
+
       - name: Cargo check
         working-directory: src-tauri
         run: cargo check --release
