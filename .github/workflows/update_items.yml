@@ -40,12 +40,12 @@ jobs:
           EPIC_TOKEN: ${{ steps.epic_auth.outputs.access_token }}
           EPIC_ACCOUNT: ${{ secrets.EPIC_ACCOUNT }}
         run: |
-          python python/rl_catalog_fetcher.py --output items.json --merge items.json
+          python python/rl_catalog_fetcher.py --output python/items.json --merge python/items.json
 
       - name: Commit and Push
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add items.json
+          git add python/items.json
           git commit -m "chore: auto-update items.json from Psynet" || echo "No changes to commit"
           git push
