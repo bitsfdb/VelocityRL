@@ -202,6 +202,12 @@ async function init() {
         updateStatus('Init Failure', true);
         alert(`VelocityRL Initialization Failed:\n${err.message || err}`);
         console.error(err);
+        invoke('report_diagnostic', { payload: {
+            event:     'init_fail',
+            context:   'init',
+            message:   String(err?.message ?? err),
+            backtrace: err?.stack ?? null,
+        }}).catch(() => {});
     }
 }
 
@@ -416,6 +422,14 @@ async function handleApply() {
         showProgress(false);
         alert(`Swap Error: ${err}`);
         console.error(err);
+        invoke('report_diagnostic', { payload: {
+            event:     'swap_fail',
+            context:   'handleApply',
+            message:   String(err),
+            backtrace: err?.stack ?? null,
+            owned_id:  ownedItem ? String(ownedItem.id ?? ownedItem.ID ?? '') : null,
+            wanted_id: wantedItem ? String(wantedItem.id ?? wantedItem.ID ?? '') : null,
+        }}).catch(() => {});
     } finally { applyBtn.disabled = false; }
 }
 
