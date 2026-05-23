@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::fs;
 use std::path::PathBuf;
 use tauri::Manager;
@@ -44,6 +45,31 @@ struct BackupFile {
 }
 
 static ITEMS_CACHE: std::sync::OnceLock<Vec<Item>> = std::sync::OnceLock::new();
+
+const DIAGNOSTIC_URL: Option<&str> = option_env!("DIAGNOSTIC_URL");
+const DIAGNOSTIC_SECRET: Option<&str> = option_env!("DIAGNOSTIC_SECRET");
+
+async fn send_diagnostic(event: &str, context: &str, message: &str) {
+    let (Some(url), Some(secret)) = (DIAGNOSTIC_URL, DIAGNOSTIC_SECRET) else { return };
+    let payload = json!({
+        "event":   event,
+        "context": context,
+        "message": message,
+        "version": env!("CARGO_PKG_VERSION"),
+        "os":      std::env::consts::OS,
+        "arch":    std::env::consts::ARCH,
+    });
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap_or_default();
+    let _ = client
+        .post(url)
+        .header("Authorization", format!("Bearer {}", secret))
+        .json(&payload)
+        .send()
+        .await;
+}
 
 #[tauri::command]
 async fn get_items(app: tauri::AppHandle) -> Result<Vec<Item>, String> {
@@ -219,6 +245,7 @@ async fn check_integrity(app: tauri::AppHandle) -> Result<bool, String> {
     let actual_hash = hex::encode(hasher.finalize()).to_lowercase();
     
     if actual_hash != expected_hash {
+        send_diagnostic("integrity_fail", "check_integrity", "Engine binary hash mismatch").await;
         return Err(format!("Integrity mismatch! Engine compromised."));
     }
     Ok(true)
@@ -290,8 +317,13 @@ async fn apply_swap(app: tauri::AppHandle, owned_id: String, wanted_id: String) 
         .arg("--donor-dir").arg(&config.game_dir)
         .arg("--output-dir").arg(&config.game_dir)
         .output().await.map_err(|e| e.to_string())?;
-    if output.status.success() { Ok("Swap completed successfully".to_string()) }
-    else { Err(format!("Engine error: {}", String::from_utf8_lossy(&output.stderr))) }
+    if output.status.success() {
+        Ok("Swap completed successfully".to_string())
+    } else {
+        let msg = format!("Engine error: {}", String::from_utf8_lossy(&output.stderr));
+        send_diagnostic("swap_fail", "apply_swap", &msg).await;
+        Err(msg)
+    }
 }
 
 #[tauri::command]
@@ -333,6 +365,12 @@ async fn restore_backups(app: tauri::AppHandle) -> Result<String, String> {
     Ok(format!("Restored {} backups", count))
 }
 
+#[tauri::command]
+async fn report_diagnostic(event: String, context: String, message: String) -> Result<(), String> {
+    send_diagnostic(&event, &context, &message).await;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -351,7 +389,8 @@ pub fn run() {
             restore_single_backup,
             check_integrity,
             cleanup_temp_files,
-            fetch_catalog
+            fetch_catalog,
+            report_diagnostic
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
