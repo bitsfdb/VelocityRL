@@ -1,7 +1,7 @@
 const { invoke } = window.__TAURI__.core;
 const { open } = window.__TAURI__.dialog;
 
-const API_BASE = 'https://api.sfdb.dev';
+const API_BASE = 'https://api.velocityrl.tech';
 
 function escHtml(str) {
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');

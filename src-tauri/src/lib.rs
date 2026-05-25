@@ -84,7 +84,7 @@ async fn get_items(app: tauri::AppHandle) -> Result<Vec<Item>, String> {
     let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
     let cache_path = config_dir.join("items.json");
 
-    let url = "https://velocityrl.me/items.json";
+    let url = "https://api.velocityrl.tech/items.json";
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
