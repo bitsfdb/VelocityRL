@@ -183,10 +183,9 @@ async function init() {
             throw new Error(`Security Violation: ${e}`);
         });
         updateStatus('Initializing Engine...', false);
-        items = await invoke('get_items').catch(async (e) => {
-            console.warn('Local item database unavailable, fetching from API...', e);
-            updateStatus('Fetching from API...', false);
-            return await fetchItemsFromAPI();
+        items = await fetchItemsFromAPI().catch(async (e) => {
+            console.warn('API unavailable, loading from local cache...', e);
+            return await invoke('get_items');
         });
         const config = await invoke('get_config').catch(e => { console.warn('Config load failed:', e); return { game_dir: '' }; });
         if (config) {
