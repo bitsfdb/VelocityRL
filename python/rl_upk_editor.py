@@ -2592,6 +2592,9 @@ def find_keys_path(script_dir: Path, selected_file: Path) -> Optional[Path]:
         Path.cwd() / "keys.txt",
         selected_file.parent / "keys.txt",
     ]
+    if getattr(sys, "_MEIPASS", None):
+        candidates.insert(0, Path(sys._MEIPASS) / "keys.txt")
+        
     for candidate in candidates:
         if candidate.exists():
             return candidate
