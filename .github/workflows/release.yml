@@ -31,7 +31,7 @@ jobs:
         run: |
           pip install pyinstaller cryptography
           mkdir -p src-tauri/bin
-          pyinstaller --onefile --distpath src-tauri/bin --name velocity-engine-x86_64-pc-windows-msvc python/rl_asset_swapper.py
+          pyinstaller --onefile --distpath src-tauri/bin --name velocity-engine-x86_64-pc-windows-msvc --add-data "python/rl_upk_editor.py;." --add-data "python/keys.txt;." --add-data "python/items.json;." python/rl_asset_swapper.py
 
       - name: Generate engine checksum
         shell: pwsh
@@ -124,7 +124,7 @@ jobs:
         run: |
           pip install pyinstaller cryptography
           mkdir -p src-tauri/bin
-          pyinstaller --onefile --distpath src-tauri/bin --name velocity-engine-x86_64-unknown-linux-gnu python/rl_asset_swapper.py
+          pyinstaller --onefile --distpath src-tauri/bin --name velocity-engine-x86_64-unknown-linux-gnu --add-data "python/rl_upk_editor.py:." --add-data "python/keys.txt:." --add-data "python/items.json:." python/rl_asset_swapper.py
 
       - name: Generate engine checksum
         run: |
