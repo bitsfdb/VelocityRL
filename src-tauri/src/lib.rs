@@ -3,9 +3,80 @@ use serde_json::json;
 use std::fs;
 use std::path::PathBuf;
 use tauri::Manager;
-use tauri_plugin_shell::ShellExt;
 use sha2::{Sha256, Digest};
 use hex;
+
+// ── Embedded engine ───────────────────────────────────────────────────────────
+// The engine binary is compiled into this library at build time.
+// This eliminates all runtime path-finding: the engine is always present.
+#[cfg(target_os = "windows")]
+const ENGINE_BYTES: &[u8] = include_bytes!("../bin/velocity-engine-x86_64-pc-windows-msvc.exe");
+#[cfg(not(target_os = "windows"))]
+const ENGINE_BYTES: &[u8] = include_bytes!("../bin/velocity-engine-x86_64-unknown-linux-gnu");
+
+fn engine_hash() -> String {
+    let mut h = Sha256::new();
+    h.update(ENGINE_BYTES);
+    hex::encode(h.finalize())
+}
+
+/// Extract the embedded engine to AppLocalData if missing or outdated, return its path.
+async fn get_engine_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let local_dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    fs::create_dir_all(&local_dir).map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "windows")]
+    let name = "velocity-engine.exe";
+    #[cfg(not(target_os = "windows"))]
+    let name = "velocity-engine";
+
+    let path = local_dir.join(name);
+    let expected = engine_hash();
+
+    let needs_write = if path.exists() {
+        match fs::read(&path) {
+            Ok(bytes) => {
+                let mut h = Sha256::new();
+                h.update(&bytes);
+                hex::encode(h.finalize()) != expected
+            }
+            Err(_) => true,
+        }
+    } else {
+        true
+    };
+
+    if needs_write {
+        fs::write(&path, ENGINE_BYTES).map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(path)
+}
+
+/// Run the engine with the given args and optional env vars.
+async fn run_engine(
+    path: PathBuf,
+    args: Vec<String>,
+    env_vars: Vec<(String, String)>,
+) -> Result<std::process::Output, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = std::process::Command::new(&path);
+        for arg in &args { cmd.arg(arg); }
+        for (k, v) in &env_vars { cmd.env(k, v); }
+        cmd.output()
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 #[derive(Serialize, Deserialize, Clone)]
 struct Config {
@@ -49,6 +120,8 @@ static ITEMS_CACHE: std::sync::OnceLock<Vec<Item>> = std::sync::OnceLock::new();
 const DIAGNOSTIC_URL: Option<&str> = option_env!("DIAGNOSTIC_URL");
 const DIAGNOSTIC_SECRET: Option<&str> = option_env!("DIAGNOSTIC_SECRET");
 
+// ── Diagnostics ───────────────────────────────────────────────────────────────
+
 async fn send_diagnostic(mut payload: serde_json::Value) {
     let (Some(url), Some(secret)) = (DIAGNOSTIC_URL, DIAGNOSTIC_SECRET) else { return };
     if let Some(obj) = payload.as_object_mut() {
@@ -75,6 +148,8 @@ async fn send_diagnostic(mut payload: serde_json::Value) {
         .await;
 }
 
+// ── Commands ──────────────────────────────────────────────────────────────────
+
 #[tauri::command]
 async fn get_items(app: tauri::AppHandle) -> Result<Vec<Item>, String> {
     if let Some(cached) = ITEMS_CACHE.get() {
@@ -84,14 +159,12 @@ async fn get_items(app: tauri::AppHandle) -> Result<Vec<Item>, String> {
     let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
     let cache_path = config_dir.join("items.json");
 
-    let url = "https://api.velocityrl.tech/items.json";
-
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|e| e.to_string())?;
-    
-    if let Ok(resp) = client.get(url).send().await {
+
+    if let Ok(resp) = client.get("https://api.velocityrl.tech/items.json").send().await {
         if let Ok(content) = resp.text().await {
             if let Ok(resp) = serde_json::from_str::<ItemsResponse>(&content) {
                 let items = match resp {
@@ -119,23 +192,7 @@ async fn get_items(app: tauri::AppHandle) -> Result<Vec<Item>, String> {
         }
     }
 
-    let resource_path = app.path().resolve("python/items.json", tauri::path::BaseDirectory::Resource).ok();
-    if let Some(path) = resource_path {
-        if path.exists() {
-            if let Ok(content) = fs::read_to_string(&path) {
-                if let Ok(resp) = serde_json::from_str::<ItemsResponse>(&content) {
-                    let items = match resp {
-                        ItemsResponse::Database { items } => items,
-                        ItemsResponse::List(items) => items,
-                    };
-                    let _ = ITEMS_CACHE.set(items.clone());
-                    return Ok(items);
-                }
-            }
-        }
-    }
-
-    Err("Failed to parse items database".into())
+    Err("Failed to load items database".into())
 }
 
 #[tauri::command]
@@ -164,11 +221,11 @@ async fn save_config(app: tauri::AppHandle, config: Config) -> Result<(), String
 async fn get_backups(app: tauri::AppHandle) -> Result<Vec<BackupFile>, String> {
     let config = get_config(app.clone()).await?;
     if config.game_dir.is_empty() { return Ok(vec![]); }
-    
+
     let items = get_items(app.clone()).await.unwrap_or_default();
     let mut backups = Vec::new();
     let dir = PathBuf::from(&config.game_dir);
-    
+
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -177,18 +234,15 @@ async fn get_backups(app: tauri::AppHandle) -> Result<Vec<BackupFile>, String> {
                 let clean_name = file_name.to_lowercase()
                     .replace(".bak", "")
                     .replace(".upk", "");
-                
+
                 let display_name = items.iter()
                     .find(|i| {
                         let db_pkg = i.asset_package.to_lowercase().replace(".upk", "");
                         if db_pkg.is_empty() || db_pkg == "none" { return false; }
-                        
                         if db_pkg == clean_name { return true; }
-                        
                         if db_pkg.len() > 4 && (clean_name.contains(&db_pkg) || db_pkg.contains(&clean_name)) {
                             return true;
                         }
-                        
                         false
                     })
                     .map(|i| i.product.clone())
@@ -206,63 +260,8 @@ async fn get_backups(app: tauri::AppHandle) -> Result<Vec<BackupFile>, String> {
 
 #[tauri::command]
 async fn check_integrity(app: tauri::AppHandle) -> Result<bool, String> {
-    let paths = vec![
-        app.path().resolve("python/engine.sha256", tauri::path::BaseDirectory::Resource),
-        app.path().resolve("_up_/python/engine.sha256", tauri::path::BaseDirectory::Resource),
-        app.path().resolve("engine.sha256", tauri::path::BaseDirectory::Resource),
-    ];
-
-    let mut final_path = None;
-    for p in paths {
-        if let Ok(path) = p {
-            if path.exists() {
-                final_path = Some(path);
-                break;
-            }
-        }
-    }
-
-    let hash_path = match final_path {
-        Some(p) => p,
-        None => return Err("Engine checksum not found — cannot verify integrity".into()),
-    };
-    
-    let expected_hash = fs::read_to_string(hash_path).map_err(|e| e.to_string())?.trim().to_lowercase();
-    
-    let sidecar_name = "velocity-engine";
-    #[cfg(target_os = "windows")]
-    let sidecar_file = format!("{}-x86_64-pc-windows-msvc.exe", sidecar_name);
-    #[cfg(not(target_os = "windows"))]
-    let sidecar_file = sidecar_name;
-
-    // Tauri v2 places externalBin sidecars next to the executable, not in AppData.
-    // BaseDirectory::Resource can resolve to AppData\Roaming on some installs, so
-    // always check exe_dir first.
-    let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf()));
-    let sidecar_path = exe_dir.as_deref().map(|d| d.join(&sidecar_file)).into_iter()
-        .chain([
-            app.path().resolve(&sidecar_file, tauri::path::BaseDirectory::Resource).ok(),
-            app.path().resolve(format!("bin/{}", sidecar_file), tauri::path::BaseDirectory::Resource).ok(),
-            app.path().resolve(format!("_up_/src-tauri/bin/{}", sidecar_file), tauri::path::BaseDirectory::Resource).ok(),
-        ].into_iter().flatten())
-        .find(|p| p.exists())
-        .ok_or_else(|| format!("Engine binary not found — cannot verify integrity"))?;
-
-    let file_bytes = fs::read(sidecar_path).map_err(|e| e.to_string())?;
-    let mut hasher = Sha256::new();
-    hasher.update(&file_bytes);
-    let actual_hash = hex::encode(hasher.finalize()).to_lowercase();
-    
-    if actual_hash != expected_hash {
-        send_diagnostic(json!({
-            "event":    "integrity_fail",
-            "context":  "check_integrity",
-            "message":  "Engine binary hash mismatch — possible tampering or corrupt install",
-            "expected": expected_hash,
-            "actual":   actual_hash,
-        })).await;
-        return Err(format!("Integrity mismatch! Engine compromised."));
-    }
+    // Engine is embedded at compile time — extract it and confirm it's ready.
+    get_engine_path(&app).await?;
     Ok(true)
 }
 
@@ -299,16 +298,15 @@ async fn cleanup_temp_files(app: tauri::AppHandle) -> Result<String, String> {
 
 #[tauri::command]
 async fn fetch_catalog(app: tauri::AppHandle, token: String, account: String) -> Result<String, String> {
-    let sidecar = app.shell().sidecar("velocity-engine").map_err(|e| e.to_string())?;
-    let output = sidecar
-        .arg("--fetch")
-        .arg("--account").arg(account)
-        .env("EPIC_TOKEN", token)
-        .output().await.map_err(|e| e.to_string())?;
-    
+    let engine_path = get_engine_path(&app).await?;
+    let output = run_engine(
+        engine_path,
+        vec!["--fetch".into(), "--account".into(), account],
+        vec![("EPIC_TOKEN".into(), token)],
+    ).await?;
+
     if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        Ok(stdout)
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
     } else {
         Err(format!("Fetch error: {}", String::from_utf8_lossy(&output.stderr)))
     }
@@ -318,20 +316,24 @@ async fn fetch_catalog(app: tauri::AppHandle, token: String, account: String) ->
 async fn apply_swap(app: tauri::AppHandle, owned_id: String, wanted_id: String) -> Result<String, String> {
     let config = get_config(app.clone()).await?;
     if config.game_dir.is_empty() { return Err("Game directory not set".to_string()); }
-    let items_path = app.path().resolve("python/items.json", tauri::path::BaseDirectory::Resource)
-        .or_else(|_| app.path().resolve("_up_/python/items.json", tauri::path::BaseDirectory::Resource))
-        .map_err(|e| e.to_string())?;
-    
-    let sidecar = app.shell().sidecar("velocity-engine").map_err(|e| e.to_string())?;
-    let output = sidecar
-        .arg("--no-gui")
-        .arg("--items").arg(items_path)
-        .arg("--target").arg(&owned_id)
-        .arg("--donor").arg(&wanted_id)
-        .arg("--overwrite")
-        .arg("--donor-dir").arg(&config.game_dir)
-        .arg("--output-dir").arg(&config.game_dir)
-        .output().await.map_err(|e| e.to_string())?;
+
+    let engine_path = get_engine_path(&app).await?;
+    let items_path = app.path().app_config_dir().map_err(|e| e.to_string())?.join("items.json");
+
+    let output = run_engine(
+        engine_path,
+        vec![
+            "--no-gui".into(),
+            "--items".into(), items_path.to_string_lossy().to_string(),
+            "--target".into(), owned_id.clone(),
+            "--donor".into(), wanted_id.clone(),
+            "--overwrite".into(),
+            "--donor-dir".into(), config.game_dir.clone(),
+            "--output-dir".into(), config.game_dir.clone(),
+        ],
+        vec![],
+    ).await?;
+
     if output.status.success() {
         Ok("Swap completed successfully".to_string())
     } else {
