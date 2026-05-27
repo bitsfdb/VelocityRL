@@ -18,7 +18,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https://api.sfdb.dev data: blob:; connect-src 'self' https://api.sfdb.dev https://velocityrl.me"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https://api.velocityrl.tech data: blob:; connect-src 'self' https://api.velocityrl.tech https://velocityrl.tech"
     },
     "withGlobalTauri": true
   },
@@ -34,12 +34,7 @@
     ],
     "resources": [
       "../python/items.json",
-      "../python/keys.txt",
-      "../python/engine.sha256",
-      "../python/rl_upk_editor.py"
-    ],
-    "externalBin": [
-      "bin/velocity-engine"
+      "../python/keys.txt"
     ],
     "android": {
       "debugApplicationIdSuffix": ".debug"
