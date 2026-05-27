@@ -180,7 +180,7 @@ async function init() {
         await invoke('check_integrity').catch(e => {
             throw new Error(`Security Violation: ${e}`);
         });
-        updateStatus('Initializing Engine...', false);
+        updateStatus('Please Wait...', false);
         items = await fetchItemsFromAPI().catch(async (e) => {
             console.warn('API unavailable, loading from local cache...', e);
             return await invoke('get_items');
@@ -259,10 +259,26 @@ async function refreshBackups() {
         backups.forEach(file => {
             const div = document.createElement('div');
             div.className = 'backup-item';
+            let pImg = file.image_url || '';
+            if (!pImg && items && items.length > 0) {
+                const fileName = file.path.split(/[/\\]/).pop();
+                const cleanName = fileName.toLowerCase().replace('.bak', '').replace('.upk', '');
+                const matched = items.find(i => {
+                    const dbPkg = (i.asset_package || '').toLowerCase().replace('.upk', '');
+                    if (!dbPkg || dbPkg === 'none') return false;
+                    return dbPkg === cleanName || (dbPkg.length > 4 && (cleanName.includes(dbPkg) || dbPkg.includes(cleanName)));
+                });
+                if (matched && matched.image_url) {
+                    pImg = matched.image_url;
+                }
+            }
             div.innerHTML = `
-                <div>
-                    <div class="backup-name">${escHtml(file.name)}</div>
-                    <div class="backup-date">Modified Product</div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    ${pImg ? `<img src="${escHtml(pImg)}" class="flyout-img" style="width: 40px; height: 40px; border-radius: 6px; object-fit: contain; background: rgba(0,0,0,0.2);" />` : '<div class="flyout-img" style="width: 40px; height: 40px; border-radius: 6px; background: rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>'}
+                    <div>
+                        <div class="backup-name">${escHtml(file.name)}</div>
+                        <div class="backup-date">Modified Product</div>
+                    </div>
                 </div>
                 <div class="restore-mini-btn" title="Restore this file">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-blue)" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
@@ -405,7 +421,7 @@ function validate() {
 
 async function handleApply() {
     try {
-        updateStatus('Initializing Engine...', false);
+        updateStatus('Please Wait...', false);
         showProgress(true, 15);
         applyBtn.disabled = true;
         let p = 15;

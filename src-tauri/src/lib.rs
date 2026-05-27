@@ -113,6 +113,8 @@ enum ItemsResponse {
 struct BackupFile {
     name: String,
     path: String,
+    #[serde(default)]
+    image_url: String,
 }
 
 static ITEMS_CACHE: std::sync::OnceLock<Vec<Item>> = std::sync::OnceLock::new();
@@ -164,18 +166,34 @@ async fn get_items(app: tauri::AppHandle) -> Result<Vec<Item>, String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    if let Ok(resp) = client.get("https://raw.githubusercontent.com/CrunchyRL/RLUPKTools/refs/heads/main/items.json").send().await {
-        if let Ok(content) = resp.text().await {
-            if let Ok(resp) = serde_json::from_str::<ItemsResponse>(&content) {
-                let items = match resp {
-                    ItemsResponse::Database { items } => items,
-                    ItemsResponse::List(items) => items,
-                };
-                fs::create_dir_all(&config_dir).ok();
-                fs::write(&cache_path, &content).ok();
-                let _ = ITEMS_CACHE.set(items.clone());
-                return Ok(items);
+    let api_url = "https://api.velocityrl.tech/items.json";
+    let github_url = "https://raw.githubusercontent.com/CrunchyRL/RLUPKTools/refs/heads/main/items.json";
+
+    let mut fetched_content = None;
+    if let Ok(resp) = client.get(api_url).send().await {
+        if let Ok(text) = resp.text().await {
+            fetched_content = Some(text);
+        }
+    }
+
+    if fetched_content.is_none() {
+        if let Ok(resp) = client.get(github_url).send().await {
+            if let Ok(text) = resp.text().await {
+                fetched_content = Some(text);
             }
+        }
+    }
+
+    if let Some(content) = fetched_content {
+        if let Ok(resp) = serde_json::from_str::<ItemsResponse>(&content) {
+            let items = match resp {
+                ItemsResponse::Database { items } => items,
+                ItemsResponse::List(items) => items,
+            };
+            fs::create_dir_all(&config_dir).ok();
+            fs::write(&cache_path, &content).ok();
+            let _ = ITEMS_CACHE.set(items.clone());
+            return Ok(items);
         }
     }
 
@@ -235,7 +253,7 @@ async fn get_backups(app: tauri::AppHandle) -> Result<Vec<BackupFile>, String> {
                     .replace(".bak", "")
                     .replace(".upk", "");
 
-                let display_name = items.iter()
+                let matched_item = items.iter()
                     .find(|i| {
                         let db_pkg = i.asset_package.to_lowercase().replace(".upk", "");
                         if db_pkg.is_empty() || db_pkg == "none" { return false; }
@@ -244,13 +262,15 @@ async fn get_backups(app: tauri::AppHandle) -> Result<Vec<BackupFile>, String> {
                             return true;
                         }
                         false
-                    })
-                    .map(|i| i.product.clone())
-                    .unwrap_or(file_name);
+                    });
+
+                let display_name = matched_item.map(|i| i.product.clone()).unwrap_or(file_name);
+                let image_url = matched_item.map(|i| i.image_url.clone()).unwrap_or_default();
 
                 backups.push(BackupFile {
                     name: display_name,
                     path: path.to_string_lossy().to_string(),
+                    image_url,
                 });
             }
         }
