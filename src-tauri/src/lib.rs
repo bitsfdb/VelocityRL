@@ -235,13 +235,17 @@ async fn check_integrity(app: tauri::AppHandle) -> Result<bool, String> {
     #[cfg(not(target_os = "windows"))]
     let sidecar_file = sidecar_name;
 
-    let sidecar_path = app.path().resolve(format!("bin/{}", sidecar_file), tauri::path::BaseDirectory::Resource)
-        .or_else(|_| app.path().resolve(format!("_up_/src-tauri/bin/{}", sidecar_file), tauri::path::BaseDirectory::Resource))
-        .map_err(|e| format!("Could not locate engine: {}", e))?;
-
-    if !sidecar_path.exists() {
-        return Err("Engine binary not found — cannot verify integrity".into());
-    }
+    // Tauri v2 externalBin places sidecars at the resource root, not in bin/.
+    // Try root first, then bin/, then the dev-tree fallback.
+    let sidecar_path = [
+        app.path().resolve(&sidecar_file, tauri::path::BaseDirectory::Resource).ok(),
+        app.path().resolve(format!("bin/{}", sidecar_file), tauri::path::BaseDirectory::Resource).ok(),
+        app.path().resolve(format!("_up_/src-tauri/bin/{}", sidecar_file), tauri::path::BaseDirectory::Resource).ok(),
+    ]
+    .into_iter()
+    .flatten()
+    .find(|p| p.exists())
+    .ok_or_else(|| format!("Engine binary not found — cannot verify integrity"))?;
 
     let file_bytes = fs::read(sidecar_path).map_err(|e| e.to_string())?;
     let mut hasher = Sha256::new();
