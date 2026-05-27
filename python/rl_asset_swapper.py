@@ -153,19 +153,22 @@ def import_rl_upk_editor():
 
 def load_items(path: Path) -> List[Item]:
     raw = json.loads(path.read_text(encoding="utf-8-sig"))
-    rows = raw.get("Items", raw if isinstance(raw, list) else [])
+    # Support both CrunchyRL format {"Items":[...]} and new format {"items":[...]}
+    rows = raw.get("Items") or raw.get("items") or (raw if isinstance(raw, list) else [])
     out: List[Item] = []
     for row in rows:
         try:
-            pkg = str(row.get("AssetPackage", "") or "")
-            asset_path = str(row.get("AssetPath", "") or "")
+            # CrunchyRL keys: AssetPackage, AssetPath, ID, Product, Quality, Slot
+            # New format keys: asset_package, asset_path, id, label/long_label, quality_label, slot
+            pkg = str(row.get("AssetPackage") or row.get("asset_package") or "")
+            asset_path = str(row.get("AssetPath") or row.get("asset_path") or "")
             if not pkg or not asset_path:
                 continue
             out.append(Item(
-                id=int(row.get("ID", 0) or 0),
-                product=str(row.get("Product", "") or ""),
-                quality=str(row.get("Quality", "") or ""),
-                slot=str(row.get("Slot", "") or ""),
+                id=int(row.get("ID") or row.get("id") or 0),
+                product=str(row.get("Product") or row.get("label") or row.get("long_label") or ""),
+                quality=str(row.get("Quality") or row.get("quality_label") or ""),
+                slot=str(row.get("Slot") or row.get("slot") or ""),
                 asset_package=pkg,
                 asset_path=asset_path,
             ))
