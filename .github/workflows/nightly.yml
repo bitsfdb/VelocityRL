@@ -48,6 +48,19 @@ jobs:
         run: |
           curl -fsSL "https://raw.githubusercontent.com/CrunchyRL/RLUPKTools/refs/heads/main/items.json" -o python/items.json
 
+      - name: Patch rl_upk_editor tkinter import
+        shell: python
+        run: |
+          with open('python/rl_upk_editor.py', encoding='utf-8') as f:
+              src = f.read()
+          src = src.replace(
+              'except ImportError:\n    HAS_GUI = False',
+              'except Exception:\n    HAS_GUI = False',
+              1
+          )
+          with open('python/rl_upk_editor.py', 'w', encoding='utf-8') as f:
+              f.write(src)
+
       - name: Build Python sidecar
         run: |
           pip install pyinstaller cryptography
@@ -180,6 +193,19 @@ jobs:
       - name: Update items database
         run: |
           curl -fsSL "https://raw.githubusercontent.com/CrunchyRL/RLUPKTools/refs/heads/main/items.json" -o python/items.json
+
+      - name: Patch rl_upk_editor tkinter import
+        shell: python
+        run: |
+          with open('python/rl_upk_editor.py', encoding='utf-8') as f:
+              src = f.read()
+          src = src.replace(
+              'except ImportError:\n    HAS_GUI = False',
+              'except Exception:\n    HAS_GUI = False',
+              1
+          )
+          with open('python/rl_upk_editor.py', 'w', encoding='utf-8') as f:
+              f.write(src)
 
       - name: Build Python sidecar
         run: |
