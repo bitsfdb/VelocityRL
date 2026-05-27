@@ -186,14 +186,8 @@ async function init() {
             return await invoke('get_items');
         });
         const config = await invoke('get_config').catch(e => { console.warn('Config load failed:', e); return { game_dir: '' }; });
-        if (config) {
-            if (config.game_dir) document.getElementById('game-dir').value = config.game_dir;
-        } else {
-            updateStatus('Setup Required', true);
-            setTimeout(() => {
-                document.getElementById('settings-modal').classList.add('active');
-                handleBrowse();
-            }, 1000);
+        if (config && config.game_dir) {
+            document.getElementById('game-dir').value = config.game_dir;
         }
         updateStatus('bitsfdb', false);
         invoke('cleanup_temp_files').catch(e => console.warn('Cleanup failed:', e));
@@ -464,37 +458,13 @@ async function handleRestore() {
 }
 
 async function handleSaveSettings() {
-    const dir = document.getElementById('game-dir').value;
-    try {
-        await invoke('save_config', { config: { game_dir: dir } });
-        document.getElementById('settings-modal').classList.remove('active');
-        refreshBackups();
-        if (dir) showToast('Success!', 'success');
-    } catch (err) {
-        showToast('Failed! please report this to the maintainer bitsfdb on the discord support server', 'error');
-        console.error(err);
-    }
+    // Disabled: User is not allowed to change installation directory
+    document.getElementById('settings-modal').classList.remove('active');
 }
 
 async function handleBrowse() {
-    try {
-        const selected = await open({ 
-            directory: true, 
-            multiple: false, 
-            title: 'Select Rocket League CookedPCConsole Directory' 
-        });
-        if (selected) {
-            document.getElementById('game-dir').value = selected;
-            // If first time, auto-save
-            const config = await invoke('get_config').catch(() => ({ game_dir: '' }));
-            if (!config.game_dir) {
-                handleSaveSettings();
-            }
-        }
-    } catch (err) { 
-        showToast('Failed! please report this to the maintainer bitsfdb on the discord support server', 'error');
-        console.error(err); 
-    }
+    // Disabled: User is not allowed to change installation directory
+    return;
 }
 
 async function checkForUpdates() {
