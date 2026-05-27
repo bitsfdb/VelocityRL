@@ -53,11 +53,39 @@ jobs:
         run: |
           with open('python/rl_upk_editor.py', encoding='utf-8') as f:
               src = f.read()
-          src = src.replace(
-              'except ImportError:\n    HAS_GUI = False',
-              'except Exception:\n    HAS_GUI = False',
-              1
+          old = (
+              'try:\n'
+              '    import tkinter as tk\n'
+              '    from tkinter import filedialog, messagebox, simpledialog, ttk\n'
+              '    HAS_GUI = True\n'
+              'except ImportError:\n'
+              '    HAS_GUI = False'
           )
+          new = (
+              'HAS_GUI = False\n'
+              'class _TkStub:\n'
+              '    def __getattr__(self, n): return self\n'
+              '    def __call__(self, *a, **kw): return self\n'
+              '    def __bool__(self): return False\n'
+              '    def __iter__(self): return iter([])\n'
+              '    def pack(self, *a, **kw): return self\n'
+              '    def grid(self, *a, **kw): return self\n'
+              '    def configure(self, *a, **kw): return self\n'
+              'tk = filedialog = messagebox = simpledialog = ttk = _TkStub()'
+          )
+          if old in src:
+              src = src.replace(old, new, 1)
+              print("Patched tkinter block")
+          else:
+              print("WARNING: tkinter block not found, attempting broad patch")
+              import re
+              src = re.sub(
+                  r'try:\s+import tkinter.*?(?:except \w+:\s+HAS_GUI = False)',
+                  new,
+                  src,
+                  count=1,
+                  flags=re.DOTALL
+              )
           with open('python/rl_upk_editor.py', 'w', encoding='utf-8') as f:
               f.write(src)
 
@@ -199,11 +227,39 @@ jobs:
         run: |
           with open('python/rl_upk_editor.py', encoding='utf-8') as f:
               src = f.read()
-          src = src.replace(
-              'except ImportError:\n    HAS_GUI = False',
-              'except Exception:\n    HAS_GUI = False',
-              1
+          old = (
+              'try:\n'
+              '    import tkinter as tk\n'
+              '    from tkinter import filedialog, messagebox, simpledialog, ttk\n'
+              '    HAS_GUI = True\n'
+              'except ImportError:\n'
+              '    HAS_GUI = False'
           )
+          new = (
+              'HAS_GUI = False\n'
+              'class _TkStub:\n'
+              '    def __getattr__(self, n): return self\n'
+              '    def __call__(self, *a, **kw): return self\n'
+              '    def __bool__(self): return False\n'
+              '    def __iter__(self): return iter([])\n'
+              '    def pack(self, *a, **kw): return self\n'
+              '    def grid(self, *a, **kw): return self\n'
+              '    def configure(self, *a, **kw): return self\n'
+              'tk = filedialog = messagebox = simpledialog = ttk = _TkStub()'
+          )
+          if old in src:
+              src = src.replace(old, new, 1)
+              print("Patched tkinter block")
+          else:
+              print("WARNING: tkinter block not found, attempting broad patch")
+              import re
+              src = re.sub(
+                  r'try:\s+import tkinter.*?(?:except \w+:\s+HAS_GUI = False)',
+                  new,
+                  src,
+                  count=1,
+                  flags=re.DOTALL
+              )
           with open('python/rl_upk_editor.py', 'w', encoding='utf-8') as f:
               f.write(src)
 
