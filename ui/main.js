@@ -105,7 +105,7 @@ async function init() {
 
         const container = document.getElementById('owned-selected');
         container.innerHTML = `
-            <div class="clear-item-btn" onclick="clearOwned()">
+            <div class="clear-item-btn">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
             </div>
             ${pImg ? `<img src="${escHtml(pImg)}" class="selected-img" />` : ''}
@@ -113,6 +113,7 @@ async function init() {
             <span class="quality-badge">${escHtml(pQuality)}</span>
             <p style="margin-top: 16px; font-size: 13px; color: var(--text-secondary)">${escHtml(pSlot)}</p>
         `;
+        container.querySelector('.clear-item-btn').addEventListener('click', clearOwned);
         container.classList.add('selected');
         ownedSearch.value = pName;
         validate();
@@ -127,7 +128,7 @@ async function init() {
 
         const container = document.getElementById('wanted-selected');
         container.innerHTML = `
-            <div class="clear-item-btn" onclick="clearWanted()">
+            <div class="clear-item-btn">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
             </div>
             ${pImg ? `<img src="${escHtml(pImg)}" class="selected-img" />` : ''}
@@ -135,6 +136,7 @@ async function init() {
             <span class="quality-badge">${escHtml(pQuality)}</span>
             <p style="margin-top: 16px; font-size: 13px; color: var(--text-secondary)">${escHtml(pSlot)}</p>
         `;
+        container.querySelector('.clear-item-btn').addEventListener('click', clearWanted);
         container.classList.add('selected');
         wantedSearch.value = pName;
         validate();
