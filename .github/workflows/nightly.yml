@@ -89,6 +89,42 @@ jobs:
           with open('python/rl_upk_editor.py', 'w', encoding='utf-8') as f:
               f.write(src)
 
+      - name: Patch rl_asset_swapper keys search path
+        shell: python
+        run: |
+          with open('python/rl_asset_swapper.py', encoding='utf-8') as f:
+              src = f.read()
+          old = (
+              '        candidates = [\n'
+              '            here / "keys.txt",\n'
+              '            here / "keys(1).txt",\n'
+              '            here.parent / "python" / "keys.txt",\n'
+              '            here.parent / "python" / "keys(1).txt",\n'
+              '            Path.cwd() / "keys.txt",\n'
+              '            Path.cwd() / "python" / "keys.txt",\n'
+              '            args.donor_dir / "keys.txt" if args.donor_dir else None,\n'
+              '        ]'
+          )
+          new = (
+              '        candidates = [\n'
+              '            Path(sys._MEIPASS) / "keys.txt" if getattr(sys, "_MEIPASS", None) else None,\n'
+              '            here / "keys.txt",\n'
+              '            here / "keys(1).txt",\n'
+              '            here.parent / "python" / "keys.txt",\n'
+              '            here.parent / "python" / "keys(1).txt",\n'
+              '            Path.cwd() / "keys.txt",\n'
+              '            Path.cwd() / "python" / "keys.txt",\n'
+              '            args.donor_dir / "keys.txt" if args.donor_dir else None,\n'
+              '        ]'
+          )
+          if old in src:
+              src = src.replace(old, new, 1)
+              print("Patched keys search path")
+          else:
+              print("WARNING: keys candidates block not found, skipping patch")
+          with open('python/rl_asset_swapper.py', 'w', encoding='utf-8') as f:
+              f.write(src)
+
       - name: Build Python sidecar
         run: |
           pip install pyinstaller cryptography
@@ -261,6 +297,42 @@ jobs:
                   flags=re.DOTALL
               )
           with open('python/rl_upk_editor.py', 'w', encoding='utf-8') as f:
+              f.write(src)
+
+      - name: Patch rl_asset_swapper keys search path
+        shell: python
+        run: |
+          with open('python/rl_asset_swapper.py', encoding='utf-8') as f:
+              src = f.read()
+          old = (
+              '        candidates = [\n'
+              '            here / "keys.txt",\n'
+              '            here / "keys(1).txt",\n'
+              '            here.parent / "python" / "keys.txt",\n'
+              '            here.parent / "python" / "keys(1).txt",\n'
+              '            Path.cwd() / "keys.txt",\n'
+              '            Path.cwd() / "python" / "keys.txt",\n'
+              '            args.donor_dir / "keys.txt" if args.donor_dir else None,\n'
+              '        ]'
+          )
+          new = (
+              '        candidates = [\n'
+              '            Path(sys._MEIPASS) / "keys.txt" if getattr(sys, "_MEIPASS", None) else None,\n'
+              '            here / "keys.txt",\n'
+              '            here / "keys(1).txt",\n'
+              '            here.parent / "python" / "keys.txt",\n'
+              '            here.parent / "python" / "keys(1).txt",\n'
+              '            Path.cwd() / "keys.txt",\n'
+              '            Path.cwd() / "python" / "keys.txt",\n'
+              '            args.donor_dir / "keys.txt" if args.donor_dir else None,\n'
+              '        ]'
+          )
+          if old in src:
+              src = src.replace(old, new, 1)
+              print("Patched keys search path")
+          else:
+              print("WARNING: keys candidates block not found, skipping patch")
+          with open('python/rl_asset_swapper.py', 'w', encoding='utf-8') as f:
               f.write(src)
 
       - name: Build Python sidecar
