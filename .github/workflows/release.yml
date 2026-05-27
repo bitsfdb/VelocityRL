@@ -5,11 +5,14 @@ on:
     tags:
       - 'v*'
 
+env:
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+
 jobs:
   windows:
     permissions:
       contents: write
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     steps:
       - uses: actions/checkout@v4
@@ -22,16 +25,123 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-
+            ${{ runner.os }}-cargo-
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
+      - name: Update items database
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/CrunchyRL/RLUPKTools/refs/heads/main/items.json" -o python/items.json
+
+      - name: Patch rl_upk_editor tkinter import
+        shell: python
+        run: |
+          with open('python/rl_upk_editor.py', encoding='utf-8') as f:
+              src = f.read()
+          old = (
+              'try:\n'
+              '    import tkinter as tk\n'
+              '    from tkinter import filedialog, messagebox, simpledialog, ttk\n'
+              '    HAS_GUI = True\n'
+              'except ImportError:\n'
+              '    HAS_GUI = False'
+          )
+          new = (
+              'HAS_GUI = False\n'
+              'class _TkStub:\n'
+              '    def __getattr__(self, n): return self\n'
+              '    def __call__(self, *a, **kw): return self\n'
+              '    def __bool__(self): return False\n'
+              '    def __iter__(self): return iter([])\n'
+              '    def pack(self, *a, **kw): return self\n'
+              '    def grid(self, *a, **kw): return self\n'
+              '    def configure(self, *a, **kw): return self\n'
+              'tk = filedialog = messagebox = simpledialog = ttk = _TkStub()'
+          )
+          if old in src:
+              src = src.replace(old, new, 1)
+              print("Patched tkinter block")
+          else:
+              print("WARNING: tkinter block not found, attempting broad patch")
+              import re
+              src = re.sub(
+                  r'try:\s+import tkinter.*?(?:except \w+:\s+HAS_GUI = False)',
+                  new,
+                  src,
+                  count=1,
+                  flags=re.DOTALL
+              )
+          with open('python/rl_upk_editor.py', 'w', encoding='utf-8') as f:
+              f.write(src)
+
+      - name: Patch rl_asset_swapper keys search path
+        shell: python
+        run: |
+          with open('python/rl_asset_swapper.py', encoding='utf-8') as f:
+              src = f.read()
+          old = (
+              '        candidates = [\n'
+              '            here / "keys.txt",\n'
+              '            here / "keys(1).txt",\n'
+              '            here.parent / "python" / "keys.txt",\n'
+              '            here.parent / "python" / "keys(1).txt",\n'
+              '            Path.cwd() / "keys.txt",\n'
+              '            Path.cwd() / "python" / "keys.txt",\n'
+              '            args.donor_dir / "keys.txt" if args.donor_dir else None,\n'
+              '        ]'
+          )
+          new = (
+              '        candidates = [\n'
+              '            Path(sys._MEIPASS) / "keys.txt" if getattr(sys, "_MEIPASS", None) else None,\n'
+              '            here / "keys.txt",\n'
+              '            here / "keys(1).txt",\n'
+              '            here.parent / "python" / "keys.txt",\n'
+              '            here.parent / "python" / "keys(1).txt",\n'
+              '            Path.cwd() / "keys.txt",\n'
+              '            Path.cwd() / "python" / "keys.txt",\n'
+              '            args.donor_dir / "keys.txt" if args.donor_dir else None,\n'
+              '        ]'
+          )
+          if old in src:
+              src = src.replace(old, new, 1)
+              print("Patched keys search path")
+          else:
+              print("WARNING: keys candidates block not found, skipping patch")
+          with open('python/rl_asset_swapper.py', 'w', encoding='utf-8') as f:
+              f.write(src)
+
       - name: Build Python sidecar
         run: |
           pip install pyinstaller cryptography
           mkdir -p src-tauri/bin
-          pyinstaller --onefile --distpath src-tauri/bin --name velocity-engine-x86_64-pc-windows-msvc --add-data "python/rl_upk_editor.py;." --add-data "python/keys.txt;." --add-data "python/items.json;." python/rl_asset_swapper.py
+          pyinstaller --onefile --distpath src-tauri/bin --name velocity-engine-x86_64-pc-windows-msvc `
+            --add-data "python/rl_upk_editor.py;." `
+            --add-data "python/keys.txt;." `
+            --add-data "python/items.json;." `
+            python/rl_asset_swapper.py
+
+      - name: Build standalone CLI
+        run: |
+          pyinstaller --onefile --name velocityrl `
+            --add-data "python/rl_asset_swapper.py;." `
+            --add-data "python/rl_upk_editor.py;." `
+            --add-data "python/items.json;." `
+            --add-data "python/keys.txt;." `
+            python/cli.py
+          move dist\velocityrl.exe velocityrl.exe
 
       - name: Generate engine checksum
         shell: pwsh
@@ -59,7 +169,7 @@ jobs:
 
             **Installation:** Download the `.msi` (Windows Installer) or `.exe` (NSIS setup) below.
 
-            **Auto-update:** If you already have VelocityRL installed, the updater will notify you automatically.
+            **Auto-update:** If you already have VelocityRL installed, the app will notify you of future updates automatically.
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
           includeUpdaterJson: true
@@ -78,11 +188,12 @@ jobs:
             }
           }
 
-      - name: Upload checksums to release
+      - name: Upload CLI and checksums to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           files: |
+            velocityrl.exe
             src-tauri/target/release/bundle/msi/*.sha256
             src-tauri/target/release/bundle/nsis/*.sha256
             python/engine.sha256
@@ -93,6 +204,7 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-22.04
+    needs: windows
 
     steps:
       - uses: actions/checkout@v4
@@ -104,6 +216,18 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-
+            ${{ runner.os }}-cargo-
 
       - name: Install Linux build dependencies
         run: |
@@ -120,11 +244,96 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Update items database
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/CrunchyRL/RLUPKTools/refs/heads/main/items.json" -o python/items.json
+
+      - name: Patch rl_upk_editor tkinter import
+        shell: python
+        run: |
+          with open('python/rl_upk_editor.py', encoding='utf-8') as f:
+              src = f.read()
+          old = (
+              'try:\n'
+              '    import tkinter as tk\n'
+              '    from tkinter import filedialog, messagebox, simpledialog, ttk\n'
+              '    HAS_GUI = True\n'
+              'except ImportError:\n'
+              '    HAS_GUI = False'
+          )
+          new = (
+              'HAS_GUI = False\n'
+              'class _TkStub:\n'
+              '    def __getattr__(self, n): return self\n'
+              '    def __call__(self, *a, **kw): return self\n'
+              '    def __bool__(self): return False\n'
+              '    def __iter__(self): return iter([])\n'
+              '    def pack(self, *a, **kw): return self\n'
+              '    def grid(self, *a, **kw): return self\n'
+              '    def configure(self, *a, **kw): return self\n'
+              'tk = filedialog = messagebox = simpledialog = ttk = _TkStub()'
+          )
+          if old in src:
+              src = src.replace(old, new, 1)
+              print("Patched tkinter block")
+          else:
+              print("WARNING: tkinter block not found, attempting broad patch")
+              import re
+              src = re.sub(
+                  r'try:\s+import tkinter.*?(?:except \w+:\s+HAS_GUI = False)',
+                  new,
+                  src,
+                  count=1,
+                  flags=re.DOTALL
+              )
+          with open('python/rl_upk_editor.py', 'w', encoding='utf-8') as f:
+              f.write(src)
+
+      - name: Patch rl_asset_swapper keys search path
+        shell: python
+        run: |
+          with open('python/rl_asset_swapper.py', encoding='utf-8') as f:
+              src = f.read()
+          old = (
+              '        candidates = [\n'
+              '            here / "keys.txt",\n'
+              '            here / "keys(1).txt",\n'
+              '            here.parent / "python" / "keys.txt",\n'
+              '            here.parent / "python" / "keys(1).txt",\n'
+              '            Path.cwd() / "keys.txt",\n'
+              '            Path.cwd() / "python" / "keys.txt",\n'
+              '            args.donor_dir / "keys.txt" if args.donor_dir else None,\n'
+              '        ]'
+          )
+          new = (
+              '        candidates = [\n'
+              '            Path(sys._MEIPASS) / "keys.txt" if getattr(sys, "_MEIPASS", None) else None,\n'
+              '            here / "keys.txt",\n'
+              '            here / "keys(1).txt",\n'
+              '            here.parent / "python" / "keys.txt",\n'
+              '            here.parent / "python" / "keys(1).txt",\n'
+              '            Path.cwd() / "keys.txt",\n'
+              '            Path.cwd() / "python" / "keys.txt",\n'
+              '            args.donor_dir / "keys.txt" if args.donor_dir else None,\n'
+              '        ]'
+          )
+          if old in src:
+              src = src.replace(old, new, 1)
+              print("Patched keys search path")
+          else:
+              print("WARNING: keys candidates block not found, skipping patch")
+          with open('python/rl_asset_swapper.py', 'w', encoding='utf-8') as f:
+              f.write(src)
+
       - name: Build Python sidecar
         run: |
           pip install pyinstaller cryptography
           mkdir -p src-tauri/bin
-          pyinstaller --onefile --distpath src-tauri/bin --name velocity-engine-x86_64-unknown-linux-gnu --add-data "python/rl_upk_editor.py:." --add-data "python/keys.txt:." --add-data "python/items.json:." python/rl_asset_swapper.py
+          pyinstaller --onefile --distpath src-tauri/bin --name velocity-engine-x86_64-unknown-linux-gnu \
+            --add-data "python/rl_upk_editor.py:." \
+            --add-data "python/keys.txt:." \
+            --add-data "python/items.json:." \
+            python/rl_asset_swapper.py
 
       - name: Generate engine checksum
         run: |
@@ -151,7 +360,7 @@ jobs:
 
             **Installation (Linux):** Download the `.AppImage` (portable, no install needed) or `.deb` (Debian/Ubuntu) below.
 
-            **Auto-update:** If you already have VelocityRL installed, the updater will notify you automatically.
+            **Auto-update:** If you already have VelocityRL installed, the app will notify you of future updates automatically.
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
           includeUpdaterJson: true
