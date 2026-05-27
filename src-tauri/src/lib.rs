@@ -164,7 +164,7 @@ async fn get_items(app: tauri::AppHandle) -> Result<Vec<Item>, String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    if let Ok(resp) = client.get("https://api.velocityrl.tech/items.json").send().await {
+    if let Ok(resp) = client.get("https://raw.githubusercontent.com/CrunchyRL/RLUPKTools/refs/heads/main/items.json").send().await {
         if let Ok(content) = resp.text().await {
             if let Ok(resp) = serde_json::from_str::<ItemsResponse>(&content) {
                 let items = match resp {
