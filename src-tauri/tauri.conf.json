@@ -18,7 +18,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https://api.velocityrl.tech data: blob:; connect-src 'self' https://api.velocityrl.tech https://velocityrl.tech"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https://api.velocityrl.tech data: blob:; connect-src 'self' https://api.velocityrl.tech https://velocityrl.tech https://api.github.com"
     },
     "withGlobalTauri": true
   },
@@ -42,7 +42,7 @@
   },
   "plugins": {
     "shell": {
-      "open": "^https://discord\\.gg/"
+      "open": "^https://(discord\\.gg|github\\.com|velocityrl\\.tech)"
     }
   }
 }
