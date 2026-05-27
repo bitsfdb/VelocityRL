@@ -169,8 +169,6 @@ async function init() {
     document.getElementById('cancel-settings').onclick = () => document.getElementById('settings-modal').classList.remove('active');
     document.getElementById('close-settings').onclick = handleSaveSettings;
     document.getElementById('browse-dir').onclick = handleBrowse;
-    document.getElementById('fetch-items-btn').onclick = handleFetchItems;
-
     document.getElementById('settings-modal').onclick = (e) => {
         if (e.target === document.getElementById('settings-modal')) {
             document.getElementById('settings-modal').classList.remove('active');
@@ -199,6 +197,7 @@ async function init() {
         }
         updateStatus('bitsfdb', false);
         invoke('cleanup_temp_files').catch(e => console.warn('Cleanup failed:', e));
+        checkForUpdates();
     } catch (err) {
         updateStatus('Init Failure', true);
         alert(`VelocityRL Initialization Failed:\n${err.message || err}`);
@@ -482,29 +481,20 @@ async function handleBrowse() {
     }
 }
 
-async function handleFetchItems() {
+async function checkForUpdates() {
     try {
-        const token = prompt("Enter Epic Auth Token / Exchange Token:");
-        if (!token) return;
-        const account = prompt("Enter Epic Account ID (optional):") || "Unknown";
-        
-        updateStatus('Updating Database...', false);
-        showProgress(true, 10);
-        
-        await invoke('fetch_catalog', { token, account });
-        
-        showProgress(true, 100);
-        showToast('Database Updated!', 'success');
-        updateStatus('bitsfdb', false);
-        setTimeout(() => showProgress(false), 2000);
-        
-        // Reload items
-        items = await invoke('get_items');
-    } catch (err) {
-        showToast('Update Failed: ' + err, 'error');
-        updateStatus('Update Error', true);
-        showProgress(false);
-    }
+        const current = await window.__TAURI__.app.getVersion();
+        const res = await fetch('https://api.github.com/repos/bitsfdb/VelocityRL/releases/latest');
+        if (!res.ok) return;
+        const data = await res.json();
+        const latest = (data.tag_name || '').replace(/^v/, '');
+        if (!latest || latest === current) return;
+        const url = escHtml(data.html_url || 'https://github.com/bitsfdb/VelocityRL/releases/latest');
+        showToast(
+            `Update available: v${escHtml(latest)} — <a href="#" class="toast-link" onclick="event.preventDefault(); window.__TAURI__.core.invoke('plugin:shell|open', { path: '${url}' })">Download</a>`,
+            'warning'
+        );
+    } catch (_) {}
 }
 
 window.addEventListener('DOMContentLoaded', () => init());
