@@ -164,7 +164,7 @@ async function init() {
 
     applyBtn.onclick = handleApply;
     document.getElementById('restore-btn').onclick = handleRestore;
-    document.getElementById('website-btn').onclick = () => showToast('⚠️ (WIP)', 'warning');
+    document.getElementById('website-btn').onclick = () => window.__TAURI__.core.invoke('plugin:shell|open', { path: 'https://velocityrl.tech' });
     document.getElementById('settings-btn').onclick = () => document.getElementById('settings-modal').classList.add('active');
     document.getElementById('cancel-settings').onclick = () => document.getElementById('settings-modal').classList.remove('active');
     document.getElementById('close-settings').onclick = handleSaveSettings;
