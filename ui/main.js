@@ -262,7 +262,7 @@ async function refreshBackups() {
             div.innerHTML = `
                 <div>
                     <div class="backup-name">${escHtml(file.name)}</div>
-                    <div class="backup-date">Modified Package</div>
+                    <div class="backup-date">Modified Product</div>
                 </div>
                 <div class="restore-mini-btn" title="Restore this file">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-blue)" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
