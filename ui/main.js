@@ -49,8 +49,7 @@ function showToast(message, type = 'success') {
     
     let content = message;
     if (type === 'error') {
-        const discordLink = 'https://discord.gg/2HhBNbrGMj';
-        content = `<div>${message}<br><a href="#" class="toast-link" onclick="event.preventDefault(); window.__TAURI__.core.invoke('plugin:shell|open', { path: '${discordLink}' })">Join Support Discord</a></div>`;
+        content = `<div>${message}<br><a href="#" class="toast-link" onclick="event.preventDefault(); window.__TAURI__.core.invoke('plugin:shell|open', { path: 'https://velocityrl.tech' })">Get Support</a></div>`;
     }
     
     toast.innerHTML = `<div class="toast-content">${content}</div>`;
@@ -469,18 +468,40 @@ async function handleBrowse() {
 
 async function checkForUpdates() {
     try {
-        const current = await window.__TAURI__.app.getVersion();
-        const res = await fetch('https://api.github.com/repos/bitsfdb/VelocityRL/releases/latest');
-        if (!res.ok) return;
-        const data = await res.json();
-        const latest = (data.tag_name || '').replace(/^v/, '');
-        if (!latest || latest === current) return;
-        const url = escHtml(data.html_url || 'https://github.com/bitsfdb/VelocityRL/releases/latest');
-        showToast(
-            `Update available: v${escHtml(latest)} — <a href="#" class="toast-link" onclick="event.preventDefault(); window.__TAURI__.core.invoke('plugin:shell|open', { path: '${url}' })">Download</a>`,
-            'warning'
-        );
-    } catch (_) {}
+        const version = await invoke('check_for_updates');
+        if (!version) return;
+        const toast = document.createElement('div');
+        toast.className = 'toast warning';
+        toast.innerHTML = `<div class="toast-content">Update v${escHtml(version)} available — <a href="#" class="toast-link" id="install-update-link">Install Now</a></div>`;
+        document.getElementById('toast-container')?.appendChild(toast);
+        document.getElementById('install-update-link')?.addEventListener('click', async (e) => {
+            e.preventDefault();
+            toast.remove();
+            showToast('Downloading update, please wait...', 'warning');
+            try {
+                await invoke('install_update');
+                showToast('Update installed! Restarting...', 'success');
+                setTimeout(() => window.__TAURI__.process.relaunch(), 2000);
+            } catch (err) {
+                showToast(`Update failed: ${escHtml(String(err))}`, 'error');
+            }
+        });
+    } catch (_) {
+        // Fallback: check GitHub API directly
+        try {
+            const current = await window.__TAURI__.app.getVersion();
+            const res = await fetch('https://api.github.com/repos/bitsfdb/VelocityRL/releases/latest');
+            if (!res.ok) return;
+            const data = await res.json();
+            const latest = (data.tag_name || '').replace(/^v/, '');
+            if (!latest || latest === current) return;
+            const url = escHtml(data.html_url || 'https://github.com/bitsfdb/VelocityRL/releases/latest');
+            showToast(
+                `Update v${escHtml(latest)} available — <a href="#" class="toast-link" onclick="event.preventDefault(); window.__TAURI__.core.invoke('plugin:shell|open', { path: '${url}' })">Download</a>`,
+                'warning'
+            );
+        } catch (_) {}
+    }
 }
 
 window.addEventListener('DOMContentLoaded', () => init());
