@@ -105,7 +105,7 @@ async function init() {
 
         const container = document.getElementById('owned-selected');
         container.innerHTML = `
-            <div class="clear-item-btn" onclick="clearOwned()">
+            <div class="clear-item-btn">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
             </div>
             ${pImg ? `<img src="${escHtml(pImg)}" class="selected-img" />` : ''}
@@ -113,6 +113,7 @@ async function init() {
             <span class="quality-badge">${escHtml(pQuality)}</span>
             <p style="margin-top: 16px; font-size: 13px; color: var(--text-secondary)">${escHtml(pSlot)}</p>
         `;
+        container.querySelector('.clear-item-btn').addEventListener('click', clearOwned);
         container.classList.add('selected');
         ownedSearch.value = pName;
         validate();
@@ -127,7 +128,7 @@ async function init() {
 
         const container = document.getElementById('wanted-selected');
         container.innerHTML = `
-            <div class="clear-item-btn" onclick="clearWanted()">
+            <div class="clear-item-btn">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
             </div>
             ${pImg ? `<img src="${escHtml(pImg)}" class="selected-img" />` : ''}
@@ -135,6 +136,7 @@ async function init() {
             <span class="quality-badge">${escHtml(pQuality)}</span>
             <p style="margin-top: 16px; font-size: 13px; color: var(--text-secondary)">${escHtml(pSlot)}</p>
         `;
+        container.querySelector('.clear-item-btn').addEventListener('click', clearWanted);
         container.classList.add('selected');
         wantedSearch.value = pName;
         validate();
@@ -162,13 +164,11 @@ async function init() {
 
     applyBtn.onclick = handleApply;
     document.getElementById('restore-btn').onclick = handleRestore;
-    document.getElementById('website-btn').onclick = () => showToast('⚠️ (WIP)', 'warning');
+    document.getElementById('website-btn').onclick = () => window.__TAURI__.core.invoke('plugin:shell|open', { path: 'https://velocityrl.tech' });
     document.getElementById('settings-btn').onclick = () => document.getElementById('settings-modal').classList.add('active');
     document.getElementById('cancel-settings').onclick = () => document.getElementById('settings-modal').classList.remove('active');
     document.getElementById('close-settings').onclick = handleSaveSettings;
     document.getElementById('browse-dir').onclick = handleBrowse;
-    document.getElementById('fetch-items-btn').onclick = handleFetchItems;
-
     document.getElementById('settings-modal').onclick = (e) => {
         if (e.target === document.getElementById('settings-modal')) {
             document.getElementById('settings-modal').classList.remove('active');
@@ -180,24 +180,23 @@ async function init() {
         await invoke('check_integrity').catch(e => {
             throw new Error(`Security Violation: ${e}`);
         });
-        updateStatus('Initializing Engine...', false);
-        items = await invoke('get_items').catch(async (e) => {
-            console.warn('Local item database unavailable, fetching from API...', e);
-            updateStatus('Fetching from API...', false);
-            return await fetchItemsFromAPI();
+        updateStatus('Please Wait...', false);
+        items = await fetchItemsFromAPI().catch(async (e) => {
+            console.warn('API unavailable, loading from local cache...', e);
+            return await invoke('get_items');
         });
         const config = await invoke('get_config').catch(e => { console.warn('Config load failed:', e); return { game_dir: '' }; });
-        if (config) {
-            if (config.game_dir) document.getElementById('game-dir').value = config.game_dir;
+        if (config && config.game_dir) {
+            document.getElementById('game-dir').value = config.game_dir;
         } else {
             updateStatus('Setup Required', true);
             setTimeout(() => {
                 document.getElementById('settings-modal').classList.add('active');
-                handleBrowse();
             }, 1000);
         }
         updateStatus('bitsfdb', false);
         invoke('cleanup_temp_files').catch(e => console.warn('Cleanup failed:', e));
+        checkForUpdates();
     } catch (err) {
         updateStatus('Init Failure', true);
         alert(`VelocityRL Initialization Failed:\n${err.message || err}`);
@@ -259,10 +258,26 @@ async function refreshBackups() {
         backups.forEach(file => {
             const div = document.createElement('div');
             div.className = 'backup-item';
+            let pImg = file.image_url || '';
+            if (!pImg && items && items.length > 0) {
+                const fileName = file.path.split(/[/\\]/).pop();
+                const cleanName = fileName.toLowerCase().replace('.bak', '').replace('.upk', '');
+                const matched = items.find(i => {
+                    const dbPkg = (i.asset_package || '').toLowerCase().replace('.upk', '');
+                    if (!dbPkg || dbPkg === 'none') return false;
+                    return dbPkg === cleanName || (dbPkg.length > 4 && (cleanName.includes(dbPkg) || dbPkg.includes(cleanName)));
+                });
+                if (matched && matched.image_url) {
+                    pImg = matched.image_url;
+                }
+            }
             div.innerHTML = `
-                <div>
-                    <div class="backup-name">${escHtml(file.name)}</div>
-                    <div class="backup-date">Modified Package</div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    ${pImg ? `<img src="${escHtml(pImg)}" class="flyout-img" style="width: 40px; height: 40px; border-radius: 6px; object-fit: contain; background: rgba(0,0,0,0.2);" />` : '<div class="flyout-img" style="width: 40px; height: 40px; border-radius: 6px; background: rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>'}
+                    <div>
+                        <div class="backup-name">${escHtml(file.name)}</div>
+                        <div class="backup-date">Modified Product</div>
+                    </div>
                 </div>
                 <div class="restore-mini-btn" title="Restore this file">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-blue)" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
@@ -405,7 +420,7 @@ function validate() {
 
 async function handleApply() {
     try {
-        updateStatus('Initializing Engine...', false);
+        updateStatus('Please Wait...', false);
         showProgress(true, 15);
         applyBtn.disabled = true;
         let p = 15;
@@ -455,7 +470,7 @@ async function handleSaveSettings() {
         refreshBackups();
         if (dir) showToast('Success!', 'success');
     } catch (err) {
-        showToast('Failed! please report this to the maintainer bitsfdb on the discord support server', 'error');
+        showToast('Failed to save configuration!', 'error');
         console.error(err);
     }
 }
@@ -469,41 +484,27 @@ async function handleBrowse() {
         });
         if (selected) {
             document.getElementById('game-dir').value = selected;
-            // If first time, auto-save
-            const config = await invoke('get_config').catch(() => ({ game_dir: '' }));
-            if (!config.game_dir) {
-                handleSaveSettings();
-            }
         }
     } catch (err) { 
-        showToast('Failed! please report this to the maintainer bitsfdb on the discord support server', 'error');
+        showToast('Browse failed!', 'error');
         console.error(err); 
     }
 }
 
-async function handleFetchItems() {
+async function checkForUpdates() {
     try {
-        const token = prompt("Enter Epic Auth Token / Exchange Token:");
-        if (!token) return;
-        const account = prompt("Enter Epic Account ID (optional):") || "Unknown";
-        
-        updateStatus('Updating Database...', false);
-        showProgress(true, 10);
-        
-        await invoke('fetch_catalog', { token, account });
-        
-        showProgress(true, 100);
-        showToast('Database Updated!', 'success');
-        updateStatus('bitsfdb', false);
-        setTimeout(() => showProgress(false), 2000);
-        
-        // Reload items
-        items = await invoke('get_items');
-    } catch (err) {
-        showToast('Update Failed: ' + err, 'error');
-        updateStatus('Update Error', true);
-        showProgress(false);
-    }
+        const current = await window.__TAURI__.app.getVersion();
+        const res = await fetch('https://api.github.com/repos/bitsfdb/VelocityRL/releases/latest');
+        if (!res.ok) return;
+        const data = await res.json();
+        const latest = (data.tag_name || '').replace(/^v/, '');
+        if (!latest || latest === current) return;
+        const url = escHtml(data.html_url || 'https://github.com/bitsfdb/VelocityRL/releases/latest');
+        showToast(
+            `Update available: v${escHtml(latest)} — <a href="#" class="toast-link" onclick="event.preventDefault(); window.__TAURI__.core.invoke('plugin:shell|open', { path: '${url}' })">Download</a>`,
+            'warning'
+        );
+    } catch (_) {}
 }
 
 window.addEventListener('DOMContentLoaded', () => init());

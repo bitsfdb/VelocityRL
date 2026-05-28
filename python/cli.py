@@ -6,7 +6,25 @@ Run 'velocityrl --config' to update your game directory.
 """
 import json
 import sys
+import threading
 from pathlib import Path
+
+VERSION = "1.2.0"
+RELEASES_URL = "https://github.com/bitsfdb/VelocityRL/releases/latest"
+_RELEASES_API = "https://api.github.com/repos/bitsfdb/VelocityRL/releases/latest"
+
+
+def _print_update_notice():
+    try:
+        import urllib.request
+        req = urllib.request.Request(_RELEASES_API, headers={"User-Agent": f"velocityrl-cli/{VERSION}"})
+        with urllib.request.urlopen(req, timeout=4) as r:
+            data = json.loads(r.read())
+        latest = data.get("tag_name", "").lstrip("v")
+        if latest and latest != VERSION:
+            print(f"\n  *** Update available: v{latest} → {RELEASES_URL}\n")
+    except Exception:
+        pass
 
 # ── Resource paths ────────────────────────────────────────────────────────────
 # PyInstaller bundles files into sys._MEIPASS; when running from source,
@@ -71,6 +89,11 @@ def detect_game_dir():
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
+    print(f"VelocityRL CLI v{VERSION}")
+    print("A desktop application with a full UI is available at: https://velocityrl.tech")
+    print()
+    threading.Thread(target=_print_update_notice, daemon=True).start()
+
     cfg = load_config()
 
     if '--config' in sys.argv:

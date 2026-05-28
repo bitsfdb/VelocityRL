@@ -21,8 +21,17 @@ try:
     import tkinter as tk
     from tkinter import filedialog, messagebox, simpledialog, ttk
     HAS_GUI = True
-except ImportError:
+except Exception:
     HAS_GUI = False
+    class _TkStub:
+        def __getattr__(self, n): return self
+        def __call__(self, *a, **kw): return self
+        def __bool__(self): return False
+        def __iter__(self): return iter([])
+        def pack(self, *a, **kw): return self
+        def grid(self, *a, **kw): return self
+        def configure(self, *a, **kw): return self
+    tk = filedialog = messagebox = simpledialog = ttk = _TkStub()
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -2583,6 +2592,9 @@ def find_keys_path(script_dir: Path, selected_file: Path) -> Optional[Path]:
         Path.cwd() / "keys.txt",
         selected_file.parent / "keys.txt",
     ]
+    if getattr(sys, "_MEIPASS", None):
+        candidates.insert(0, Path(sys._MEIPASS) / "keys.txt")
+
     for candidate in candidates:
         if candidate.exists():
             return candidate

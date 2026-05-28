@@ -189,6 +189,7 @@ input {
     border-radius: 8px;
     font-size: 14px;
     outline: none;
+    user-select: text;
 }
 
 input:focus {
@@ -267,6 +268,7 @@ input:focus {
     cursor: pointer;
     transition: all 0.2s;
     border: 1px solid var(--border-color);
+    z-index: 1;
 }
 
 .item-selected-view.selected .clear-item-btn {

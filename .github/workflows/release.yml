@@ -5,11 +5,14 @@ on:
     tags:
       - 'v*'
 
+env:
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+
 jobs:
   windows:
     permissions:
       contents: write
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     steps:
       - uses: actions/checkout@v4
@@ -22,16 +25,46 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-
+            ${{ runner.os }}-cargo-
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
+      - name: Update items database
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/CrunchyRL/RLUPKTools/refs/heads/main/items.json" -o python/items.json
+
       - name: Build Python sidecar
         run: |
           pip install pyinstaller cryptography
           mkdir -p src-tauri/bin
-          pyinstaller --onefile --distpath src-tauri/bin --name velocity-engine-x86_64-pc-windows-msvc python/rl_asset_swapper.py
+          pyinstaller --onefile --distpath src-tauri/bin --name velocity-engine-x86_64-pc-windows-msvc `
+            --add-data "python/rl_upk_editor.py;." `
+            --add-data "python/keys.txt;." `
+            --add-data "python/items.json;." `
+            python/rl_asset_swapper.py
+
+      - name: Build standalone CLI
+        run: |
+          pyinstaller --onefile --name velocityrl `
+            --add-data "python/rl_asset_swapper.py;." `
+            --add-data "python/rl_upk_editor.py;." `
+            --add-data "python/items.json;." `
+            --add-data "python/keys.txt;." `
+            python/cli.py
+          move dist\velocityrl.exe velocityrl.exe
 
       - name: Generate engine checksum
         shell: pwsh
@@ -59,7 +92,7 @@ jobs:
 
             **Installation:** Download the `.msi` (Windows Installer) or `.exe` (NSIS setup) below.
 
-            **Auto-update:** If you already have VelocityRL installed, the updater will notify you automatically.
+            **Auto-update:** If you already have VelocityRL installed, the app will notify you of future updates automatically.
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
           includeUpdaterJson: true
@@ -78,11 +111,12 @@ jobs:
             }
           }
 
-      - name: Upload checksums to release
+      - name: Upload CLI and checksums to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           files: |
+            velocityrl.exe
             src-tauri/target/release/bundle/msi/*.sha256
             src-tauri/target/release/bundle/nsis/*.sha256
             python/engine.sha256
@@ -93,6 +127,7 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-22.04
+    needs: windows
 
     steps:
       - uses: actions/checkout@v4
@@ -104,6 +139,18 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-
+            ${{ runner.os }}-cargo-
 
       - name: Install Linux build dependencies
         run: |
@@ -120,11 +167,19 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Update items database
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/CrunchyRL/RLUPKTools/refs/heads/main/items.json" -o python/items.json
+
       - name: Build Python sidecar
         run: |
           pip install pyinstaller cryptography
           mkdir -p src-tauri/bin
-          pyinstaller --onefile --distpath src-tauri/bin --name velocity-engine-x86_64-unknown-linux-gnu python/rl_asset_swapper.py
+          pyinstaller --onefile --distpath src-tauri/bin --name velocity-engine-x86_64-unknown-linux-gnu \
+            --add-data "python/rl_upk_editor.py:." \
+            --add-data "python/keys.txt:." \
+            --add-data "python/items.json:." \
+            python/rl_asset_swapper.py
 
       - name: Generate engine checksum
         run: |
@@ -151,7 +206,7 @@ jobs:
 
             **Installation (Linux):** Download the `.AppImage` (portable, no install needed) or `.deb` (Debian/Ubuntu) below.
 
-            **Auto-update:** If you already have VelocityRL installed, the updater will notify you automatically.
+            **Auto-update:** If you already have VelocityRL installed, the app will notify you of future updates automatically.
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
           includeUpdaterJson: true
