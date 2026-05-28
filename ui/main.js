@@ -49,7 +49,8 @@ function showToast(message, type = 'success') {
     
     let content = message;
     if (type === 'error') {
-        content = `<div>${message}<br><a href="#" class="toast-link" onclick="event.preventDefault(); window.__TAURI__.core.invoke('plugin:shell|open', { path: 'https://velocityrl.tech' })">Get Support</a></div>`;
+        const discordLink = 'https://discord.gg/2HhBNbrGMj';
+        content = `<div>${message}<br><a href="#" class="toast-link" onclick="event.preventDefault(); window.__TAURI__.core.invoke('plugin:shell|open', { path: '${discordLink}' })">Join Support Discord</a></div>`;
     }
     
     toast.innerHTML = `<div class="toast-content">${content}</div>`;
