@@ -458,13 +458,18 @@ async function handleRestore() {
 }
 
 async function handleSaveSettings() {
-    // Disabled: User is not allowed to change installation directory
+    const dir = document.getElementById('game-dir').value.trim();
+    if (dir) {
+        await invoke('save_config', { config: { game_dir: dir } }).catch(e => console.warn('Save config failed:', e));
+    }
     document.getElementById('settings-modal').classList.remove('active');
 }
 
 async function handleBrowse() {
-    // Disabled: User is not allowed to change installation directory
-    return;
+    const dir = await open({ directory: true, multiple: false, title: 'Select Rocket League CookedPCConsole folder' });
+    if (dir) {
+        document.getElementById('game-dir').value = dir;
+    }
 }
 
 async function checkForUpdates() {
