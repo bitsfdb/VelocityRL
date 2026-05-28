@@ -9,7 +9,7 @@ import sys
 import threading
 from pathlib import Path
 
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 RELEASES_URL = "https://github.com/bitsfdb/VelocityRL/releases/latest"
 _RELEASES_API = "https://api.github.com/repos/bitsfdb/VelocityRL/releases/latest"
 
