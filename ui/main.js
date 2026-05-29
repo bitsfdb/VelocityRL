@@ -163,6 +163,13 @@ async function init() {
     });
 
     applyBtn.onclick = handleApply;
+    document.getElementById('apply-pfp').onclick = handleApplyPfp;
+    document.getElementById('apply-name-change').onclick = handleApplyNameChange;
+    document.getElementById('apply-adv-swap').onclick = handleApplyAdvSwap;
+    document.getElementById('browse-pfp-upk').onclick = async () => {
+        const path = await open({ filters: [{ name: 'UPK', extensions: ['upk'] }] });
+        if (path) document.getElementById('pfp-upk-path').value = path;
+    };
     document.getElementById('restore-btn').onclick = handleRestore;
     document.getElementById('website-btn').onclick = () => window.__TAURI__.core.invoke('plugin:shell|open', { path: 'https://velocityrl.tech' });
     document.getElementById('settings-btn').onclick = () => document.getElementById('settings-modal').classList.add('active');
@@ -300,6 +307,56 @@ async function restoreSingle(path) {
     } catch (err) {
         updateStatus('Error', true);
         alert(`Failed to restore: ${err}`);
+    }
+}
+
+async function handleApplyPfp() {
+    const donorUpk = document.getElementById('pfp-upk-path').value.trim();
+    if (!donorUpk) return showToast('Select a donor UPK first', 'warning');
+    try {
+        updateStatus('Applying PFP...', false);
+        const res = await invoke('set_custom_pfp', { donorUpk });
+        showToast(res, 'success');
+        updateStatus('bitsfdb', false);
+    } catch (err) {
+        showToast(err, 'error');
+        updateStatus('PFP Failed', true);
+    }
+}
+
+async function handleApplyNameChange() {
+    const oldName = document.getElementById('old-name').value.trim();
+    const newName = document.getElementById('new-name').value.trim();
+    if (!oldName || !newName) return showToast('Enter both names', 'warning');
+    try {
+        updateStatus('Patching Name...', false);
+        const res = await invoke('change_display_name', { oldName, newName });
+        showToast(res, 'success');
+        updateStatus('bitsfdb', false);
+    } catch (err) {
+        showToast(err, 'error');
+        updateStatus('Patch Failed', true);
+    }
+}
+
+async function handleApplyAdvSwap() {
+    const targetPkg = document.getElementById('adv-target-pkg').value.trim();
+    const targetPath = document.getElementById('adv-target-path').value.trim();
+    const donorPkg = document.getElementById('adv-donor-pkg').value.trim();
+    const donorPath = document.getElementById('adv-donor-path').value.trim();
+
+    if (!targetPkg || !targetPath || !donorPkg || !donorPath) {
+        return showToast('Fill all advanced fields', 'warning');
+    }
+
+    try {
+        updateStatus('Swapping Export...', false);
+        const res = await invoke('replace_export', { targetPkg, targetPath, donorPkg, donorPath });
+        showToast(res, 'success');
+        updateStatus('bitsfdb', false);
+    } catch (err) {
+        showToast(err, 'error');
+        updateStatus('Adv Swap Failed', true);
     }
 }
 
