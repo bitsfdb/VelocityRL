@@ -333,6 +333,62 @@ async fn fetch_catalog(app: tauri::AppHandle, token: String, account: String) ->
 }
 
 #[tauri::command]
+async fn replace_export(app: tauri::AppHandle, target_pkg: String, target_path: String, donor_pkg: String, donor_path: String) -> Result<String, String> {
+    let config = get_config(app.clone()).await?;
+    if config.game_dir.is_empty() { return Err("Game directory not set".to_string()); }
+
+    let engine_path = get_engine_path(&app).await?;
+    let items_path = app.path().app_config_dir().map_err(|e| e.to_string())?.join("items.json");
+
+    let output = run_engine(
+        engine_path,
+        vec![
+            "--replace-export".into(),
+            "--items".into(), items_path.to_string_lossy().to_string(),
+            "--target".into(), target_pkg,
+            "--target-path".into(), target_path,
+            "--donor".into(), donor_pkg,
+            "--donor-path".into(), donor_path,
+            "--overwrite".into(),
+            "--donor-dir".into(), config.game_dir.clone(),
+            "--output-dir".into(), config.game_dir.clone(),
+        ],
+        vec![],
+    ).await?;
+
+    if output.status.success() {
+        Ok("Export replacement completed".to_string())
+    } else {
+        Err(format!("Engine error: {}", String::from_utf8_lossy(&output.stderr)))
+    }
+}
+
+#[tauri::command]
+async fn set_custom_pfp(app: tauri::AppHandle, donor_upk: String) -> Result<String, String> {
+    let config = get_config(app.clone()).await?;
+    if config.game_dir.is_empty() { return Err("Game directory not set".to_string()); }
+
+    let engine_path = get_engine_path(&app).await?;
+
+    let output = run_engine(
+        engine_path,
+        vec![
+            "--custom-pfp".into(), donor_upk,
+            "--overwrite".into(),
+            "--donor-dir".into(), config.game_dir.clone(),
+            "--output-dir".into(), config.game_dir.clone(),
+        ],
+        vec![],
+    ).await?;
+
+    if output.status.success() {
+        Ok("Custom PFP applied".to_string())
+    } else {
+        Err(format!("Engine error: {}", String::from_utf8_lossy(&output.stderr)))
+    }
+}
+
+#[tauri::command]
 async fn apply_swap(app: tauri::AppHandle, owned_id: String, wanted_id: String) -> Result<String, String> {
     let config = get_config(app.clone()).await?;
     if config.game_dir.is_empty() { return Err("Game directory not set".to_string()); }
@@ -460,6 +516,8 @@ pub fn run() {
             save_config,
             get_backups,
             apply_swap,
+            replace_export,
+            set_custom_pfp,
             restore_backups,
             restore_single_backup,
             check_integrity,
