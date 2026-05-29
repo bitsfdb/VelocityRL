@@ -389,42 +389,6 @@ async fn set_custom_pfp(app: tauri::AppHandle, donor_upk: String) -> Result<Stri
 }
 
 #[tauri::command]
-async fn change_display_name(app: tauri::AppHandle, old_name: String, new_name: String) -> Result<String, String> {
-    let local_dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
-    let script_path = local_dir.join("rl_memory_patcher.py");
-
-    // We should ensure the script is extracted if we're bundling it,
-    // but for this task we assume it's in the python/ directory during dev
-    // and correctly placed in production.
-
-    // For now, let's try to run it from the python/ dir if it exists, otherwise from local_dir
-    let python_script = if PathBuf::from("python/rl_memory_patcher.py").exists() {
-        PathBuf::from("python/rl_memory_patcher.py")
-    } else {
-        script_path
-    };
-
-    let output = tauri::async_runtime::spawn_blocking(move || {
-        std::process::Command::new("python")
-            .arg(python_script)
-            .arg("--old")
-            .arg(old_name)
-            .arg("--new")
-            .arg(new_name)
-            .output()
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())?;
-
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        Err(format!("Memory patcher error: {}", String::from_utf8_lossy(&output.stderr)))
-    }
-}
-
-#[tauri::command]
 async fn apply_swap(app: tauri::AppHandle, owned_id: String, wanted_id: String) -> Result<String, String> {
     let config = get_config(app.clone()).await?;
     if config.game_dir.is_empty() { return Err("Game directory not set".to_string()); }
@@ -554,7 +518,6 @@ pub fn run() {
             apply_swap,
             replace_export,
             set_custom_pfp,
-            change_display_name,
             restore_backups,
             restore_single_backup,
             check_integrity,
