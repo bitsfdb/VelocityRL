@@ -164,7 +164,6 @@ async function init() {
 
     applyBtn.onclick = handleApply;
     document.getElementById('apply-pfp').onclick = handleApplyPfp;
-    document.getElementById('apply-name-change').onclick = handleApplyNameChange;
     document.getElementById('apply-adv-swap').onclick = handleApplyAdvSwap;
     document.getElementById('browse-pfp-upk').onclick = async () => {
         const path = await open({ filters: [{ name: 'UPK', extensions: ['upk'] }] });
@@ -321,21 +320,6 @@ async function handleApplyPfp() {
     } catch (err) {
         showToast(err, 'error');
         updateStatus('PFP Failed', true);
-    }
-}
-
-async function handleApplyNameChange() {
-    const oldName = document.getElementById('old-name').value.trim();
-    const newName = document.getElementById('new-name').value.trim();
-    if (!oldName || !newName) return showToast('Enter both names', 'warning');
-    try {
-        updateStatus('Patching Name...', false);
-        const res = await invoke('change_display_name', { oldName, newName });
-        showToast(res, 'success');
-        updateStatus('bitsfdb', false);
-    } catch (err) {
-        showToast(err, 'error');
-        updateStatus('Patch Failed', true);
     }
 }
 
