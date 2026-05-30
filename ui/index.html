@@ -23,14 +23,6 @@
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4l3 3"/></svg>
                 Restore
             </div>
-            <div class="nav-item" data-tab="personalization-tab" id="nav-personalization">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                Personalization
-            </div>
-            <div class="nav-item" data-tab="advanced-tab" id="nav-advanced">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-                Advanced
-            </div>
         </nav>
 
         <div class="sidebar-footer">
@@ -99,52 +91,11 @@
             </div>
 
             <div class="swapper-controls">
-                <p id="system-warning" class="hidden" style="color: var(--danger); font-size: 13px; font-weight: 500;">
-                    ⚠️ Bodies & Goal Explosions are in beta. Stability not guaranteed.
-                </p>
                 <button id="apply-swap" class="action-btn" disabled>Swap Items</button>
             </div>
         </div>
 
-        <div id="personalization-tab" class="tab-content">
-            <div class="personalization-grid">
-                <div class="card">
-                    <h3>Custom Profile Picture</h3>
-                    <p style="color: var(--text-secondary); margin-bottom: 16px; font-size: 13px;">Replace your default avatar with a custom UPK asset.</p>
-                    <div class="input-row">
-                        <input type="text" id="pfp-upk-path" placeholder="Path to donor UPK containing PFP" style="flex: 1;">
-                        <button id="browse-pfp-upk" class="browse-btn">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                        </button>
-                    </div>
-                    <button id="apply-pfp" class="action-btn" style="width: 100%; margin-top: 16px;">Apply PFP</button>
-                </div>
 
-            </div>
-        </div>
-
-        <div id="advanced-tab" class="tab-content">
-            <div class="card">
-                <h3>Direct Export Replacement</h3>
-                <p style="color: var(--text-secondary); margin-bottom: 20px; font-size: 13px;">Swap specific internal objects between UPK files. Useful for custom decals and audio.</p>
-
-                <div class="advanced-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
-                    <div class="advanced-col">
-                        <label>Target Package (Owned)</label>
-                        <input type="text" id="adv-target-pkg" placeholder="e.g., Body_Fennec_SF.upk">
-                        <label style="margin-top: 12px; display: block;">Target Object Path</label>
-                        <input type="text" id="adv-target-path" placeholder="e.g., Body_Fennec.Body_Fennec">
-                    </div>
-                    <div class="advanced-col">
-                        <label>Donor Package (Visual)</label>
-                        <input type="text" id="adv-donor-pkg" placeholder="e.g., CustomDecal.upk">
-                        <label style="margin-top: 12px; display: block;">Donor Object Path</label>
-                        <input type="text" id="adv-donor-path" placeholder="e.g., CustomDecal.Material">
-                    </div>
-                </div>
-                <button id="apply-adv-swap" class="action-btn" style="width: 100%; margin-top: 24px;">Replace Export</button>
-            </div>
-        </div>
 
         <div id="restore-tab" class="tab-content">
             <div class="restoration-grid">
@@ -176,10 +127,10 @@
                 </div>
             </div>
             <div class="settings-group">
-                <label>Rocket League Data Path</label>
+                <label>Rocket League CookedPCConsole Path</label>
                 <div class="input-row">
-                    <input type="text" id="game-dir" placeholder="Rocket League Data Path" disabled style="opacity: 0.7; cursor: not-allowed; width: 100%;">
-                    <div id="browse-dir" class="browse-btn" style="display: none;">
+                    <input type="text" id="game-dir" placeholder="Rocket League CookedPCConsole Path" style="width: 100%;">
+                    <div id="browse-dir" class="browse-btn">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                     </div>
                 </div>
@@ -195,7 +146,7 @@
                 <div id="progress-fill" class="progress-fill"></div>
             </div>
         </div>
-        <div>VelocityRL v1.1.0 BETA</div>
+        <div>VelocityRL v1.2.1 BETA</div>
     </div>
 
     <div id="toast-container"></div>

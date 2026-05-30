@@ -27,6 +27,7 @@ if False:
     import zipfile
     from cryptography.hazmat.backends import default_backend
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    from PIL import Image  # ensure Pillow is bundled
 
 
 
@@ -366,22 +367,16 @@ def apply_name_pairs(upk, package, pairs: Sequence[Tuple[str, str]], preserve_he
         if case_match:
             log.append(f"CASE: matched {old!r} case-insensitively")
 
-        # FIX: Instead of only patching header refs (which causes a Header/Body desync crash),
-        # we free up the target name if it already exists in the file's dictionary.
+        # If the target name already exists elsewhere in the donor's name table,
+        # freeing it (FREEDNAME) breaks every import/export that legitimately
+        # references it (e.g. 'Boost_Standard' in a Gold Rush package). This
+        # causes "Bad name index" crashes in the game. Block the swap instead.
         colliding_indices, _ = find_name_indices(current, new)
-        for c_idx in colliding_indices:
-            dummy_name = f"FREEDNAME{c_idx}" # No underscores, engine treats as pure base name
-            if preserve_header_offsets:
-                fixed, pad = fixed_rename_name_entry(upk, current, c_idx, dummy_name)
-                if fixed is not None:
-                    current = fixed
-                    log.append(f"FREED(FIXED): name[{c_idx}] freed to {dummy_name} in-place; pad={pad}.")
-                    continue
-            try:
-                current = upk.rename_name_entry(current, c_idx, dummy_name)
-                log.append(f"FREED: Renamed colliding name at index {c_idx} to {dummy_name}")
-            except Exception as e:
-                log.append(f"WARN: Could not free colliding name: {e}")
+        if colliding_indices:
+            raise ValueError(
+                f"Cannot swap: the visual item's package already references '{new}' internally. "
+                f"Try a different visual item."
+            )
 
         # Now force the physical text replacement so body and header stay perfectly synced
         for idx in indices:
@@ -529,14 +524,54 @@ def build_reencrypted_package_with_output_key(upk, original_encrypted_path: Path
     output_path.write_bytes(output)
     return output_path
 
+_keys_map: Optional[dict] = None
+
+def _load_keys_map() -> dict:
+    global _keys_map
+    if _keys_map is not None:
+        return _keys_map
+    try:
+        map_path = default_path(("keys_map.json",))
+        if map_path.exists():
+            import json
+            _keys_map = json.loads(map_path.read_text(encoding="utf-8"))
+        else:
+            _keys_map = {}
+    except Exception:
+        _keys_map = {}
+    return _keys_map
+
+
+def _get_exact_key(target_key_path: Path) -> Optional[bytes]:
+    """Look up the exact AES key for a UPK file using the Shift key map."""
+    keys_map = _load_keys_map()
+    if not keys_map:
+        return None
+    # Derive package name: Boost_Bubble_SF.upk -> boost_bubble_sf, boost_bubble
+    stem = target_key_path.stem.lower()  # e.g. boost_bubble_sf
+    key_b64 = keys_map.get(stem) or keys_map.get(stem.removesuffix('_sf'))
+    if not key_b64:
+        return None
+    try:
+        return base64.b64decode(key_b64)
+    except Exception:
+        return None
+
+
 def build_output(upk, donor_path: Path, target_key_path: Path, modified, provider, output_path: Path, was_encrypted: bool, log: List[str]) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if was_encrypted and provider is not None:
-        override_key = None
-        if target_key_path.exists() and hasattr(upk, "find_key_for_encrypted_upk"):
-            override_key = upk.find_key_for_encrypted_upk(target_key_path, provider)
-            log.append(f"Output key source:   {target_key_path}")
-            log.append(f"Encrypting with key from target/original {target_key_path.name}: {base64.b64encode(override_key).decode()}")
+        # Try exact key from Shift's CSV map first (no false positives)
+        override_key = _get_exact_key(target_key_path)
+        if override_key is not None:
+            log.append(f"Exact key from map: {target_key_path.name}")
+        elif target_key_path.exists() and hasattr(upk, "find_key_for_encrypted_upk"):
+            try:
+                override_key = upk.find_key_for_encrypted_upk(target_key_path, provider)
+                log.append(f"Output key source:   {target_key_path}")
+                log.append(f"Encrypting with key from target/original {target_key_path.name}: {base64.b64encode(override_key).decode()}")
+            except Exception:
+                log.append(f"WARN: target key not in database, falling back to donor key.")
         elif target_key_path.exists():
             log.append(f"Output key source exists but rl_upk_editor has no find_key_for_encrypted_upk: {target_key_path}")
         else:
@@ -585,8 +620,13 @@ def swap_one_package(upk, source_path: Path, output_path: Path, key_source_path:
     log.extend(rename_log)
     log.append(f"Modified offsets:    {summary_line(modified)}")
 
+    backup_path = output_path.with_suffix(output_path.suffix + ".bak")
+    if backup_path.exists():
+        raise RuntimeError(
+            f"{output_path.name} is already swapped — restore it first before swapping again."
+        )
+
     if output_path.exists() and options.overwrite:
-        backup_path = output_path.with_suffix(output_path.suffix + ".bak")
         shutil.copy2(output_path, backup_path)
         log.append(f"Backup written:      {backup_path}")
 
@@ -735,6 +775,342 @@ def revert_item(target: Item, options: SwapOptions) -> Tuple[List[Path], List[st
 
 
 
+# ── PNG → Custom PFP pipeline ─────────────────────────────────────────────────
+
+_BULKDATA_TFC = 0x01  # stored in separate .tfc file
+
+
+def _load_png_rgba(path: Path, w: int, h: int) -> List:
+    try:
+        from PIL import Image
+    except ImportError:
+        raise RuntimeError("Pillow is required for PNG input. Run: pip install Pillow")
+    img = Image.open(str(path)).convert("RGBA").resize((w, h), Image.LANCZOS)
+    return list(img.getdata())
+
+
+def _dxt5_alpha_block(alphas: List[int]) -> bytes:
+    a0, a1 = max(alphas), min(alphas)
+    if a0 == a1:
+        return bytes([a0, a1, 0, 0, 0, 0, 0, 0])
+    table = [a0, a1] + [(a0 * (7 - i) + a1 * i) // 7 for i in range(1, 7)]
+    indices = [min(range(8), key=lambda j, v=a: abs(table[j] - v)) for a in alphas]
+    bits = 0
+    for i in range(15, -1, -1):
+        bits = (bits << 3) | (indices[i] & 7)
+    return bytes([a0, a1]) + bits.to_bytes(6, 'little')
+
+
+def _rgb565(r: int, g: int, b: int) -> int:
+    return ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)
+
+
+def _from565(c: int) -> Tuple[int, int, int]:
+    return (c >> 11) << 3, ((c >> 5) & 0x3F) << 2, (c & 0x1F) << 3
+
+
+def _dxt1_color_block(rgbs: List[Tuple[int, int, int]]) -> bytes:
+    c0v = _rgb565(max(p[0] for p in rgbs), max(p[1] for p in rgbs), max(p[2] for p in rgbs))
+    c1v = _rgb565(min(p[0] for p in rgbs), min(p[1] for p in rgbs), min(p[2] for p in rgbs))
+    if c0v == c1v:
+        return struct.pack('<HHI', c0v, c1v, 0)
+    if c0v < c1v:
+        c0v, c1v = c1v, c0v
+    c0, c1 = _from565(c0v), _from565(c1v)
+    pal = [c0, c1,
+           tuple((2*c0[i]+c1[i])//3 for i in range(3)),
+           tuple((c0[i]+2*c1[i])//3 for i in range(3))]
+    idx = 0
+    for i, px in enumerate(rgbs):
+        best = min(range(4), key=lambda j: sum((pal[j][k]-px[k])**2 for k in range(3)))
+        idx |= best << (i * 2)
+    return struct.pack('<HHI', c0v, c1v, idx)
+
+
+def _compress_dxt5(pixels: List, w: int, h: int) -> bytes:
+    pw, ph = (w + 3) & ~3, (h + 3) & ~3
+    if pw != w or ph != h:
+        pixels = [pixels[min(y, h-1)*w + min(x, w-1)] for y in range(ph) for x in range(pw)]
+        w, h = pw, ph
+    out = bytearray()
+    for by in range(0, h, 4):
+        for bx in range(0, w, 4):
+            blk = [pixels[(by+dy)*w+(bx+dx)] for dy in range(4) for dx in range(4)]
+            out += _dxt5_alpha_block([p[3] for p in blk])
+            out += _dxt1_color_block([(p[0], p[1], p[2]) for p in blk])
+    return bytes(out)
+
+
+def _downsample(pixels: List, w: int, h: int) -> Tuple[List, int, int]:
+    nw, nh = max(1, w >> 1), max(1, h >> 1)
+    out = [tuple(sum(pixels[min(y*2+dy, h-1)*w+min(x*2+dx, w-1)][i] for dy in range(2) for dx in range(2)) // 4
+                 for i in range(4))
+           for y in range(nh) for x in range(nw)]
+    return out, nw, nh
+
+
+def _dxt5_mip_chain(pixels: List, w: int, h: int, n: int) -> List[bytes]:
+    mips, cur, cw, ch = [], pixels, w, h
+    for _ in range(n):
+        mips.append(_compress_dxt5(cur, cw, ch))
+        if cw <= 1 and ch <= 1:
+            break
+        cur, cw, ch = _downsample(cur, cw, ch)
+    while len(mips) < n:
+        mips.append(mips[-1])
+    return mips
+
+
+def _parse_texture2d_mips(serial: bytes, props_end: int) -> Tuple[int, List[dict], str]:
+    """Returns (arr_start, mips, layout) where layout is 'A' or 'B'."""
+    def is_pow2(n: int) -> bool:
+        return n > 0 and (n & (n - 1)) == 0
+
+    # Layout A: flags(4) + elem(4) + size_on_disk(4) + offset(8)
+    # Layout B: flags(4) + elem(4) + offset(8) + size_on_disk(4)  ← standard UE3 source
+    def try_at(start: int, layout: str):
+        if start + 4 > len(serial):
+            return None
+        mc = struct.unpack_from('<i', serial, start)[0]
+        if not (1 <= mc <= 16):
+            return None
+        pos = start + 4
+        mips: List[dict] = []
+        for _ in range(mc):
+            if pos + 20 > len(serial):
+                return None
+            flags = struct.unpack_from('<I', serial, pos)[0]; pos += 4
+            elem  = struct.unpack_from('<i', serial, pos)[0]; pos += 4
+            if layout == 'A':
+                disk = struct.unpack_from('<i', serial, pos)[0]; pos += 4
+                off  = struct.unpack_from('<q', serial, pos)[0]; pos += 8
+            else:
+                off  = struct.unpack_from('<q', serial, pos)[0]; pos += 8
+                disk = struct.unpack_from('<i', serial, pos)[0]; pos += 4
+            is_tfc = bool(flags & _BULKDATA_TFC)
+            data_start = pos
+            if not is_tfc:
+                read_len = disk if disk > 0 else (elem if elem > 0 else 0)
+                if read_len < 0: read_len = 0
+                if pos + read_len > len(serial): return None
+                pos += read_len
+            else:
+                read_len = 0
+            if pos + 8 > len(serial):
+                return None
+            mw = struct.unpack_from('<i', serial, pos)[0]; pos += 4
+            mh = struct.unpack_from('<i', serial, pos)[0]; pos += 4
+            if not (is_pow2(mw) and is_pow2(mh) and 0 < mw <= 4096 and 0 < mh <= 4096):
+                return None
+            mips.append(dict(flags=flags, elem_count=elem, size_on_disk=disk,
+                             bulk_offset=off, data_start=data_start,
+                             data_len=read_len, w=mw, h=mh, is_tfc=is_tfc))
+        return mips
+
+    scan_end = min(props_end + 256, len(serial) - 4)
+    for start in range(props_end, scan_end, 4):
+        for layout in ('B', 'A'):
+            result = try_at(start, layout)
+            if result:
+                return start, result, layout
+
+    raise ValueError(
+        f"Cannot locate Texture2D mip array near offset {props_end} "
+        f"(serial length {len(serial)})"
+    )
+
+
+def _rebuild_texture2d_serial(serial: bytes, arr_start: int, mips: List[dict], new_inline: List[bytes], layout: str = 'B') -> bytes:
+    prefix = serial[:arr_start + 4]  # everything up to and including mip count
+    inline_iter = iter(new_inline)
+    body = bytearray()
+    last_end = arr_start + 4
+    for mip in mips:
+        hdr_start = mip['data_start'] - 20
+        if mip['is_tfc']:
+            body += serial[hdr_start: hdr_start + 20]
+        else:
+            nd = next(inline_iter)
+            body += struct.pack('<I', mip['flags'])
+            body += struct.pack('<i', len(nd))
+            if layout == 'A':
+                body += struct.pack('<i', len(nd))
+                body += struct.pack('<q', mip['bulk_offset'])
+            else:
+                body += struct.pack('<q', mip['bulk_offset'])
+                body += struct.pack('<i', len(nd))
+            body += nd
+        body += struct.pack('<i', mip['w'])
+        body += struct.pack('<i', mip['h'])
+        last_end = mip['data_start'] + mip['data_len'] + 8
+    return prefix + bytes(body) + serial[last_end:]
+
+
+def _read_upk_texture_props(pkg, serial: bytes) -> Tuple[int, int, str]:
+    """
+    Read SizeX, SizeY, and Format from a cooked RL Texture2D serial.
+    Properties start at byte 4 (byte 0 is a 4-byte cooked strip-flag sentinel).
+    """
+    def name_idx(name: str) -> int:
+        indices, _ = find_name_indices(pkg, name)
+        return indices[0] if indices else -1
+
+    size_x_idx   = name_idx('SizeX')
+    size_y_idx   = name_idx('SizeY')
+    int_prop_idx = name_idx('IntProperty')
+    none_idx     = name_idx('None')
+
+    width = height = 0
+    pos = 4  # skip 4-byte sentinel at offset 0
+    for _ in range(100):
+        if pos + 8 > len(serial):
+            break
+        ni = struct.unpack_from('<i', serial, pos)[0]
+        if ni == none_idx or ni < 0:
+            break
+        ti         = struct.unpack_from('<i', serial, pos + 8)[0] if pos + 12 <= len(serial) else -1
+        prop_size  = struct.unpack_from('<i', serial, pos + 16)[0] if pos + 20 <= len(serial) else -1
+        if prop_size < 0 or prop_size > 100000:
+            break
+        if ti == int_prop_idx and prop_size == 4 and pos + 28 <= len(serial):
+            value = struct.unpack_from('<i', serial, pos + 24)[0]
+            if ni == size_x_idx:
+                width = value
+            elif ni == size_y_idx:
+                height = value
+        pos += 24 + prop_size
+
+    # Detect pixel format: scan first 600 bytes for a known format name index
+    fmt = 'PF_A8R8G8B8'
+    for fmt_name in ('PF_DXT5', 'PF_DXT1'):
+        idx = name_idx(fmt_name)
+        if idx >= 0:
+            for i in range(0, min(len(serial) - 4, 600), 4):
+                if struct.unpack_from('<i', serial, i)[0] == idx:
+                    fmt = fmt_name
+                    break
+        if fmt != 'PF_A8R8G8B8':
+            break
+
+    return width, height, fmt
+
+
+def swap_pfp_from_png(upk, png_path: Path, options: SwapOptions) -> Tuple[List[Path], List[str]]:
+    TARGET_PKG    = "AvatarBorder_Default_SF.upk"
+    TARGET_EXPORT = "AvatarBorder_Default.AvatarBorder_Default"
+    log: List[str] = []
+    log.append(f"Custom PFP from PNG: {png_path}")
+
+    if not png_path.exists():
+        raise FileNotFoundError(f"PNG not found: {png_path}")
+
+    target_path = options.output_dir / TARGET_PKG
+    key_dir = options.key_source_dir or options.donor_dir or options.output_dir
+    key_src = key_dir / TARGET_PKG
+
+    if not target_path.exists():
+        raise FileNotFoundError(
+            f"Target UPK not found: {target_path}\n"
+            "Ensure the game directory points to CookedPCConsole."
+        )
+
+    temp_dir = script_dir() / "AssetSwapper_Decrypted"
+    temp_dir.mkdir(exist_ok=True)
+
+    _, pkg, provider, _, was_enc = resolve_with_optional_keys(upk, target_path, temp_dir, options.keys_path)
+
+    # Find the main Texture2D export — look for 'StaticFrame' or the largest Texture2D
+    export = None
+    for exp in pkg.exports:
+        if pkg.export_class_name(exp) == 'Texture2D':
+            n = pkg.names[exp.object_name.name_index].name if hasattr(exp.object_name, 'name_index') else ''
+            if n == 'StaticFrame':
+                export = exp
+                break
+    if export is None:
+        # Fallback: largest Texture2D export
+        for exp in pkg.exports:
+            if pkg.export_class_name(exp) == 'Texture2D':
+                if export is None or exp.serial_size > export.serial_size:
+                    export = exp
+    if export is None:
+        raise ValueError(f"No Texture2D export found in {TARGET_PKG}")
+    serial = pkg.object_data(export)
+    if not serial:
+        raise ValueError("Empty export serial data")
+
+    # Read texture dimensions and format from the property table
+    width, height, fmt = _read_upk_texture_props(pkg, serial)
+    if not width or not height:
+        raise ValueError(f"Could not read texture dimensions (got {width}×{height})")
+    log.append(f"Texture: {width}×{height} {fmt}")
+
+    # Compute pixel data size and start offset
+    if fmt == 'PF_DXT5':
+        pixel_size = ((width + 3) // 4) * ((height + 3) // 4) * 16
+    elif fmt == 'PF_DXT1':
+        pixel_size = ((width + 3) // 4) * ((height + 3) // 4) * 8
+    else:
+        # PF_A8R8G8B8 and others: 4 bytes per pixel
+        pixel_size = width * height * 4
+
+    if pixel_size > len(serial):
+        raise ValueError(f"Computed pixel size {pixel_size} exceeds serial length {len(serial)}")
+
+    pixel_start = len(serial) - pixel_size
+    log.append(f"Pixel data: offset {pixel_start}, size {pixel_size} bytes")
+
+    # Load PNG, resize, convert to target format
+    try:
+        from PIL import Image
+    except ImportError:
+        raise RuntimeError("Pillow required: pip install Pillow")
+
+    img = Image.open(str(png_path)).convert("RGBA").resize((width, height), Image.LANCZOS)
+
+    if fmt == 'PF_DXT5':
+        pixel_list = list(img.getdata())
+        new_pixels = _compress_dxt5(pixel_list, width, height)
+    elif fmt == 'PF_DXT1':
+        pixel_list = list(img.getdata())
+        # DXT1: same as DXT5 color block but no alpha block
+        out = bytearray()
+        pw, ph = (width + 3) & ~3, (height + 3) & ~3
+        if pw != width or ph != height:
+            pixel_list = [pixel_list[min(y, height-1)*width + min(x, width-1)]
+                          for y in range(ph) for x in range(pw)]
+        for by in range(0, ph, 4):
+            for bx in range(0, pw, 4):
+                blk = [pixel_list[(by+dy)*pw + (bx+dx)] for dy in range(4) for dx in range(4)]
+                out += _dxt1_color_block([(p[0], p[1], p[2]) for p in blk])
+        new_pixels = bytes(out)
+    else:
+        # PF_A8R8G8B8 — UE3/DX uses BGRA byte order on disk
+        rgba = img.tobytes()
+        bgra = bytearray(len(rgba))
+        for i in range(0, len(rgba), 4):
+            bgra[i]   = rgba[i + 2]  # B
+            bgra[i+1] = rgba[i + 1]  # G
+            bgra[i+2] = rgba[i]      # R
+            bgra[i+3] = rgba[i + 3]  # A
+        new_pixels = bytes(bgra)
+
+    if len(new_pixels) != pixel_size:
+        raise ValueError(f"Generated pixel data size mismatch: {len(new_pixels)} != {pixel_size}")
+
+    new_serial = serial[:pixel_start] + new_pixels
+
+    if target_path.exists() and options.overwrite:
+        bak = target_path.with_suffix(target_path.suffix + ".bak")
+        shutil.copy2(target_path, bak)
+        log.append(f"Backup: {bak}")
+
+    modified = upk.replace_export_data(pkg, export, new_serial)
+    build_output(upk, target_path, key_src, modified, provider, target_path, was_enc, log)
+    log.append("Custom PFP applied.")
+    return [target_path], log
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser()
     p.add_argument("--items", type=Path, default=default_path(("items.json", "items(4).json")))
@@ -753,6 +1129,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--target-path", default="")
     p.add_argument("--donor-path", default="")
     p.add_argument("--custom-pfp", type=Path, default=None)
+    p.add_argument("--pfp-png", type=Path, default=None)
     p.add_argument("--token", default="")
     p.add_argument("--account", default="Unknown")
     thumbs = p.add_mutually_exclusive_group()
@@ -826,21 +1203,24 @@ def interactive_run(args: argparse.Namespace) -> int:
 
 
 def cli_run(args: argparse.Namespace) -> int:
+    is_pfp_mode = bool(args.custom_pfp or getattr(args, 'pfp_png', None))
+
     # If any required args are missing, try interactive mode if we're in a TTY
-    if not args.donor_dir or not args.output_dir or (not args.revert and (not args.target or not args.donor)):
+    if not args.donor_dir or not args.output_dir or (
+        not is_pfp_mode and not args.revert and (not args.target or not args.donor)
+    ):
         if sys.stdin.isatty():
             return interactive_run(args)
-        
+
     if not args.donor_dir or not args.output_dir:
         raise SystemExit("--donor-dir and --output-dir are required")
     if args.revert and not args.target:
         raise SystemExit("--target is required for --revert")
-    if not args.revert and (not args.target or not args.donor):
+    if not is_pfp_mode and not args.revert and (not args.target or not args.donor):
         raise SystemExit("--target and --donor are required")
+
     upk = import_rl_upk_editor()
-    items = load_items(args.items)
-    target = find_item(items, str(args.target), args.slot)
-    donor = find_item(items, str(args.donor), target.slot if not args.slot else args.slot) if args.donor else target
+
     keys = args.keys
     if keys is None:
         here = script_dir()
@@ -857,6 +1237,7 @@ def cli_run(args: argparse.Namespace) -> int:
             if candidate is not None and candidate.exists():
                 keys = candidate
                 break
+
     options = SwapOptions(
         items_path=args.items,
         keys_path=keys,
@@ -867,14 +1248,22 @@ def cli_run(args: argparse.Namespace) -> int:
         preserve_header_offsets=args.preserve_header_offsets,
         overwrite=args.overwrite,
     )
-    if args.revert:
-        _, log = revert_item(target, options)
-    elif args.replace_export:
-        _, log = swap_export_only(upk, args.target, args.target_path, args.donor, args.donor_path, options)
+
+    if getattr(args, 'pfp_png', None):
+        _, log = swap_pfp_from_png(upk, args.pfp_png, options)
     elif args.custom_pfp:
         _, log = swap_pfp(upk, args.custom_pfp, options)
     else:
-        _, log = swap_asset(upk, target, donor, options)
+        items = load_items(args.items)
+        target = find_item(items, str(args.target), args.slot)
+        donor = find_item(items, str(args.donor), target.slot if not args.slot else args.slot) if args.donor else target
+        if args.revert:
+            _, log = revert_item(target, options)
+        elif args.replace_export:
+            _, log = swap_export_only(upk, args.target, args.target_path, args.donor, args.donor_path, options)
+        else:
+            _, log = swap_asset(upk, target, donor, options)
+
     for line in log:
         print(line)
     return 0
