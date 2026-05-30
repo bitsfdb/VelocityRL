@@ -195,9 +195,9 @@ async function init() {
             throw new Error(`Security Violation: ${e}`);
         });
         updateStatus('Please Wait...', false);
-        items = await fetchItemsFromAPI().catch(async (e) => {
-            console.warn('API unavailable, loading from local cache...', e);
-            return await invoke('get_items');
+        items = await invoke('get_items').catch(async (e) => {
+            console.warn('API get_items failed, falling back to paginated fetch API...', e);
+            return await fetchItemsFromAPI();
         });
         const config = await invoke('get_config').catch(e => { console.warn('Config load failed:', e); return { game_dir: '' }; });
         if (config && config.game_dir) {
