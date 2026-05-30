@@ -97,6 +97,15 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
           includeUpdaterJson: true
 
+      - name: Capture sig files before cleanup
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "sig-output" | Out-Null
+          Get-ChildItem -Path "src-tauri/target/release/bundle" -Recurse -Filter "*.sig" -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName "sig-output/$($_.Name)"
+            Write-Host "Captured: $($_.Name)"
+          }
+
       - name: Generate installer checksums
         shell: pwsh
         run: |
@@ -128,9 +137,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $sigFiles = Get-ChildItem -Path "src-tauri/target/release/bundle" -Recurse -Filter "*.sig" -ErrorAction SilentlyContinue
-          foreach ($f in $sigFiles) {
-            gh release upload ${{ github.ref_name }} $f.FullName --clobber
+          Get-ChildItem -Path "sig-output" -Filter "*.sig" -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host "Uploading: $($_.Name)"
+            gh release upload ${{ github.ref_name }} $_.FullName --clobber
           }
 
   linux:
@@ -221,6 +230,14 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
           includeUpdaterJson: true
 
+      - name: Capture sig files before cleanup
+        run: |
+          mkdir -p sig-output
+          find src-tauri/target/release/bundle -name "*.sig" | while read f; do
+            cp "$f" "sig-output/$(basename "$f")"
+            echo "Captured: $(basename "$f")"
+          done
+
       - name: Generate installer checksums
         run: |
           for f in src-tauri/target/release/bundle/appimage/*.AppImage \
@@ -241,8 +258,8 @@ jobs:
 
       - name: Upload sig files to release
         run: |
-          find src-tauri/target/release/bundle -name "*.sig" | while read f; do
-            gh release upload ${{ github.ref_name }} "$f" --clobber
+          for f in sig-output/*.sig; do
+            [ -f "$f" ] && echo "Uploading: $(basename "$f")" && gh release upload ${{ github.ref_name }} "$f" --clobber
           done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
