@@ -111,7 +111,7 @@ jobs:
             }
           }
 
-      - name: Upload CLI, checksums and sig files to release
+      - name: Upload CLI and checksums to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
@@ -119,10 +119,19 @@ jobs:
             velocityrl.exe
             src-tauri/target/release/bundle/msi/*.sha256
             src-tauri/target/release/bundle/nsis/*.sha256
-            src-tauri/target/release/bundle/nsis/*.sig
             python/engine.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload sig files to release
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $sigFiles = Get-ChildItem -Path "src-tauri/target/release/bundle" -Recurse -Filter "*.sig" -ErrorAction SilentlyContinue
+          foreach ($f in $sigFiles) {
+            gh release upload ${{ github.ref_name }} $f.FullName --clobber
+          }
 
   linux:
     permissions:
@@ -219,14 +228,21 @@ jobs:
             [ -f "$f" ] && sha256sum "$f" | awk '{print $1 "  " FILENAME}' FS='\n' > "$f.sha256"
           done
 
-      - name: Upload checksums and sig files to release
+      - name: Upload checksums to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           files: |
             src-tauri/target/release/bundle/appimage/*.sha256
-            src-tauri/target/release/bundle/appimage/*.sig
             src-tauri/target/release/bundle/deb/*.sha256
             python/engine.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload sig files to release
+        run: |
+          find src-tauri/target/release/bundle -name "*.sig" | while read f; do
+            gh release upload ${{ github.ref_name }} "$f" --clobber
+          done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
