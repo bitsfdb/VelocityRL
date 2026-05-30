@@ -17,29 +17,29 @@ def scan_and_replace(pm: pymem.Pymem, target: bytes, replacement: bytes):
 
     # Pad replacement with null bytes so we overwrite exactly the same length
     padded_replacement = replacement.ljust(len(target), b'\x00')
-    
+
     # We search for the exact target string followed by a null terminator
     search_bytes = target + b'\x00'
     padded_replacement_with_null = padded_replacement + b'\x00'
 
     print(f"[*] Scanning memory for: {target.decode()}...")
-    
+
     # Track how many replacements we make
     count = 0
     
     # We need to scan the process memory regions.
     # Pymem provides pattern scanning, but iterating memory pages manually for raw bytes is often faster.
-    
+
     system_info = pymem.process.get_system_info()
     min_address = system_info.lpMinimumApplicationAddress
     max_address = system_info.lpMaximumApplicationAddress
 
     # Iterate through memory regions
     address = min_address
-    
+
     # Note: Memory scanning large processes (Rocket League is ~2GB+) in Python can be slow.
     # We optimize by only checking MEM_COMMIT pages that are readable and writable.
-    
+
     while address < max_address:
         mbi = pymem.memory.virtual_query(pm.process_handle, address)
         
@@ -48,28 +48,28 @@ def scan_and_replace(pm: pymem.Pymem, target: bytes, replacement: bytes):
         if mbi.State == 0x1000 and (mbi.Protect == 0x04 or mbi.Protect == 0x40): # MEM_COMMIT, PAGE_READWRITE / PAGE_EXECUTE_READWRITE
             try:
                 buffer = pm.read_bytes(mbi.BaseAddress, mbi.RegionSize)
-                
+
                 # Find all occurrences in this chunk
                 offset = 0
                 while True:
                     offset = buffer.find(search_bytes, offset)
                     if offset == -1:
                         break
-                        
+
                     # Found it! Calculate absolute memory address
                     match_address = mbi.BaseAddress + offset
-                    
+
                     # Write the new padded string over the old one
                     pm.write_bytes(match_address, padded_replacement_with_null, len(padded_replacement_with_null))
-                    
+
                     print(f"[+] Replaced occurrence at 0x{match_address:X}")
                     count += 1
                     offset += len(search_bytes)
-                    
+
             except pymem.exception.MemoryReadError:
                 # Some pages might fail to read if they have weird permissions, just skip
                 pass
-                
+
         address += mbi.RegionSize
 
     print(f"[*] Done. Replaced {count} instances.")
@@ -92,11 +92,11 @@ def main():
         sys.exit(1)
         
     print(f"[+] Connected to process (PID: {pm.process_id})")
-    
+
     start_time = time.time()
     scan_and_replace(pm, original_item, replacement_item)
     elapsed = time.time() - start_time
-    
+
     print(f"[*] Memory patch operation completed in {elapsed:.2f} seconds.")
 
 if __name__ == "__main__":

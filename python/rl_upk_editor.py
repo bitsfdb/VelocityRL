@@ -1463,6 +1463,37 @@ def merge_donor_exports_as_imports(target_package: ParsedPackage, donor_package:
 
 
 
+def replace_export_data(package: ParsedPackage, export: ExportEntry, new_data: bytes) -> ParsedPackage:
+    """Replace the raw serial data of an export with new_data, adjusting all offsets."""
+    size_delta = len(new_data) - export.serial_size
+    file_bytes = bytearray(package.file_bytes)
+
+    # Rebuild file bytes with new serial data
+    new_file_bytes = bytearray()
+    new_file_bytes += file_bytes[:export.serial_offset]
+    new_file_bytes += new_data
+    new_file_bytes += file_bytes[export.serial_offset + export.serial_size:]
+
+    # Patch the export entry's serial_size
+    export_entry_offsets = get_export_entry_offsets(package)
+    entry_offset = export_entry_offsets[export.table_index]
+    patch_i32_le(new_file_bytes, entry_offset + 32, len(new_data))
+
+    # Shift all exports that come after the modified one
+    for idx, other in enumerate(package.exports):
+        if idx == export.table_index:
+            continue
+        if other.serial_offset > export.serial_offset:
+            # We need to find the offset in the NEW file bytes, but the table order is preserved.
+            # However, the table itself might have shifted if it was after the modified export.
+            # BUT in UE3, the header (tables) is always BEFORE the export bodies.
+            # So serial_offset of all exports are always > any table offset.
+            other_entry_offset = export_entry_offsets[idx]
+            patch_i64_le(new_file_bytes, other_entry_offset + 36, other.serial_offset + size_delta)
+
+    return parse_decrypted_package_bytes(package.file_path, bytes(new_file_bytes))
+
+
 def replace_export_with_donor_export(target_package: ParsedPackage, donor_package: ParsedPackage, target_export_path: str, donor_export_path: str) -> ParsedPackage:
     merged = import_donor_names(target_package, donor_package, None)
     merged = merge_donor_exports_as_imports(merged, donor_package)
@@ -1486,24 +1517,7 @@ def replace_export_with_donor_export(target_package: ParsedPackage, donor_packag
     if not donor_bytes:
         raise ValueError("Donor export has no serial data")
 
-    size_delta = len(donor_bytes) - target_export.serial_size
-    new_data = bytearray()
-    new_data += merged.file_bytes[:target_export.serial_offset]
-    new_data += donor_bytes
-    new_data += merged.file_bytes[target_export.serial_offset + target_export.serial_size:]
-
-    export_entry_offsets = get_export_entry_offsets(merged)
-    entry_offset = export_entry_offsets[target_index - 1]
-    patch_i32_le(new_data, entry_offset + 32, len(donor_bytes))
-
-    for idx, other in enumerate(merged.exports):
-        if idx == target_index - 1:
-            continue
-        if other.serial_offset > target_export.serial_offset:
-            other_entry_offset = export_entry_offsets[idx]
-            patch_i64_le(new_data, other_entry_offset + 36, other.serial_offset + size_delta)
-
-    result = parse_decrypted_package_bytes(merged.file_path, bytes(new_data))
+    result = replace_export_data(merged, target_export, donor_bytes)
     setattr(result, '_replace_target_export_path', target_export_path)
     setattr(result, '_replace_donor_export_path', donor_export_path)
     setattr(result, '_replace_note', 'Raw donor serial data copied into target export. Name/index remapping inside arbitrary native data is not performed.')
