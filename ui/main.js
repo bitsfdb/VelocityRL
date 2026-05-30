@@ -12,7 +12,7 @@ let wantedItem = null;
 let items = [];
 let currentCategory = 'All';
 
-let ownedSearch, wantedSearch, ownedResults, wantedResults, applyBtn, statusText, progressBarContainer, progressFill, systemWarning, backupContainer;
+let ownedSearch, wantedSearch, ownedResults, wantedResults, applyBtn, statusText, progressBarContainer, progressFill, backupContainer;
 
 async function fetchItemsFromAPI() {
     const allItems = [];
@@ -43,17 +43,32 @@ async function fetchItemsFromAPI() {
 function showToast(message, type = 'success') {
     const container = document.getElementById('toast-container');
     if (!container) return;
-    
+
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
-    
-    let content = message;
+
+    const contentEl = document.createElement('div');
+    contentEl.className = 'toast-content';
+
     if (type === 'error') {
         const discordLink = 'https://discord.gg/2HhBNbrGMj';
-        content = `<div>${message}<br><a href="#" class="toast-link" onclick="event.preventDefault(); window.__TAURI__.core.invoke('plugin:shell|open', { path: '${discordLink}' })">Join Support Discord</a></div>`;
+        contentEl.innerHTML = `<div>${escHtml(String(message))}<br><a href="#" class="toast-link" onclick="event.preventDefault(); window.__TAURI__.core.invoke('plugin:shell|open', { path: '${discordLink}' })">Join Support Discord</a></div>`;
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'toast-copy-btn';
+        copyBtn.textContent = 'Copy';
+        copyBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(String(message)).then(() => {
+                copyBtn.textContent = 'Copied';
+                setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
+            });
+        });
+        toast.appendChild(contentEl);
+        toast.appendChild(copyBtn);
+    } else {
+        contentEl.innerHTML = String(message);
+        toast.appendChild(contentEl);
     }
-    
-    toast.innerHTML = `<div class="toast-content">${content}</div>`;
+
     container.appendChild(toast);
     
     setTimeout(() => {
@@ -93,7 +108,6 @@ async function init() {
     statusText = document.getElementById('status-text');
     progressBarContainer = document.getElementById('progress-bar-container');
     progressFill = document.getElementById('progress-fill');
-    systemWarning = document.getElementById('system-warning');
     backupContainer = document.getElementById('backup-container');
 
     setupSearch(ownedSearch, ownedResults, (item) => {
@@ -163,12 +177,6 @@ async function init() {
     });
 
     applyBtn.onclick = handleApply;
-    document.getElementById('apply-pfp').onclick = handleApplyPfp;
-    document.getElementById('apply-adv-swap').onclick = handleApplyAdvSwap;
-    document.getElementById('browse-pfp-upk').onclick = async () => {
-        const path = await open({ filters: [{ name: 'UPK', extensions: ['upk'] }] });
-        if (path) document.getElementById('pfp-upk-path').value = path;
-    };
     document.getElementById('restore-btn').onclick = handleRestore;
     document.getElementById('website-btn').onclick = () => window.__TAURI__.core.invoke('plugin:shell|open', { path: 'https://velocityrl.tech' });
     document.getElementById('settings-btn').onclick = () => document.getElementById('settings-modal').classList.add('active');
@@ -309,40 +317,7 @@ async function restoreSingle(path) {
     }
 }
 
-async function handleApplyPfp() {
-    const donorUpk = document.getElementById('pfp-upk-path').value.trim();
-    if (!donorUpk) return showToast('Select a donor UPK first', 'warning');
-    try {
-        updateStatus('Applying PFP...', false);
-        const res = await invoke('set_custom_pfp', { donorUpk });
-        showToast(res, 'success');
-        updateStatus('bitsfdb', false);
-    } catch (err) {
-        showToast(err, 'error');
-        updateStatus('PFP Failed', true);
-    }
-}
 
-async function handleApplyAdvSwap() {
-    const targetPkg = document.getElementById('adv-target-pkg').value.trim();
-    const targetPath = document.getElementById('adv-target-path').value.trim();
-    const donorPkg = document.getElementById('adv-donor-pkg').value.trim();
-    const donorPath = document.getElementById('adv-donor-path').value.trim();
-
-    if (!targetPkg || !targetPath || !donorPkg || !donorPath) {
-        return showToast('Fill all advanced fields', 'warning');
-    }
-
-    try {
-        updateStatus('Swapping Export...', false);
-        const res = await invoke('replace_export', { targetPkg, targetPath, donorPkg, donorPath });
-        showToast(res, 'success');
-        updateStatus('bitsfdb', false);
-    } catch (err) {
-        showToast(err, 'error');
-        updateStatus('Adv Swap Failed', true);
-    }
-}
 
 function updateStatus(text, isError = false) {
     if (!statusText) return;
@@ -439,17 +414,9 @@ function renderResults(matches, resultsDiv, selectionHandler) {
 }
 
 function validate() {
-    if (!systemWarning || !applyBtn) return;
-    
+    if (!applyBtn) return;
     const oSlot = ownedItem ? (ownedItem.Slot || ownedItem.slot) : null;
     const wSlot = wantedItem ? (wantedItem.Slot || wantedItem.slot) : null;
-
-    const isUnsupported = (ownedItem && (oSlot === 'Body' || oSlot === 'Goal Explosion')) || 
-                        (wantedItem && (wSlot === 'Body' || wSlot === 'Goal Explosion'));
-    
-    if (isUnsupported) systemWarning.classList.remove('hidden');
-    else systemWarning.classList.add('hidden');
-
     const typesMatch = !ownedItem || !wantedItem || oSlot === wSlot;
     applyBtn.disabled = !(ownedItem && wantedItem && typesMatch);
 }
@@ -471,7 +438,7 @@ async function handleApply() {
     } catch (err) {
         updateStatus('Swap Failed', true);
         showProgress(false);
-        alert(`Swap Error: ${err}`);
+        showToast(`Swap Error: ${err}`, 'error');
         console.error(err);
         invoke('report_diagnostic', { payload: {
             event:     'swap_fail',
