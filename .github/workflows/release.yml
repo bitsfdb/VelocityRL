@@ -111,7 +111,7 @@ jobs:
             }
           }
 
-      - name: Upload CLI and checksums to release
+      - name: Upload CLI, checksums and sig files to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
@@ -119,6 +119,7 @@ jobs:
             velocityrl.exe
             src-tauri/target/release/bundle/msi/*.sha256
             src-tauri/target/release/bundle/nsis/*.sha256
+            src-tauri/target/release/bundle/nsis/*.sig
             python/engine.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -218,12 +219,13 @@ jobs:
             [ -f "$f" ] && sha256sum "$f" | awk '{print $1 "  " FILENAME}' FS='\n' > "$f.sha256"
           done
 
-      - name: Upload checksums to release
+      - name: Upload checksums and sig files to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           files: |
             src-tauri/target/release/bundle/appimage/*.sha256
+            src-tauri/target/release/bundle/appimage/*.sig
             src-tauri/target/release/bundle/deb/*.sha256
             python/engine.sha256
         env:
