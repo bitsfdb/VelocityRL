@@ -517,6 +517,20 @@ input:focus {
 
 .hidden { display: none !important; }
 
+.personalization-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    margin-top: 32px;
+}
+
+.advanced-col label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    display: block;
+}
+
 .category-strip {
     display: flex;
     gap: 12px;
@@ -592,6 +606,26 @@ input:focus {
 .toast-content {
     font-size: 14px;
     line-height: 1.5;
+    user-select: text;
+}
+
+.toast-copy-btn {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.15s;
+    letter-spacing: 0.03em;
+}
+
+.toast-copy-btn:hover {
+    background: rgba(255,255,255,0.14);
+    color: var(--text-primary);
 }
 
 .toast-link {

@@ -46,7 +46,7 @@
     },
     "updater": {
       "endpoints": [
-        "https://github.com/bitsfdb/VelocityRL/releases/latest/download/latest.json"
+        "https://api.velocityrl.tech/latest.json"
       ],
       "dialog": false,
       "pubkey": "RWR2qOXWsECNhLNDvcJXqpgq+bd3GpPNwW2mICuEAb+JkXX2AMUFmYBK"
