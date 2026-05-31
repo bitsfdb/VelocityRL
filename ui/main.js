@@ -49,12 +49,18 @@ function showToast(message, type = 'success') {
     
     let content = message;
     if (type === 'error') {
-        const discordLink = 'https://discord.gg/2HhBNbrGMj';
-        content = `<div>${message}<br><a href="#" class="toast-link" onclick="event.preventDefault(); window.__TAURI__.core.invoke('plugin:shell|open', { path: '${discordLink}' })">Join Support Discord</a></div>`;
+        content = `<div>${message}<br><a href="#" class="toast-link" id="discord-support-link">Join Support Discord</a></div>`;
     }
-    
+
     toast.innerHTML = `<div class="toast-content">${content}</div>`;
     container.appendChild(toast);
+
+    if (type === 'error') {
+        toast.querySelector('#discord-support-link')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.__TAURI__.core.invoke('plugin:shell|open', { path: 'https://discord.gg/2HhBNbrGMj' });
+        });
+    }
     
     setTimeout(() => {
         toast.style.animation = 'toastSlideOut 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards';
@@ -163,12 +169,6 @@ async function init() {
     });
 
     applyBtn.onclick = handleApply;
-    document.getElementById('apply-pfp').onclick = handleApplyPfp;
-    document.getElementById('apply-adv-swap').onclick = handleApplyAdvSwap;
-    document.getElementById('browse-pfp-upk').onclick = async () => {
-        const path = await open({ filters: [{ name: 'UPK', extensions: ['upk'] }] });
-        if (path) document.getElementById('pfp-upk-path').value = path;
-    };
     document.getElementById('restore-btn').onclick = handleRestore;
     document.getElementById('website-btn').onclick = () => window.__TAURI__.core.invoke('plugin:shell|open', { path: 'https://velocityrl.tech' });
     document.getElementById('settings-btn').onclick = () => document.getElementById('settings-modal').classList.add('active');
@@ -306,41 +306,6 @@ async function restoreSingle(path) {
     } catch (err) {
         updateStatus('Error', true);
         alert(`Failed to restore: ${err}`);
-    }
-}
-
-async function handleApplyPfp() {
-    const donorUpk = document.getElementById('pfp-upk-path').value.trim();
-    if (!donorUpk) return showToast('Select a donor UPK first', 'warning');
-    try {
-        updateStatus('Applying PFP...', false);
-        const res = await invoke('set_custom_pfp', { donorUpk });
-        showToast(res, 'success');
-        updateStatus('bitsfdb', false);
-    } catch (err) {
-        showToast(err, 'error');
-        updateStatus('PFP Failed', true);
-    }
-}
-
-async function handleApplyAdvSwap() {
-    const targetPkg = document.getElementById('adv-target-pkg').value.trim();
-    const targetPath = document.getElementById('adv-target-path').value.trim();
-    const donorPkg = document.getElementById('adv-donor-pkg').value.trim();
-    const donorPath = document.getElementById('adv-donor-path').value.trim();
-
-    if (!targetPkg || !targetPath || !donorPkg || !donorPath) {
-        return showToast('Fill all advanced fields', 'warning');
-    }
-
-    try {
-        updateStatus('Swapping Export...', false);
-        const res = await invoke('replace_export', { targetPkg, targetPath, donorPkg, donorPath });
-        showToast(res, 'success');
-        updateStatus('bitsfdb', false);
-    } catch (err) {
-        showToast(err, 'error');
-        updateStatus('Adv Swap Failed', true);
     }
 }
 
