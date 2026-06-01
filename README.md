@@ -78,3 +78,15 @@ Or on the support server https://discord.gg/2HhBNbrGMj
 ## License
 
 MIT
+
+## Code Signing Policy
+
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+| Role | Member |
+|------|--------|
+| Committers & Approvers | [@bitsfdb](https://github.com/bitsfdb) |
+
+## Privacy Policy
+
+This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. Anonymous diagnostic reports may be sent to velocityrl.tech solely for crash analysis; this can be disabled by the user.
