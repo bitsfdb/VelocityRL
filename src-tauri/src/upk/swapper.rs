@@ -333,22 +333,31 @@ pub fn swap_asset(
 }
 
 /// Restore a previously swapped file from its .bak backup.
+/// Accepts either the original UPK path OR the .bak path itself.
 pub fn restore_single(path: &str) -> Result<(), SwapError> {
-    let p = Path::new(path);
-    // The backup extension is "upk.bak" — we need to find it
-    let bak = {
-        let mut name = p
+    let (orig, bak) = if path.ends_with(".bak") {
+        // Caller passed the .bak path — strip it to get the original
+        let bak_p = PathBuf::from(path);
+        let orig_name = bak_p
             .file_name()
             .unwrap_or_default()
             .to_string_lossy()
-            .into_owned();
+            .trim_end_matches(".bak")
+            .to_string();
+        (bak_p.with_file_name(orig_name), bak_p)
+    } else {
+        // Caller passed the original UPK path — append .bak
+        let p = PathBuf::from(path);
+        let mut name = p.file_name().unwrap_or_default().to_string_lossy().into_owned();
         name.push_str(".bak");
-        p.with_file_name(name)
+        let bak_p = p.with_file_name(name);
+        (p, bak_p)
     };
+
     if !bak.exists() {
-        return Err(SwapError::Msg(format!("no backup found for {}", path)));
+        return Err(SwapError::Msg(format!("no backup found for {}", orig.display())));
     }
-    std::fs::copy(&bak, p)?;
+    std::fs::copy(&bak, &orig)?;
     std::fs::remove_file(&bak)?;
     Ok(())
 }
