@@ -140,6 +140,37 @@ async fn get_items(app: tauri::AppHandle) -> Result<Vec<Item>, String> {
         }
     }
 
+    // Last resort: use the bundled items.json shipped with the app
+    if let Ok(resource_path) = app.path().resource_dir() {
+        let bundled = resource_path.join("items.json");
+        if bundled.exists() {
+            if let Ok(content) = fs::read_to_string(&bundled) {
+                if let Ok(resp) = serde_json::from_str::<ItemsResponse>(&content) {
+                    let mut items = match resp {
+                        ItemsResponse::Database { items } => items,
+                        ItemsResponse::List(items) => items,
+                    };
+                    // Generate thumbnail URLs for items that don't have one
+                    const THUMB_BASE: &str = "https://api.velocityrl.tech/thumbnails/";
+                    for item in &mut items {
+                        if item.image_url.is_empty() && !item.asset_package.is_empty() {
+                            let stem = item.asset_package
+                                .to_lowercase()
+                                .replace("_sf.upk", "")
+                                .replace(".upk", "");
+                            item.image_url = format!("{}{}_t.png", THUMB_BASE, stem);
+                        }
+                    }
+                    fs::create_dir_all(&config_dir).ok();
+                    let serialized = serde_json::to_string(&serde_json::json!({"Items": items})).unwrap_or_default();
+                    fs::write(&cache_path, &serialized).ok();
+                    let _ = ITEMS_CACHE.set(items.clone());
+                    return Ok(items);
+                }
+            }
+        }
+    }
+
     Err("Failed to load items database".into())
 }
 
