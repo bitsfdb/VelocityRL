@@ -320,10 +320,16 @@ pub fn swap_asset(
     }
 
     // ── Backup target first, then write ──────────────────────────────────────────
-    std::fs::copy(&target_path, &backup_path)?;
-    std::fs::write(&target_path, &output)?;
+    std::fs::copy(&target_path, &backup_path)
+        .map_err(|e| SwapError::Msg(format!("Failed to create backup at {}: {}", backup_path.display(), e)))?;
+    std::fs::write(&target_path, &output)
+        .map_err(|e| SwapError::Msg(format!("Failed to write output to {}: {}", target_path.display(), e)))?;
 
-    Ok(format!("Swap complete: {} bytes written", output.len()))
+    Ok(format!(
+        "Swap complete: {} bytes written. Backup saved to: {}",
+        output.len(),
+        backup_path.display()
+    ))
 }
 
 /// Restore a previously swapped file from its .bak backup.
