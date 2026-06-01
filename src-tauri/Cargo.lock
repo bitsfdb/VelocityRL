@@ -4745,7 +4745,7 @@ checksum = "7ba6f5989077681266825251a52748b8c1d8a4ad098cc37e440103d0ea717fc0"
 
 [[package]]
 name = "velocity-rl"
-version = "1.2.1"
+version = "1.2.2"
 dependencies = [
  "aes",
  "base64 0.22.1",
