@@ -558,6 +558,331 @@ def _get_exact_key(target_key_path: Path) -> Optional[bytes]:
         return None
 
 
+# ── Low-level UPK helpers (mirrors the Rust engine exactly) ──────────────────
+
+PACKAGE_FILE_TAG = 0x9E2A83C1
+
+@dataclass
+class _UPKPrefix:
+    total_header_size: int
+    name_count: int
+    name_offset: int
+    export_offset: int
+    import_offset: int
+    depends_offset: int
+    garbage_size: int
+    compressed_chunks_offset: int
+    meta_file_offset: int  # byte position of garbage_size field in raw file
+
+
+def _read_fstring_at(data: bytes, pos: int) -> Tuple[str, int]:
+    flen = struct.unpack_from('<i', data, pos)[0]; pos += 4
+    if flen > 0:
+        raw = data[pos:pos + flen]; pos += flen
+        return raw.rstrip(b'\x00').decode('utf-8', errors='replace'), pos
+    if flen < 0:
+        bc = (-flen) * 2; raw = data[pos:pos + bc]; pos += bc
+        return raw.decode('utf-16-le', errors='replace').rstrip('\x00'), pos
+    return '', pos
+
+
+def _parse_upk_prefix(data: bytes) -> _UPKPrefix:
+    if struct.unpack_from('<I', data, 0)[0] != PACKAGE_FILE_TAG:
+        raise ValueError("Not a valid UPK file")
+    pos = 8  # skip tag + versions
+    total_header_size = struct.unpack_from('<i', data, pos)[0]; pos += 4
+    _, pos = _read_fstring_at(data, pos)          # folder_name
+    pos += 4                                       # package_flags
+    name_count  = struct.unpack_from('<i', data, pos)[0]; pos += 4
+    name_offset = struct.unpack_from('<i', data, pos)[0]; pos += 4
+    export_count = struct.unpack_from('<i', data, pos)[0]; pos += 4  # noqa: F841
+    export_offset = struct.unpack_from('<i', data, pos)[0]; pos += 4
+    import_count = struct.unpack_from('<i', data, pos)[0]; pos += 4  # noqa: F841
+    import_offset = struct.unpack_from('<i', data, pos)[0]; pos += 4
+    depends_offset = struct.unpack_from('<i', data, pos)[0]; pos += 4
+    pos += 16                                      # import_export_guids + counts + thumbnail
+    pos += 16                                      # GUID
+    gen_count = struct.unpack_from('<i', data, pos)[0]; pos += 4
+    pos += gen_count * 12                          # generations
+    pos += 12                                      # engine_version, cooker_version, compression_flags
+    std_chunks = struct.unpack_from('<i', data, pos)[0]; pos += 4
+    pos += std_chunks * 24
+    pos += 4                                       # PackageSource
+    add_count = struct.unpack_from('<i', data, pos)[0]; pos += 4
+    for _ in range(add_count):
+        _, pos = _read_fstring_at(data, pos)
+    tex_count = struct.unpack_from('<i', data, pos)[0]; pos += 4
+    for _ in range(tex_count):
+        pos += 20
+        inner = struct.unpack_from('<i', data, pos)[0]; pos += 4
+        pos += inner * 4
+    meta_file_offset = pos
+    garbage_size = struct.unpack_from('<i', data, pos)[0]; pos += 4
+    compressed_chunks_offset = struct.unpack_from('<i', data, pos)[0]
+    return _UPKPrefix(
+        total_header_size=total_header_size, name_count=name_count,
+        name_offset=name_offset, export_offset=export_offset,
+        import_offset=import_offset, depends_offset=depends_offset,
+        garbage_size=garbage_size, compressed_chunks_offset=compressed_chunks_offset,
+        meta_file_offset=meta_file_offset,
+    )
+
+
+def _find_summary_offsets(data: bytes) -> dict:
+    pos = 8
+    total_off = pos; pos += 4
+    flen = struct.unpack_from('<i', data, pos)[0]; pos += 4
+    if flen > 0: pos += flen
+    elif flen < 0: pos += (-flen) * 2
+    pos += 4
+    name_count_off = pos; pos += 4
+    name_off_off   = pos; pos += 4
+    pos += 4
+    export_off_off = pos; pos += 4
+    pos += 4
+    import_off_off = pos; pos += 4
+    depends_off_off = pos
+    return {
+        'total_header_size': total_off,
+        'name_offset': name_off_off,
+        'export_offset': export_off_off,
+        'import_offset': import_off_off,
+        'depends_offset': depends_off_off,
+    }
+
+
+def _patch_i32(data: bytearray, offset: int, value: int) -> None:
+    if offset + 4 <= len(data):
+        struct.pack_into('<i', data, offset, value)
+
+
+def _aes_ecb_decrypt(key: bytes, data: bytes) -> bytes:
+    from cryptography.hazmat.backends import default_backend
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    c = Cipher(algorithms.AES(key), modes.ECB(), backend=default_backend())
+    d = c.decryptor()
+    return d.update(data) + d.finalize()
+
+
+def _aes_ecb_encrypt(key: bytes, data: bytes) -> bytes:
+    from cryptography.hazmat.backends import default_backend
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    pad = (16 - len(data) % 16) % 16
+    data = data + b'\x00' * pad
+    c = Cipher(algorithms.AES(key), modes.ECB(), backend=default_backend())
+    e = c.encryptor()
+    return e.update(data) + e.finalize()
+
+
+def _walk_name_table(header: bytes, name_count: int) -> List[dict]:
+    slots, pos = [], 0
+    for _ in range(name_count):
+        if pos + 4 > len(header):
+            raise ValueError("Name table truncated")
+        flen = struct.unpack_from('<i', header, pos)[0]
+        cap  = flen if flen > 0 else (-flen * 2) if flen < 0 else 0
+        if pos + 4 + cap + 8 > len(header):
+            raise ValueError("Name entry overrun")
+        if flen > 0:
+            name = header[pos+4:pos+4+cap].rstrip(b'\x00').decode('utf-8', errors='replace')
+        elif flen < 0:
+            name = header[pos+4:pos+4+cap].decode('utf-16-le', errors='replace').rstrip('\x00')
+        else:
+            name = ''
+        flags_off = pos + 4 + cap
+        flags = struct.unpack_from('<Q', header, flags_off)[0]
+        entry_end = flags_off + 8
+        slots.append({'pos': pos, 'flen': flen, 'cap': cap,
+                      'name': name, 'flags': flags, 'end': entry_end})
+        pos = entry_end
+    return slots
+
+
+def _serialize_name_entry(name: str, flags: int) -> bytes:
+    raw = name.encode('utf-8')
+    return struct.pack('<i', len(raw) + 1) + raw + b'\x00' + struct.pack('<Q', flags)
+
+
+class _NameTooLong(Exception):
+    pass
+
+
+def _apply_inplace(header: bytes, name_count: int, pairs: List[Tuple[str, str]]) -> bytes:
+    data  = bytearray(header)
+    slots = _walk_name_table(bytes(data), name_count)
+    for old_str, new_str in pairs:
+        idxs = [i for i, s in enumerate(slots) if s['name'].lower() == old_str.lower()]
+        if not idxs:
+            continue
+        if any(i not in idxs and s['name'].lower() == new_str.lower() for i, s in enumerate(slots)):
+            raise ValueError(
+                f"Cannot swap: package already references '{new_str}' internally. "
+                f"Try a different visual item.")
+        for idx in idxs:
+            s = slots[idx]
+            if s['flen'] < 0:
+                raise ValueError(f"Name '{old_str}' uses UTF-16; rename not supported.")
+            needed = len(new_str.encode('utf-8')) + 1
+            if needed > s['cap']:
+                raise _NameTooLong()
+            start = s['pos'] + 4
+            nb = new_str.encode('utf-8')
+            for i in range(s['cap']):
+                data[start + i] = nb[i] if i < len(nb) else 0
+            slots[idx]['name'] = new_str
+    return bytes(data)
+
+
+def _apply_header_renames(
+    header: bytes,
+    import_off: int, export_off: int, depends_off: int,
+    name_count: int,
+    pairs: List[Tuple[str, str]],
+) -> Tuple[bytes, int]:
+    """
+    Rename name table entries in decrypted header (name table at byte 0).
+    Tries in-place first; rebuilds tables if name is longer.
+    Returns (new_header, delta_bytes).
+    """
+    try:
+        return _apply_inplace(header, name_count, pairs), 0
+    except _NameTooLong:
+        pass
+
+    cur = bytearray(header)
+    ci, ce, cd = import_off, export_off, depends_off
+
+    for old_str, new_str in pairs:
+        slots = _walk_name_table(bytes(cur), name_count)
+        idxs = [i for i, s in enumerate(slots) if s['name'].lower() == old_str.lower()]
+        if not idxs:
+            continue
+        if any(i not in idxs and s['name'].lower() == new_str.lower() for i, s in enumerate(slots)):
+            raise ValueError(
+                f"Cannot swap: package already references '{new_str}' internally. "
+                f"Try a different visual item.")
+        for idx in idxs:
+            s = slots[idx]
+            if s['flen'] < 0:
+                raise ValueError(f"Name '{old_str}' uses UTF-16; rename not supported.")
+            old_nt   = bytes(cur[:ci])
+            imp_tbl  = bytes(cur[ci:ce])
+            exp_tbl  = bytes(cur[ce:cd])
+            beyond   = bytes(cur[cd:])
+            new_nt   = bytearray()
+            for i2, s2 in enumerate(slots):
+                new_nt += _serialize_name_entry(new_str, s2['flags']) if i2 == idx \
+                          else old_nt[s2['pos']:s2['end']]
+            delta = len(new_nt) - len(old_nt)
+            cur = bytearray(new_nt) + bytearray(imp_tbl) + bytearray(exp_tbl) + bytearray(beyond)
+            ci += delta; ce += delta; cd += delta
+
+    return bytes(cur), len(cur) - len(header)
+
+
+def swap_one_package(
+    upk,  # kept for API compatibility; unused in the new pipeline
+    source_path: Path,
+    output_path: Path,
+    key_source_path: Path,
+    pairs: Sequence[Tuple[str, str]],
+    options: SwapOptions,
+) -> Tuple[Path, List[str]]:
+    """
+    Shift-style header-only swap (matches the Rust engine exactly):
+      1. Decrypt AES header block from donor file
+      2. Rename name table entries in-place (rebuild tables if name grew)
+      3. Re-encrypt header with target file's key
+      4. Splice new header back — compressed body is never touched
+      5. Backup original target, write output
+    """
+    log: List[str] = []
+
+    if not source_path.exists():
+        raise FileNotFoundError(f"Source package not found: {source_path}")
+
+    backup_path = output_path.with_suffix(output_path.suffix + ".bak")
+    if backup_path.exists():
+        raise RuntimeError(
+            f"{output_path.name} is already swapped — restore it first before swapping again.")
+    if output_path.exists() and not options.overwrite:
+        raise FileExistsError(f"Output already exists: {output_path}")
+
+    log.append(f"Source:  {source_path}")
+    log.append(f"Output:  {output_path}")
+    log.append("Pairs:   " + ", ".join(f"{o!r} -> {n!r}" for o, n in pairs))
+
+    # ── Parse prefix ─────────────────────────────────────────────────────────
+    donor_data = source_path.read_bytes()
+    pfx = _parse_upk_prefix(donor_data)
+
+    name_off = pfx.name_offset
+    enc_size = pfx.total_header_size - pfx.garbage_size - pfx.name_offset
+    enc_aligned = (enc_size + 15) & ~15
+    enc_block = donor_data[name_off:name_off + enc_aligned]
+
+    # ── Find donor AES key ────────────────────────────────────────────────────
+    donor_key = _get_exact_key(source_path)
+    if donor_key is None:
+        raise ValueError(
+            f"No AES key found for {source_path.name}. "
+            f"Ensure keys_map.json is present next to the script.")
+    log.append(f"Donor key: found")
+
+    # ── Decrypt, rename, re-encrypt ───────────────────────────────────────────
+    header_plain = _aes_ecb_decrypt(donor_key, enc_block)
+
+    import_rel = pfx.import_offset - pfx.name_offset
+    export_rel = pfx.export_offset - pfx.name_offset
+    depends_rel = pfx.depends_offset - pfx.name_offset
+
+    new_header, header_delta = _apply_header_renames(
+        header_plain, import_rel, export_rel, depends_rel,
+        pfx.name_count, list(pairs))
+
+    output_key = _get_exact_key(key_source_path) or donor_key
+    log.append(f"Output key: {'target' if output_key != donor_key else 'donor (fallback)'}")
+
+    new_enc_aligned = (len(new_header) + 15) & ~15
+    size_growth = new_enc_aligned - enc_aligned
+
+    if size_growth > pfx.garbage_size:
+        raise ValueError(
+            f"Header grew by {size_growth} bytes but only {pfx.garbage_size} bytes "
+            f"of padding available. Try a visual item with a shorter name.")
+
+    new_header = new_header + b'\x00' * (new_enc_aligned - len(new_header))
+    new_enc_block = _aes_ecb_encrypt(output_key, new_header)
+
+    # ── Splice header into donor file, body untouched ─────────────────────────
+    output = bytearray(donor_data)
+    output[name_off:name_off + enc_aligned] = new_enc_block
+    if size_growth > 0:
+        gap_start = name_off + new_enc_aligned
+        del output[gap_start:gap_start + size_growth]
+
+    if header_delta != 0 or size_growth != 0:
+        offs = _find_summary_offsets(bytes(output))
+        if header_delta != 0:
+            _patch_i32(output, offs['import_offset'],  pfx.import_offset  + header_delta)
+            _patch_i32(output, offs['export_offset'],  pfx.export_offset  + header_delta)
+            _patch_i32(output, offs['depends_offset'], pfx.depends_offset + header_delta)
+        if size_growth != 0:
+            _patch_i32(output, pfx.meta_file_offset, pfx.garbage_size - size_growth)
+        if header_delta != 0:
+            _patch_i32(output, pfx.meta_file_offset + 4,
+                       pfx.compressed_chunks_offset + header_delta)
+
+    # ── Backup original target, write output ─────────────────────────────────
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if output_path.exists() and options.overwrite:
+        shutil.copy2(output_path, backup_path)
+        log.append(f"Backup: {backup_path}")
+    output_path.write_bytes(bytes(output))
+    log.append(f"Swap complete: {len(output)} bytes written.")
+    return output_path, log
+
+
 def build_output(upk, donor_path: Path, target_key_path: Path, modified, provider, output_path: Path, was_encrypted: bool, log: List[str]) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if was_encrypted and provider is not None:
