@@ -248,10 +248,13 @@ async fn apply_swap(app: tauri::AppHandle, owned_id: String, wanted_id: String) 
     if config.game_dir.is_empty() {
         return Err("Game directory not set".to_string());
     }
-    // Load cached items.json from app config dir
+    // Fetch items if not cached yet (first launch)
+    get_items(app.clone()).await
+        .map_err(|e| format!("Failed to load items database: {}", e))?;
+
     let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
     let items_json = fs::read_to_string(config_dir.join("items.json"))
-        .map_err(|_| "items database not found — open Settings and wait for items to load".to_string())?;
+        .map_err(|_| "Items database missing — check your internet connection and try again.".to_string())?;
 
     let opts = upk::SwapOptions {
         game_dir: std::path::PathBuf::from(&config.game_dir),
