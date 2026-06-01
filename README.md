@@ -89,4 +89,4 @@ Free code signing provided by [SignPath.io](https://signpath.io), certificate by
 
 ## Privacy Policy
 
-This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. Anonymous diagnostic reports may be sent to velocityrl.tech solely for crash analysis; this can be disabled by the user.
+This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. Anonymous diagnostic reports may be sent to velocityrl.tech solely for crash analysis.
