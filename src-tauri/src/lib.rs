@@ -47,6 +47,16 @@ struct BackupFile {
     image_url: String,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+struct SwapEntry {
+    owned_id:  i32,
+    wanted_id: i32,
+    #[serde(default)]
+    owned_name:  String,
+    #[serde(default)]
+    wanted_name: String,
+}
+
 static ITEMS_CACHE: std::sync::OnceLock<Vec<Item>> = std::sync::OnceLock::new();
 
 const DIAGNOSTIC_URL: Option<&str> = option_env!("DIAGNOSTIC_URL");
@@ -273,6 +283,41 @@ async fn set_custom_pfp(_app: tauri::AppHandle, _png_path: String) -> Result<Str
     Err("Not yet implemented — Rust UPK engine coming soon".to_string())
 }
 
+// ── swaps.json helpers ────────────────────────────────────────────────────────
+
+fn swaps_path(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path().app_config_dir().ok().map(|d| d.join("swaps.json"))
+}
+
+fn load_swaps(app: &tauri::AppHandle) -> Vec<SwapEntry> {
+    swaps_path(app)
+        .and_then(|p| fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn save_swaps(app: &tauri::AppHandle, swaps: &[SwapEntry]) {
+    if let Some(path) = swaps_path(app) {
+        if let Ok(json) = serde_json::to_string_pretty(swaps) {
+            let _ = fs::create_dir_all(path.parent().unwrap_or(&path));
+            let _ = fs::write(path, json);
+        }
+    }
+}
+
+#[tauri::command]
+async fn get_swaps(app: tauri::AppHandle) -> Result<Vec<SwapEntry>, String> {
+    Ok(load_swaps(&app))
+}
+
+#[tauri::command]
+async fn delete_swap(app: tauri::AppHandle, owned_id: i32) -> Result<(), String> {
+    let mut swaps = load_swaps(&app);
+    swaps.retain(|s| s.owned_id != owned_id);
+    save_swaps(&app, &swaps);
+    Ok(())
+}
+
 #[tauri::command]
 async fn apply_swap(app: tauri::AppHandle, owned_id: String, wanted_id: String) -> Result<String, String> {
     let config = get_config(app.clone()).await?;
@@ -280,7 +325,7 @@ async fn apply_swap(app: tauri::AppHandle, owned_id: String, wanted_id: String) 
         return Err("Game directory not set".to_string());
     }
     // Fetch items if not cached yet (first launch)
-    get_items(app.clone()).await
+    let all_items = get_items(app.clone()).await
         .map_err(|e| format!("Failed to load items database: {}", e))?;
 
     let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
@@ -293,16 +338,39 @@ async fn apply_swap(app: tauri::AppHandle, owned_id: String, wanted_id: String) 
         keys_txt: include_str!("../../python/keys.txt").to_string(),
         keys_map_json: include_str!("../../python/keys_map.json").to_string(),
     };
-    upk::swap_asset(&owned_id, &wanted_id, &opts).map_err(|e| e.to_string())
+    let result = upk::swap_asset(&owned_id, &wanted_id, &opts).map_err(|e| e.to_string())?;
+
+    // Save to swaps.json
+    let oid: i32 = owned_id.parse().unwrap_or(0);
+    let wid: i32 = wanted_id.parse().unwrap_or(0);
+    let owned_name  = all_items.iter().find(|i| i.id == oid).map(|i| i.product.clone()).unwrap_or_default();
+    let wanted_name = all_items.iter().find(|i| i.id == wid).map(|i| i.product.clone()).unwrap_or_default();
+    let mut swaps = load_swaps(&app);
+    swaps.retain(|s| s.owned_id != oid); // replace if already exists
+    swaps.push(SwapEntry { owned_id: oid, wanted_id: wid, owned_name, wanted_name });
+    save_swaps(&app, &swaps);
+
+    Ok(result)
 }
 
 #[tauri::command]
 async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<(), String> {
-    let config = get_config(app).await?;
+    let config = get_config(app.clone()).await?;
     if config.game_dir.is_empty() {
         return Err("Game directory not configured".into());
     }
-    upk::restore_single(&path).map_err(|e| e.to_string())
+    upk::restore_single(&path).map_err(|e| e.to_string())?;
+    // Remove from swaps.json — derive owned_id from the filename
+    let stem = std::path::Path::new(&path)
+        .file_name().unwrap_or_default().to_string_lossy()
+        .to_lowercase().replace(".upk.bak","").replace(".upk","");
+    let items = get_items(app.clone()).await.unwrap_or_default();
+    if let Some(item) = items.iter().find(|i| i.asset_package.to_lowercase().replace(".upk","") == stem) {
+        let mut swaps = load_swaps(&app);
+        swaps.retain(|s| s.owned_id != item.id);
+        save_swaps(&app, &swaps);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -367,6 +435,8 @@ pub fn run() {
             report_diagnostic,
             check_for_updates,
             install_update,
+            get_swaps,
+            delete_swap,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
