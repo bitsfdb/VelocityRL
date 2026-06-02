@@ -517,20 +517,6 @@ input:focus {
 
 .hidden { display: none !important; }
 
-.personalization-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-    margin-top: 32px;
-}
-
-.advanced-col label {
-    font-size: 12px;
-    color: var(--text-secondary);
-    margin-bottom: 8px;
-    display: block;
-}
-
 .category-strip {
     display: flex;
     gap: 12px;

@@ -648,69 +648,6 @@ def cleanup_old_temp_files(directory: Path, logger: Optional[Callable[[str], Non
             except Exception:
                 pass
 
-def swap_pfp(upk, pfp_upk_path: Path, options: SwapOptions) -> Tuple[List[Path], List[str]]:
-    # This assumes the user provides a donor UPK that contains the custom PFP.
-    # We'll swap it with the default avatar border or a known avatar package.
-    target_package_name = "AvatarBorder_Default_SF.upk"
-    target_export_path = "AvatarBorder_Default.AvatarBorder_Default"
-
-    log: List[str] = []
-    log.append(f"Custom PFP requested using donor: {pfp_upk_path}")
-
-    return swap_export_only_path(upk, target_package_name, target_export_path, pfp_upk_path, target_export_path, options)
-
-
-def swap_export_only_path(upk, target_pkg_name: str, target_export_path: str, donor_pkg_path: Path, donor_export_path: str, options: SwapOptions) -> Tuple[List[Path], List[str]]:
-    log: List[str] = []
-    target_pkg_path = options.output_dir / target_pkg_name
-    key_dir = options.key_source_dir or options.donor_dir
-    key_source_path = key_dir / target_pkg_name
-
-    log.append(f"Replacing export {target_export_path} in {target_pkg_name} with {donor_export_path} from {donor_pkg_path}")
-
-    temp_dir = script_dir() / "AssetSwapper_Decrypted"
-    temp_dir.mkdir(exist_ok=True)
-
-    _, target_package, target_provider, _, target_was_encrypted = resolve_with_optional_keys(upk, target_pkg_path, temp_dir, options.keys_path)
-    _, donor_package, _, _, _ = resolve_with_optional_keys(upk, donor_pkg_path, temp_dir, options.keys_path)
-
-    modified = upk.replace_export_with_donor_export(target_package, donor_package, target_export_path, donor_export_path)
-
-    if target_pkg_path.exists() and options.overwrite:
-        backup_path = target_pkg_path.with_suffix(target_pkg_path.suffix + ".bak")
-        shutil.copy2(target_pkg_path, backup_path)
-        log.append(f"Backup written: {backup_path}")
-
-    build_output(upk, target_pkg_path, key_source_path, modified, target_provider, target_pkg_path, target_was_encrypted, log)
-    return [target_pkg_path], log
-
-
-def swap_export_only(upk, target_pkg_name: str, target_export_path: str, donor_pkg_name: str, donor_export_path: str, options: SwapOptions) -> Tuple[List[Path], List[str]]:
-    log: List[str] = []
-    donor_pkg_path = options.donor_dir / donor_pkg_name
-    target_pkg_path = options.output_dir / target_pkg_name
-    key_dir = options.key_source_dir or options.donor_dir
-    key_source_path = key_dir / target_pkg_name
-
-    log.append(f"Replacing export {target_export_path} in {target_pkg_name} with {donor_export_path} from {donor_pkg_name}")
-
-    temp_dir = script_dir() / "AssetSwapper_Decrypted"
-    temp_dir.mkdir(exist_ok=True)
-
-    _, target_package, target_provider, _, target_was_encrypted = resolve_with_optional_keys(upk, target_pkg_path, temp_dir, options.keys_path)
-    _, donor_package, _, _, _ = resolve_with_optional_keys(upk, donor_pkg_path, temp_dir, options.keys_path)
-
-    modified = upk.replace_export_with_donor_export(target_package, donor_package, target_export_path, donor_export_path)
-
-    if target_pkg_path.exists() and options.overwrite:
-        backup_path = target_pkg_path.with_suffix(target_pkg_path.suffix + ".bak")
-        shutil.copy2(target_pkg_path, backup_path)
-        log.append(f"Backup written: {backup_path}")
-
-    build_output(upk, target_pkg_path, key_source_path, modified, target_provider, target_pkg_path, target_was_encrypted, log)
-    return [target_pkg_path], log
-
-
 def revert_item(target: Item, options: SwapOptions) -> Tuple[List[Path], List[str]]:
     src_dir = options.key_source_dir or options.donor_dir
     paths: List[Path] = []
@@ -749,10 +686,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-gui", action="store_true")
     p.add_argument("--revert", action="store_true")
     p.add_argument("--fetch", action="store_true")
-    p.add_argument("--replace-export", action="store_true")
-    p.add_argument("--target-path", default="")
-    p.add_argument("--donor-path", default="")
-    p.add_argument("--custom-pfp", type=Path, default=None)
     p.add_argument("--token", default="")
     p.add_argument("--account", default="Unknown")
     thumbs = p.add_mutually_exclusive_group()
@@ -869,10 +802,6 @@ def cli_run(args: argparse.Namespace) -> int:
     )
     if args.revert:
         _, log = revert_item(target, options)
-    elif args.replace_export:
-        _, log = swap_export_only(upk, args.target, args.target_path, args.donor, args.donor_path, options)
-    elif args.custom_pfp:
-        _, log = swap_pfp(upk, args.custom_pfp, options)
     else:
         _, log = swap_asset(upk, target, donor, options)
     for line in log:
