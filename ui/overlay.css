@@ -1,0 +1,133 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+    background: transparent;
+    overflow: hidden;
+    width: 100vw; height: 100vh;
+    font-family: 'Outfit', -apple-system, sans-serif;
+}
+
+.widget {
+    position: fixed;
+    background: rgba(8, 8, 10, 0.82);
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 12px;
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    user-select: none;
+    transition: opacity 0.25s;
+}
+.widget.hidden { opacity: 0; pointer-events: none; }
+
+/* ── Position presets ──────────────────────────────────────────── */
+.pos-top-center  { top: 22px; left: 50%; transform: translateX(-50%); }
+.pos-top-left    { top: 22px; left: 22px; }
+.pos-top-right   { top: 22px; right: 22px; }
+.pos-bottom-left { bottom: 52px; left: 22px; }
+.pos-bottom-right{ bottom: 52px; right: 22px; }
+
+/* ── Game widget ───────────────────────────────────────────────── */
+.game-widget { padding: 12px 20px 14px; min-width: 200px; text-align: center; }
+
+.score-row {
+    display: flex; align-items: center; justify-content: center;
+    gap: 10px;
+}
+.score {
+    font-size: 46px; font-weight: 900;
+    font-variant-numeric: tabular-nums; letter-spacing: -1px; line-height: 1;
+}
+.score.blue   { color: #60a5fa; }
+.score.orange { color: #fb923c; }
+.sep { font-size: 30px; font-weight: 200; color: rgba(255,255,255,0.25); margin-top: -2px; }
+
+.time-row {
+    display: flex; align-items: center; justify-content: center;
+    gap: 6px; margin-top: 3px;
+}
+.time-val {
+    font-size: 13px; font-weight: 600;
+    color: rgba(255,255,255,0.5); font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em;
+}
+.ot-badge {
+    background: rgba(234,179,8,0.2); color: #fde047;
+    font-size: 9px; font-weight: 700; letter-spacing: 0.1em;
+    padding: 2px 5px; border-radius: 4px;
+}
+.ot-badge.hidden { display: none; }
+
+.divider { height: 1px; background: rgba(255,255,255,0.07); margin: 9px 0; }
+
+.session-row {
+    display: flex; gap: 14px; justify-content: center; align-items: flex-end;
+}
+.sess-cell { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.sess-val {
+    font-size: 20px; font-weight: 800;
+    font-variant-numeric: tabular-nums; color: #fff;
+    line-height: 1;
+}
+.sess-val.green  { color: #4ade80; }
+.sess-val.red    { color: #f87171; }
+.sess-val.blue-c { color: #60a5fa; }
+.sess-lbl {
+    font-size: 8px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.1em; color: rgba(255,255,255,0.35);
+}
+.mmr-cell .sess-val { font-size: 16px; }
+
+/* Goal flash */
+.goal-flash {
+    position: fixed; top: 45%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 88px; font-weight: 900;
+    color: #fde047;
+    text-shadow: 0 0 80px rgba(253,224,71,0.9), 0 4px 32px rgba(0,0,0,0.9);
+    letter-spacing: -2px; pointer-events: none;
+    animation: goalPop 2.4s ease-out forwards;
+}
+.goal-flash.hidden { display: none; }
+@keyframes goalPop {
+    0%   { opacity: 0; transform: translate(-50%,-50%) scale(0.5); }
+    12%  { opacity: 1; transform: translate(-50%,-50%) scale(1.12); }
+    25%  { transform: translate(-50%,-50%) scale(1.0); }
+    75%  { opacity: 1; }
+    100% { opacity: 0; }
+}
+
+/* ── HUD widget (clock) ────────────────────────────────────────── */
+.hud-widget { padding: 8px 14px; min-width: 80px; text-align: center; }
+
+.hud-clock {
+    font-size: 14px; font-weight: 600;
+    color: rgba(255,255,255,0.55);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em;
+}
+
+/* ── Edit mode ─────────────────────────────────────────────────── */
+.edit-bar {
+    position: fixed; bottom: 32px; left: 50%;
+    transform: translateX(-50%);
+    display: flex; align-items: center; gap: 14px;
+    background: rgba(8,8,10,0.92);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 12px; padding: 10px 20px;
+    z-index: 9999;
+}
+.edit-bar.hidden { display: none; }
+.edit-hint { font-size: 13px; color: rgba(255,255,255,0.5); }
+.edit-done-btn {
+    background: #3b82f6; color: #fff;
+    border: none; border-radius: 8px;
+    padding: 6px 18px; font-size: 13px; font-weight: 700;
+    cursor: pointer;
+}
+.edit-done-btn:hover { background: #2563eb; }
+
+.widget.editable {
+    cursor: grab;
+    border: 1.5px dashed rgba(59,130,246,0.7) !important;
+    user-select: none;
+}
+.widget.editable:active { cursor: grabbing; }
