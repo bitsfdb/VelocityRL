@@ -180,12 +180,17 @@ async function init() {
     document.getElementById('restore-btn').onclick = handleRestore;
     document.getElementById('website-btn').onclick = () => window.__TAURI__.core.invoke('plugin:shell|open', { path: 'https://velocityrl.tech' });
     document.getElementById('settings-btn').onclick = () => document.getElementById('settings-modal').classList.add('active');
-    document.getElementById('cancel-settings').onclick = () => document.getElementById('settings-modal').classList.remove('active');
+    document.getElementById('cancel-settings').onclick = () => {
+        document.getElementById('settings-modal').classList.remove('active');
+        document.getElementById('install-chooser').style.display = 'none';
+    };
     document.getElementById('close-settings').onclick = handleSaveSettings;
     document.getElementById('browse-dir').onclick = handleBrowse;
+    document.getElementById('autodetect-dir').onclick = handleAutoDetect;
     document.getElementById('settings-modal').onclick = (e) => {
         if (e.target === document.getElementById('settings-modal')) {
             document.getElementById('settings-modal').classList.remove('active');
+            document.getElementById('install-chooser').style.display = 'none';
         }
     };
 
@@ -202,6 +207,18 @@ async function init() {
         const config = await invoke('get_config').catch(e => { console.warn('Config load failed:', e); return { game_dir: '' }; });
         if (config && config.game_dir) {
             document.getElementById('game-dir').value = config.game_dir;
+        } else {
+            const installs = await invoke('detect_game_dir').catch(() => []);
+            if (installs.length === 1) {
+                document.getElementById('game-dir').value = installs[0].path;
+                await invoke('save_config', { config: { game_dir: installs[0].path } }).catch(() => {});
+                showToast(`${installs[0].label} install detected`, 'success');
+            } else if (installs.length > 1) {
+                document.getElementById('settings-modal').classList.add('active');
+                showInstallChooser(installs);
+            } else {
+                document.getElementById('settings-modal').classList.add('active');
+            }
         }
         updateStatus('bitsfdb', false);
         invoke('cleanup_temp_files').catch(e => console.warn('Cleanup failed:', e));
@@ -341,7 +358,7 @@ function setupSearch(input, resultsDiv, selectionHandler) {
         
         let lockCategory = currentCategory;
         if (input.id === 'wanted-search' && ownedItem) {
-            lockCategory = ownedItem.Slot || ownedItem.slot || 'All';
+            lockCategory = (ownedItem.Slot || ownedItem.slot || 'All');
         }
 
         if (term.length < 2 && lockCategory === 'All') {
@@ -354,11 +371,11 @@ function setupSearch(input, resultsDiv, selectionHandler) {
             const pAsset = (item.AssetPackage || item.asset_package || '').toLowerCase();
             const pSlot = item.Slot || item.slot || '';
 
-            const invalidTypes = ['Series', 'Crate', 'Currency', 'Premium', 'Unknown'];
-            if (invalidTypes.includes(pSlot)) return false;
+            const invalidTypes = ['series', 'crate', 'currency', 'premium', 'unknown'];
+            if (invalidTypes.includes(normSlot(pSlot))) return false;
 
             const matchesTerm = term.length < 2 || pName.includes(term) || pAsset.includes(term);
-            const matchesCat = lockCategory === 'All' || pSlot.toLowerCase() === lockCategory.toLowerCase();
+            const matchesCat = lockCategory === 'All' || normSlot(pSlot) === normSlot(lockCategory);
             return matchesTerm && matchesCat;
         }).slice(0, 50);
         renderResults(matches, resultsDiv, selectionHandler);
@@ -368,11 +385,10 @@ function setupSearch(input, resultsDiv, selectionHandler) {
         if (input.id === 'wanted-search' && ownedItem) {
             lockCategory = (ownedItem.Slot || ownedItem.slot || 'All');
         }
-        
+
         if (lockCategory !== 'All' && input.value === '') {
             const matches = items.filter(item => {
-                const s = (item.Slot || item.slot || '').toLowerCase();
-                return s === lockCategory.toLowerCase();
+                return normSlot(item.Slot || item.slot) === normSlot(lockCategory);
             }).slice(0, 50);
             renderResults(matches, resultsDiv, selectionHandler);
         }
@@ -413,12 +429,21 @@ function renderResults(matches, resultsDiv, selectionHandler) {
     resultsDiv.style.display = 'block';
 }
 
+function normSlot(s) { return String(s || '').toLowerCase().replace(/[\s_-]+/g, ''); }
+
 function validate() {
     if (!applyBtn) return;
-    const oSlot = ownedItem ? (ownedItem.Slot || ownedItem.slot) : null;
-    const wSlot = wantedItem ? (wantedItem.Slot || wantedItem.slot) : null;
+    const oSlot = ownedItem ? normSlot(ownedItem.Slot || ownedItem.slot) : '';
+    const wSlot = wantedItem ? normSlot(wantedItem.Slot || wantedItem.slot) : '';
     const typesMatch = !ownedItem || !wantedItem || oSlot === wSlot;
     applyBtn.disabled = !(ownedItem && wantedItem && typesMatch);
+}
+
+function openSettingsForPath() {
+    document.getElementById('settings-modal').classList.add('active');
+    invoke('detect_game_dir').then(installs => {
+        if (installs && installs.length > 1) showInstallChooser(installs);
+    }).catch(() => {});
 }
 
 async function handleApply() {
@@ -438,7 +463,12 @@ async function handleApply() {
     } catch (err) {
         updateStatus('Swap Failed', true);
         showProgress(false);
-        showToast(`Swap Error: ${err}`, 'error');
+        if (String(err).includes('Game directory not set') || String(err).includes('Game directory not configured') || String(err).includes('game_dir')) {
+            showToast('Game path not set — please configure it in Settings.', 'error');
+            openSettingsForPath();
+        } else {
+            showToast(`Swap Error: ${err}`, 'error');
+        }
         console.error(err);
         invoke('report_diagnostic', { payload: {
             event:     'swap_fail',
@@ -460,17 +490,55 @@ async function handleRestore() {
         setTimeout(() => updateStatus('bitsfdb', false), 3000);
     } catch (err) {
         updateStatus('Restore Failed', true);
-        alert(`Restore Error: ${err}`);
+        if (String(err).includes('Game directory not set') || String(err).includes('Game directory not configured') || String(err).includes('game_dir')) {
+            showToast('Game path not set — please configure it in Settings.', 'error');
+            openSettingsForPath();
+        } else {
+            showToast(`Restore Error: ${err}`, 'error');
+        }
         console.error(err);
     }
 }
 
 async function handleSaveSettings() {
+    const existing = await invoke('get_config').catch(() => ({}));
     const dir = document.getElementById('game-dir').value.trim();
-    if (dir) {
-        await invoke('save_config', { config: { game_dir: dir } }).catch(e => console.warn('Save config failed:', e));
-    }
+    await invoke('save_config', { config: { ...existing, game_dir: dir || existing.game_dir || '' } })
+        .catch(e => console.warn('Save config failed:', e));
     document.getElementById('settings-modal').classList.remove('active');
+}
+
+async function handleAutoDetect() {
+    const installs = await invoke('detect_game_dir').catch(() => []);
+    if (installs.length === 0) {
+        showToast('Could not auto-detect Rocket League. Please browse manually.', 'error');
+    } else if (installs.length === 1) {
+        document.getElementById('game-dir').value = installs[0].path;
+        showToast(`${installs[0].label} install detected`, 'success');
+    } else {
+        showInstallChooser(installs);
+    }
+}
+
+function showInstallChooser(installs) {
+    const container = document.getElementById('install-chooser');
+    container.innerHTML = '';
+    const label = document.createElement('p');
+    label.style.cssText = 'font-size:13px;color:var(--text-secondary);margin-bottom:8px;';
+    label.textContent = 'Multiple installs found — pick one:';
+    container.appendChild(label);
+    installs.forEach(install => {
+        const btn = document.createElement('button');
+        btn.className = 'chooser-btn';
+        btn.innerHTML = `<strong>${escHtml(install.label)}</strong><span>${escHtml(install.path)}</span>`;
+        btn.onclick = () => {
+            document.getElementById('game-dir').value = install.path;
+            container.innerHTML = '';
+            showToast(`${install.label} selected`, 'success');
+        };
+        container.appendChild(btn);
+    });
+    container.style.display = 'block';
 }
 
 async function handleBrowse() {
@@ -518,4 +586,197 @@ async function checkForUpdates() {
     }
 }
 
-window.addEventListener('DOMContentLoaded', () => init());
+// ── Privacy ────────────────────────────────────────────────────────────────
+
+async function fetchPrivacyVersion() {
+    try {
+        const resp = await fetch('https://velocityrl.tech/privacy.html');
+        if (!resp.ok) return null;
+        const html = await resp.text();
+        // Parse "Last updated: ..." from the page
+        const match = html.match(/last\s+updated[:\s]+([^\n<]{3,60})/i);
+        return match ? match[1].trim() : null;
+    } catch { return null; }
+}
+
+window.addEventListener('DOMContentLoaded', async () => {
+    document.getElementById('privacy-link').addEventListener('click', (e) => {
+        e.preventDefault();
+        window.__TAURI__.core.invoke('plugin:shell|open', { path: 'https://velocityrl.tech/privacy.html' });
+    });
+
+    document.getElementById('privacy-agree-btn').addEventListener('click', async () => {
+        const config = await invoke('get_config').catch(() => ({ game_dir: '', privacy_agreed: false, privacy_version: '', rl_username: '', rl_platform: 'epic', trn_api_key: '' }));
+        await invoke('save_config', { config: { ...config, privacy_agreed: true, privacy_version: window._currentPrivacyVersion || '' } }).catch(() => {});
+        document.getElementById('privacy-modal').classList.remove('active');
+        init();
+        initOverlay();
+    });
+
+    const config = await invoke('get_config').catch(() => null);
+
+    // Strict check — any non-true value (false, null, missing) means not agreed
+    const agreed = config?.privacy_agreed === true;
+
+    // Fetch last-updated date from the privacy page itself
+    const serverVersion = await fetchPrivacyVersion();
+    if (serverVersion) window._currentPrivacyVersion = serverVersion;
+
+    if (!agreed) {
+        document.getElementById('privacy-modal').classList.add('active');
+        return;
+    }
+
+    if (serverVersion && config.privacy_version !== serverVersion) {
+        document.getElementById('privacy-modal-title').textContent = 'Privacy Policy Updated';
+        document.getElementById('privacy-modal-desc').textContent = 'Our Privacy Policy has been updated. Please review and agree to continue.';
+        document.getElementById('privacy-modal').classList.add('active');
+        return;
+    }
+
+    init();
+    initOverlay();
+});
+
+// ── Stats Tab ──────────────────────────────────────────────────────────────
+
+function initOverlay() {
+    const overlayStatus = document.getElementById('overlay-status');
+    const streamStatus  = document.getElementById('stream-status');
+    const streamSub     = document.getElementById('stream-sub');
+    const launchBtn     = document.getElementById('overlay-launch-btn');
+    const hideBtn       = document.getElementById('overlay-hide-btn');
+    const startBtn      = document.getElementById('stream-start-btn');
+    const stopBtn       = document.getElementById('stream-stop-btn');
+    const enableApiBtn  = document.getElementById('enable-api-btn');
+    const saveBtn       = document.getElementById('stats-save-btn');
+    const portInput     = document.getElementById('stats-port');
+    const usernameInput = document.getElementById('stats-username');
+    const posBtns       = document.querySelectorAll('.pos-btn');
+
+    let currentPos = 'top-center';
+
+    function setOverlayStatus(on) {
+        overlayStatus.textContent = on ? 'On' : 'Off';
+        overlayStatus.style.color = on ? '#4ade80' : 'var(--text-secondary)';
+    }
+    function setStreamStatus(on) {
+        streamStatus.textContent = on ? 'On' : 'Off';
+        streamStatus.style.color = on ? '#4ade80' : 'var(--text-secondary)';
+        streamSub.textContent = on ? 'connected' : 'connects to RL on localhost';
+    }
+
+    launchBtn.addEventListener('click', async () => {
+        await invoke('create_overlay').catch(e => showToast(String(e), 'error'));
+        setOverlayStatus(true);
+    });
+
+    hideBtn.addEventListener('click', async () => {
+        await invoke('hide_overlay').catch(() => {});
+        setOverlayStatus(false);
+    });
+
+    document.getElementById('overlay-test-btn')?.addEventListener('click', () => {
+        invoke('test_overlay').catch(() => {});
+    });
+
+    document.getElementById('overlay-move-btn')?.addEventListener('click', () => {
+        invoke('send_overlay_config', { payload: { edit_mode: true } }).catch(() => {});
+    });
+
+    startBtn.addEventListener('click', async () => {
+        const port = parseInt(portInput.value) || 49123;
+        await invoke('start_stats_stream', { port }).catch(e => showToast(String(e), 'error'));
+        setStreamStatus(true);
+    });
+
+    stopBtn.addEventListener('click', async () => {
+        await invoke('stop_stats_stream').catch(() => {});
+        setStreamStatus(false);
+    });
+
+    enableApiBtn.addEventListener('click', async () => {
+        const port = parseInt(portInput.value) || 49123;
+        try {
+            const path = await invoke('enable_stats_api', { port });
+            showToast(`Written: ${path} — restart RL`, 'success');
+        } catch (e) {
+            showToast(String(e), 'error');
+        }
+    });
+
+    // Game widget position buttons
+    let currentGamePos = 'top-center';
+    let currentHudPos  = 'top-right';
+    let clock24h = false;
+
+    async function savePos() {
+        const existing = await invoke('get_config').catch(() => ({}));
+        invoke('save_config', { config: { ...existing, overlay_position: currentGamePos, hud_position: currentHudPos } }).catch(() => {});
+    }
+
+    document.querySelectorAll('.game-pos-btn').forEach(b => b.addEventListener('click', () => {
+        currentGamePos = b.dataset.pos;
+        document.querySelectorAll('.game-pos-btn').forEach(x => x.classList.toggle('active', x === b));
+        invoke('send_overlay_config', { payload: { game_pos: currentGamePos } }).catch(() => {});
+        savePos();
+    }));
+
+    document.querySelectorAll('.hud-pos-btn').forEach(b => b.addEventListener('click', () => {
+        currentHudPos = b.dataset.pos;
+        document.querySelectorAll('.hud-pos-btn').forEach(x => x.classList.toggle('active', x === b));
+        invoke('send_overlay_config', { payload: { hud_pos: currentHudPos } }).catch(() => {});
+        savePos();
+    }));
+
+    // Clock format
+    async function saveClock() {
+        const existing = await invoke('get_config').catch(() => ({}));
+        invoke('save_config', { config: { ...existing, clock_24h: clock24h } }).catch(() => {});
+    }
+
+    document.getElementById('clock-12h-btn')?.addEventListener('click', () => {
+        clock24h = false;
+        document.getElementById('clock-12h-btn').classList.add('active');
+        document.getElementById('clock-24h-btn').classList.remove('active');
+        invoke('send_overlay_config', { payload: { clock_24h: false } }).catch(() => {});
+        saveClock();
+    });
+    document.getElementById('clock-24h-btn')?.addEventListener('click', () => {
+        clock24h = true;
+        document.getElementById('clock-24h-btn').classList.add('active');
+        document.getElementById('clock-12h-btn').classList.remove('active');
+        invoke('send_overlay_config', { payload: { clock_24h: true } }).catch(() => {});
+        saveClock();
+    });
+
+    // Session reset
+    document.getElementById('session-reset-btn')?.addEventListener('click', () => {
+        invoke('send_overlay_config', { payload: { reset_session: true } }).catch(() => {});
+        showToast('Session reset', 'success');
+    });
+
+    saveBtn.addEventListener('click', async () => {
+        const existing = await invoke('get_config').catch(() => ({}));
+        const username = usernameInput?.value.trim() || '';
+        const port     = parseInt(portInput?.value) || 49123;
+        await invoke('save_config', { config: { ...existing, rl_username: username, overlay_position: currentGamePos, hud_position: currentHudPos, stats_port: port, clock_24h: clock24h } })
+            .catch(() => {});
+        invoke('send_overlay_config', { payload: { player_name: username, game_pos: currentGamePos, hud_pos: currentHudPos, clock_24h: clock24h } }).catch(() => {});
+        showToast('Saved', 'success');
+    });
+
+    // Populate from config
+    invoke('get_config').then(cfg => {
+        if (!cfg) return;
+        if (usernameInput) usernameInput.value = cfg.rl_username || '';
+        if (portInput)     portInput.value     = cfg.stats_port || 49123;
+        currentGamePos = cfg.overlay_position || 'top-center';
+        currentHudPos  = cfg.hud_position || 'top-right';
+        clock24h       = cfg.clock_24h || false;
+        document.querySelectorAll('.game-pos-btn').forEach(b => b.classList.toggle('active', b.dataset.pos === currentGamePos));
+        document.querySelectorAll('.hud-pos-btn').forEach(b =>  b.classList.toggle('active', b.dataset.pos === currentHudPos));
+        document.getElementById('clock-12h-btn')?.classList.toggle('active', !clock24h);
+        document.getElementById('clock-24h-btn')?.classList.toggle('active', clock24h);
+    }).catch(() => {});
+}
