@@ -7,6 +7,8 @@ Cargo.lock
 node_modules/
 dist/
 .env
+*.env
+.env.*
 .npmrc
 
 # Python

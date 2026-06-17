@@ -175,18 +175,6 @@ pub fn apply_name_pairs(
             .collect();
         if rename_indices.is_empty() { continue; }
 
-        // Collision check
-        let collision: Vec<usize> = slots.iter().enumerate()
-            .filter(|(i, s)| !rename_indices.contains(i) && s.name.eq_ignore_ascii_case(new_str))
-            .map(|(i, _)| i)
-            .collect();
-        if !collision.is_empty() {
-            return Err(format!(
-                "Cannot swap: the visual item's package already references '{}' internally. \
-                 Try a different visual item.", new_str
-            ));
-        }
-
         for &idx in &rename_indices {
             let slot = &slots[idx];
             if slot.fstr_len_raw < 0 {
@@ -309,16 +297,6 @@ pub fn apply_header_renames(
             .collect();
         if rename_idxs.is_empty() { continue; }
 
-        // Collision check
-        if slots.iter().enumerate()
-            .any(|(i, s)| !rename_idxs.contains(&i) && s.name.eq_ignore_ascii_case(new_str))
-        {
-            return Err(format!(
-                "Cannot swap: the visual item's package already references '{}' internally. \
-                 Try a different visual item.", new_str
-            ));
-        }
-
         for &idx in &rename_idxs {
             if slots[idx].fstr_len_raw < 0 {
                 return Err(format!("Name '{}' uses UTF-16; rename not supported.", old_str));
@@ -437,22 +415,6 @@ pub fn apply_name_pairs_inplace(
         if rename_indices.is_empty() {
             // Not found — skip silently (may be a pair that doesn't apply to this package)
             continue;
-        }
-
-        // Collision check: does new_str already exist at a DIFFERENT slot?
-        let collision: Vec<usize> = slots
-            .iter()
-            .enumerate()
-            .filter(|(i, s)| !rename_indices.contains(i) && s.name.eq_ignore_ascii_case(new_str))
-            .map(|(i, _)| i)
-            .collect();
-
-        if !collision.is_empty() {
-            return Err(format!(
-                "Cannot swap: the visual item's package already references '{}' internally. \
-                 Try a different visual item.",
-                new_str
-            ));
         }
 
         // Apply rename to each matching slot
