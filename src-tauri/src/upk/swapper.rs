@@ -170,7 +170,7 @@ pub fn swap_asset(
     if backup_path.exists() {
         return Err(SwapError::AlreadySwapped(format!(
             "{} is already swapped — restore it first.",
-            target.asset_package
+            if target.product.is_empty() { target.asset_package.as_str() } else { target.product.as_str() }
         )));
     }
     if !donor_path.exists() {
