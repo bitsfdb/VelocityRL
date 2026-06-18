@@ -2,9 +2,13 @@
 
 A powerful tool for performing item swaps in Rocket League.
 ![Downloads](https://img.shields.io/github/downloads/bitsfdb/velocityrl/total?style=for-the-badge&color=00d9ff&labelColor=111111) 
+
 ![Release](https://img.shields.io/github/v/release/bitsfdb/velocityrl?style=for-the-badge&color=e0e0e0&labelColor=111111) 
+
 ![Platform](https://img.shields.io/badge/Platform-Windows-111111?style=for-the-badge&logo=windows&logoColor=00d9ff) 
+
 ![Build](https://img.shields.io/github/actions/workflow/status/bitsfdb/velocityrl/release.yml?style=for-the-badge&color=00d9ff&labelColor=111111)
+
 ## Overview
 
 **VelocityRL** provides an interactive terminal wizard and a premium desktop interface that allows you to swap in-game items (e.g., swapping a standard boost for Alpha Reward). Under the hood, it seamlessly invokes an advanced Python engine to accurately parse `.upk` encryption, perfectly expand Name Table string offsets, and rebuild the package architecture without causing game crashes.
