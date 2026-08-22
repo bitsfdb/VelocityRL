@@ -1,0 +1,7 @@
+LIBRARY nametag_probe
+EXPORTS
+    TagameProbe_DumpW
+    TagameProbe_SnapshotW
+    TagameProbe_DiffW
+    TagameProbe_DiffSnapshotW
+    TagameProbe_GetLastErrorW

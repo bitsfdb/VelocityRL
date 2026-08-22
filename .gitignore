@@ -13,6 +13,11 @@ dist/
 
 # Python
 __pycache__/
+python/_probe_out/
+tools/nametag_probe/*.dll
+tools/nametag_probe/*.obj
+tools/nametag_probe/*.exp
+tools/nametag_probe/*.lib
 *.py[cod]
 *$py.class
 *.so
