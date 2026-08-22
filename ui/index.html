@@ -5,191 +5,242 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VelocityRL</title>
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <aside class="sidebar">
-        <div class="logo-section">
-            <img src="logo.svg" width="32" height="32" alt="VelocityRL Logo">
-            <h1>VelocityRL <span class="beta-badge">BETA</span></h1>
-        </div>
-
-        <nav class="nav-links">
-            <div class="nav-item active" data-tab="swapper-tab">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5M8 3H3v5M12 21v-4M8 21h8M3 16v5h5M21 16v5h-5"/></svg>
-                Swapper
-            </div>
-            <div class="nav-item" data-tab="restore-tab" id="nav-restore">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4l3 3"/></svg>
-                Restore
-            </div>
-        </nav>
-
-        <div class="sidebar-footer">
-            <div class="nav-item" id="website-btn">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-                Website
-            </div>
-            <div class="nav-item" id="settings-btn">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                Settings
-            </div>
-        </div>
-    </aside>
-
-    <main>
-        <div id="swapper-tab" class="tab-content active">
-            <div class="category-strip">
-                <button class="cat-btn active" data-slot="All">All Items</button>
-                <button class="cat-btn" data-slot="Body">Bodies</button>
-                <button class="cat-btn" data-slot="Decal">Decals</button>
-                <button class="cat-btn" data-slot="Wheel">Wheels</button>
-                <button class="cat-btn" data-slot="Boost">Boosts</button>
-                <button class="cat-btn" data-slot="Antenna">Antennas</button>
-                <button class="cat-btn" data-slot="Topper">Toppers</button>
-                <button class="cat-btn" data-slot="Goal Explosion">Goal Explosions</button>
+    <div class="app-shell">
+        <aside class="sidebar">
+            <div class="logo-section">
+                <div class="logo-mark">
+                    <img src="logo.svg" width="28" height="28" alt="">
+                </div>
+                <div class="logo-text">
+                    <span class="logo-name">VelocityRL</span>
+                    <span class="beta-badge">Beta</span>
+                </div>
             </div>
 
-            <div class="swapper-grid">
-                <div class="card">
-                    <h3>Owned Item</h3>
-                    <div class="search-box">
-                        <input type="text" id="owned-search" placeholder="Search your items..." autocomplete="off">
-                        <div id="owned-results" class="search-flyout"></div>
-                    </div>
-                    <div id="owned-selected" class="item-selected-view">
-                        <div class="clear-item-btn" id="clear-owned">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            <nav class="nav-links">
+                <div class="nav-item active" data-tab="swapper-tab">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16V4m0 0L3 8m4-4 4 4M17 8v12m0 0 4-4m-4 4-4-4"/></svg>
+                    <span>Swapper</span>
+                </div>
+                <div class="nav-item" data-tab="restore-tab" id="nav-restore">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                    <span>Restore</span>
+                </div>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="nav-item" id="website-btn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                    <span>Website</span>
+                </div>
+                <div class="nav-item" id="settings-btn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    <span>Settings</span>
+                </div>
+            </div>
+        </aside>
+
+        <div class="main-column">
+            <main>
+                <div id="swapper-tab" class="tab-content active">
+                    <header class="page-header">
+                        <div>
+                            <p class="page-eyebrow">Asset Swapper</p>
+                            <h2 class="page-title">Swap in-game items</h2>
+                            <p class="page-desc">Pick what you own, choose a target look, and apply the swap to your game files.</p>
                         </div>
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.2">
-                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                            <circle cx="8.5" cy="8.5" r="1.5"/>
-                            <polyline points="21 15 16 10 5 21"/>
-                        </svg>
-                        <p style="color: var(--text-secondary); margin-top: 12px; font-size: 13px;">No item selected</p>
-                    </div>
-                </div>
+                    </header>
 
-                <div class="card">
-                    <h3>Target Asset</h3>
-                    <div class="search-box">
-                        <input type="text" id="wanted-search" placeholder="Search target assets..." autocomplete="off">
-                        <div id="wanted-results" class="search-flyout"></div>
+                    <div class="category-strip">
+                        <button class="cat-btn active" data-slot="All">All</button>
+                        <button class="cat-btn" data-slot="Body">Bodies</button>
+                        <button class="cat-btn" data-slot="Decal">Decals</button>
+                        <button class="cat-btn" data-slot="Wheel">Wheels</button>
+                        <button class="cat-btn" data-slot="Boost">Boosts</button>
+                        <button class="cat-btn" data-slot="Antenna">Antennas</button>
+                        <button class="cat-btn" data-slot="Topper">Toppers</button>
+                        <button class="cat-btn" data-slot="Goal Explosion">Goal Explosions</button>
                     </div>
-                    <div id="wanted-selected" class="item-selected-view">
-                        <div class="clear-item-btn" id="clear-wanted">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+
+                    <div class="swapper-stage">
+                        <div class="swap-panel card">
+                            <div class="panel-header">
+                                <span class="panel-step">1</span>
+                                <div>
+                                    <h3>Owned Item</h3>
+                                    <p>What you have in your inventory</p>
+                                </div>
+                            </div>
+                            <div class="search-box">
+                                <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                                <input type="text" id="owned-search" placeholder="Search your items..." autocomplete="off">
+                                <div id="owned-results" class="search-flyout"></div>
+                            </div>
+                            <div id="owned-selected" class="item-selected-view">
+                                <div class="clear-item-btn" id="clear-owned">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                </div>
+                                <div class="empty-state">
+                                    <div class="empty-icon">
+                                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                                    </div>
+                                    <p>No item selected</p>
+                                    <span>Search above to pick an item you own</span>
+                                </div>
+                            </div>
                         </div>
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.2">
-                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                            <circle cx="8.5" cy="8.5" r="1.5"/>
-                            <polyline points="21 15 16 10 5 21"/>
-                        </svg>
-                        <p style="color: var(--text-secondary); margin-top: 12px; font-size: 13px;">No item selected</p>
+
+                        <div class="swap-bridge" aria-hidden="true">
+                            <div class="swap-bridge-line"></div>
+                            <div class="swap-bridge-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16V4m0 0L3 8m4-4 4 4M17 8v12m0 0 4-4m-4 4-4-4"/></svg>
+                            </div>
+                            <div class="swap-bridge-line"></div>
+                        </div>
+
+                        <div class="swap-panel card card-target">
+                            <div class="panel-header">
+                                <span class="panel-step panel-step-alt">2</span>
+                                <div>
+                                    <h3>Target Asset</h3>
+                                    <p>The look you want instead</p>
+                                </div>
+                            </div>
+                            <div class="search-box">
+                                <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                                <input type="text" id="wanted-search" placeholder="Search target assets..." autocomplete="off">
+                                <div id="wanted-results" class="search-flyout"></div>
+                            </div>
+                            <div id="wanted-selected" class="item-selected-view">
+                                <div class="clear-item-btn" id="clear-wanted">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                </div>
+                                <div class="empty-state">
+                                    <div class="empty-icon">
+                                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                                    </div>
+                                    <p>No item selected</p>
+                                    <span>Must match the same item type as owned</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="swapper-controls">
+                        <button id="apply-swap" class="action-btn action-btn-primary" disabled>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16V4m0 0L3 8m4-4 4 4M17 8v12m0 0 4-4m-4 4-4-4"/></svg>
+                            Swap Items
+                        </button>
                     </div>
                 </div>
-            </div>
 
-            <div class="swapper-controls">
-                <button id="apply-swap" class="action-btn" disabled>Swap Items</button>
-            </div>
+                <div id="restore-tab" class="tab-content">
+                    <header class="page-header page-header-center">
+                        <div class="restore-hero-icon">
+                            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                        </div>
+                        <p class="page-eyebrow">Backup Manager</p>
+                        <h2 class="page-title">Restore &amp; revert</h2>
+                        <p class="page-desc">Revert individual swaps or restore all modified game files from automatic backups.</p>
+                    </header>
+
+                    <div class="restoration-grid">
+                        <div id="backup-container" class="backup-list">
+                            <div class="backup-empty">Scanning for backups...</div>
+                        </div>
+                        <button id="restore-btn" class="action-btn action-btn-secondary">Restore All Items</button>
+                    </div>
+                </div>
+            </main>
+
+            <footer class="status-bar">
+                <div class="status-left">
+                    <span class="status-dot"></span>
+                    <span id="status-text">bitsfdb</span>
+                    <div id="progress-bar-container" class="progress-container hidden">
+                        <div id="progress-fill" class="progress-fill"></div>
+                    </div>
+                </div>
+                <div id="version-btn" class="version-chip">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    What's New · v1.2.3
+                </div>
+            </footer>
         </div>
-
-
-
-        <div id="restore-tab" class="tab-content">
-            <div class="restoration-grid">
-                <div style="text-align: center; margin-bottom: 32px;">
-                    <div style="background: rgba(59, 130, 246, 0.1); width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px auto;">
-                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--accent-blue)" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                    </div>
-                    <h2 style="font-size: 24px; margin-bottom: 8px;">Restore/Revert Items</h2>
-                    <p style="color: var(--text-secondary); max-width: 400px; margin: 0 auto;">Select specific files to revert or perform a full revert to clean all modifications.</p>
-                </div>
-
-                <div id="backup-container" class="backup-list">
-                    <div style="padding: 40px; text-align: center; color: var(--text-secondary);">
-                        Scanning for backups...
-                    </div>
-                </div>
-
-                <button id="restore-btn" class="action-btn" style="background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); margin-top: 24px;">Restore All Items</button>
-            </div>
-        </div>
-
-    </main>
+    </div>
 
     <div id="privacy-modal" class="modal-overlay">
-        <div class="modal" style="max-width: 420px;">
-            <div style="text-align: center; margin-bottom: 24px;">
-                <img src="logo.svg" width="40" height="40" alt="VelocityRL" style="margin-bottom: 16px;">
-                <h2 id="privacy-modal-title" style="font-size: 20px; margin-bottom: 8px;">Welcome to VelocityRL</h2>
-                <p id="privacy-modal-desc" style="color: var(--text-secondary); font-size: 13px; line-height: 1.6;">Before continuing, please review our Privacy Policy. VelocityRL may collect optional diagnostic data to improve the app.</p>
+        <div class="modal modal-sm">
+            <div class="modal-accent-bar"></div>
+            <div class="modal-body-center">
+                <img src="logo.svg" width="44" height="44" alt="VelocityRL" class="modal-logo">
+                <h2 id="privacy-modal-title">Welcome to VelocityRL</h2>
+                <p id="privacy-modal-desc">Before continuing, please review our Privacy Policy. VelocityRL may collect optional diagnostic data to improve the app.</p>
             </div>
-            <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 10px; padding: 14px 16px; margin-bottom: 20px; font-size: 13px; color: var(--text-secondary); line-height: 1.6;">
-                By clicking <strong style="color: var(--text-primary);">I Agree</strong>, you agree to the
-                <a id="privacy-link" href="#" class="toast-link" style="font-size: 13px;">Privacy Policy</a>.
+            <div class="privacy-notice">
+                By clicking <strong>I Agree</strong>, you agree to the
+                <a id="privacy-link" href="#" class="link-accent">Privacy Policy</a>.
                 No data is shared without your consent.
             </div>
-            <button id="privacy-agree-btn" class="action-btn" style="width: 100%;">I Agree</button>
+            <button id="privacy-agree-btn" class="action-btn action-btn-primary modal-full-btn">I Agree</button>
         </div>
     </div>
 
     <div id="settings-modal" class="modal-overlay">
         <div class="modal">
+            <div class="modal-accent-bar"></div>
             <div class="modal-header">
-                <h2>System Settings</h2>
-                <div id="cancel-settings" class="close-modal-btn">
+                <div>
+                    <p class="page-eyebrow">Configuration</p>
+                    <h2>Settings</h2>
+                </div>
+                <div id="cancel-settings" class="close-modal-btn" title="Close">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </div>
             </div>
             <div class="settings-group">
                 <label>Rocket League CookedPCConsole Path</label>
                 <div class="path-input-wrap">
-                    <input type="text" id="game-dir" placeholder="Rocket League CookedPCConsole Path">
+                    <input type="text" id="game-dir" placeholder="Path to CookedPCConsole folder">
                     <div class="path-btns">
-                        <div id="autodetect-dir" class="path-btn">
+                        <div id="autodetect-dir" class="path-btn" title="Auto-detect">
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                             <span>Auto-detect</span>
                         </div>
-                        <div id="browse-dir" class="path-btn">
+                        <div id="browse-dir" class="path-btn" title="Browse">
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                             <span>Browse</span>
                         </div>
                     </div>
                 </div>
             </div>
-            <div id="install-chooser" style="display:none;margin-bottom:12px;"></div>
-            <button id="close-settings" class="action-btn" style="width: 100%; margin-top: 16px;">Save</button>
-        </div>
-    </div>
-
-    <div class="status-bar">
-        <div style="display: flex; align-items: center; gap: 16px;">
-            <span id="status-text">bitsfdb</span>
-            <div id="progress-bar-container" class="progress-container hidden">
-                <div id="progress-fill" class="progress-fill"></div>
-            </div>
-        </div>
-        <div id="version-btn">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-            What's New · v1.2.3
+            <div id="install-chooser" style="display:none;"></div>
+            <button id="close-settings" class="action-btn action-btn-primary modal-full-btn">Save Settings</button>
         </div>
     </div>
 
     <div id="changelog-modal" class="modal-overlay">
-        <div class="modal" style="max-width: 520px; max-height: 80vh; display: flex; flex-direction: column;">
+        <div class="modal modal-lg">
+            <div class="modal-accent-bar"></div>
             <div class="modal-header">
-                <h2>What's New</h2>
-                <div id="close-changelog" class="close-modal-btn">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <div>
+                    <p class="page-eyebrow">Release Notes</p>
+                    <h2>What's New</h2>
+                </div>
+                <div id="close-changelog" class="close-modal-btn" title="Close">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </div>
             </div>
-            <div id="changelog-body" style="overflow-y: auto; flex: 1; padding-right: 4px;">
-                <div style="color: var(--text-secondary); text-align: center; padding: 40px;">Loading...</div>
+            <div id="changelog-body" class="changelog-scroll">
+                <div class="backup-empty">Loading...</div>
             </div>
-            <div style="border-top: 1px solid var(--border-color); padding-top: 12px; margin-top: 8px; display: flex; justify-content: flex-end;">
-                <button id="toggle-changelog-startup" class="path-btn" style="font-size: 12px; padding: 6px 12px;">Don't show on startup</button>
+            <div class="changelog-footer">
+                <button id="toggle-changelog-startup" class="path-btn">Don't show on startup</button>
             </div>
         </div>
     </div>

@@ -99,6 +99,38 @@ const qBgMap = {
     'Limited': 'bg-limited'
 };
 
+function emptyStateHtml(hint = 'Search above to pick an item you own') {
+    return `
+        <div class="empty-state">
+            <div class="empty-icon">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            </div>
+            <p>No item selected</p>
+            <span>${escHtml(hint)}</span>
+        </div>
+    `;
+}
+
+function renderSelectedItem(container, item, onClear) {
+    const pName = item.Product || item.product || 'Unknown';
+    const pQuality = item.Quality || item.quality || 'Common';
+    const pSlot = item.Slot || item.slot || '';
+    const pImg = item.image_url || item.src || '';
+    const bgClass = qBgMap[pQuality] || 'bg-common';
+
+    container.innerHTML = `
+        <div class="clear-item-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </div>
+        ${pImg ? `<img src="${escHtml(pImg)}" class="selected-img" />` : ''}
+        <h2>${escHtml(pName)}</h2>
+        <span class="quality-badge ${bgClass}">${escHtml(pQuality)}</span>
+        <p class="selected-slot">${escHtml(pSlot)}</p>
+    `;
+    container.querySelector('.clear-item-btn').addEventListener('click', onClear);
+    container.classList.add('selected');
+}
+
 async function init() {
     ownedSearch = document.getElementById('owned-search');
     wantedSearch = document.getElementById('wanted-search');
@@ -112,47 +144,15 @@ async function init() {
 
     setupSearch(ownedSearch, ownedResults, (item) => {
         ownedItem = item;
-        const pName = item.Product || item.product || 'Unknown';
-        const pQuality = item.Quality || item.quality || 'Common';
-        const pSlot = item.Slot || item.slot || '';
-        const pImg = item.image_url || item.src || '';
-
-        const container = document.getElementById('owned-selected');
-        container.innerHTML = `
-            <div class="clear-item-btn">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-            </div>
-            ${pImg ? `<img src="${escHtml(pImg)}" class="selected-img" />` : ''}
-            <h2>${escHtml(pName)}</h2>
-            <span class="quality-badge">${escHtml(pQuality)}</span>
-            <p style="margin-top: 16px; font-size: 13px; color: var(--text-secondary)">${escHtml(pSlot)}</p>
-        `;
-        container.querySelector('.clear-item-btn').addEventListener('click', clearOwned);
-        container.classList.add('selected');
-        ownedSearch.value = pName;
+        renderSelectedItem(document.getElementById('owned-selected'), item, clearOwned);
+        ownedSearch.value = item.Product || item.product || 'Unknown';
         validate();
     });
 
     setupSearch(wantedSearch, wantedResults, (item) => {
         wantedItem = item;
-        const pName = item.Product || item.product || 'Unknown';
-        const pQuality = item.Quality || item.quality || 'Common';
-        const pSlot = item.Slot || item.slot || '';
-        const pImg = item.image_url || item.src || '';
-
-        const container = document.getElementById('wanted-selected');
-        container.innerHTML = `
-            <div class="clear-item-btn">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-            </div>
-            ${pImg ? `<img src="${escHtml(pImg)}" class="selected-img" />` : ''}
-            <h2>${escHtml(pName)}</h2>
-            <span class="quality-badge">${escHtml(pQuality)}</span>
-            <p style="margin-top: 16px; font-size: 13px; color: var(--text-secondary)">${escHtml(pSlot)}</p>
-        `;
-        container.querySelector('.clear-item-btn').addEventListener('click', clearWanted);
-        container.classList.add('selected');
-        wantedSearch.value = pName;
+        renderSelectedItem(document.getElementById('wanted-selected'), item, clearWanted);
+        wantedSearch.value = item.Product || item.product || 'Unknown';
         validate();
     });
 
@@ -244,14 +244,7 @@ async function init() {
 function clearOwned() {
     ownedItem = null;
     const container = document.getElementById('owned-selected');
-    container.innerHTML = `
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.2">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-            <circle cx="8.5" cy="8.5" r="1.5"/>
-            <polyline points="21 15 16 10 5 21"/>
-        </svg>
-        <p style="color: var(--text-secondary); margin-top: 12px; font-size: 13px;">No item selected</p>
-    `;
+    container.innerHTML = emptyStateHtml('Search above to pick an item you own');
     container.classList.remove('selected');
     document.getElementById('owned-search').value = '';
     validate();
@@ -260,14 +253,7 @@ function clearOwned() {
 function clearWanted() {
     wantedItem = null;
     const container = document.getElementById('wanted-selected');
-    container.innerHTML = `
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.2">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-            <circle cx="8.5" cy="8.5" r="1.5"/>
-            <polyline points="21 15 16 10 5 21"/>
-        </svg>
-        <p style="color: var(--text-secondary); margin-top: 12px; font-size: 13px;">No item selected</p>
-    `;
+    container.innerHTML = emptyStateHtml('Must match the same item type as owned');
     container.classList.remove('selected');
     document.getElementById('wanted-search').value = '';
     validate();
@@ -278,11 +264,11 @@ window.clearWanted = clearWanted;
 
 async function refreshBackups() {
     if (!backupContainer) return;
-    backupContainer.innerHTML = '<div style="padding: 40px; text-align: center; color: var(--text-secondary);">Scanning for backups...</div>';
+    backupContainer.innerHTML = '<div class="backup-empty">Scanning for backups...</div>';
     try {
         const backups = await invoke('get_backups');
         if (backups.length === 0) {
-            backupContainer.innerHTML = '<div style="padding: 60px; text-align: center; color: var(--text-secondary);">No active modifications detected. Your files are clean.</div>';
+            backupContainer.innerHTML = '<div class="backup-empty">No active modifications detected. Your files are clean.</div>';
             return;
         }
         backupContainer.innerHTML = '';
@@ -322,7 +308,7 @@ async function refreshBackups() {
         });
     } catch (err) {
         console.error(err);
-        backupContainer.innerHTML = '<div style="padding: 40px; text-align: center; color: var(--danger);">Failed to retrieve backup list.</div>';
+        backupContainer.innerHTML = '<div class="backup-empty backup-empty-error">Failed to retrieve backup list.</div>';
     }
 }
 
@@ -344,7 +330,7 @@ async function restoreSingle(path) {
 function updateStatus(text, isError = false) {
     if (!statusText) return;
     statusText.textContent = text;
-    statusText.style.color = isError ? '#ef4444' : '#a1a1aa';
+    statusText.style.color = isError ? 'var(--danger)' : 'var(--text-secondary)';
 }
 
 function showProgress(show, percent = 0) {
