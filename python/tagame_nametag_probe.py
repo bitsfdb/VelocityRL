@@ -102,7 +102,7 @@ def load_package(upk_path: Path, work_dir: Path) -> Tuple[ParsedPackage, Path, b
     _decrypted_path, package, _provider, _keys_path, was_encrypted = resolve_input_package(
         upk_path, work_dir, SCRIPT_DIR
     )
-    return package, upk_path, was_encrypted
+    return package, str(upk_path.resolve()), was_encrypted
 
 
 def collect_player_title_products(package: ParsedPackage) -> List[NametagRecord]:
