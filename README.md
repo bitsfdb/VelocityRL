@@ -27,20 +27,12 @@ A powerful tool for performing item swaps in Rocket League.
 
 ## Credits
 
-Massive credits to [CrunchyRL/RLUPKTools](https://github.com/CrunchyRL/RLUPKTools) for making this repository possible. The advanced Python engineering for parsing and shifting Unreal Engine 3 UPK binaries was instrumental in making this project work safely.
+Massive credits to [dank/rlapi](https://github.com/dank/rlapi)
   
 ## Support
 
 Contact me on discord: @sfdb
 Or on the support server https://discord.gg/2HhBNbrGMj
-
-## License
-
-MIT
-
-## Code Signing Policy
-
-Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
 
 | Role | Member |
 |------|--------|
