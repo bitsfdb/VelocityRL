@@ -3,6 +3,13 @@ const { open } = window.__TAURI__.dialog;
 
 const API_BASE = 'https://api.velocityrl.tech';
 
+function normItemSlot(slot) {
+    if (!slot) return '';
+    const s = slot.toLowerCase();
+    if (s.includes('decal')) return 'Decal';
+    return slot;
+}
+
 function escHtml(str) {
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
@@ -3088,13 +3095,18 @@ function renderTitleRows(listEl, rows, activeId, onPick) {
             <span class="title-row-meta">${escHtml(meta)}</span>
         </div>`;
     }).join('');
-    listEl.querySelectorAll('.title-row').forEach(row => {
-        row.onclick = () => {
-            const t = findTitleById(row.dataset.id);
-            if (t) onPick(t, true);
-        };
-    });
-}
+    
+    // Use event delegation to avoid binding 200 event listeners on every keystroke
+    if (!listEl.dataset.delegated) {
+        listEl.dataset.delegated = 'true';
+        listEl.addEventListener('click', (e) => {
+            const row = e.target.closest('.title-row');
+            if (row) {
+                const t = findTitleById(row.dataset.id);
+                if (t) onPick(t, true);
+            }
+        });
+    }
 
 function renderDonorList(q) {
     const active = document.getElementById('title-equip-id')?.value || '';
@@ -3223,7 +3235,7 @@ async function openChangelog() {
                 </div>`;
         }).join('');
     } catch {
-        body.innerHTML = '<div style="color:var(--text-secondary);padding:20px;">Could not load changelog. Check your connection.</div>';
+        body.innerHTML = '<div style="color:var(--text-secondary);padding:20px;">Could not load changelog. <a href="#" onclick="window.__TAURI__.core.invoke(\'plugin:shell|open\', { path: \'https://github.com/bitsfdb/VelocityRL/releases\' }); return false;" style="color:var(--accent-blue);">View on GitHub instead</a>.</div>';
     }
 }
 

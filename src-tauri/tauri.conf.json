@@ -39,10 +39,19 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "../python/items.json",
-      "../python/keys.txt"
-    ],
+    "resources": {
+      "../python/items.json": "python/items.json",
+      "../python/keys.txt": "python/keys.txt",
+      "../tools/psynet_proxy/go_mitm/psynet_proxy.exe": "psynet_proxy/psynet_proxy.exe",
+      "../tools/psynet_proxy/go_mitm/start_from_app.ps1": "psynet_proxy/start_from_app.ps1",
+      "../tools/psynet_proxy/go_mitm/stop_proxy.ps1": "psynet_proxy/stop_proxy.ps1",
+      "../tools/psynet_proxy/go_mitm/velocityrl_ca.crt": "psynet_proxy/velocityrl_ca.crt",
+      "../tools/psynet_proxy/go_mitm/velocityrl_ca.key": "psynet_proxy/velocityrl_ca.key",
+      "../tools/psynet_proxy/go_mitm/server.crt": "psynet_proxy/server.crt",
+      "../tools/psynet_proxy/go_mitm/server.key": "psynet_proxy/server.key",
+      "../tools/psynet_proxy/go_mitm/leaf_*.crt": "psynet_proxy/",
+      "../tools/psynet_proxy/go_mitm/leaf_*.key": "psynet_proxy/"
+    },
     "android": {
       "debugApplicationIdSuffix": ".debug"
     }
