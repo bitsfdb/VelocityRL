@@ -1,31 +1,43 @@
 # VelocityRL 🚀
 
-A powerful tool for performing item swaps in Rocket League.
+A powerful desktop tool for swapping and customizing in-game assets in Rocket League — client-side only.
 
-![Downloads](https://img.shields.io/github/downloads/bitsfdb/velocityrl/total?style=for-the-badge&color=00d9ff&labelColor=111111) 
+![Downloads](https://img.shields.io/github/downloads/bitsfdb/velocityrl/total?style=for-the-badge&color=00d9ff&labelColor=111111)
+![Release](https://img.shields.io/github/v/release/bitsfdb/velocityrl?style=for-the-badge&color=e0e0e0&labelColor=111111)
+![Platform](https://img.shields.io/badge/Platform-Windows-111111?style=for-the-badge&logo=windows&logoColor=00d9ff)
 
-![Release](https://img.shields.io/github/v/release/bitsfdb/velocityrl?style=for-the-badge&color=e0e0e0&labelColor=111111) 
+## Features
 
-![Platform](https://img.shields.io/badge/Platform-Windows-111111?style=for-the-badge&logo=windows&logoColor=00d9ff) 
+### 🔄 UPK Item Swaps
+Swap any item in the game with any other item directly on disk. Use any car body, wheels, boost, decal, topper, antenna, or goal explosion — even ones you don't own. All swaps are client-side only and do not affect other players.
 
-![Build](https://img.shields.io/github/actions/workflow/status/bitsfdb/velocityrl/release.yml?style=for-the-badge&color=00d9ff&labelColor=111111)
+### 🏷️ Title Swaps
+Equip any player title in the game using the built-in PsyNet proxy. Browse the full title list, pick one, and it shows up in-game instantly. Client-side only — other players cannot see your swapped title.
 
-## Overview
+### 🏆 Rank Spoofing
+Display any competitive rank and reward level on your profile via the PsyNet proxy. Client-side only — other players cannot see your spoofed rank.
 
-**VelocityRL** is a customization tool for Rocket League allowing you to swap items without actually owning them, client side only.
+### 🔁 Reswap All
+Verified your game files and lost all your swaps? One click to re-apply every swap you've ever set up.
+
+### 📦 Live Item Database
+Items load automatically from the VelocityRL API with full thumbnail previews. The database updates itself whenever a new version is available — no manual downloads needed.
+
+### 🔄 Auto-Updater
+VelocityRL checks for updates on launch and prompts you to install new versions automatically.
 
 ## Installation
 
-![Latest Release](https://img.shields.io/github/v/release/bitsfdb/velocityrl?style=for-the-badge&color=e0e0e0&labelColor=111111)
+Download the latest installer from the [Releases](https://github.com/bitsfdb/VelocityRL/releases) page.
 
 ## Credits
 
 Massive credits to [dank/rlapi](https://github.com/dank/rlapi)
-  
+
 ## Support
 
-Contact me on discord: @sfdb
-Or on the support server https://discord.gg/2HhBNbrGMj
+Contact me on Discord: **@sfdb**
+Or join the support server: https://discord.gg/2HhBNbrGMj
 
 | Role | Member |
 |------|--------|

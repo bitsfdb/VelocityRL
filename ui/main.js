@@ -404,6 +404,13 @@ async function refreshBackups() {
     backupContainer.innerHTML = '<div class="backup-empty">Scanning for backups...</div>';
     try {
         const backups = await invoke('get_backups');
+        
+        try {
+            const swaps = await invoke('get_swaps');
+            const reswapBtn = document.getElementById('reswap-btn');
+            if (reswapBtn) reswapBtn.disabled = (!swaps || swaps.length === 0);
+        } catch { }
+
         if (backups.length === 0) {
             backupContainer.innerHTML = '<div class="backup-empty">No active modifications detected. Your files are clean.</div>';
             return;
