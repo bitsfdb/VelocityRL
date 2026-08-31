@@ -4,7 +4,6 @@ use crate::upk::{
     parser::{CompressedChunk, CompressionMeta, FileSummary, find_summary_offsets, parse_prefix},
 };
 
-/// Serialize the RL INT64 chunk table: count (i32) + N × (i64, i32, i64, i32).
 fn serialize_chunk_table(chunks: &[CompressedChunk]) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(&(chunks.len() as i32).to_le_bytes());
@@ -23,18 +22,6 @@ fn patch_i32(data: &mut [u8], offset: usize, value: i32) {
     }
 }
 
-/// Re-encrypt a modified decrypted RL UPK package.
-///
-/// Parameters:
-/// - `original_file`: raw bytes of the original (donor) encrypted file
-/// - `modified_decrypted`: full decrypted+decompressed bytes after name-table rename
-/// - `summary`: FileSummary parsed from the original file
-/// - `meta`: CompressionMeta parsed from the original file
-/// - `original_chunks`: INT64 chunk list parsed from the original encrypted block
-/// - `donor_key`: AES key used to decrypt the donor file
-/// - `output_key`: AES key to use for encrypting the output (target's key, or donor's)
-///
-/// Returns the final encrypted output bytes ready to write to disk.
 pub fn reencrypt(
     original_file: &[u8],
     modified_decrypted: &[u8],
@@ -48,7 +35,6 @@ pub fn reencrypt(
         return Err("no compressed chunks in donor file".into());
     }
 
-    // ── 1. Decrypt original encrypted block (for header structure) ──────────────
     let name_offset = summary.name_offset as usize;
     let enc_block_size = (summary.total_header_size - meta.garbage_size - summary.name_offset) as usize;
     let enc_block_size_aligned = (enc_block_size + 15) & !15;
@@ -58,34 +44,28 @@ pub fn reencrypt(
     let enc_data = &original_file[name_offset..name_offset + enc_block_size_aligned];
     let original_plain = crate::upk::crypto::decrypt_ecb(donor_key, enc_data);
 
-    // ── 2. Re-parse modified buffer FIRST to get updated offsets ────────────────
-    // apply_name_pairs may have rebuilt the name table (shrinking/growing it),
-    // which shifts depends_offset. We must use the NEW value so chunk_shift and
-    // tables_copy are both correct.
     let (mod_sum, _) = parse_prefix(modified_decrypted)
         .map_err(|e| format!("re-parse modified prefix: {}", e))?;
 
     let modified_depends = mod_sum.depends_offset as i64;
     let orig_first_uoff = original_chunks[0].uncompressed_offset;
-    let chunk_shift = modified_depends - orig_first_uoff;
+    let chunk_delta = modified_depends - orig_first_uoff;
 
-    // ── 3. Determine encrypted header size ──────────────────────────────────────
     let chunks_table_offset = meta.compressed_chunks_offset as usize;
-    // Each INT64 chunk entry = i64 + i32 + i64 + i32 = 24 bytes; + 4 byte count
-    let chunk_table_len = 4 + original_chunks.len() * 24;
+
+    let chunk_table_len = 4 + original_chunks.len() * crate::upk::parser::CHUNK_ENTRY_FIELDS;
     let required_plain_len = chunks_table_offset + chunk_table_len;
     let encrypted_plain_len = (required_plain_len + 15) & !15;
     let new_total_header_size = summary.name_offset + encrypted_plain_len as i32 + meta.garbage_size;
 
-    // ── 4. Compress body chunks ──────────────────────────────────────────────────
     let mut rebuilt_chunks: Vec<CompressedChunk> = Vec::new();
     let mut rebuilt_payloads: Vec<Vec<u8>> = Vec::new();
     let mut current_compressed_offset = new_total_header_size as i64;
 
     for (i, orig_chunk) in original_chunks.iter().enumerate() {
-        let start = (orig_chunk.uncompressed_offset + chunk_shift) as usize;
+        let start = (orig_chunk.uncompressed_offset + chunk_delta) as usize;
         let end = if i + 1 < original_chunks.len() {
-            (original_chunks[i + 1].uncompressed_offset + chunk_shift) as usize
+            (original_chunks[i + 1].uncompressed_offset + chunk_delta) as usize
         } else {
             modified_decrypted.len()
         };
@@ -106,15 +86,11 @@ pub fn reencrypt(
         rebuilt_payloads.push(payload);
     }
 
-    // ── 5. Build header_plain ────────────────────────────────────────────────────
     let mut header_plain = vec![0u8; encrypted_plain_len];
-    // Copy original decrypted header as base
+
     let copy_len = original_plain.len().min(encrypted_plain_len);
     header_plain[..copy_len].copy_from_slice(&original_plain[..copy_len]);
 
-    // Overwrite with modified name/import/export tables
-    // Use the NEW depends_offset (after name table rebuild) so we don't copy
-    // body bytes into the header or miss the last few table bytes.
     let tables_len = (mod_sum.depends_offset as usize).saturating_sub(name_offset);
     let tables_copy = tables_len.min(chunks_table_offset);
     if name_offset + tables_copy <= modified_decrypted.len() {
@@ -122,17 +98,14 @@ pub fn reencrypt(
             .copy_from_slice(&modified_decrypted[name_offset..name_offset + tables_copy]);
     }
 
-    // Write chunk table at chunks_table_offset
     let chunk_table_bytes = serialize_chunk_table(&rebuilt_chunks);
     let ct_end = chunks_table_offset + chunk_table_bytes.len();
     if ct_end <= header_plain.len() {
         header_plain[chunks_table_offset..ct_end].copy_from_slice(&chunk_table_bytes);
     }
 
-    // ── 6. AES-encrypt the header ────────────────────────────────────────────────
     let encrypted_header = encrypt_ecb(output_key, &header_plain);
 
-    // ── 7. Patch the unencrypted prefix ──────────────────────────────────────────
     let mut prefix = original_file[..name_offset].to_vec();
     let offsets = find_summary_offsets(&prefix)
         .map_err(|e| format!("find_summary_offsets: {}", e))?;
@@ -146,7 +119,6 @@ pub fn reencrypt(
     patch_i32(&mut prefix, offsets.import_offset_offset, mod_sum.import_offset);
     patch_i32(&mut prefix, offsets.depends_offset_offset, mod_sum.depends_offset);
 
-    // Patch meta: compressed_chunks_offset and last_block_size
     if meta.meta_file_offset + 8 <= prefix.len() {
         patch_i32(&mut prefix, meta.meta_file_offset + 4, meta.compressed_chunks_offset);
         if let Some(last) = rebuilt_chunks.last() {
@@ -154,12 +126,6 @@ pub fn reencrypt(
         }
     }
 
-    // ── 8. Assemble output ───────────────────────────────────────────────────────
-    // Layout: prefix | encrypted_header | gap | compressed_payloads
-    // The gap must be exactly garbage_size bytes. The encrypted block size is
-    // aligned up to 16 bytes which may overshoot the real end of encrypted data —
-    // use the Python fallback: if computed gap != garbage_size, take the last
-    // garbage_size bytes before the first chunk's compressed_offset instead.
     let orig_gap_start = name_offset + enc_data.len();
     let orig_gap_end = original_chunks[0].compressed_offset as usize;
     let garbage_size = meta.garbage_size as usize;
@@ -170,7 +136,7 @@ pub fn reencrypt(
             &[]
         };
         if candidate.len() != garbage_size && orig_gap_end >= garbage_size {
-            // Fallback: use last garbage_size bytes before first chunk
+
             &original_file[orig_gap_end - garbage_size..orig_gap_end]
         } else {
             candidate

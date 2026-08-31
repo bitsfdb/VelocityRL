@@ -22,21 +22,24 @@ pub struct FileSummary {
 #[derive(Debug, Clone)]
 pub struct CompressionMeta {
     pub garbage_size: i32,
-    /// Offset of the INT64 chunk table within the decrypted encrypted block.
+
     pub compressed_chunks_offset: i32,
     pub last_block_size: i32,
-    /// Absolute byte position of the garbage_size field in the raw file bytes (for patching).
+
     pub meta_file_offset: usize,
 }
 
-/// A compressed chunk entry using the RL INT64 format (stored inside encrypted block).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompressedChunk {
     pub uncompressed_offset: i64,
     pub uncompressed_size: i32,
     pub compressed_offset: i64,
     pub compressed_size: i32,
 }
+
+pub const CHUNK_ENTRY_FIELDS: usize = 24;
+
+const CHUNK_ENTRY_STRIDES: [usize; 3] = [24, 32, 36];
 
 #[derive(Debug, Clone)]
 pub struct NameEntry {
@@ -74,11 +77,17 @@ fn read_u64(c: &mut Cursor<&[u8]>) -> io::Result<u64> {
     Ok(u64::from_le_bytes(b))
 }
 
-/// Read an FString: i32 length (LE), then bytes. Positive length = ANSI (includes null). Negative = UTF-16LE.
 pub fn read_fstring(c: &mut Cursor<&[u8]>) -> io::Result<String> {
+    const MAX_FSTRING_CHARS: i32 = 1_048_576;
     let len = read_i32(c)?;
     if len == 0 {
         return Ok(String::new());
+    }
+    if len > MAX_FSTRING_CHARS || len < -MAX_FSTRING_CHARS {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("FString length {len} exceeds {MAX_FSTRING_CHARS}"),
+        ));
     }
     if len > 0 {
         let mut buf = vec![0u8; len as usize];
@@ -97,8 +106,6 @@ pub fn read_fstring(c: &mut Cursor<&[u8]>) -> io::Result<String> {
     }
 }
 
-/// Parse the unencrypted file prefix to extract FileSummary and CompressionMeta.
-/// The CompressionMeta fields follow the standard UE3 summary in RL's custom format.
 pub fn parse_prefix(data: &[u8]) -> io::Result<(FileSummary, CompressionMeta)> {
     let mut c = Cursor::new(data);
 
@@ -123,54 +130,69 @@ pub fn parse_prefix(data: &[u8]) -> io::Result<(FileSummary, CompressionMeta)> {
     let _export_guids_count = read_i32(&mut c)?;
     let _thumbnail_table_offset = read_i32(&mut c)?;
 
-    // GUID: 16 bytes
     let mut _guid = [0u8; 16];
     c.read_exact(&mut _guid)?;
 
-    // Generations TArray: i32 count, then count × (i32, i32, i32)
     let gen_count = read_i32(&mut c)?;
+    if !(0..=16_384).contains(&gen_count) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("implausible generations count {gen_count}"),
+        ));
+    }
     for _ in 0..gen_count {
         let _ = read_i32(&mut c)?;
         let _ = read_i32(&mut c)?;
         let _ = read_i32(&mut c)?;
     }
 
-    // engine_version (u32), cooker_version (u32)
     let _engine_version = read_u32(&mut c)?;
     let _cooker_version = read_u32(&mut c)?;
 
-    // compression_flags (u32)
     let _compression_flags = read_u32(&mut c)?;
 
-    // Standard UE3 compressed_chunks TArray (always 0 count in RL — empty)
     let std_chunk_count = read_i32(&mut c)?;
-    // Skip any entries just in case
-    for _ in 0..std_chunk_count {
-        let _ = read_i64(&mut c)?; // uncompressed_offset
-        let _ = read_i32(&mut c)?; // uncompressed_size
-        let _ = read_i64(&mut c)?; // compressed_offset
-        let _ = read_i32(&mut c)?; // compressed_size
+    if !(0..=16_384).contains(&std_chunk_count) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("implausible standard chunk count {std_chunk_count}"),
+        ));
     }
 
-    // PackageSource (u32)
+    for _ in 0..std_chunk_count {
+        let _ = read_i64(&mut c)?;
+        let _ = read_i32(&mut c)?;
+        let _ = read_i64(&mut c)?;
+        let _ = read_i32(&mut c)?;
+    }
+
     let _ = read_u32(&mut c)?;
 
-    // AdditionalPackagesToCook TArray<FString>
     let additional_count = read_i32(&mut c)?;
+    if !(0..=16_384).contains(&additional_count) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("implausible AdditionalPackagesToCook count {additional_count}"),
+        ));
+    }
     for _ in 0..additional_count {
         let _ = read_fstring(&mut c)?;
     }
 
-    // TextureAllocations: TArray of structs, always 0 count in cooked RL packages
     let tex_alloc_count = read_i32(&mut c)?;
+    if !(0..=16_384).contains(&tex_alloc_count) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("implausible TextureAllocations count {tex_alloc_count}"),
+        ));
+    }
     for _ in 0..tex_alloc_count {
-        // Each entry: 5 × i32, then TArray<i32>
+
         for _ in 0..5 { let _ = read_i32(&mut c)?; }
         let inner = read_i32(&mut c)?;
         for _ in 0..inner { let _ = read_i32(&mut c)?; }
     }
 
-    // RL-specific metadata immediately follows
     let meta_file_offset = c.position() as usize;
     let garbage_size = read_i32(&mut c)?;
     let compressed_chunks_offset = read_i32(&mut c)?;
@@ -200,25 +222,110 @@ pub fn parse_prefix(data: &[u8]) -> io::Result<(FileSummary, CompressionMeta)> {
     Ok((summary, meta))
 }
 
-/// Parse the INT64 chunk table from the decrypted encrypted block.
-/// `chunks_offset` is relative to the start of the decrypted block.
 pub fn parse_chunks(decrypted_block: &[u8], chunks_offset: i32) -> io::Result<Vec<CompressedChunk>> {
-    let mut c = Cursor::new(decrypted_block);
-    c.seek(SeekFrom::Start(chunks_offset as u64))?;
-    let count = read_i32(&mut c)?;
-    let mut chunks = Vec::with_capacity(count.max(0) as usize);
-    for _ in 0..count.max(0) {
-        chunks.push(CompressedChunk {
-            uncompressed_offset: read_i64(&mut c)?,
-            uncompressed_size: read_i32(&mut c)?,
-            compressed_offset: read_i64(&mut c)?,
-            compressed_size: read_i32(&mut c)?,
-        });
+    parse_chunks_with_stride(decrypted_block, chunks_offset).map(|(_, chunks)| chunks)
+}
+
+/// Like [`parse_chunks`], but also returns the on-disk entry stride (24 or 36).
+pub fn parse_chunks_with_stride(
+    decrypted_block: &[u8],
+    chunks_offset: i32,
+) -> io::Result<(usize, Vec<CompressedChunk>)> {
+    if chunks_offset < 0 {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "negative chunk table offset"));
+    }
+    let table_off = chunks_offset as usize;
+    if table_off + 4 > decrypted_block.len() {
+        return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "chunk table offset past end of decrypted block"));
+    }
+    let count_raw: [u8; 4] = decrypted_block[table_off..table_off + 4]
+        .try_into()
+        .map_err(|_| io::Error::new(io::ErrorKind::UnexpectedEof, "truncated chunk count"))?;
+    let count = i32::from_le_bytes(count_raw);
+    if count < 1 || count > 65_536 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("implausible chunk count {count}"),
+        ));
+    }
+    let count = count as usize;
+
+    let mut last_err = String::new();
+    for stride in CHUNK_ENTRY_STRIDES {
+        match decode_chunk_table(decrypted_block, table_off, count, stride) {
+            Ok(chunks) if chunk_table_plausible(&chunks) => return Ok((stride, chunks)),
+            Ok(_) => {
+                last_err = format!("stride {stride}: decoded {count} entries but values are not plausible");
+            }
+            Err(e) => last_err = format!("stride {stride}: {e}"),
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::InvalidData,
+        format!("no valid chunk-table stride among {:?} ({last_err})", CHUNK_ENTRY_STRIDES),
+    ))
+}
+
+fn decode_chunk_table(
+    plain: &[u8],
+    table_off: usize,
+    count: usize,
+    stride: usize,
+) -> io::Result<Vec<CompressedChunk>> {
+    let need = table_off
+        .checked_add(4)
+        .and_then(|o| o.checked_add(count.checked_mul(stride).unwrap_or(usize::MAX)))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "chunk table size overflow"))?;
+    if need > plain.len() {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            format!("stride {stride} table needs {need} bytes, block is {}", plain.len()),
+        ));
+    }
+    let mut chunks = Vec::with_capacity(count);
+    for i in 0..count {
+        let p = table_off + 4 + i * stride;
+        chunks.push(read_chunk_fields(&plain[p..p + CHUNK_ENTRY_FIELDS]).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "truncated chunk entry")
+        })?);
     }
     Ok(chunks)
 }
 
-/// Parse the name table from decrypted data.
+fn read_chunk_fields(entry: &[u8]) -> Option<CompressedChunk> {
+    if entry.len() < CHUNK_ENTRY_FIELDS {
+        return None;
+    }
+    Some(CompressedChunk {
+        uncompressed_offset: i64::from_le_bytes(entry.get(0..8)?.try_into().ok()?),
+        uncompressed_size: i32::from_le_bytes(entry.get(8..12)?.try_into().ok()?),
+        compressed_offset: i64::from_le_bytes(entry.get(12..20)?.try_into().ok()?),
+        compressed_size: i32::from_le_bytes(entry.get(20..24)?.try_into().ok()?),
+    })
+}
+
+fn chunk_table_plausible(chunks: &[CompressedChunk]) -> bool {
+    if chunks.is_empty() {
+        return false;
+    }
+    for c in chunks {
+        if c.uncompressed_offset < 0 || c.compressed_offset < 0 {
+            return false;
+        }
+        if c.uncompressed_size <= 0 || c.compressed_size <= 0 {
+            return false;
+        }
+
+        if (c.compressed_size as i64) > (c.uncompressed_size as i64) + 4096 {
+            return false;
+        }
+    }
+    chunks.windows(2).all(|w| {
+        w[1].uncompressed_offset > w[0].uncompressed_offset
+            && w[1].uncompressed_offset - w[0].uncompressed_offset == w[0].uncompressed_size as i64
+    })
+}
+
 pub fn parse_name_table(data: &[u8], name_offset: i32, name_count: i32) -> io::Result<Vec<NameEntry>> {
     let mut c = Cursor::new(data);
     c.seek(SeekFrom::Start(name_offset as u64))?;
@@ -231,8 +338,6 @@ pub fn parse_name_table(data: &[u8], name_offset: i32, name_count: i32) -> io::R
     Ok(names)
 }
 
-/// Locate the byte offsets of key summary fields within the raw prefix bytes.
-/// Used during re-encryption to patch the prefix in place.
 pub struct SummaryOffsets {
     pub total_header_size_offset: usize,
     pub name_count_offset: usize,
@@ -249,17 +354,16 @@ pub fn find_summary_offsets(data: &[u8]) -> io::Result<SummaryOffsets> {
     let mut b4 = [0u8; 4];
     let mut b2 = [0u8; 2];
 
-    c.read_exact(&mut b4)?; // tag
+    c.read_exact(&mut b4)?;
     if u32::from_le_bytes(b4) != PACKAGE_FILE_TAG {
         return Err(io::Error::new(io::ErrorKind::InvalidData, "bad tag"));
     }
-    c.read_exact(&mut b2)?; // file_version
-    c.read_exact(&mut b2)?; // licensee_version
+    c.read_exact(&mut b2)?;
+    c.read_exact(&mut b2)?;
 
     let total_header_size_offset = c.position() as usize;
-    c.read_exact(&mut b4)?; // total_header_size
+    c.read_exact(&mut b4)?;
 
-    // Skip folder_name fstring
     c.read_exact(&mut b4)?;
     let fstr_len = i32::from_le_bytes(b4);
     if fstr_len > 0 {
@@ -268,7 +372,7 @@ pub fn find_summary_offsets(data: &[u8]) -> io::Result<SummaryOffsets> {
         c.seek(SeekFrom::Current((-fstr_len * 2) as i64))?;
     }
 
-    c.read_exact(&mut b4)?; // package_flags
+    c.read_exact(&mut b4)?;
     let name_count_offset = c.position() as usize;
     c.read_exact(&mut b4)?;
     let name_offset_offset = c.position() as usize;
@@ -293,4 +397,131 @@ pub fn find_summary_offsets(data: &[u8]) -> io::Result<SummaryOffsets> {
         import_offset_offset,
         depends_offset_offset,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hex(s: &str) -> Vec<u8> {
+        let clean: String = s.chars().filter(|c| !c.is_whitespace()).collect();
+        (0..clean.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&clean[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    fn tagame_36_prefix() -> Vec<u8> {
+        let mut b = hex(
+            "
+            03 00 00 00
+            7C BD 9C 00 00 00 00 00 C4 FC 1F 00 65 93 A4 00 00 00 00 00 0C 05 08 00
+            00 00 00 00 00 00 00 00 00 00 00 00
+            40 BA BC 00 00 00 00 00 EB FF 1F 00 71 98 AC 00 00 00 00 00 C5 75 08 00
+            00 00 00 00 00 00 00 00 00 00 00 00
+            2B BA DC 00 00 00 00 00 9E FF 1F 00 36 0E B5 00 00 00 00 00 E6 8C 08 00
+            00 00 00 00 00 00 00 00 00 00 00 00
+            ",
+        );
+        assert_eq!(b.len(), 4 + 3 * 36);
+
+        b.extend_from_slice(&[0xAA, 0xBB]);
+        b
+    }
+
+    fn aftershock_24_table() -> Vec<u8> {
+        hex(
+            "
+            04 00 00 00
+            DB 07 01 00 00 00 00 00 1E 66 00 00 85 47 01 00 00 00 00 00 97 0B 00 00
+            F9 6D 01 00 00 00 00 00 3A 7F 38 00 1C 53 01 00 00 00 00 00 3D 93 11 00
+            33 ED 39 00 00 00 00 00 9C 3E 01 00 59 E6 12 00 00 00 00 00 99 DB 00 00
+            CF 2B 3B 00 00 00 00 00 C5 00 00 00 F2 C1 13 00 00 00 00 00 7A 00 00 00
+            ",
+        )
+    }
+
+    #[test]
+    fn parse_chunks_tagame_uses_36_byte_stride() {
+        let buf = tagame_36_prefix();
+        let (stride, chunks) =
+            parse_chunks_with_stride(&buf, 0).expect("TAGame 36-byte table should parse");
+        assert_eq!(stride, 36);
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(
+            chunks[0],
+            CompressedChunk {
+                uncompressed_offset: 10_272_124,
+                uncompressed_size: 2_096_324,
+                compressed_offset: 10_785_637,
+                compressed_size: 525_580,
+            }
+        );
+        assert_eq!(chunks[1].uncompressed_offset, 12_368_448);
+        assert_eq!(chunks[1].uncompressed_size, 2_097_131);
+        assert_eq!(chunks[1].compressed_offset, 11_311_217);
+        assert_eq!(chunks[1].compressed_size, 554_437);
+        assert_eq!(chunks[2].uncompressed_offset, 14_465_579);
+        assert_eq!(chunks[2].uncompressed_size, 2_097_054);
+        assert_eq!(chunks[2].compressed_offset, 11_865_654);
+        assert_eq!(chunks[2].compressed_size, 560_358);
+
+        assert_eq!(
+            chunks[1].uncompressed_offset - chunks[0].uncompressed_offset,
+            chunks[0].uncompressed_size as i64
+        );
+        assert_eq!(
+            chunks[2].uncompressed_offset - chunks[1].uncompressed_offset,
+            chunks[1].uncompressed_size as i64
+        );
+    }
+
+    #[test]
+    fn parse_chunks_sf_uses_24_byte_stride() {
+        let buf = aftershock_24_table();
+        assert_eq!(buf.len(), 4 + 4 * 24);
+        let (stride, chunks) =
+            parse_chunks_with_stride(&buf, 0).expect("_SF 24-byte table should parse");
+        assert_eq!(stride, 24);
+        assert_eq!(chunks.len(), 4);
+        assert_eq!(
+            chunks[0],
+            CompressedChunk {
+                uncompressed_offset: 67_547,
+                uncompressed_size: 26_142,
+                compressed_offset: 83_845,
+                compressed_size: 2_967,
+            }
+        );
+        assert_eq!(chunks[1].uncompressed_offset, 93_689);
+        assert_eq!(chunks[1].uncompressed_size, 3_702_586);
+        assert_eq!(chunks[2].uncompressed_offset, 3_796_275);
+        assert_eq!(chunks[3].uncompressed_offset, 3_877_839);
+        assert_eq!(chunks[3].uncompressed_size, 197);
+        assert_eq!(chunks[3].compressed_size, 122);
+        for w in chunks.windows(2) {
+            assert_eq!(
+                w[1].uncompressed_offset - w[0].uncompressed_offset,
+                w[0].uncompressed_size as i64
+            );
+        }
+    }
+
+    #[test]
+    fn parse_chunks_24_byte_misparse_of_tagame_is_rejected() {
+        let buf = tagame_36_prefix();
+        let wrong = decode_chunk_table(&buf, 0, 3, 24).unwrap();
+        assert!(!chunk_table_plausible(&wrong), "24-byte stride on TAGame bytes must not look plausible");
+        assert_eq!(wrong[1].uncompressed_offset, 0);
+        assert_eq!(wrong[1].uncompressed_size, 0);
+    }
+
+    #[test]
+    fn parse_chunks_rejects_bad_count_and_truncated_table() {
+        assert!(parse_chunks(&[0, 0, 0, 0], 0).is_err());
+        assert!(parse_chunks(&[0xff, 0xff, 0xff, 0x7f], 0).is_err());
+        let tiny = hex("03 00 00 00 01 00 00 00");
+        let err = parse_chunks(&tiny, 0).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    }
 }
