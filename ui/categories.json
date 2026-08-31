@@ -1,0 +1,129 @@
+{
+  "source": "PlayerTitleConfig",
+  "captured_at": "2026-08-23T21:28:16.023778+03:00",
+  "category_count": 26,
+  "categories": [
+    {
+      "ID": "AuraFarmer",
+      "Color": "E1F8FF",
+      "GlowColor": "4B99F7"
+    },
+    {
+      "ID": "AutoTour_Completed",
+      "Color": "9BFF00"
+    },
+    {
+      "ID": "AutoTour_CompletedGC",
+      "Color": "FF2800",
+      "GlowColor": "FF2800"
+    },
+    {
+      "ID": "AutoTour_CompletedSuperSonicLegend_1",
+      "Color": "F0FFF9",
+      "GlowColor": "F0FFF9"
+    },
+    {
+      "ID": "AutoTour_CompletedSuperSonicLegend_2",
+      "Color": "FF8DDD",
+      "GlowColor": "FF8DDD"
+    },
+    {
+      "ID": "Champion",
+      "Color": "FFEB5C",
+      "GlowColor": "FFA300"
+    },
+    {
+      "ID": "Community_Spotlight",
+      "Color": "BF5FFF"
+    },
+    {
+      "ID": "Community_Spotlight_Creator",
+      "Color": "BF5FFF",
+      "GlowColor": "BF5FFF"
+    },
+    {
+      "ID": "Developer",
+      "Color": "00FFAA",
+      "GlowColor": "00FFFF"
+    },
+    {
+      "ID": "Gryffindor",
+      "Color": "BEBEBE",
+      "GlowColor": "C80752"
+    },
+    {
+      "ID": "Helper",
+      "Color": "00FFAA"
+    },
+    {
+      "ID": "Hufflepuff",
+      "Color": "BEBEBE",
+      "GlowColor": "FFD046"
+    },
+    {
+      "ID": "MinusAura",
+      "Color": "C31334",
+      "GlowColor": "4A0000"
+    },
+    {
+      "ID": "Participant",
+      "Color": "FFEB5C"
+    },
+    {
+      "ID": "PocketLeague",
+      "Color": "FFA900",
+      "GlowColor": "0062FF"
+    },
+    {
+      "ID": "RLCS_Challenger",
+      "Color": "43CDFF",
+      "GlowColor": "9966CC"
+    },
+    {
+      "ID": "RLCS_Champion",
+      "Color": "AEF7FF",
+      "GlowColor": "43AFFF"
+    },
+    {
+      "ID": "Ranked_Champion",
+      "Color": "DBD2FF",
+      "GlowColor": "8C50FF"
+    },
+    {
+      "ID": "Ravenclaw",
+      "Color": "BEBEBE",
+      "GlowColor": "4D90CD"
+    },
+    {
+      "ID": "Rivalry_Blue",
+      "Color": "2C9EFF"
+    },
+    {
+      "ID": "Rivalry_Red",
+      "Color": "FF0000"
+    },
+    {
+      "ID": "Rivalry_Yellow",
+      "Color": "F8BF26"
+    },
+    {
+      "ID": "SZN_1_Red",
+      "Color": "FF2800",
+      "GlowColor": "FF2800"
+    },
+    {
+      "ID": "SZN_1_White",
+      "Color": "E8E8E8",
+      "GlowColor": "E8E8E8"
+    },
+    {
+      "ID": "Slytherin",
+      "Color": "BEBEBE",
+      "GlowColor": "006351"
+    },
+    {
+      "ID": "World_Cup_Gold",
+      "Color": "FFCF5C"
+    }
+  ]
+}

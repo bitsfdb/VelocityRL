@@ -1,0 +1,135 @@
+{
+  "Items": [
+    {
+      "ID": 23,
+      "Product": "Octane",
+      "Slot": "Body",
+      "Quality": "Common",
+      "UnlockMethod": "UnlockMethod_Default",
+      "Paintable": true,
+      "Paints": [
+        { "id": 1, "label": "Crimson" },
+        { "id": 2, "label": "Lime" },
+        { "id": 3, "label": "Black" },
+        { "id": 4, "label": "Orange" },
+        { "id": 5, "label": "Sky Blue" },
+        { "id": 6, "label": "Cobalt" },
+        { "id": 7, "label": "Saffron" },
+        { "id": 8, "label": "Grey" },
+        { "id": 9, "label": "Pink" },
+        { "id": 10, "label": "Forest Green" },
+        { "id": 11, "label": "Purple" },
+        { "id": 12, "label": "Titanium White" },
+        { "id": 13, "label": "Burnt Sienna" }
+      ],
+      "AssetPackage": "Body_Octane_SF.upk",
+      "AssetPath": "Body_Octane.Body_Octane"
+    },
+    {
+      "ID": 4284,
+      "Product": "Fennec",
+      "Slot": "Body",
+      "Quality": "Import",
+      "UnlockMethod": "UnlockMethod_Online",
+      "Paintable": true,
+      "Paints": [
+        { "id": 1, "label": "Crimson" },
+        { "id": 2, "label": "Lime" },
+        { "id": 3, "label": "Black" },
+        { "id": 4, "label": "Orange" },
+        { "id": 5, "label": "Sky Blue" },
+        { "id": 6, "label": "Cobalt" },
+        { "id": 7, "label": "Saffron" },
+        { "id": 8, "label": "Grey" },
+        { "id": 9, "label": "Pink" },
+        { "id": 10, "label": "Forest Green" },
+        { "id": 11, "label": "Purple" },
+        { "id": 12, "label": "Titanium White" },
+        { "id": 13, "label": "Burnt Sienna" }
+      ],
+      "AssetPackage": "Body_Fennec_SF.upk",
+      "AssetPath": "Body_Fennec.Body_Fennec"
+    },
+    {
+      "ID": 1,
+      "Product": "8-Ball",
+      "Slot": "Antenna",
+      "Quality": "Uncommon",
+      "UnlockMethod": "UnlockMethod_Online",
+      "Paintable": false,
+      "AssetPackage": "Antenna_8Ball_SF.upk",
+      "AssetPath": "Antenna_8Ball.Antenna_8Ball"
+    },
+    {
+      "ID": 31,
+      "Product": "Chakram",
+      "Slot": "Wheels",
+      "Quality": "VeryRare",
+      "UnlockMethod": "UnlockMethod_Online",
+      "Paintable": true,
+      "Paints": [
+        { "id": 1, "label": "Crimson" },
+        { "id": 2, "label": "Lime" },
+        { "id": 3, "label": "Black" },
+        { "id": 4, "label": "Orange" },
+        { "id": 5, "label": "Sky Blue" },
+        { "id": 6, "label": "Cobalt" },
+        { "id": 7, "label": "Saffron" },
+        { "id": 8, "label": "Grey" },
+        { "id": 9, "label": "Pink" },
+        { "id": 10, "label": "Forest Green" },
+        { "id": 11, "label": "Purple" },
+        { "id": 12, "label": "Titanium White" },
+        { "id": 13, "label": "Burnt Sienna" }
+      ],
+      "AssetPackage": "Wheel_Chakram_SF.upk",
+      "AssetPath": "Wheel_Chakram.Wheel_Chakram"
+    },
+    {
+      "ID": 35,
+      "Product": "Halo",
+      "Slot": "Topper",
+      "Quality": "Common",
+      "UnlockMethod": "UnlockMethod_Default",
+      "Paintable": true,
+      "Paints": [
+        { "id": 1, "label": "Crimson" },
+        { "id": 2, "label": "Lime" },
+        { "id": 3, "label": "Black" },
+        { "id": 4, "label": "Orange" },
+        { "id": 5, "label": "Sky Blue" },
+        { "id": 6, "label": "Cobalt" },
+        { "id": 7, "label": "Saffron" },
+        { "id": 8, "label": "Grey" },
+        { "id": 9, "label": "Pink" },
+        { "id": 10, "label": "Forest Green" },
+        { "id": 11, "label": "Purple" },
+        { "id": 12, "label": "Titanium White" },
+        { "id": 13, "label": "Burnt Sienna" }
+      ],
+      "AssetPackage": "Hat_Halo_SF.upk",
+      "AssetPath": "Hat_Halo.Hat_Halo"
+    },
+    {
+      "ID": 44,
+      "Product": "Merc: Narwhal",
+      "Slot": "Decal",
+      "Quality": "Rare",
+      "UnlockMethod": "UnlockMethod_Online",
+      "Paintable": false,
+      "AssetPackage": "Skin_Merc_Narwhal_SF.upk",
+      "AssetPath": "Skin_Merc_Narwhal.Skin_Merc_Narwhal"
+    },
+    {
+      "ID": 886,
+      "Product": "Batmobile",
+      "Slot": "Body",
+      "Quality": "Premium",
+      "UnlockMethod": "UnlockMethod_DLC",
+      "Paintable": false,
+      "DLC": "Batmobile DLC",
+      "AssetPackage": "Body_Batmobile_SF.upk",
+      "AssetPath": "Body_Batmobile.Body_Batmobile"
+    }
+  ]
+}

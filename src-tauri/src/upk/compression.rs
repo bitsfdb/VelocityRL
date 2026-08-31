@@ -2,7 +2,7 @@ use flate2::{read::ZlibDecoder, write::ZlibEncoder, Compression};
 use std::io::{self, Cursor, Read, Write};
 
 const PACKAGE_FILE_TAG: u32 = 0x9E2A83C1;
-const DEFAULT_BLOCK_SIZE: usize = 0x20000; // 128 KiB
+const DEFAULT_BLOCK_SIZE: usize = 0x20000;
 
 fn read_i32(c: &mut Cursor<&[u8]>) -> io::Result<i32> {
     let mut b = [0u8; 4];
@@ -10,7 +10,6 @@ fn read_i32(c: &mut Cursor<&[u8]>) -> io::Result<i32> {
     Ok(i32::from_le_bytes(b))
 }
 
-/// Decompress a single RL chunk payload into uncompressed bytes.
 pub fn decompress_chunk(payload: &[u8]) -> io::Result<Vec<u8>> {
     let mut c = Cursor::new(payload);
 
@@ -27,7 +26,6 @@ pub fn decompress_chunk(payload: &[u8]) -> io::Result<Vec<u8>> {
     let _total_comp = read_i32(&mut c)?;
     let total_uncomp = read_i32(&mut c)?;
 
-    // Read block headers until sum of uncompressed sizes == total_uncomp
     let mut blocks: Vec<(i32, i32)> = Vec::new();
     let mut sum_uncomp = 0i32;
     while sum_uncomp < total_uncomp {
@@ -37,7 +35,6 @@ pub fn decompress_chunk(payload: &[u8]) -> io::Result<Vec<u8>> {
         sum_uncomp = sum_uncomp.saturating_add(uncomp);
     }
 
-    // Decompress each block
     let mut out = Vec::with_capacity(total_uncomp as usize);
     for (comp_size, _uncomp_size) in &blocks {
         let start = c.position() as usize;
@@ -55,9 +52,8 @@ pub fn decompress_chunk(payload: &[u8]) -> io::Result<Vec<u8>> {
     Ok(out)
 }
 
-/// Compress uncompressed bytes into an RL chunk payload.
 pub fn compress_chunk(data: &[u8]) -> io::Result<Vec<u8>> {
-    // Split into DEFAULT_BLOCK_SIZE blocks and compress each
+
     let mut compressed_blocks: Vec<Vec<u8>> = Vec::new();
     let mut orig_block_sizes: Vec<usize> = Vec::new();
 
@@ -77,12 +73,12 @@ pub fn compress_chunk(data: &[u8]) -> io::Result<Vec<u8>> {
     out.extend_from_slice(&(DEFAULT_BLOCK_SIZE as i32).to_le_bytes());
     out.extend_from_slice(&total_comp.to_le_bytes());
     out.extend_from_slice(&total_uncomp.to_le_bytes());
-    // Block headers
+
     for (compressed, orig_size) in compressed_blocks.iter().zip(orig_block_sizes.iter()) {
         out.extend_from_slice(&(compressed.len() as i32).to_le_bytes());
         out.extend_from_slice(&(*orig_size as i32).to_le_bytes());
     }
-    // Block data
+
     for compressed in &compressed_blocks {
         out.extend_from_slice(compressed);
     }

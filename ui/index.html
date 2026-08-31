@@ -5,236 +5,544 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VelocityRL</title>
     <link rel="stylesheet" href="style.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
-<body>
-    <div class="app-shell">
-        <aside class="sidebar">
-            <div class="logo-section">
-                <div class="logo-mark">
-                    <img src="logo.svg" width="28" height="28" alt="">
-                </div>
-                <div class="logo-text">
-                    <span class="logo-name">VelocityRL</span>
-                    <span class="beta-badge">Beta</span>
+<body class="is-loading">
+    <aside class="sidebar" inert>
+        <div class="logo-section">
+            <img src="logo.svg" width="28" height="28" alt="">
+            <span class="logo-name">VelocityRL</span>
+        </div>
+
+        <nav class="nav-links">
+            <div class="nav-item active" data-tab="swapper-tab">Swapper</div>
+            <div class="nav-item" data-tab="titles-tab">Titles</div>
+            <div class="nav-item" data-tab="names-tab">Names<span class="nav-wip">WIP</span></div>
+            <div class="nav-item" data-tab="ranks-tab">Fake Ranks</div>
+            <div class="nav-item" data-tab="camera-tab">Camera</div>
+            <div class="nav-item" data-tab="misc-tab">Miscellaneous</div>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="nav-item" id="website-btn">Website</div>
+            <div class="nav-item" id="settings-btn">Settings</div>
+        </div>
+    </aside>
+
+    <div class="main-wrap" inert>
+        <main>
+            <div class="repair-banner" style="border-left-color: #2196f3; margin-bottom: 12px; background: rgba(33, 150, 243, 0.05);">
+                <div class="repair-banner-text">
+                    <strong>Keep VelocityRL Open</strong>
+                    <span>VelocityRL must remain running in the background for titles, spoofing, and names to appear in Rocket League.</span>
                 </div>
             </div>
 
-            <nav class="nav-links">
-                <div class="nav-item active" data-tab="swapper-tab">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16V4m0 0L3 8m4-4 4 4M17 8v12m0 0 4-4m-4 4-4-4"/></svg>
-                    <span>Swapper</span>
+            <div id="swapper-tab" class="tab-content active">
+                <div class="subtab-strip" role="tablist">
+                    <button type="button" class="subtab-btn active" data-subtab="swaps-pane">Swaps</button>
+                    <button type="button" class="subtab-btn" data-subtab="restore-pane">Restore</button>
                 </div>
-                <div class="nav-item" data-tab="restore-tab" id="nav-restore">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-                    <span>Restore</span>
-                </div>
-            </nav>
 
-            <div class="sidebar-footer">
-                <div class="nav-item" id="website-btn">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-                    <span>Website</span>
-                </div>
-                <div class="nav-item" id="settings-btn">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                    <span>Settings</span>
-                </div>
-            </div>
-        </aside>
-
-        <div class="main-column">
-            <main>
-                <div id="swapper-tab" class="tab-content active">
-                    <header class="page-header">
-                        <div>
-                            <p class="page-eyebrow">Asset Swapper</p>
-                            <h2 class="page-title">Swap in-game items</h2>
-                            <p class="page-desc">Pick what you own, choose a target look, and apply the swap to your game files.</p>
-                        </div>
-                    </header>
-
+                <div id="swaps-pane" class="subtab-pane active">
                     <div class="category-strip">
-                        <button class="cat-btn active" data-slot="All">All</button>
+                        <button class="cat-btn active" data-slot="All">All Items</button>
                         <button class="cat-btn" data-slot="Body">Bodies</button>
                         <button class="cat-btn" data-slot="Decal">Decals</button>
-                        <button class="cat-btn" data-slot="Wheel">Wheels</button>
-                        <button class="cat-btn" data-slot="Boost">Boosts</button>
+                        <button class="cat-btn" data-slot="Wheels">Wheels</button>
+                        <button class="cat-btn" data-slot="Rocket Boost">Boosts</button>
                         <button class="cat-btn" data-slot="Antenna">Antennas</button>
                         <button class="cat-btn" data-slot="Topper">Toppers</button>
                         <button class="cat-btn" data-slot="Goal Explosion">Goal Explosions</button>
                     </div>
 
-                    <div class="swapper-stage">
-                        <div class="swap-panel card">
-                            <div class="panel-header">
-                                <span class="panel-step">1</span>
-                                <div>
-                                    <h3>Owned Item</h3>
-                                    <p>What you have in your inventory</p>
-                                </div>
-                            </div>
+                    <div class="swapper-grid">
+                        <div class="card">
+                            <h3>Owned Item</h3>
                             <div class="search-box">
-                                <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                                 <input type="text" id="owned-search" placeholder="Search your items..." autocomplete="off">
                                 <div id="owned-results" class="search-flyout"></div>
                             </div>
                             <div id="owned-selected" class="item-selected-view">
-                                <div class="clear-item-btn" id="clear-owned">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                                </div>
+                                <div class="clear-item-btn" id="clear-owned">×</div>
                                 <div class="empty-state">
-                                    <div class="empty-icon">
-                                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                                    </div>
                                     <p>No item selected</p>
-                                    <span>Search above to pick an item you own</span>
                                 </div>
                             </div>
                         </div>
 
-                        <div class="swap-bridge" aria-hidden="true">
-                            <div class="swap-bridge-line"></div>
-                            <div class="swap-bridge-icon">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16V4m0 0L3 8m4-4 4 4M17 8v12m0 0 4-4m-4 4-4-4"/></svg>
-                            </div>
-                            <div class="swap-bridge-line"></div>
-                        </div>
-
-                        <div class="swap-panel card card-target">
-                            <div class="panel-header">
-                                <span class="panel-step panel-step-alt">2</span>
-                                <div>
-                                    <h3>Target Asset</h3>
-                                    <p>The look you want instead</p>
-                                </div>
-                            </div>
+                        <div class="card">
+                            <h3>Target Asset</h3>
                             <div class="search-box">
-                                <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                                 <input type="text" id="wanted-search" placeholder="Search target assets..." autocomplete="off">
                                 <div id="wanted-results" class="search-flyout"></div>
                             </div>
                             <div id="wanted-selected" class="item-selected-view">
-                                <div class="clear-item-btn" id="clear-wanted">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                                </div>
+                                <div class="clear-item-btn" id="clear-wanted">×</div>
                                 <div class="empty-state">
-                                    <div class="empty-icon">
-                                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                                    </div>
                                     <p>No item selected</p>
-                                    <span>Must match the same item type as owned</span>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <div class="swapper-controls">
-                        <button id="apply-swap" class="action-btn action-btn-primary" disabled>
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16V4m0 0L3 8m4-4 4 4M17 8v12m0 0 4-4m-4 4-4-4"/></svg>
-                            Swap Items
-                        </button>
+                    <div class="spawn-paint-block" id="swap-paint-block">
+                        <div class="spawn-paint-head">
+                            <span class="spawn-paint-label">Paint</span>
+                            <span id="swap-paint-selected" class="spawn-paint-selected" style="color: var(--muted);">Coming Soon</span>
+                        </div>
+                        <div id="swap-paint-swatches" class="paint-swatches" role="radiogroup" aria-label="Swap paint color" style="pointer-events: none; opacity: 0.3;">
+                            <button type="button" class="paint-swatch is-active" data-paint="0" aria-label="None" aria-checked="true" disabled></button>
+                            <button type="button" class="paint-swatch" data-paint="1" aria-label="Crimson" aria-checked="false" disabled></button>
+                            <button type="button" class="paint-swatch" data-paint="2" aria-label="Lime" aria-checked="false" disabled></button>
+                            <button type="button" class="paint-swatch" data-paint="3" aria-label="Black" aria-checked="false" disabled></button>
+                            <button type="button" class="paint-swatch" data-paint="4" aria-label="Orange" aria-checked="false" disabled></button>
+                            <button type="button" class="paint-swatch" data-paint="5" aria-label="Sky Blue" aria-checked="false" disabled></button>
+                            <button type="button" class="paint-swatch" data-paint="6" aria-label="Cobalt" aria-checked="false" disabled></button>
+                            <button type="button" class="paint-swatch" data-paint="7" aria-label="Saffron" aria-checked="false" disabled></button>
+                            <button type="button" class="paint-swatch" data-paint="8" aria-label="Grey" aria-checked="false" disabled></button>
+                            <button type="button" class="paint-swatch" data-paint="9" aria-label="Pink" aria-checked="false" disabled></button>
+                            <button type="button" class="paint-swatch" data-paint="10" aria-label="Forest Green" aria-checked="false" disabled></button>
+                            <button type="button" class="paint-swatch" data-paint="11" aria-label="Purple" aria-checked="false" disabled></button>
+                            <button type="button" class="paint-swatch" data-paint="12" aria-label="Titanium White" aria-checked="false" disabled></button>
+                        </div>
+                        <select id="swap-paint" class="spawn-paint-select" aria-hidden="true" tabindex="-1" disabled>
+                            <option value="0">None</option>
+                        </select>
+                        <p id="swap-paint-hint" class="field-hint" style="display:block; color: var(--accent-red, #e05);">⚠ Paint swaps are disabled — selecting a paint causes items to become invisible in-game and may crash Rocket League. Coming in a later update.</p>
                     </div>
+
+                    <div class="swapper-controls">
+                        <button id="apply-swap" class="action-btn" disabled>Swap Items</button>
+                    </div>
+                    <p id="swap-rl-hint" class="field-hint" hidden>Rocket League is running — close it before swapping or restoring.</p>
                 </div>
 
-                <div id="restore-tab" class="tab-content">
-                    <header class="page-header page-header-center">
-                        <div class="restore-hero-icon">
-                            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                        </div>
-                        <p class="page-eyebrow">Backup Manager</p>
-                        <h2 class="page-title">Restore &amp; revert</h2>
-                        <p class="page-desc">Revert individual swaps or restore all modified game files from automatic backups.</p>
-                    </header>
-
+                <div id="restore-pane" class="subtab-pane">
+                    <h2 class="section-title">Restore / Revert</h2>
+                    <p class="section-desc">Revert individual files or restore everything from backups.</p>
                     <div class="restoration-grid">
                         <div id="backup-container" class="backup-list">
                             <div class="backup-empty">Scanning for backups...</div>
                         </div>
-                        <button id="restore-btn" class="action-btn action-btn-secondary">Restore All Items</button>
+                        <div style="display: flex; gap: 12px; margin-top: 12px;">
+                            <button id="restore-btn" class="action-btn action-btn-secondary" disabled>Restore All Items</button>
+                            <button id="reswap-btn" class="action-btn" style="background: var(--accent-blue); color: #fff;" disabled>Reswap All Items</button>
+                        </div>
                     </div>
                 </div>
-            </main>
+            </div>
 
-            <footer class="status-bar">
-                <div class="status-left">
-                    <span class="status-dot"></span>
-                    <span id="status-text">bitsfdb</span>
-                    <div id="progress-bar-container" class="progress-container hidden">
-                        <div id="progress-fill" class="progress-fill"></div>
+            <div id="titles-tab" class="tab-content">
+                <h2 class="section-title titles-hero">Titles</h2>
+
+                <div class="card spoof-card titles-shell">
+                    <div class="title-pick-grid">
+                        <section class="title-pick-panel" data-role="donor" aria-labelledby="donor-heading">
+                            <header class="title-pick-head">
+                                <span class="title-pick-step">1</span>
+                                <div>
+                                    <h3 id="donor-heading">Donor</h3>
+                                    <p>Title you have equipped.</p>
+                                </div>
+                            </header>
+                            <div id="donor-selected" class="title-selected-slot is-empty">
+                                <span class="title-selected-label">Not picked</span>
+                                <span class="title-selected-meta">Search below</span>
+                            </div>
+                            <input type="hidden" id="title-equip-id" value="">
+                            <div class="search-box">
+                                <input type="text" id="donor-search" placeholder="Search your equipped title…" autocomplete="off" spellcheck="false">
+                            </div>
+                            <div id="donor-list" class="titles-list title-pick-list"><div class="backup-empty">Loading…</div></div>
+                        </section>
+
+                        <div class="title-pick-bridge" aria-hidden="true">
+                            <span class="title-pick-arrow">→</span>
+                            <span class="title-pick-bridge-label">becomes</span>
+                        </div>
+
+                        <section class="title-pick-panel title-pick-panel-display" data-role="display" aria-labelledby="display-heading">
+                            <header class="title-pick-head">
+                                <span class="title-pick-step">2</span>
+                                <div>
+                                    <h3 id="display-heading">Look (optional)</h3>
+                                    <p>Catalog look or custom text below.</p>
+                                </div>
+                            </header>
+                            <div id="display-selected" class="title-selected-slot is-empty">
+                                <span class="title-selected-label">Not picked</span>
+                                <span class="title-selected-meta">Search below</span>
+                            </div>
+                            <input type="hidden" id="title-display-id" value="">
+                            <div class="search-box">
+                                <input type="text" id="display-search" placeholder="Search the look you want…" autocomplete="off" spellcheck="false">
+                            </div>
+                            <div id="display-list" class="titles-list title-pick-list"><div class="backup-empty">Loading…</div></div>
+                        </section>
+                    </div>
+
+                    <div class="title-custom-fields">
+                        <div class="settings-group">
+                            <label for="title-custom-text">Custom text</label>
+                            <input type="text" id="title-custom-text" placeholder="Type any title (e.g. VelocityRL)" autocomplete="off" maxlength="128" spellcheck="false">
+                        </div>
+                        <div class="title-color-row">
+                            <div class="settings-group">
+                                <label for="title-color-hex">Color</label>
+                                <div class="title-color-inputs">
+                                    <input type="color" id="title-color-picker" value="#c8c8c8" aria-label="Title color picker">
+                                    <input type="text" id="title-color-hex" placeholder="AEF7FF" maxlength="7" autocomplete="off" spellcheck="false">
+                                </div>
+                            </div>
+                            <div class="settings-group">
+                                <label for="title-glow-hex">Glow</label>
+                                <div class="title-color-inputs">
+                                    <input type="color" id="title-glow-picker" value="#43afff" aria-label="Title glow picker">
+                                    <input type="text" id="title-glow-hex" placeholder="43AFFF" maxlength="7" autocomplete="off" spellcheck="false">
+                                </div>
+                            </div>
+                            <label class="switch-row title-color-enable" for="title-color-custom">
+                                <input type="checkbox" id="title-color-custom" class="switch-input" role="switch">
+                                <span class="switch-ui" aria-hidden="true">
+                                    <span class="switch-track"><span class="switch-thumb"></span></span>
+                                    <span class="switch-state">
+                                        <span class="switch-state-on">On</span>
+                                        <span class="switch-state-off">Off</span>
+                                    </span>
+                                </span>
+                                <span class="switch-copy">
+                                    <span class="switch-title">Custom colors</span>
+                                    <span class="switch-hint">injects a new title category</span>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="titles-preview-block">
+                        <h3 class="titles-preview-heading">Preview</h3>
+                        <div class="titles-stage" id="titles-stage" aria-live="polite">
+                            <div class="titles-stage-from">
+                                <span class="spoof-preview-label">Equipped</span>
+                                <div id="donor-preview" class="title-preview-chip title-preview-muted">-</div>
+                            </div>
+                            <span class="titles-stage-sep" aria-hidden="true">→</span>
+                            <div class="titles-stage-to">
+                                <span class="spoof-preview-label">In-game</span>
+                                <div id="title-preview" class="title-preview-chip">-</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="swapper-controls">
+                        <button id="title-apply-btn" class="action-btn">Add swap</button>
+                    </div>
+
+                    <div class="title-swap-queue">
+                        <div id="title-swap-list" class="backup-list">
+                            <div class="backup-empty">No title remaps yet.</div>
+                        </div>
+                        <button id="title-restore-all-btn" class="action-btn action-btn-secondary" type="button" hidden>Restore all</button>
                     </div>
                 </div>
-                <div id="version-btn" class="version-chip">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                    What's New · v1.2.3
-                </div>
-            </footer>
-        </div>
-    </div>
+            </div>
 
-    <div id="privacy-modal" class="modal-overlay">
-        <div class="modal modal-sm">
-            <div class="modal-accent-bar"></div>
-            <div class="modal-body-center">
-                <img src="logo.svg" width="44" height="44" alt="VelocityRL" class="modal-logo">
-                <h2 id="privacy-modal-title">Welcome to VelocityRL</h2>
-                <p id="privacy-modal-desc">Before continuing, please review our Privacy Policy. VelocityRL may collect optional diagnostic data to improve the app.</p>
+            <div id="names-tab" class="tab-content">
+                <h2 class="section-title">Names <span class="section-wip" title="Work in progress">WIP</span></h2>
+                <div class="wip-banner" role="status">
+                    <div class="wip-banner-text">
+                        <strong>Not available</strong>
+                        <span>Name spoof is not working yet and is fully disabled. Controls below cannot be used — check back in a later update.</span>
+                    </div>
+                </div>
+                <p class="section-desc">Display-name spoofing is coming later. Other PsyNet spoofs (ranks, titles) are unaffected.</p>
+                <div class="card spoof-card name-spoof-disabled" aria-disabled="true">
+                    <div class="settings-group">
+                        <label class="switch-row" for="name-spoof-enabled">
+                            <input type="checkbox" id="name-spoof-enabled" class="switch-input" role="switch" disabled aria-disabled="true">
+                            <span class="switch-ui" aria-hidden="true">
+                                <span class="switch-track"><span class="switch-thumb"></span></span>
+                                <span class="switch-state">
+                                    <span class="switch-state-on">On</span>
+                                    <span class="switch-state-off">Off</span>
+                                </span>
+                            </span>
+                            <span class="switch-copy">
+                                <span class="switch-title">Name spoof <span class="inline-wip">WIP</span></span>
+                                <span class="switch-hint">Unavailable — not working yet</span>
+                            </span>
+                        </label>
+                    </div>
+                    <div class="name-preview" id="name-spoof-preview" aria-live="polite">
+                        <span class="name-preview-chip name-preview-from" id="name-preview-from">bitss.</span>
+                        <span class="name-preview-arrow" aria-hidden="true">→</span>
+                        <span class="name-preview-chip name-preview-to" id="name-preview-to">evil bits</span>
+                    </div>
+                    <div class="settings-group">
+                        <label for="name-spoof-display">Display name</label>
+                        <input type="text" id="name-spoof-display" placeholder="evil bits" maxlength="32" autocomplete="off" spellcheck="false" disabled aria-disabled="true" readonly tabindex="-1">
+                    </div>
+                    <div class="settings-group">
+                        <label for="name-spoof-real">Your Epic name</label>
+                        <input type="text" id="name-spoof-real" placeholder="bitss." maxlength="32" autocomplete="off" spellcheck="false" disabled aria-disabled="true" readonly tabindex="-1">
+                        <p class="field-hint">Exact in-game name to replace (case-sensitive).</p>
+                    </div>
+                    <details class="name-advanced">
+                        <summary>Advanced</summary>
+                        <div class="settings-group">
+                            <label for="name-spoof-player-id">Player ID</label>
+                            <input type="text" id="name-spoof-player-id" placeholder="Epic|…|0" autocomplete="off" spellcheck="false" disabled aria-disabled="true" readonly tabindex="-1">
+                            <p class="field-hint">Epic|…|0 for WS name scrub. Set manually or learned from WS traffic when empty.</p>
+                        </div>
+                        <label class="switch-row switch-row-compact" for="name-spoof-lab-all">
+                            <input type="checkbox" id="name-spoof-lab-all" class="switch-input" role="switch" disabled aria-disabled="true">
+                            <span class="switch-ui" aria-hidden="true">
+                                <span class="switch-track"><span class="switch-thumb"></span></span>
+                            </span>
+                            <span class="switch-copy">
+                                <span class="switch-title">Lab: all nametags</span>
+                                <span class="switch-hint">Every PlayerName on wire shows your spoof (testing only)</span>
+                            </span>
+                        </label>
+                    </details>
+                    <div class="swapper-controls">
+                        <button id="name-spoof-save-btn" class="action-btn" type="button" disabled aria-disabled="true" title="Name spoof is not available yet">Save name spoof</button>
+                    </div>
+                </div>
             </div>
-            <div class="privacy-notice">
-                By clicking <strong>I Agree</strong>, you agree to the
-                <a id="privacy-link" href="#" class="link-accent">Privacy Policy</a>.
-                No data is shared without your consent.
+
+            <div id="ranks-tab" class="tab-content">
+                <h2 class="section-title">Fake Ranks</h2>
+                <p class="section-desc">Override ranked badges, MMR, and season reward tier per playlist.</p>
+                <div class="card spoof-card">
+                    <div class="settings-group">
+                        <label class="switch-row" for="fake-ranks-enabled">
+                            <input type="checkbox" id="fake-ranks-enabled" class="switch-input" role="switch">
+                            <span class="switch-ui" aria-hidden="true">
+                                <span class="switch-track"><span class="switch-thumb"></span></span>
+                                <span class="switch-state">
+                                    <span class="switch-state-on">On</span>
+                                    <span class="switch-state-off">Off</span>
+                                </span>
+                            </span>
+                            <span class="switch-copy">
+                                <span class="switch-title">Fake ranks</span>
+                            </span>
+                        </label>
+                    </div>
+                    <div class="settings-group rank-season-group">
+                        <label for="fake-ranks-season-level">Season reward level</label>
+                        <div class="rank-season-row">
+                            <select id="fake-ranks-season-level" aria-label="Season reward tier">
+                                <option value="">Keep real</option>
+                            </select>
+                            <label class="rank-season-wins-label" for="fake-ranks-season-wins">Wins this level</label>
+                            <input type="number" id="fake-ranks-season-wins" min="0" max="10" step="1" inputmode="numeric" autocomplete="off" placeholder="0" aria-label="Wins toward next season reward level">
+                        </div>
+                    </div>
+                    <div class="settings-group">
+                        <label for="fake-ranks-playlist-add">Add playlist override</label>
+                        <div class="rank-add-form">
+                            <select id="fake-ranks-playlist-add" aria-label="Playlist"></select>
+                            <button type="button" id="fake-ranks-add-rank-pick" class="rank-playlist-pick" aria-haspopup="listbox">
+                                <img class="rank-playlist-icon" id="fake-ranks-add-rank-icon" src="ranks/tier-19.png" width="28" height="28" alt="">
+                                <span class="rank-playlist-name" id="fake-ranks-add-rank-name">Grand Champion I</span>
+                            </button>
+                            <input type="number" id="fake-ranks-add-mmr" min="0" max="3000" step="1" inputmode="numeric" autocomplete="off" placeholder="MMR" aria-label="MMR value">
+                        </div>
+                    </div>
+                    <div class="swapper-controls">
+                        <button id="fake-ranks-add-btn" class="action-btn" type="button">Add playlist</button>
+                    </div>
+                    <div id="fake-ranks-picker-popover" class="rank-picker-popover hidden" role="listbox" aria-label="Pick rank"></div>
+                    <div class="fake-ranks-queue">
+                        <div id="fake-ranks-queue-list" class="backup-list">
+                            <div class="backup-empty">No playlist overrides yet. Pick a playlist and rank above, then Add playlist.</div>
+                        </div>
+                        <button id="fake-ranks-remove-all-btn" class="action-btn action-btn-secondary" type="button" hidden>Remove all</button>
+                    </div>
+                    <div class="swapper-controls">
+                        <button id="fake-ranks-save-btn" class="action-btn" type="button">Save fake ranks</button>
+                    </div>
+                </div>
             </div>
-            <button id="privacy-agree-btn" class="action-btn action-btn-primary modal-full-btn">I Agree</button>
-        </div>
+
+            <div id="camera-tab" class="tab-content">
+                <h2 class="section-title">Camera</h2>
+                <p class="section-desc">Unlock FOV / height / distance slider limits. Save, then restart Rocket League.</p>
+                <div class="card spoof-card">
+                    <div class="settings-group">
+                        <label class="switch-row" for="camera-spoof-enabled">
+                            <input type="checkbox" id="camera-spoof-enabled" class="switch-input" role="switch">
+                            <span class="switch-ui" aria-hidden="true">
+                                <span class="switch-track"><span class="switch-thumb"></span></span>
+                                <span class="switch-state">
+                                    <span class="switch-state-on">On</span>
+                                    <span class="switch-state-off">Off</span>
+                                </span>
+                            </span>
+                            <span class="switch-copy">
+                                <span class="switch-title">Camera limits</span>
+                                <span class="switch-hint">Raises the in-game FOV, height, and distance slider limits</span>
+                            </span>
+                        </label>
+                    </div>
+                    <div class="settings-group camera-limit-group">
+                        <label>FOV limits</label>
+                        <div class="camera-limit-row">
+                            <label class="camera-limit-field" for="camera-fov-min">Min<input type="number" id="camera-fov-min" min="1" max="1000" step="1" inputmode="decimal" autocomplete="off"></label>
+                            <label class="camera-limit-field" for="camera-fov-max">Max<input type="number" id="camera-fov-max" min="1" max="1000" step="1" inputmode="decimal" autocomplete="off"></label>
+                            <label class="camera-limit-field" for="camera-fov-interval">Interval<input type="number" id="camera-fov-interval" min="0.1" max="100" step="0.1" inputmode="decimal" autocomplete="off"></label>
+                        </div>
+                    </div>
+                    <div class="settings-group camera-limit-group">
+                        <label>Height limits</label>
+                        <div class="camera-limit-row">
+                            <label class="camera-limit-field" for="camera-height-min">Min<input type="number" id="camera-height-min" min="1" max="1000" step="1" inputmode="decimal" autocomplete="off"></label>
+                            <label class="camera-limit-field" for="camera-height-max">Max<input type="number" id="camera-height-max" min="1" max="1000" step="1" inputmode="decimal" autocomplete="off"></label>
+                            <label class="camera-limit-field" for="camera-height-interval">Interval<input type="number" id="camera-height-interval" min="0.1" max="100" step="0.1" inputmode="decimal" autocomplete="off"></label>
+                        </div>
+                    </div>
+                    <div class="settings-group camera-limit-group">
+                        <label>Distance limits</label>
+                        <div class="camera-limit-row">
+                            <label class="camera-limit-field" for="camera-distance-min">Min<input type="number" id="camera-distance-min" min="1" max="1000" step="1" inputmode="decimal" autocomplete="off"></label>
+                            <label class="camera-limit-field" for="camera-distance-max">Max<input type="number" id="camera-distance-max" min="1" max="1000" step="1" inputmode="decimal" autocomplete="off"></label>
+                            <label class="camera-limit-field" for="camera-distance-interval">Interval<input type="number" id="camera-distance-interval" min="0.1" max="100" step="0.1" inputmode="decimal" autocomplete="off"></label>
+                        </div>
+                    </div>
+                    <div class="swapper-controls">
+                        <button id="camera-reset-defaults-btn" class="action-btn action-btn-secondary" type="button">Reset to defaults</button>
+                        <button id="camera-save-btn" class="action-btn" type="button">Save camera</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="misc-tab" class="tab-content">
+                <h2 class="section-title">Miscellaneous</h2>
+                <p class="section-desc">Season logo + bottom main menu text. Start VelocityRL and wait for the proxy before launching RL.</p>
+                <div class="card spoof-card">
+                    <div class="settings-group">
+                        <label class="switch-row palette-switch-row" for="rich-palette-enabled" id="palette-switch-row">
+                            <input type="checkbox" id="rich-palette-enabled" class="switch-input" role="switch" disabled>
+                            <span class="switch-ui" aria-hidden="true">
+                                <span class="switch-track"><span class="switch-thumb"></span></span>
+                                <span class="switch-state">
+                                    <span class="switch-state-on">Applied</span>
+                                    <span class="switch-state-off">Off</span>
+                                </span>
+                            </span>
+                            <span class="switch-copy">
+                                <span class="switch-title">Rich color palette</span>
+                            </span>
+                        </label>
+                    </div>
+                    <div class="swapper-controls">
+                        <button id="palette-apply-btn" class="action-btn" type="button" disabled>Apply</button>
+                        <button id="palette-restore-btn" class="action-btn action-btn-secondary" type="button" disabled>Restore</button>
+                    </div>
+                </div>
+                <div class="card spoof-card">
+                    <div class="settings-group">
+                        <label class="switch-row" for="logo-spoof-enabled">
+                            <input type="checkbox" id="logo-spoof-enabled" class="switch-input" role="switch">
+                            <span class="switch-ui" aria-hidden="true">
+                                <span class="switch-track"><span class="switch-thumb"></span></span>
+                                <span class="switch-state">
+                                    <span class="switch-state-on">On</span>
+                                    <span class="switch-state-off">Off</span>
+                                </span>
+                            </span>
+                            <span class="switch-copy">
+                                <span class="switch-title">Season logo</span>
+                                <span class="switch-hint">Must be PNG, 1024×1024</span>
+                            </span>
+                        </label>
+                    </div>
+                    <div class="settings-group">
+                        <label for="logo-spoof-url">Logo URL</label>
+                        <input type="text" id="logo-spoof-url" placeholder="https://rl-cdn.psyonix.com/LogoImages/S23/..." autocomplete="off" spellcheck="false">
+                        <a href="#" id="logo-spoof-default" class="titles-bg-default-link logo-spoof-default-link">Season 23 default</a>
+                    </div>
+                    <div class="swapper-controls">
+                        <button id="logo-spoof-save-btn" class="action-btn" type="button">Save season logo</button>
+                    </div>
+                </div>
+                <div class="card spoof-card">
+                    <div class="settings-group">
+                        <label class="switch-row" for="blog-spoof-enabled">
+                            <input type="checkbox" id="blog-spoof-enabled" class="switch-input" role="switch">
+                            <span class="switch-ui" aria-hidden="true">
+                                <span class="switch-track"><span class="switch-thumb"></span></span>
+                                <span class="switch-state">
+                                    <span class="switch-state-on">On</span>
+                                    <span class="switch-state-off">Off</span>
+                                </span>
+                            </span>
+                            <span class="switch-copy">
+                                <span class="switch-title">Bottom Main Menu Text</span>
+                            </span>
+                        </label>
+                    </div>
+                    <div class="settings-group">
+                        <label for="blog-spoof-motd">Text</label>
+                        <textarea id="blog-spoof-motd" rows="4" placeholder="Use VelocityRL :)" spellcheck="false"></textarea>
+                    </div>
+                    <div class="swapper-controls">
+                        <button id="blog-spoof-save-btn" class="action-btn" type="button">Save</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <footer class="status-bar">
+            <div class="status-left">
+                <span id="status-text">bitsfdb</span>
+                <div id="progress-bar-container" class="progress-container hidden">
+                    <div id="progress-fill" class="progress-fill"></div>
+                </div>
+            </div>
+            <div id="version-btn">What's New · v2.0.0</div>
+        </footer>
     </div>
 
     <div id="settings-modal" class="modal-overlay">
         <div class="modal">
-            <div class="modal-accent-bar"></div>
             <div class="modal-header">
-                <div>
-                    <p class="page-eyebrow">Configuration</p>
-                    <h2>Settings</h2>
-                </div>
-                <div id="cancel-settings" class="close-modal-btn" title="Close">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                </div>
+                <h2>Settings</h2>
+                <div id="cancel-settings" class="close-modal-btn">×</div>
             </div>
             <div class="settings-group">
                 <label>Rocket League CookedPCConsole Path</label>
                 <div class="path-input-wrap">
-                    <input type="text" id="game-dir" placeholder="Path to CookedPCConsole folder">
+                    <input type="text" id="game-dir" placeholder="CookedPCConsole folder path">
                     <div class="path-btns">
-                        <div id="autodetect-dir" class="path-btn" title="Auto-detect">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                            <span>Auto-detect</span>
-                        </div>
-                        <div id="browse-dir" class="path-btn" title="Browse">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                            <span>Browse</span>
-                        </div>
+                        <div id="autodetect-dir" class="path-btn"><span>Auto-detect</span></div>
+                        <div id="browse-dir" class="path-btn"><span>Browse</span></div>
                     </div>
                 </div>
             </div>
             <div id="install-chooser" style="display:none;"></div>
-            <button id="close-settings" class="action-btn action-btn-primary modal-full-btn">Save Settings</button>
+            <p class="settings-footer-note"><a id="privacy-link" href="#">Privacy Policy</a></p>
+            <button id="close-settings" class="action-btn">Save</button>
+        </div>
+    </div>
+
+    <div id="close-psynet-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="close-psynet-title">
+        <div class="modal">
+            <h2 id="close-psynet-title">PsyNet proxy is running</h2>
+            <p>Closing VelocityRL will disconnect Rocket League from PsyNet. The game will not work until VelocityRL is running or hosts are restored.</p>
+            <div class="close-choice-actions">
+                <button type="button" class="action-btn" data-close-choice="revert">Close and remove hosts</button>
+                <button type="button" class="action-btn action-btn-secondary" data-close-choice="keep-hosts">Close without removing hosts</button>
+                <button type="button" class="action-btn action-btn-secondary" data-close-choice="stay">Keep VelocityRL running</button>
+            </div>
         </div>
     </div>
 
     <div id="changelog-modal" class="modal-overlay">
-        <div class="modal modal-lg">
-            <div class="modal-accent-bar"></div>
+        <div class="modal modal-wide">
             <div class="modal-header">
-                <div>
-                    <p class="page-eyebrow">Release Notes</p>
-                    <h2>What's New</h2>
-                </div>
-                <div id="close-changelog" class="close-modal-btn" title="Close">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                </div>
+                <h2>What's New</h2>
+                <div id="close-changelog" class="close-modal-btn">×</div>
             </div>
             <div id="changelog-body" class="changelog-scroll">
                 <div class="backup-empty">Loading...</div>
@@ -246,6 +554,9 @@
     </div>
 
     <div id="toast-container"></div>
+    <div id="app-loading-overlay" class="app-loading-overlay" role="status" aria-live="polite" aria-busy="true">
+        <p class="app-loading-text">Loading…</p>
+    </div>
     <script src="main.js"></script>
 </body>
 </html>
