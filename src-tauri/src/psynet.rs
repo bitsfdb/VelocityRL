@@ -291,6 +291,9 @@ fn proxy_dir_candidates() -> Vec<PathBuf> {
             );
             candidates.push(dir.join("tools").join("psynet_proxy").join("go_mitm"));
             candidates.push(dir.join("psynet_proxy"));
+            // Bundled resources dir (NSIS installer puts resources under _up_/)
+            candidates.push(dir.join("_up_").join("psynet_proxy"));
+            candidates.push(dir.join("resources").join("psynet_proxy"));
         }
     }
 

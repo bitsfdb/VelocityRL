@@ -243,7 +243,7 @@ async fn get_items(app: tauri::AppHandle) -> Result<Vec<Item>, String> {
     fn populate_thumbnails(items: &mut [Item]) {
         const THUMB_BASE: &str = "https://api.velocityrl.tech/thumbnails/";
         for item in items.iter_mut() {
-            if !item.asset_package.is_empty() {
+            if item.image_url.is_empty() && !item.asset_package.is_empty() {
                 let stem = item.asset_package
                     .to_lowercase()
                     .replace("_sf.upk", "")
