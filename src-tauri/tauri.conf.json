@@ -49,8 +49,12 @@
       "../tools/psynet_proxy/go_mitm/velocityrl_ca.key": "psynet_proxy/velocityrl_ca.key",
       "../tools/psynet_proxy/go_mitm/server.crt": "psynet_proxy/server.crt",
       "../tools/psynet_proxy/go_mitm/server.key": "psynet_proxy/server.key",
-      "../tools/psynet_proxy/go_mitm/leaf_*.crt": "psynet_proxy/",
-      "../tools/psynet_proxy/go_mitm/leaf_*.key": "psynet_proxy/"
+      "../tools/psynet_proxy/go_mitm/leaf_api.rlpp.psynet.gg.crt": "psynet_proxy/leaf_api.rlpp.psynet.gg.crt",
+      "../tools/psynet_proxy/go_mitm/leaf_config.psynet.gg.crt": "psynet_proxy/leaf_config.psynet.gg.crt",
+      "../tools/psynet_proxy/go_mitm/leaf_ws.rlpp.psynet.gg.crt": "psynet_proxy/leaf_ws.rlpp.psynet.gg.crt",
+      "../tools/psynet_proxy/go_mitm/leaf_api.rlpp.psynet.gg.key": "psynet_proxy/leaf_api.rlpp.psynet.gg.key",
+      "../tools/psynet_proxy/go_mitm/leaf_config.psynet.gg.key": "psynet_proxy/leaf_config.psynet.gg.key",
+      "../tools/psynet_proxy/go_mitm/leaf_ws.rlpp.psynet.gg.key": "psynet_proxy/leaf_ws.rlpp.psynet.gg.key"
     },
     "android": {
       "debugApplicationIdSuffix": ".debug"

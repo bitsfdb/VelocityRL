@@ -189,12 +189,8 @@ pub fn apply_name_pairs(
                 let delta = new_data.len() as i64 - data.len() as i64;
                 *data = new_data;
                 cur_import_offset = (cur_import_offset as i64 + delta) as i32;
-
+                cur_export_offset = (cur_export_offset as i64 + delta) as i32;
                 cur_depends_offset = (cur_depends_offset as i64 + delta) as i32;
-
-                let name_table_growth = delta;
-                cur_import_offset = (import_offset as i64 + name_table_growth) as i32;
-                cur_export_offset = (export_offset as i64 + name_table_growth) as i32;
             }
         }
     }
