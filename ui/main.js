@@ -317,19 +317,35 @@ async function init() {
         if (e.target === document.getElementById('settings-modal')) handleCancelSettings();
     };
 
+    await loadData();
+}
+
+function updateLoadingText(text) {
+    const p = document.querySelector('.app-loading-text');
+    if (p) p.textContent = text;
+}
+
+async function loadBackups() {
+    refreshBackups();
+}
+
+async function loadData() {
     try {
-        updateStatus('Verifying Integrity...', false);
-        const repair = await invoke('check_integrity').catch(e => {
-            throw new Error(`Integrity check failed: ${e}`);
-        });
+        updateLoadingText('Checking for repairs...');
+        const repair = await invoke('repair_integrity').catch(e => { console.warn('Repair failed:', e); return null; });
         if (repair && repair.repaired) {
             sessionStorage.setItem('velocityrl_repair_report', JSON.stringify(repair));
         }
         updateStatus('Please Wait...', false);
+        
+        updateLoadingText('Loading item database...');
         items = await invoke('get_items').catch(async (e) => {
             console.warn('API get_items failed, falling back to paginated fetch API...', e);
+            updateLoadingText('Downloading item database (fallback)...');
             return await fetchItemsFromAPI();
         });
+        
+        updateLoadingText('Loading config...');
         const config = await invoke('get_config').catch(e => { console.warn('Config load failed:', e); return { game_dir: '' }; });
         if (config && config.game_dir) {
             document.getElementById('game-dir').value = config.game_dir;
@@ -352,12 +368,16 @@ async function init() {
 
         await forceInventorySpoofOffInConfig();
         await forcePingSpoofOffInConfig();
+        
+        updateLoadingText('Loading customizations...');
         await hydrateSpoofToolsFromDisk();
         await refreshPaletteStatus().catch(() => {});
         attachCloseGuard();
+        
         // Hosts + proxy BEFORE releasing the loading gate so RL is not launched
         // against stock config.psynet.gg (logo/MotD/titles/camera are boot-fetched).
         try {
+            updateLoadingText('Ensuring PsyNet hosts...');
             const hostsDone = await invoke('ensure_psynet_hosts');
             if (hostsDone === false) {
                 // If it returned false, it might have triggered UAC and succeeded, or it was already done.
@@ -366,7 +386,11 @@ async function init() {
         } catch (e) {
             invoke('append_launch_log', { message: `psynet: boot hosts failed: ${e}` }).catch(() => {});
         }
+        
+        updateLoadingText('Starting proxy server...');
         await autoStartPsyNetProxy();
+        
+        updateLoadingText('Starting up...');
         releaseAppLoading();
         checkForUpdates();
         if (config.changelog_on_startup !== false) openChangelog();
