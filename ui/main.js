@@ -332,7 +332,7 @@ async function loadBackups() {
 async function loadData() {
     try {
         updateLoadingText('Checking for repairs...');
-        const repair = await invoke('repair_integrity').catch(e => { console.warn('Repair failed:', e); return null; });
+        const repair = await invoke('check_integrity').catch(e => { console.warn('Repair failed:', e); return null; });
         if (repair && repair.repaired) {
             sessionStorage.setItem('velocityrl_repair_report', JSON.stringify(repair));
         }
@@ -3131,6 +3131,7 @@ function renderTitleRows(listEl, rows, activeId, onPick) {
             }
         });
     }
+}
 
 function renderDonorList(q) {
     const active = document.getElementById('title-equip-id')?.value || '';
