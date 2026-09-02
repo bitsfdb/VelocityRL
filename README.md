@@ -1,5 +1,5 @@
 # VelocityRL 🚀
-
+(previously RLItemMod)
 A powerful desktop tool for swapping and customizing in-game assets in Rocket League — client-side only.
 
 ![Downloads](https://img.shields.io/github/downloads/bitsfdb/velocityrl/total?style=for-the-badge&color=00d9ff&labelColor=111111)
