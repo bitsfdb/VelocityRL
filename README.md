@@ -12,10 +12,10 @@ A powerful desktop tool for swapping and customizing in-game assets in Rocket Le
 Swap any item in the game with any other item directly on disk. Use any car body, wheels, boost, decal, topper, antenna, or goal explosion — even ones you don't own. All swaps are client-side only and do not affect other players.
 
 ### 🏷️ Title Swaps
-Equip any player title in the game using the built-in PsyNet proxy. Browse the full title list, pick one, and it shows up in-game instantly. Client-side only — other players cannot see your swapped title.
+Equip any player title in game. Browse the full title list (or do a custom one), then pick one, and it shows up in-game after a restart. Client-side only — other players cannot see your swapped title.
 
 ### 🏆 Rank Spoofing
-Display any competitive rank and reward level on your profile via the PsyNet proxy. Client-side only — other players cannot see your spoofed rank.
+Display any competitive rank and reward level on your profile. Client-side only — other players cannot see your spoofed rank, Goes away after updating mmr or Season reward level.
 
 ### 🔁 Reswap All
 Verified your game files and lost all your swaps? One click to re-apply every swap you've ever set up.
