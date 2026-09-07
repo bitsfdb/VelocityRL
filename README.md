@@ -2,10 +2,9 @@
 (previously RLItemMod)
 A powerful desktop tool for swapping and customizing in-game assets in Rocket League — client-side only.
 
-![Downloads](https://img.shields.io/github/downloads/bitsfdb/velocityrl/total?style=for-the-badge&color=00d9ff&labelColor=111111)
+![Downloads](https://img.shields.io/github/downloads/bitsfdb/velocityrl/total?style=for-the-badge&color=5865F2&labelColor=111111)
 ![Release](https://img.shields.io/github/v/release/bitsfdb/velocityrl?style=for-the-badge&color=e0e0e0&labelColor=111111)
-![Platform](https://img.shields.io/badge/Platform-Windows-111111?style=for-the-badge&logo=windows&logoColor=00d9ff)
-
+![Platform](https://img.shields.io/badge/Platform-Windows-111111?style=for-the-badge&logo=windows&logoColor=5865F2)
 ## Features
 
 ### 🔄 UPK Item Swaps
