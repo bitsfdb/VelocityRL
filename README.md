@@ -35,13 +35,6 @@ Unlock the full color palette for your car — way more colors than the default 
 ### Season Logo & Menu Text
 Customize the season logo and the text on the bottom of the main menu.
 
-
-### Everything Else
-- **Auto-Updater** — new versions install themselves
-- **Start with Windows** — optional, off by default
-- **One-click Diagnostics** — sends everything needed to fix your issue fast
-- **Built-in dev settings** — advanced troubleshooting without touching files
-
 ## Installation
 
 1. Download the latest installer from the [Releases](https://github.com/bitsfdb/VelocityRL/releases) page
