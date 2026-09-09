@@ -1,33 +1,57 @@
 # VelocityRL 🚀
-(previously RLItemMod)
-A powerful desktop tool for swapping and customizing in-game assets in Rocket League — client-side only.
 
-![Downloads](https://img.shields.io/github/downloads/bitsfdb/velocityrl/total?style=for-the-badge&color=5865F2&labelColor=111111)
+The all-in-one customization app for Rocket League. Swap items, show off ranks, play community maps, track your matches — all client-side, all in one clean app.
+
+![Downloads](https://img.shields.io/github/downloads/bitsfdb/velocityrl/total?style=for-the-badge&color=00d9ff&labelColor=111111)
 ![Release](https://img.shields.io/github/v/release/bitsfdb/velocityrl?style=for-the-badge&color=e0e0e0&labelColor=111111)
-![Platform](https://img.shields.io/badge/Platform-Windows-111111?style=for-the-badge&logo=windows&logoColor=5865F2)
+![Platform](https://img.shields.io/badge/Platform-Windows-111111?style=for-the-badge&logo=windows&logoColor=00d9ff)
+
 ## Features
 
-### 🔄 UPK Item Swaps
-Swap any item in the game with any other item directly on disk. Use any car body, wheels, boost, decal, topper, antenna, or goal explosion — even ones you don't own. All swaps are client-side only and do not affect other players.
+### Item Swapper
+Swap any item in the game with any other item — car bodies, wheels, boosts, decals, toppers, antennas, and goal explosions, even ones you don't own. Pick a paint color, hit swap, and it's in-game.
 
-### 🏷️ Title Swaps
-Equip any player title in game. Browse the full title list (or do a custom one), then pick one, and it shows up in-game after a restart. Client-side only — other players cannot see your swapped title.
+- **Presets** — save your swaps as named loadouts and switch between them anytime. Roll a full random car with one button. Share presets with friends using a short code, or import theirs.
+- **Restore** — put any single item back to normal, or wipe everything at once. Game update broke your swaps? One click re-applies your whole setup. Every swap is logged, so you always know what changed.
 
-### 🏆 Rank Spoofing
-Display any competitive rank and reward level on your profile. Client-side only — other players cannot see your spoofed rank, Goes away after updating mmr or Season reward level.
+### Live Match Tracker
+A clean overlay while you play — live score, your stats, and your MMR change after every match. Position it wherever you want, and it never touches your game.
 
-### 🔁 Reswap All
-Verified your game files and lost all your swaps? One click to re-apply every swap you've ever set up.
+### Titles
+Equip any player title in the game, or make your own. Restore back to normal anytime.
 
-### 📦 Live Item Database
-Items load automatically from the VelocityRL API with full thumbnail previews. The database updates itself whenever a new version is available — no manual downloads needed.
+### Fake Ranks
+Show any competitive rank and reward level on your profile. Add as many playlists as you want.
 
-### 🔄 Auto-Updater
-VelocityRL checks for updates on launch and prompts you to install new versions automatically.
+### Camera
+Unlock the camera settings the game normally limits — field of view, height, distance, and more.
+
+### Maps
+A built-in browser for community maps. Find maps, download them, and play them in-game without leaving the app. Bring your own map files too. Save favorites as presets for one-click loading, and launch Rocket League offline with a single button — your game files go back to normal automatically when you're done.
+
+### Color Palette
+Unlock the full color palette for your car — way more colors than the default selection.
+
+### Replay Vault
+Opt in once and every match replay is saved securely to your own personal vault. Browse and re-download your replays anytime, from the app or the Discord bot.
+
+### Season Logo & Menu Text
+Customize the season logo and the text on the bottom of the main menu.
+
+### Live Item Database
+The item list and thumbnails load themselves from the VelocityRL API and update automatically — no manual downloads, ever.
+
+### Everything Else
+- **Auto-Updater** — new versions install themselves
+- **Start with Windows** — optional, off by default
+- **One-click Diagnostics** — sends everything needed to fix your issue fast
+- **Built-in dev settings** — advanced troubleshooting without touching files
 
 ## Installation
 
-Download the latest installer from the [Releases](https://github.com/bitsfdb/VelocityRL/releases) page.
+1. Download the latest installer from the [Releases](https://github.com/bitsfdb/VelocityRL/releases) page
+2. Run it, open VelocityRL, and pick your Rocket League folder when asked
+3. That's it — the app handles the rest
 
 ## Credits
 
