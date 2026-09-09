@@ -32,14 +32,9 @@ A built-in browser for community maps. Find maps, download them, and play them i
 ### Color Palette
 Unlock the full color palette for your car — way more colors than the default selection.
 
-### Replay Vault
-Opt in once and every match replay is saved securely to your own personal vault. Browse and re-download your replays anytime, from the app or the Discord bot.
-
 ### Season Logo & Menu Text
 Customize the season logo and the text on the bottom of the main menu.
 
-### Live Item Database
-The item list and thumbnails load themselves from the VelocityRL API and update automatically — no manual downloads, ever.
 
 ### Everything Else
 - **Auto-Updater** — new versions install themselves
