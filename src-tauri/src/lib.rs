@@ -1777,31 +1777,41 @@ pub fn run() {
                 }) {}
             });
             std::thread::spawn(|| {
-                match psynet::ensure_config_hosts() {
-                    Ok(true) => {
-                        applog::event("psynet: boot hosts already set (config.psynet.gg)")
-                    }
-                    Ok(false) => applog::event("psynet: boot hosts added config.psynet.gg"),
-                    Err(e) => applog::event(&format!("psynet: boot hosts failed: {e}")),
-                }
-                // Auto-start the native proxy immediately after hosts/cert are ready.
+                // Bind the native MITM first; only rewrite hosts after :443 is healthy.
+                // Orphan config.psynet.gg → 127.0.0.1 is what testers see as EOS/online failure.
                 tauri::async_runtime::spawn(async {
                     let _ = psynet::clear_rocket_league_cache();
                     if crate::proxy::is_proxy_running() {
                         applog::event("psynet: proxy already running at boot");
                         return;
                     }
-                    // Load spoof config so the proxy has it ready before RL connects.
                     if let Some(cfg) = psynet::load_active_spoof_from_disk() {
                         crate::proxy::set_spoof_config(cfg).await;
                     }
                     match crate::proxy::start_native_proxy().await {
                         Ok(()) => applog::event("psynet: native proxy auto-started on port 443"),
-                        Err(e) => applog::event(&format!("psynet: proxy auto-start failed: {e}")),
+                        Err(e) => {
+                            applog::event(&format!("psynet: proxy auto-start failed: {e}"));
+                            let _ = psynet::revert_config_hosts();
+                            return;
+                        }
                     }
                     match crate::proxy::start_ws_broker().await {
                         Ok(()) => applog::event("psynet: WS broker auto-started on port 27505"),
                         Err(e) => applog::event(&format!("psynet: WS broker auto-start failed (non-fatal): {e}")),
+                    }
+                    match psynet::ensure_config_hosts() {
+                        Ok(true) => {
+                            applog::event("psynet: boot hosts already set (config.psynet.gg)")
+                        }
+                        Ok(false) => applog::event("psynet: boot hosts added config.psynet.gg"),
+                        Err(e) => {
+                            applog::event(&format!(
+                                "psynet: boot hosts failed after listen — stopping proxy: {e}"
+                            ));
+                            crate::proxy::stop_native_proxy(true);
+                            let _ = psynet::revert_config_hosts();
+                        }
                     }
                 });
             });

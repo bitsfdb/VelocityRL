@@ -539,11 +539,13 @@ async function loadData() {
         updateStatus('bitsfdb', false);
         invoke('cleanup_temp_files').catch(() => {});
 
-        updateLoadingText('Ensuring PsyNet hosts...');
-        try { await invoke('ensure_psynet_hosts'); } catch (e) { console.warn('psynet hosts:', e); }
-
         updateLoadingText('Starting proxy server...');
-        autoStartPsyNetProxy().catch(e => console.warn('proxy autostart:', e));
+        // Do NOT call ensure_psynet_hosts before the native proxy is listening —
+        // that orphans config.psynet.gg → 127.0.0.1 and breaks RL/EOS online.
+        autoStartPsyNetProxy().catch(async (e) => {
+            console.warn('proxy autostart:', e);
+            try { await invoke('stop_psynet_proxy', { revertHosts: true }); } catch (_) {}
+        });
 
         updateLoadingText('Starting up...');
         loadingPercent = 100;

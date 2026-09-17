@@ -21,16 +21,6 @@ jobs:
         with:
           node-version: lts/*
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
-
-      - name: Build PsyNet proxy
-        run: |
-          cd tools/psynet_proxy/go_mitm
-          go build -o psynet_proxy.exe .
-
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
@@ -47,6 +37,27 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm install
+
+      # Native PsyNet MITM lives in-process (src-tauri/src/proxy.rs). Leaf private
+      # keys are compile-time include_bytes! — there is no Go sidecar to build.
+      - name: Assert native PsyNet cert compile inputs
+        shell: pwsh
+        run: |
+          $certs = Join-Path $PWD 'src-tauri/resources/certs'
+          $required = @(
+            'velocityrl_ca.crt',
+            'leaf_config.psynet.gg.crt',
+            'leaf_config.psynet.gg.key',
+            'leaf_ws.rlpp.psynet.gg.crt',
+            'leaf_ws.rlpp.psynet.gg.key'
+          )
+          foreach ($f in $required) {
+            $p = Join-Path $certs $f
+            if (-not (Test-Path -LiteralPath $p)) {
+              throw "missing native proxy compile asset: $p (run src-tauri/resources/certs/gen_certs.py or restore matching leaf keys)"
+            }
+          }
+          Write-Host "Native PsyNet cert inputs OK ($($required.Count) files)"
 
       - name: Build and publish
         uses: tauri-apps/tauri-action@v0
