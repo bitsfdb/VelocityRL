@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "VelocityRL",
-  "version": "2.0.1",
+  "version": "2.0.0",
   "identifier": "com.velocityrl.app",
   "build": {
     "frontendDist": "../ui",
@@ -20,18 +20,26 @@
         "fullscreen": false,
         "devtools": false,
         "create": false,
-        "focus": false
+        "visible": true,
+        "focus": true
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https://api.velocityrl.tech data: blob:; connect-src 'self' https://api.velocityrl.tech https://velocityrl.tech https://api.github.com https://github.com"
+      "csp": null
     },
     "withGlobalTauri": true
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": "nsis",
     "createUpdaterArtifacts": true,
+    "windows": {
+      "nsis": {
+        "installMode": "both",
+        "installerHooks": "hooks.nsh"
+      },
+      "wix": null
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -40,21 +48,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../python/items.json": "python/items.json",
-      "../python/keys.txt": "python/keys.txt",
-      "../tools/psynet_proxy/go_mitm/psynet_proxy.exe": "psynet_proxy/psynet_proxy.exe",
-      "../tools/psynet_proxy/go_mitm/start_from_app.ps1": "psynet_proxy/start_from_app.ps1",
-      "../tools/psynet_proxy/go_mitm/stop_proxy.ps1": "psynet_proxy/stop_proxy.ps1",
-      "../tools/psynet_proxy/go_mitm/velocityrl_ca.crt": "psynet_proxy/velocityrl_ca.crt",
-      "../tools/psynet_proxy/go_mitm/velocityrl_ca.key": "psynet_proxy/velocityrl_ca.key",
-      "../tools/psynet_proxy/go_mitm/server.crt": "psynet_proxy/server.crt",
-      "../tools/psynet_proxy/go_mitm/server.key": "psynet_proxy/server.key",
-      "../tools/psynet_proxy/go_mitm/leaf_api.rlpp.psynet.gg.crt": "psynet_proxy/leaf_api.rlpp.psynet.gg.crt",
-      "../tools/psynet_proxy/go_mitm/leaf_config.psynet.gg.crt": "psynet_proxy/leaf_config.psynet.gg.crt",
-      "../tools/psynet_proxy/go_mitm/leaf_ws.rlpp.psynet.gg.crt": "psynet_proxy/leaf_ws.rlpp.psynet.gg.crt",
-      "../tools/psynet_proxy/go_mitm/leaf_api.rlpp.psynet.gg.key": "psynet_proxy/leaf_api.rlpp.psynet.gg.key",
-      "../tools/psynet_proxy/go_mitm/leaf_config.psynet.gg.key": "psynet_proxy/leaf_config.psynet.gg.key",
-      "../tools/psynet_proxy/go_mitm/leaf_ws.rlpp.psynet.gg.key": "psynet_proxy/leaf_ws.rlpp.psynet.gg.key"
+      "../resources/items.json": "items.json",
+      "resources/certs/velocityrl_ca.crt": "psynet_proxy/velocityrl_ca.crt"
     },
     "android": {
       "debugApplicationIdSuffix": ".debug"
@@ -69,7 +64,7 @@
         "https://api.velocityrl.tech/latest.json"
       ],
       "dialog": false,
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVBMjMzMjA0OEVCRTAwQjEKUldTeEFMNk9CRElqV3ByemYrcEdPclJUNy9qdjRlUExqU0grOXROcmNkNTl1UGo0Z2owOHNIRDUK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEEwQTUyMzU4MUMwMTI1RDEKUldUUkpRRWNXQ09sb1A2K3BDRkhIVkRVMDMyUGVTQUdoQ2c0WUlMcDNUNXFNMW5tOGFHWTRPTHgK"
     }
   }
 }

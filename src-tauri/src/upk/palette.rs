@@ -1,23 +1,11 @@
-//! Rich color palette unlock for Rocket League `TAGame.upk`.
-//!
-//! Garage pickers: stack vanilla **BlueTeamV3** (10×7) over **OrangeTeamV3**
-//! (10×7) over Accent hues 0–9 (10×7) → HueCount=10, ValueCount=21.
-//! Same width as the team grids so there is no empty black gutter. Accent’s
-//! extra five hues stay on the stock Accent picker (untouched 15×7).
-//! Stored **value-major** (`index = value * HueCount + hue`) — same layout as
-//! stock Blue/Orange/Accent on disk and the garage fill order.
-//! Written into Blue/Orange V1–V3 only. **Accent is never rewritten**.
-//! Grown last-chunk payload is **appended at EOF** so trailing out-of-order
-//! chunks (TAGame stores chunk 4 after the last table entry) keep their
-//! `CompressedOffset`.
-
 use crate::upk::{compression, crypto, parser};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-pub const BACKUP_SUFFIX: &str = ".vrlpal.orig";
+pub const TAGAME_BACKUP_NAME: &str = "TAGame.upk.bak";
+const LEGACY_PALETTE_BACKUP_NAME: &str = "TAGame.upk.vrlpal.orig";
 
 const COLOR_SET_CLASS: &str = "CarColorSet_TA";
 
@@ -27,14 +15,8 @@ const SOURCE_ORANGE: &str = "OrangeTeamV3";
 const SOURCE_BLUE_FALLBACK: &[&str] = &["BlueTeamV2", "BlueTeam"];
 const SOURCE_ORANGE_FALLBACK: &[&str] = &["OrangeTeamV2", "OrangeTeam"];
 
-const RICH_TARGETS: &[&str] = &[
-    "BlueTeam",
-    "BlueTeamV2",
-    "BlueTeamV3",
-    "OrangeTeam",
-    "OrangeTeamV2",
-    "OrangeTeamV3",
-];
+const RICH_TARGET_EXPORT: &str = "OrangeTeamV2";
+const RICH_TARGETS: &[&str] = &[RICH_TARGET_EXPORT];
 
 const STACK_SOURCES: &[&str] = &[SOURCE_BLUE, SOURCE_ORANGE, RICH_SET];
 
@@ -73,34 +55,95 @@ fn tagame_path(game_dir: &Path) -> PathBuf {
 }
 
 fn backup_path(game_dir: &Path) -> PathBuf {
-    let mut p = tagame_path(game_dir);
-    let mut name = p
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .into_owned();
-    name.push_str(BACKUP_SUFFIX);
-    p.set_file_name(name);
-    p
+    game_dir.join(TAGAME_BACKUP_NAME)
 }
 
-pub fn resolve_cooked_dir(game_dir: &Path) -> Result<PathBuf, PaletteError> {
-    if tagame_path(game_dir).exists() {
-        return Ok(game_dir.to_path_buf());
+fn migrate_legacy_palette_backup(cooked: &Path) {
+    let legacy = cooked.join(LEGACY_PALETTE_BACKUP_NAME);
+    if !legacy.is_file() {
+        return;
     }
-    let candidates = [
+    let backup = backup_path(cooked);
+    if backup.exists() {
+        let _ = std::fs::remove_file(&legacy);
+        return;
+    }
+    if std::fs::rename(&legacy, &backup).is_err() {
+        if std::fs::copy(&legacy, &backup).is_ok() {
+            let _ = std::fs::remove_file(&legacy);
+        }
+    }
+}
+
+fn cooked_dir_candidates(game_dir: &Path) -> [PathBuf; 3] {
+    [
+        game_dir.to_path_buf(),
         game_dir.join("CookedPCConsole"),
         game_dir.join("TAGame").join("CookedPCConsole"),
-    ];
-    for c in candidates {
-        if tagame_path(&c).exists() {
+    ]
+}
+
+fn resolve_cooked_dir_loose(game_dir: &Path) -> Result<PathBuf, PaletteError> {
+    if let Ok(p) = resolve_cooked_dir(game_dir) {
+        return Ok(p);
+    }
+    for c in cooked_dir_candidates(game_dir) {
+        if c.is_dir() && c.join("Engine.upk").exists() {
+            migrate_legacy_palette_backup(&c);
             return Ok(c);
         }
     }
     Err(PaletteError::Msg(format!(
-        "TAGame.upk not found under {}. Point Settings at CookedPCConsole (…/TAGame/CookedPCConsole), not the game root.",
+        "CookedPCConsole not found under {}. Point Settings at …/TAGame/CookedPCConsole.",
         game_dir.display()
     )))
+}
+
+pub fn resolve_cooked_dir(game_dir: &Path) -> Result<PathBuf, PaletteError> {
+    let check_candidate = |p: &Path| -> Option<PathBuf> {
+        if tagame_path(p).exists() {
+            Some(p.to_path_buf())
+        } else if tagame_path(&p.join("CookedPCConsole")).exists() {
+            Some(p.join("CookedPCConsole"))
+        } else if tagame_path(&p.join("TAGame").join("CookedPCConsole")).exists() {
+            Some(p.join("TAGame").join("CookedPCConsole"))
+        } else {
+            None
+        }
+    };
+
+    let base_path = if game_dir.is_file() {
+        game_dir.parent().unwrap_or(game_dir)
+    } else {
+        game_dir
+    };
+
+    let mut found = check_candidate(base_path);
+
+    if found.is_none() {
+        let mut curr = base_path;
+        for _ in 0..4 {
+            if let Some(parent) = curr.parent() {
+                if let Some(hit) = check_candidate(parent) {
+                    found = Some(hit);
+                    break;
+                }
+                curr = parent;
+            } else {
+                break;
+            }
+        }
+    }
+
+    let cooked = found.ok_or_else(|| {
+        PaletteError::Msg(format!(
+            "TAGame.upk not found under {}. Point Settings at CookedPCConsole (…/TAGame/CookedPCConsole), not the game root.",
+            game_dir.display()
+        ))
+    })?;
+
+    migrate_legacy_palette_backup(&cooked);
+    Ok(cooked)
 }
 
 pub fn fingerprint_bytes(data: &[u8], name_offset: usize, enc_len: usize) -> String {
@@ -216,6 +259,15 @@ fn color_sets(
     Ok(out)
 }
 
+#[doc(hidden)]
+pub fn debug_decrypt(
+    data: &[u8],
+    keys_txt: &str,
+    keys_map_json: &str,
+) -> Result<(parser::FileSummary, parser::CompressionMeta, Vec<u8>, [u8; 32], usize), PaletteError> {
+    decrypt_tagame(data, keys_txt, keys_map_json)
+}
+
 fn decrypt_tagame(
     data: &[u8],
     keys_txt: &str,
@@ -288,8 +340,6 @@ fn is_broken_alias(sets: &HashMap<String, (usize, i32, i64)>) -> bool {
     })
 }
 
-/// Previous Accent-only design: team exports are unique copies of *stock-sized*
-/// Accent (10309). Accent itself stays 10309.
 fn is_accent_copy(sets: &HashMap<String, (usize, i32, i64)>) -> bool {
     let Some(&(_, rich_size, rich_off)) = sets.get(RICH_SET) else {
         return false;
@@ -312,7 +362,6 @@ fn is_accent_copy(sets: &HashMap<String, (usize, i32, i64)>) -> bool {
     matched > 0
 }
 
-/// 10×21 stack: team exports unique and larger than stock Accent; Accent stays stock.
 fn is_combined(sets: &HashMap<String, (usize, i32, i64)>) -> bool {
     let Some(&(_, rich_size, rich_off)) = sets.get(RICH_SET) else {
         return false;
@@ -335,11 +384,13 @@ fn is_combined(sets: &HashMap<String, (usize, i32, i64)>) -> bool {
     matched == RICH_TARGETS.len()
 }
 
-/// Older remap: several Blue*/Orange* exports share one serial offset (e.g. all → V3).
 fn teams_share_serial(sets: &HashMap<String, (usize, i32, i64)>) -> bool {
     let mut seen = HashSet::new();
-    for target in RICH_TARGETS {
-        let Some(&(_, _, off)) = sets.get(*target) else {
+    for target in [
+        "BlueTeam", "BlueTeamV2", "BlueTeamV3",
+        "OrangeTeam", "OrangeTeamV2", "OrangeTeamV3",
+    ] {
+        let Some(&(_, _, off)) = sets.get(target) else {
             continue;
         };
         if !seen.insert(off) {
@@ -353,35 +404,18 @@ fn is_remapped(sets: &HashMap<String, (usize, i32, i64)>) -> bool {
     is_combined(sets) || teams_share_serial(sets) || is_accent_copy(sets) || is_broken_alias(sets)
 }
 
-/// True when `needle` swatches appear as a contiguous 16-byte-aligned block in `haystack`.
-#[allow(dead_code)]
-fn colors_payload_contains(haystack: &[u8], needle: &[u8]) -> bool {
-    if needle.is_empty() || haystack.len() < needle.len() || needle.len() % 16 != 0 {
-        return false;
-    }
-    let mut off = 0usize;
-    while off + needle.len() <= haystack.len() {
-        if haystack[off..off + needle.len()] == *needle {
-            return true;
-        }
-        off += 16;
-    }
-    false
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LiveKind {
+pub enum LiveKind {
     BrokenAlias,
     AccentCopy,
-    /// Team exports hold the 10×21 Blue/Orange/Accent-head stack; Accent is stock 15×7.
+
     Applied,
-    /// Larger remaps that are not the current 10×21 stack.
+
     StaleRemap,
-    /// Stock / restored structure (not the rich remap).
+
     Vanilla,
 }
 
-/// Inspect live export sizes + swatch payloads. Never uses backup presence as a proxy.
 fn classify_live_sets(
     file: &[u8],
     plain: &[u8],
@@ -401,7 +435,7 @@ fn classify_live_sets(
 
     match classify_via_swatches(file, plain, summary, meta, sets) {
         Ok(kind) => kind,
-        // Size-only "combined" is not Applied — classify via swatches.
+
         Err(_) if is_combined(sets) => LiveKind::StaleRemap,
         Err(_) => LiveKind::Vanilla,
     }
@@ -454,6 +488,18 @@ fn classify_via_swatches(
     {
         return Ok(LiveKind::Applied);
     }
+
+    if let Some(&(_, v2_size, v2_off)) = sets.get(RICH_TARGET_EXPORT) {
+        if v2_size > 0 {
+            let v2_bytes = read_serial_bytes(file, &chunks, v2_off, v2_size as usize)?;
+            if let Ok(v2) = extract_swatches(&v2_bytes, &names, RICH_TARGET_EXPORT) {
+                if is_full_stack(&v2) {
+                    return Ok(LiveKind::Applied);
+                }
+            }
+        }
+    }
+
     if is_combined(sets)
         || blue.value_count != SRC_VALUES
         || accent.hue_count != ACCENT_HUE_COUNT
@@ -463,19 +509,6 @@ fn classify_via_swatches(
     }
 
     Ok(LiveKind::Vanilla)
-}
-
-
-/// Chunk table indices whose compressed payload starts at or after `payload_end`.
-/// TAGame stores chunk 4 *after* the last table entry; splicing a larger last
-/// payload used to move those bytes without updating this offset.
-fn later_compressed_chunks(chunks: &[parser::CompressedChunk], payload_end: i64) -> Vec<usize> {
-    chunks
-        .iter()
-        .enumerate()
-        .filter(|(_, c)| c.compressed_offset >= payload_end)
-        .map(|(i, _)| i)
-        .collect()
 }
 
 fn write_chunk_entry(
@@ -649,7 +682,7 @@ fn atomic_write(path: &Path, data: &[u8]) -> Result<(), PaletteError> {
         .file_name()
         .unwrap_or_default()
         .to_os_string();
-    name.push(".vrlpal.tmp");
+    name.push(".pal.tmp");
     let tmp = path.with_file_name(name);
     std::fs::write(&tmp, data).map_err(|e| PaletteError::Msg(format!("temp write failed: {e}")))?;
     match replace_file(&tmp, path) {
@@ -802,7 +835,6 @@ fn walk_props(serial: &[u8], mut pos: usize, names: &[String]) -> Result<String,
     Ok(out)
 }
 
-/// Inspect `CarColorSet_TA` serials in a TAGame.upk (live or backup).
 pub fn dump_color_sets(
     upk_path: &Path,
     keys_txt: &str,
@@ -1214,7 +1246,6 @@ fn extend_cell(out: &mut Vec<u8>, src: &[u8], off: usize, elem: usize) -> Result
     Ok(())
 }
 
-/// Copy one swatch from a value-major source (stock / stacked) into a value-major build.
 fn push_from_value_major(
     out: &mut Vec<u8>,
     src: &[u8],
@@ -1231,7 +1262,6 @@ fn push_from_value_major(
     extend_cell(out, src, off, elem)
 }
 
-/// Pull a value-band (optionally fewer hues) keeping value-major order.
 fn extract_value_major_band(
     payload: &[u8],
     src_hues: i32,
@@ -1260,7 +1290,6 @@ fn extract_value_major_band(
     Ok(out)
 }
 
-/// True when `team` is the 10×21 BlueV3 + OrangeV3 + Accent-head stack.
 fn is_full_stack(team: &SwatchSource) -> bool {
     if team.hue_count != STACK_HUE_COUNT || team.value_count != STACK_VALUE_COUNT {
         return false;
@@ -1268,7 +1297,6 @@ fn is_full_stack(team: &SwatchSource) -> bool {
     (team.hue_count as i64) * (team.value_count as i64) == team.color_count as i64
 }
 
-/// True when live stack bands match vanilla Blue / Orange / Accent hues 0–9.
 fn is_three_band_stack(
     team: &SwatchSource,
     blue: &SwatchSource,
@@ -1338,7 +1366,6 @@ fn is_three_band_stack(
     top == blue.colors_payload && mid == orange.colors_payload && bot == accent_head
 }
 
-/// BlueV3 over OrangeV3 over Accent hues 0–9: 10×21, no empty cells.
 fn combine_swatches(blocks: &[&SwatchSource]) -> Result<CombinedSwatches, PaletteError> {
     if blocks.len() != 3 {
         return Err(PaletteError::Msg(format!(
@@ -1379,7 +1406,7 @@ fn combine_swatches(blocks: &[&SwatchSource]) -> Result<CombinedSwatches, Palett
     let value_count = STACK_VALUE_COUNT;
     let mut colors_payload = Vec::with_capacity((hue_count * value_count) as usize * 16);
     let mut debug_payload = Vec::with_capacity((hue_count * value_count) as usize * debug_elem);
-    // Row-major: Colors[value * HueCount + hue] — matches garage left-to-right fill.
+
     for v in 0..value_count {
         let band = v / SRC_VALUES;
         let local_v = v % SRC_VALUES;
@@ -1513,7 +1540,7 @@ fn rebuild_with_combined(
         }
     }
     let out = write_export_serial(&ser);
-    // Round-trip sanity: rebuilt must parse and keep counts.
+
     let check = extract_swatches(&out, names, "rebuilt")?;
     if check.color_count != combined.color_count as usize
         || check.value_count != combined.value_count
@@ -1547,7 +1574,7 @@ fn team_sources_already_combined(blocks: &[&SwatchSource]) -> bool {
     if blocks.len() < 2 {
         return false;
     }
-    // Identical payloads ⇒ the stacked remap was already written into each source export.
+
     blocks
         .windows(2)
         .all(|w| w[0].colors_payload == w[1].colors_payload)
@@ -1597,8 +1624,7 @@ fn apply_combined_copies(
         )));
     }
 
-    let sample_name = pick_source_name(&sets, SOURCE_BLUE, SOURCE_BLUE_FALLBACK)?;
-    let sample = load_swatch(file, &chunks, &sets, &names, &sample_name)?;
+    let sample = load_swatch(file, &chunks, &sets, &names, RICH_TARGET_EXPORT)?;
     let already_combined = is_combined(&sets);
     if already_combined && is_full_stack(&sample) {
         return Ok((
@@ -1614,7 +1640,7 @@ fn apply_combined_copies(
     }
     if already_combined {
         return Err(PaletteError::Msg(
-            "Live TAGame.upk already has a different stacked palette. Restore vanilla .vrlpal.orig, then Apply."
+            "Live TAGame.upk already has a different stacked palette. Restore vanilla TAGame.upk.bak, then Apply."
                 .into(),
         ));
     }
@@ -1631,7 +1657,7 @@ fn apply_combined_copies(
     let refs: Vec<&SwatchSource> = owned.iter().collect();
     if team_sources_already_combined(&refs) {
         return Err(PaletteError::Msg(
-            "Source color sets are already combined (not stock vanilla). Restore .vrlpal.orig, then Apply."
+            "Source color sets are already combined (not stock vanilla). Restore TAGame.upk.bak, then Apply."
                 .into(),
         ));
     }
@@ -1666,9 +1692,8 @@ fn apply_combined_copies(
             last_uncomp.len(),
             last.uncompressed_size
         )));
-    }
-
-    let mut patched = 0usize;
+    }    let mut patched = 0usize;
+    let mut any_grew = false;
     let mut append_plan: Vec<(usize, i32, i64)> = Vec::new();
     let mut expected: HashMap<String, Vec<u8>> = HashMap::new();
 
@@ -1689,15 +1714,25 @@ fn apply_combined_copies(
             expected.insert((*target).to_string(), new_serial);
             continue;
         }
-        // Prefer EOF-append whenever serial grows or content changes.
-        if new_size > size || template != new_serial {
+        if new_size <= size {
+
+            let local_pos = (off - last.uncompressed_offset) as usize;
+            let mut padded = new_serial.clone();
+            padded.resize(size as usize, 0);
+            last_uncomp[local_pos..local_pos + size as usize]
+                .copy_from_slice(&padded);
+
+            append_plan.push((pos, new_size, off));
+            expected.insert((*target).to_string(), new_serial);
+            patched += 1;
+        } else {
+
+            any_grew = true;
             let new_off = last.uncompressed_offset + last_uncomp.len() as i64;
             last_uncomp.extend_from_slice(&new_serial);
             append_plan.push((pos, new_size, new_off));
             expected.insert((*target).to_string(), new_serial);
             patched += 1;
-        } else {
-            expected.insert((*target).to_string(), new_serial);
         }
     }
     expected.insert(RICH_SET.to_string(), accent_bytes);
@@ -1734,27 +1769,75 @@ fn apply_combined_copies(
     if plain.len() != enc_aligned {
         return Err(PaletteError::Msg(format!(
             "decrypted block size mismatch ({} vs {})",
-            plain.len(),
-            enc_aligned
+            plain.len(), enc_aligned
         )));
     }
 
-    // Append grown last-chunk payload at true EOF so trailing out-of-order
-    // chunks (TAGame chunk 4) keep their original CompressedOffset.
     let mut output = file.clone();
-    let new_coff = i64::try_from(output.len())
-        .map_err(|_| PaletteError::Msg("file offset exceeds i64".into()))?;
-    output.extend_from_slice(&new_payload);
 
-    write_chunk_entry(
-        plain,
-        meta.compressed_chunks_offset as usize,
-        last_idx,
-        stride,
-        new_usize,
-        new_coff,
-        new_csize,
-    )?;
+    if any_grew {
+
+        let new_coff = i32::try_from(output.len())
+            .map_err(|_| PaletteError::Msg("file offset exceeds i32".into()))? as i64;
+        output.extend_from_slice(&new_payload);
+        write_chunk_entry(
+            plain,
+            meta.compressed_chunks_offset as usize,
+            last_idx,
+            stride,
+            new_usize,
+            new_coff,
+            new_csize,
+        )?;
+        log::info!("palette: serial grew — payload appended at EOF");
+    } else {
+
+        let orig_start = last.compressed_offset as usize;
+        let orig_csize = last.compressed_size as usize;
+        if new_payload.len() <= orig_csize {
+            let mut chunk_buf = new_payload;
+            chunk_buf.resize(orig_csize, 0);
+            if orig_start + orig_csize <= output.len() {
+                output[orig_start..orig_start + orig_csize]
+                    .copy_from_slice(&chunk_buf);
+            }
+        } else {
+
+            let new_coff = i32::try_from(output.len())
+                .map_err(|_| PaletteError::Msg("file offset exceeds i32".into()))? as i64;
+            output.extend_from_slice(&new_payload);
+            log::info!("palette: compressed size grew unexpectedly — EOF fallback");
+            write_chunk_entry(
+                plain,
+                meta.compressed_chunks_offset as usize,
+                last_idx,
+                stride,
+                new_usize,
+                new_coff,
+                new_csize,
+            )?;
+
+            let new_enc = crypto::encrypt_ecb(key, plain);
+            if name_offset + enc_aligned > output.len() {
+                return Err(PaletteError::Msg("encrypted header OOB after chunk rewrite".into()));
+            }
+            output[name_offset..name_offset + enc_aligned].copy_from_slice(&new_enc);
+            validate_applied(&output, keys_txt, keys_map_json, &expected)?;
+            *file = output;
+            return Ok((patched, combined));
+        }
+
+        write_chunk_entry(
+            plain,
+            meta.compressed_chunks_offset as usize,
+            last_idx,
+            stride,
+            new_usize,
+            last.compressed_offset,
+            new_csize,
+        )?;
+        log::info!("palette: all serials replaced in-place (no EOF growth)");
+    }
 
     let new_enc = crypto::encrypt_ecb(key, plain);
     if name_offset + enc_aligned > output.len() {
@@ -1768,18 +1851,6 @@ fn apply_combined_copies(
         keys_map_json,
         &expected,
     )?;
-
-    let later = later_compressed_chunks(
-        &chunks,
-        last.compressed_offset + last.compressed_size as i64,
-    );
-    if !later.is_empty() {
-        log::info!(
-            "palette: {} chunk(s) stored after last table entry {:?}; grew payload appended at EOF",
-            later.len(),
-            later
-        );
-    }
 
     *file = output;
     Ok((patched, combined))
@@ -1865,8 +1936,6 @@ fn is_current_stack_in_file(
     Ok(classify_live_sets(&data, &plain, &summary, &meta, &sets) == LiveKind::Applied)
 }
 
-/// True when live team exports are the 10×21 stack from stock BlueV3 + OrangeV3 + Accent,
-/// and Accent still matches stock.
 fn is_current_stack_matching_stock(
     live: &Path,
     stock: &Path,
@@ -1946,10 +2015,9 @@ pub fn status(game_dir: &Path, expected_patched_fp: Option<&str>) -> PaletteStat
     };
     let tagame = tagame_path(&cooked);
     let fp = file_fingerprint(&tagame).unwrap_or_default();
-    let keys = include_str!("../../../python/keys.txt");
-    let keymap = include_str!("../../../python/keys_map.json");
-    // Integrity fingerprint is only for wipe detection elsewhere — never for applied/vanilla.
-    // Backup presence is also never used as a proxy for applied.
+    let keys = include_str!("../../resources/keys.txt");
+    let keymap = include_str!("../../resources/keys_map.json");
+
     let _ = expected_patched_fp;
 
     let data = match std::fs::read(&tagame) {
@@ -1993,16 +2061,16 @@ pub fn status(game_dir: &Path, expected_patched_fp: Option<&str>) -> PaletteStat
             &cooked,
             false,
             fp,
-            "Old palette remap — Restore (or Apply will restore .vrlpal.orig first)."
+            "Old palette remap — Restore (or Apply will restore TAGame.upk.bak first)."
                 .into(),
         ),
         LiveKind::Applied => make_status(
             &cooked,
             true,
             fp,
-            "Rich palette on (10×21: Blue V3 over Orange V3 over Accent). Accent picker untouched.".into(),
+            "Color palette on (OrangeTeamV2 10×21 stack + config override). Accent picker untouched.".into(),
         ),
-        LiveKind::Vanilla => make_status(&cooked, false, fp, "Rich palette off".into()),
+        LiveKind::Vanilla => make_status(&cooked, false, fp, "Color palette off".into()),
     }
 }
 
@@ -2043,12 +2111,181 @@ fn file_layout_ok(path: &Path, keys: &str, keymap: &str) -> Result<(), PaletteEr
     validate_chunk_layout(&data, &chunks)
 }
 
+fn backup_references_stale_engine(
+    backup: &Path,
+    current_engine_guid: &[u8; 16],
+    keys_txt: &str,
+    keys_map_json: &str,
+) -> bool {
+    let Ok(data) = std::fs::read(backup) else {
+        return false;
+    };
+    let Ok((summary, _meta, plain, _key, _enc_aligned)) =
+        decrypt_tagame(&data, keys_txt, keys_map_json)
+    else {
+        return false;
+    };
+    crate::upk::swapper::header_references_stale_engine(&plain, &summary, summary.name_offset, 0, current_engine_guid)
+}
+
+pub fn tagame_engine_skew_warning(game_dir: &Path) -> Option<String> {
+    let cooked = resolve_cooked_dir(game_dir).ok()?;
+    let engine = cooked.join("Engine.upk");
+    let tagame = tagame_path(&cooked);
+    let engine_meta = std::fs::metadata(&engine).ok()?;
+    let tagame_meta = std::fs::metadata(&tagame).ok()?;
+    let engine_m = engine_meta.modified().ok()?;
+    let tagame_m = tagame_meta.modified().ok()?;
+    if engine_m <= tagame_m {
+        return None;
+    }
+    let engine_sz = engine_meta.len();
+    let tagame_sz = tagame_meta.len();
+    Some(format!(
+        "Engine.upk is newer than TAGame.upk (Engine {engine_sz} bytes, TAGame {tagame_sz} bytes). \
+         After a game update you must re-download TAGame: Misc → Reset for verify, then verify in Epic/Steam."
+    ))
+}
+
+pub fn probe_engine_refs(game_dir: &Path) -> String {
+    let mut out = String::new();
+    let Ok(cooked) = resolve_cooked_dir(game_dir) else {
+        return "could not resolve CookedPCConsole".into();
+    };
+    let engine_path = cooked.join("Engine.upk");
+    let _tagame = tagame_path(&cooked);
+    let keys_txt = include_str!("../../resources/keys.txt");
+    let keys_map_json = include_str!("../../resources/keys_map.json");
+
+    let Some(eng_guid) = crate::upk::swapper::read_package_guid(&engine_path) else {
+        return "Engine.upk unreadable".into();
+    };
+    let guid_hex: String = eng_guid.iter().map(|b| format!("{b:02X}")).collect();
+    let (eng_ver, cook_ver) = crate::upk::swapper::read_engine_versions(&engine_path).unwrap_or((0, 0));
+    out.push_str(&format!(
+        "Engine.upk guid={guid_hex} version={eng_ver} cooker={cook_ver}\n"
+    ));
+
+    for label in [
+        "TAGame.upk",
+        "TAGame.upk.bak",
+    ] {
+        let path = cooked.join(label);
+        if !path.is_file() {
+            continue;
+        }
+        let Ok(data) = std::fs::read(&path) else {
+            out.push_str(&format!("{label}: read failed\n"));
+            continue;
+        };
+        let Ok((summary, _meta, plain, _key, _enc)) =
+            decrypt_tagame(&data, keys_txt, keys_map_json)
+        else {
+            out.push_str(&format!("{label}: decrypt failed\n"));
+            continue;
+        };
+        let stale = crate::upk::swapper::header_references_stale_engine(
+            &plain,
+            &summary,
+            summary.name_offset,
+            0,
+            &eng_guid,
+        );
+        let indices = crate::upk::swapper::find_engine_dependency_linker_indices(
+            &plain,
+            summary.name_offset,
+            summary.name_count,
+            summary.import_offset,
+            summary.import_count,
+        );
+        let import_guid = crate::upk::swapper::read_engine_import_guid_in_header(
+            &plain,
+            &summary,
+            summary.name_offset,
+            0,
+        )
+        .map(|g| g.iter().map(|b| format!("{b:02X}")).collect::<String>())
+        .unwrap_or_else(|| "?".into());
+        let (file_eng, file_cook) =
+            crate::upk::swapper::read_prefix_engine_versions(&data).unwrap_or((0, 0));
+        out.push_str(&format!(
+            "{label}: stale={stale} pkg_imports={indices:?} import_guid={import_guid} prefix_ver={file_eng}/{file_cook}\n"
+        ));
+    }
+    out
+}
+
+pub fn repair_tagame_engine_refs(game_dir: &Path) -> Result<String, PaletteError> {
+    refuse_if_game_running("Repair Engine refs")?;
+    crate::upk::swapper::dump_engine_info(game_dir);
+    let cooked = resolve_cooked_dir(game_dir)?;
+    let tagame = tagame_path(&cooked);
+    let engine_path = cooked.join("Engine.upk");
+    let keys_txt = include_str!("../../resources/keys.txt");
+    let keys_map_json = include_str!("../../resources/keys_map.json");
+
+    let Some(engine_guid) = crate::upk::swapper::read_package_guid(&engine_path) else {
+        return Err(PaletteError::Msg("Could not read Engine.upk GUID.".into()));
+    };
+
+    let mut data = std::fs::read(&tagame).map_err(|e| PaletteError::Msg(e.to_string()))?;
+    let (summary, _meta, mut plain, key, enc_aligned) =
+        decrypt_tagame(&data, keys_txt, keys_map_json)?;
+    let name_offset = summary.name_offset as usize;
+
+    let stale = crate::upk::swapper::header_references_stale_engine(
+        &plain,
+        &summary,
+        summary.name_offset,
+        0,
+        &engine_guid,
+    );
+
+    let plain_before = plain.clone();
+    let patched_guid = crate::upk::swapper::patch_engine_import_guid(
+        &mut plain,
+        &summary,
+        summary.name_offset,
+        0,
+        engine_guid,
+    );
+    let plain_changed = patched_guid || plain != plain_before;
+    let mut patched_ver = false;
+    if let Some((eng_ver, cook_ver)) = crate::upk::swapper::read_engine_versions(&engine_path) {
+        patched_ver =
+            crate::upk::swapper::patch_engine_versions_in_prefix(&mut data, &summary, eng_ver, cook_ver);
+    }
+
+    if !stale && !plain_changed && !patched_ver {
+        return Ok("TAGame.upk already references the current Engine.upk.".into());
+    }
+
+    if plain_changed {
+        let new_enc = crypto::encrypt_ecb(&key, &plain);
+        if name_offset + enc_aligned > data.len() || new_enc.len() != enc_aligned {
+            return Err(PaletteError::Msg(
+                "TAGame.upk encrypted header size changed unexpectedly.".into(),
+            ));
+        }
+        data[name_offset..name_offset + enc_aligned].copy_from_slice(&new_enc);
+    }
+    if plain_changed || patched_ver {
+        atomic_write(&tagame, &data)?;
+    }
+
+    crate::applog::event(&format!(
+        "palette: repaired TAGame Engine refs (stale={stale} guid={patched_guid} ver={patched_ver} plain={plain_changed})"
+    ));
+    Ok("Repaired TAGame.upk Engine references. Restart Rocket League.".into())
+}
+
 pub fn apply(
     game_dir: &Path,
     keys_txt: &str,
     keys_map_json: &str,
 ) -> Result<PaletteStatus, PaletteError> {
     refuse_if_game_running("Apply")?;
+    crate::upk::swapper::dump_engine_info(game_dir);
     let cooked = resolve_cooked_dir(game_dir)?;
     let tagame = tagame_path(&cooked);
     let backup = backup_path(&cooked);
@@ -2067,8 +2304,19 @@ pub fn apply(
     let live_shared = sets_from_file(&tagame, keys_txt, keys_map_json)
         .map(|s| teams_share_serial(&s))
         .unwrap_or(false);
-    let backup_usable = backup.exists() && is_vanilla_stock_file(&backup, keys_txt, keys_map_json);
-    // Rebuild from stock BlueV3 + OrangeV3 + Accent whenever live is not that 10×21 stack.
+    let mut backup_usable = backup.exists() && is_vanilla_stock_file(&backup, keys_txt, keys_map_json);
+
+    if backup_usable {
+        let engine_path = cooked.join("Engine.upk");
+        if let Some(current_guid) = crate::upk::swapper::read_package_guid(&engine_path) {
+            if backup_references_stale_engine(&backup, &current_guid, keys_txt, keys_map_json) {
+                crate::applog::event("palette: backup has stale Engine GUID (game updated?) — wiping old TAGame.upk.bak");
+                let _ = std::fs::remove_file(&backup);
+                backup_usable = false;
+            }
+        }
+    }
+
     let matches_stock = backup_usable
         && is_current_stack_matching_stock(&tagame, &backup, keys_txt, keys_map_json)
             .unwrap_or(false);
@@ -2082,7 +2330,7 @@ pub fn apply(
             || live_shared
         {
             return Err(PaletteError::Msg(
-                "TAGame.upk is damaged or already remapped, and no usable stock backup (.vrlpal.orig). Verify game files in Steam/Epic."
+                "TAGame.upk is damaged or already remapped, and no usable stock backup (TAGame.upk.bak). Verify game files in Steam/Epic."
                     .into(),
             ));
         }
@@ -2133,7 +2381,7 @@ pub fn apply(
             true,
             fp,
             format!(
-                "Rich palette already on (10×21: Blue V3 over Orange V3 over Accent). Restart Rocket League if colors look wrong.{backup_note}"
+                "Color palette already on (10×21: Blue V3 over Orange V3 over Accent). Restart Rocket League if colors look wrong.{backup_note}"
             ),
         ));
     }
@@ -2145,7 +2393,7 @@ pub fn apply(
         true,
         fp,
         format!(
-            "Rich palette on ({patched} sets, {}×{} / {} swatches: Blue V3 over Orange V3 over Accent). Accent picker untouched. Restart Rocket League.{backup_note}",
+            "Color palette on ({patched} sets, {}×{} / {} swatches: Blue V3 over Orange V3 over Accent). Accent picker untouched. Restart Rocket League.{backup_note}",
             combined.hue_count,
             combined.value_count,
             combined.color_count
@@ -2153,19 +2401,53 @@ pub fn apply(
     ))
 }
 
+pub fn reset_tagame_for_verify(game_dir: &Path) -> Result<String, PaletteError> {
+    refuse_if_game_running("Reset TAGame")?;
+    let cooked = resolve_cooked_dir_loose(game_dir)?;
+    migrate_legacy_palette_backup(&cooked);
+    let tagame = tagame_path(&cooked);
+    let backup = backup_path(&cooked);
+
+    let had_tagame = tagame.exists();
+    let had_backup = backup.exists();
+    if !had_tagame && !had_backup {
+        return Err(PaletteError::Msg(
+            "Nothing to reset — TAGame.upk and TAGame.upk.bak are already gone.".into(),
+        ));
+    }
+
+    let mut parts: Vec<String> = Vec::new();
+
+    if had_tagame {
+        std::fs::remove_file(&tagame).map_err(|e| {
+            PaletteError::Msg(format!("Could not delete {}: {e}", tagame.display()))
+        })?;
+        parts.push(format!(
+            "Deleted {}",
+            tagame.file_name().unwrap_or_default().to_string_lossy()
+        ));
+    }
+
+    if had_backup {
+        parts.push(format!("Kept palette backup at {TAGAME_BACKUP_NAME}"));
+    }
+
+    Ok(parts.join("\n"))
+}
+
 pub fn restore(game_dir: &Path) -> Result<PaletteStatus, PaletteError> {
     refuse_if_game_running("Restore")?;
     let cooked = resolve_cooked_dir(game_dir)?;
     let tagame = tagame_path(&cooked);
     let backup = backup_path(&cooked);
-    let keys = include_str!("../../../python/keys.txt");
-    let keymap = include_str!("../../../python/keys_map.json");
+    let keys = include_str!("../../resources/keys.txt");
+    let keymap = include_str!("../../resources/keys_map.json");
 
     if backup.exists() {
         restore_from(&backup, &tagame, keys, keymap)?;
     } else {
         return Err(PaletteError::Msg(
-            "No palette backup (.vrlpal.orig)".into(),
+            "No palette backup (TAGame.upk.bak)".into(),
         ));
     }
 
@@ -2174,7 +2456,7 @@ pub fn restore(game_dir: &Path) -> Result<PaletteStatus, PaletteError> {
             "Restore finished but TAGame.upk still has a shared-Accent remap. Verify game files.".into(),
         ));
     }
-    // Re-inspect live TAGame — do not assume off just because a backup file exists.
+
     let mut st = status(&cooked, None);
     if st.applied {
         st.message = "Restore wrote the backup, but TAGame.upk still looks patched. Verify game files.".into();
@@ -2260,17 +2542,6 @@ mod tests {
         assert!(is_combined(&s));
         assert!(!is_accent_copy(&s));
         assert!(is_remapped(&s));
-    }
-
-    #[test]
-    fn combined_payload_embeds_accent_in_bottom_band() {
-        let accent: Vec<u8> = (0..105u8).flat_map(|i| [i; 16]).collect();
-        let blue: Vec<u8> = (0..70u8).flat_map(|i| [i.wrapping_add(40); 16]).collect();
-        let orange: Vec<u8> = (0..70u8).flat_map(|i| [i.wrapping_add(80); 16]).collect();
-        let mut stacked = Vec::new();
-        stacked.extend_from_slice(&blue);
-        stacked.extend_from_slice(&orange);
-        assert!(!colors_payload_contains(&stacked, &accent));
     }
 
     fn mk(n: usize, vc: i32) -> SwatchSource {
@@ -2391,7 +2662,7 @@ mod tests {
     fn shared_team_serial_is_stale_remap() {
         let mut s = HashMap::new();
         s.insert("Accent".into(), (0, 10309, 17_901_839));
-        // All blue exports alias one V3 serial; oranges alias another.
+
         for name in ["BlueTeam", "BlueTeamV2", "BlueTeamV3"] {
             s.insert(name.into(), (0, 6990, 17_917_010));
         }
@@ -2405,7 +2676,7 @@ mod tests {
 
     #[test]
     fn tagged_prop_roundtrip_preserves_bytes() {
-        // NetIndex -1, IntProperty HueCount=10, None
+
         let mut names = vec![String::new(); 5];
         names[0] = "None".into();
         names[1] = "HueCount".into();
@@ -2420,6 +2691,15 @@ mod tests {
         push_fname(&mut serial, 0, 0);
         let parsed = parse_export_serial(&serial, &names).unwrap();
         assert_eq!(write_export_serial(&parsed), serial);
+    }
+
+    fn later_compressed_chunks(chunks: &[parser::CompressedChunk], after_offset: i64) -> Vec<usize> {
+        chunks
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.compressed_offset >= after_offset)
+            .map(|(i, _)| i)
+            .collect()
     }
 
     #[test]
@@ -2444,7 +2724,7 @@ mod tests {
                 compressed_size: 50,
             },
         ];
-        // Last table entry ends at 2050; chunk 0 at 1000 is before; chunk 2 at 3000 is after.
+
         assert_eq!(later_compressed_chunks(&chunks, 2050), vec![2]);
     }
 
@@ -2479,18 +2759,16 @@ mod tests {
         assert!(validate_chunk_layout(&tagged, &overlap).is_err());
     }
 
-    /// Decrypts stock fixture, Apply, proves HueCount=10 / ValueCount=21 and
-    /// bands match BlueV3, OrangeV3, Accent hues 0–9. Accent export untouched.
     #[test]
     fn apply_stock_fixture_yields_exact_10x21_bands() {
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let orig = manifest.join("target/pal_test/TAGame.upk.vrlpal.orig");
+        let orig = manifest.join("target/pal_test/TAGame.upk.bak");
         if !orig.exists() {
             eprintln!("skip apply_stock_fixture: missing {}", orig.display());
             return;
         }
-        let keys = include_str!("../../../python/keys.txt");
-        let keymap = include_str!("../../../python/keys_map.json");
+        let keys = include_str!("../../resources/keys.txt");
+        let keymap = include_str!("../../resources/keys_map.json");
 
         let mut data = std::fs::read(&orig).unwrap();
         let (sum, meta, mut plain, key, _) = decrypt_tagame(&data, keys, keymap).unwrap();

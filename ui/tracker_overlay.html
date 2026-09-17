@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VelocityRL Overlay</title>
+    <link rel="stylesheet" href="tracker_overlay.css">
+</head>
+<body>
+
+    <svg width="0" height="0" style="position:absolute; display:none;" aria-hidden="true">
+        <defs>
+
+            <symbol id="ico-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter">
+                <path d="M4 20V12M10 20V8M16 20V6M3 20H21"/>
+                <path d="M5 9L10 5L14 8L20 2"/>
+            </symbol>
+
+            <symbol id="ico-flame" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
+            </symbol>
+
+            <symbol id="ico-trophy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/>
+                <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/>
+                <path d="M4 22h16"/>
+                <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/>
+                <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/>
+                <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>
+            </symbol>
+
+            <symbol id="ico-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 6 6 18"/>
+                <path d="m6 6 12 12"/>
+            </symbol>
+        </defs>
+    </svg>
+
+    <div class="overlay-wrap" id="overlay-wrap">
+
+        <div class="unlock-bar" id="unlock-bar">
+            <button type="button" class="lock-btn" id="btn-lock">Lock</button>
+        </div>
+
+        <div class="cards-panel view-circle" id="view-circle">
+            <span class="conn-dot" id="conn-dot" title="Stats API status"></span>
+
+            <div class="card card-streak">
+                <svg class="bg" viewBox="0 0 280 46" preserveAspectRatio="none">
+                    <path d="M 0,0 L 215,0 A 280 280 0 0 0 210,46 L 0,46 Z"/>
+                </svg>
+                <div class="label streak-label">
+                    <svg class="icon streak-icon" viewBox="0 0 24 24"><use href="#ico-flame"/></svg>
+                    <span class="text">STRK</span>
+                </div>
+                <div class="value" id="val-streak">0</div>
+            </div>
+
+            <div class="card card-wins">
+                <svg class="bg" viewBox="0 0 280 46" preserveAspectRatio="none">
+                    <path d="M 0,0 L 210,0 A 280 280 0 0 0 215,46 L 0,46 Z"/>
+                </svg>
+                <div class="label win-label">
+                    <svg class="icon win-icon" viewBox="0 0 24 24"><use href="#ico-trophy"/></svg>
+                    <span class="text">WINS</span>
+                </div>
+                <div class="value win" id="val-wins">0</div>
+            </div>
+
+            <div class="card card-losses">
+                <svg class="bg" viewBox="0 0 280 46" preserveAspectRatio="none">
+                    <path d="M 0,0 L 216,0 A 280 280 0 0 0 230,46 L 0,46 Z"/>
+                </svg>
+                <div class="label loss-label">
+                    <svg class="icon loss-icon" viewBox="0 0 24 24"><use href="#ico-x"/></svg>
+                    <span class="text">LOSS</span>
+                </div>
+                <div class="value loss" id="val-losses">0</div>
+            </div>
+        </div>
+
+        <div class="view-minimal" id="view-minimal">
+            <span class="conn-dot" id="conn-dot-min" title="Stats API status"></span>
+            <div class="min-stat min-streak">
+                <svg class="min-icon streak-icon" viewBox="0 0 24 24"><use href="#ico-flame"/></svg>
+                <span class="min-label">STRK</span>
+                <span class="min-val" id="min-val-streak">0</span>
+            </div>
+            <div class="min-sep"></div>
+            <div class="min-stat min-wins">
+                <svg class="min-icon win-icon" viewBox="0 0 24 24"><use href="#ico-trophy"/></svg>
+                <span class="min-label">WINS</span>
+                <span class="min-val win" id="min-val-wins">0</span>
+            </div>
+            <div class="min-sep"></div>
+            <div class="min-stat min-losses">
+                <svg class="min-icon loss-icon" viewBox="0 0 24 24"><use href="#ico-x"/></svg>
+                <span class="min-label">LOSS</span>
+                <span class="min-val loss" id="min-val-losses">0</span>
+            </div>
+        </div>
+
+        <div class="view-redesigned" id="view-redesigned">
+            <span class="conn-dot" id="conn-dot-red" title="Stats API status"></span>
+            <div class="redesigned-grid">
+                <div class="redesigned-item item-streak">
+                    <div class="redesigned-header">
+                        <svg class="redesigned-icon streak-icon" viewBox="0 0 24 24"><use href="#ico-flame"/></svg>
+                        <span class="redesigned-label">STRK</span>
+                    </div>
+                    <div class="redesigned-val" id="red-val-streak">0</div>
+                </div>
+                <div class="redesigned-item item-wins">
+                    <div class="redesigned-header">
+                        <svg class="redesigned-icon win-icon" viewBox="0 0 24 24"><use href="#ico-trophy"/></svg>
+                        <span class="redesigned-label">WINS</span>
+                    </div>
+                    <div class="redesigned-val win" id="red-val-wins">0</div>
+                </div>
+                <div class="redesigned-item item-losses">
+                    <div class="redesigned-header">
+                        <svg class="redesigned-icon loss-icon" viewBox="0 0 24 24"><use href="#ico-x"/></svg>
+                        <span class="redesigned-label">LOSS</span>
+                    </div>
+                    <div class="redesigned-val loss" id="red-val-losses">0</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="tracker_overlay.js"></script>
+</body>
+</html>

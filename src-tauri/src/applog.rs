@@ -99,6 +99,63 @@ fn prune_crash_logs(dir: &Path, keep: usize) {
     }
 }
 
+pub fn prune_old_logs(dir: &Path) {
+    const THREE_DAYS_SECS: u64 = 3 * 24 * 60 * 60;
+    let max_age = std::time::Duration::from_secs(THREE_DAYS_SECS);
+    let now = SystemTime::now();
+
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+
+            if path.file_name().and_then(|n| n.to_str()) == Some("session.active") {
+                continue;
+            }
+
+            let is_log_file = path.extension().map_or(false, |ext| {
+                ext.eq_ignore_ascii_case("log") || ext.eq_ignore_ascii_case("zip")
+            });
+
+            if is_log_file {
+                if let Ok(metadata) = entry.metadata() {
+                    if let Ok(mtime) = metadata.modified() {
+                        if let Ok(age) = now.duration_since(mtime) {
+                            if age > max_age {
+                                let _ = fs::remove_file(&path);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(parent) = dir.parent() {
+        let diag_dir = parent.join("diagnostics");
+        if diag_dir.is_dir() {
+            if let Ok(entries) = fs::read_dir(&diag_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_file() {
+                        if let Ok(metadata) = entry.metadata() {
+                            if let Ok(mtime) = metadata.modified() {
+                                if let Ok(age) = now.duration_since(mtime) {
+                                    if age > max_age {
+                                        let _ = fs::remove_file(&path);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn session_marker(dir: &Path) -> PathBuf {
     dir.join("session.active")
 }
@@ -114,6 +171,8 @@ pub fn init(app: &AppHandle) -> PathBuf {
     let dir = resolve_logs_dir(app);
     let _ = fs::create_dir_all(&dir);
 
+    prune_old_logs(&dir);
+
     let unclean = session_marker(&dir).is_file();
     rotate_numbered(&dir, "launch", LAUNCH_KEEP);
     prune_crash_logs(&dir, CRASH_KEEP);
@@ -128,18 +187,18 @@ pub fn init(app: &AppHandle) -> PathBuf {
         "=== VelocityRL launch ===\n\
          time: {}\n\
          version: {}\n\
+         build_number: {}\n\
          profile: {}\n\
          os: {}-{}\n\
-         pid: {}\n\
          log_dir: {}\n\
          previous_exit_clean: {}\n\
          ---",
         now_stamp(),
         env!("CARGO_PKG_VERSION"),
+        env!("VRL_BUILD_NUMBER"),
         profile,
         std::env::consts::OS,
         std::env::consts::ARCH,
-        std::process::id(),
         dir.display(),
         !unclean
     );
@@ -191,6 +250,7 @@ fn install_panic_hook() {
     }
 
     std::panic::set_hook(Box::new(|info| {
+        crate::psynet::kill_proxy_on_exit();
         write_panic_crash(info);
         if let Ok(g) = PREVIOUS_HOOK.lock() {
             if let Some(ref prev) = *g {
@@ -238,6 +298,7 @@ pub fn mark_clean_exit() {
     if let Ok(guard) = LOG_DIR.lock() {
         if let Some(ref dir) = *guard {
             event("clean exit");
+            prune_old_logs(dir);
             let _ = fs::remove_file(session_marker(dir));
         }
     }
@@ -245,11 +306,14 @@ pub fn mark_clean_exit() {
 
 pub fn on_run_event(_app: &AppHandle, ev: &RunEvent) {
     match ev {
-        RunEvent::Exit => {
-            mark_clean_exit();
-        }
         RunEvent::ExitRequested { .. } => {
-            event("exit requested");
+            mark_clean_exit();
+            crate::psynet::kill_proxy_on_exit();
+        }
+        RunEvent::Exit => {
+
+            mark_clean_exit();
+            crate::psynet::kill_proxy_on_exit();
         }
         _ => {}
     }
@@ -266,4 +330,93 @@ pub fn get_logs_dir(app: AppHandle) -> Result<String, String> {
     let dir = resolve_logs_dir(&app);
     let _ = fs::create_dir_all(&dir);
     Ok(dir.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub fn get_log_tail(app: AppHandle, lines: Option<usize>) -> Result<String, String> {
+    let dir = resolve_logs_dir(&app);
+    let _ = fs::create_dir_all(&dir);
+
+    let mut newest: Option<(PathBuf, std::time::SystemTime)> = None;
+    if let Ok(entries) = fs::read_dir(&dir) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.extension().map_or(false, |ext| ext == "log") {
+                let mtime = entry.metadata().and_then(|m| m.modified()).unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                if newest.as_ref().map_or(true, |(_, best)| mtime > *best) {
+                    newest = Some((path, mtime));
+                }
+            }
+        }
+    }
+
+    let Some((newest_path, _)) = newest else {
+        return Ok(String::from("(no log files found)"));
+    };
+
+    let mut file = fs::File::open(&newest_path).map_err(|e| format!("open failed: {e}"))?;
+    let metadata = file.metadata().map_err(|e| format!("metadata failed: {e}"))?;
+    let len = metadata.len();
+    let max_read = 64 * 1024;
+
+    use std::io::{Read, Seek, SeekFrom};
+    let offset = if len > max_read { len - max_read } else { 0 };
+    file.seek(SeekFrom::Start(offset)).map_err(|e| format!("seek failed: {e}"))?;
+    let mut buf = Vec::new();
+    file.read_to_end(&mut buf).map_err(|e| format!("read failed: {e}"))?;
+    let content = String::from_utf8_lossy(&buf);
+
+    let n = lines.unwrap_or(200);
+    let tail: String = content.lines().rev().take(n).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n");
+    Ok(format!("--- {} ---\n{}", newest_path.file_name().unwrap_or_default().to_string_lossy(), tail))
+}
+
+#[tauri::command]
+pub fn get_debug_info(app: AppHandle) -> Result<std::collections::HashMap<String, String>, String> {
+    let mut info = std::collections::HashMap::new();
+    let dir = resolve_logs_dir(&app);
+    let _ = fs::create_dir_all(&dir);
+    info.insert("log_dir".into(), dir.to_string_lossy().into_owned());
+
+    let count = fs::read_dir(&dir)
+        .map(|rd| rd.filter_map(|e| e.ok()).filter(|e| e.path().extension().map_or(false, |x| x == "log")).count())
+        .unwrap_or(0);
+    info.insert("log_files".into(), count.to_string());
+
+    let mut log_files: Vec<PathBuf> = fs::read_dir(&dir)
+        .map_err(|e| format!("read_dir: {e}"))?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().map_or(false, |ext| ext == "log"))
+        .collect();
+    log_files.sort_by(|a, b| {
+        let ma = a.metadata().and_then(|m| m.modified()).unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+        let mb = b.metadata().and_then(|m| m.modified()).unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+        mb.cmp(&ma)
+    });
+    if let Some(newest) = log_files.first() {
+        if let Ok(meta) = newest.metadata() {
+            info.insert("latest_log_name".into(), newest.file_name().unwrap_or_default().to_string_lossy().into_owned());
+            info.insert("latest_log_size".into(), format!("{} KB", meta.len() / 1024));
+        }
+    }
+    Ok(info)
+}
+
+#[tauri::command]
+pub fn open_log_folder(app: AppHandle) -> Result<(), String> {
+    let dir = resolve_logs_dir(&app);
+    #[cfg(windows)]
+    {
+        std::process::Command::new("explorer")
+            .arg(&dir)
+            .spawn()
+            .map_err(|e| format!("Failed to open log folder: {e}"))?;
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = open::that(&dir);
+        Ok(())
+    }
 }

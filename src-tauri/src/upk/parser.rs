@@ -17,6 +17,13 @@ pub struct FileSummary {
     pub import_count: i32,
     pub import_offset: i32,
     pub depends_offset: i32,
+    pub import_export_guids_offset: i32,
+    pub import_guids_count: i32,
+    pub export_guids_count: i32,
+    pub guid: [u8; 16],
+    pub engine_version: u32,
+    pub cooker_version: u32,
+    pub engine_version_offset: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -125,13 +132,13 @@ pub fn parse_prefix(data: &[u8]) -> io::Result<(FileSummary, CompressionMeta)> {
     let import_count = read_i32(&mut c)?;
     let import_offset = read_i32(&mut c)?;
     let depends_offset = read_i32(&mut c)?;
-    let _import_export_guids_offset = read_i32(&mut c)?;
-    let _import_guids_count = read_i32(&mut c)?;
-    let _export_guids_count = read_i32(&mut c)?;
+    let import_export_guids_offset = read_i32(&mut c)?;
+    let import_guids_count = read_i32(&mut c)?;
+    let export_guids_count = read_i32(&mut c)?;
     let _thumbnail_table_offset = read_i32(&mut c)?;
 
-    let mut _guid = [0u8; 16];
-    c.read_exact(&mut _guid)?;
+    let mut guid = [0u8; 16];
+    c.read_exact(&mut guid)?;
 
     let gen_count = read_i32(&mut c)?;
     if !(0..=16_384).contains(&gen_count) {
@@ -146,8 +153,9 @@ pub fn parse_prefix(data: &[u8]) -> io::Result<(FileSummary, CompressionMeta)> {
         let _ = read_i32(&mut c)?;
     }
 
-    let _engine_version = read_u32(&mut c)?;
-    let _cooker_version = read_u32(&mut c)?;
+    let engine_version_offset = c.position() as usize;
+    let engine_version = read_u32(&mut c)?;
+    let cooker_version = read_u32(&mut c)?;
 
     let _compression_flags = read_u32(&mut c)?;
 
@@ -212,6 +220,13 @@ pub fn parse_prefix(data: &[u8]) -> io::Result<(FileSummary, CompressionMeta)> {
         import_count,
         import_offset,
         depends_offset,
+        import_export_guids_offset,
+        import_guids_count,
+        export_guids_count,
+        guid,
+        engine_version,
+        cooker_version,
+        engine_version_offset,
     };
     let meta = CompressionMeta {
         garbage_size,
@@ -226,7 +241,6 @@ pub fn parse_chunks(decrypted_block: &[u8], chunks_offset: i32) -> io::Result<Ve
     parse_chunks_with_stride(decrypted_block, chunks_offset).map(|(_, chunks)| chunks)
 }
 
-/// Like [`parse_chunks`], but also returns the on-disk entry stride (24 or 36).
 pub fn parse_chunks_with_stride(
     decrypted_block: &[u8],
     chunks_offset: i32,

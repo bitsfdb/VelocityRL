@@ -169,11 +169,11 @@ pub fn check_repair(game_dir: &Path, state: &IntegrityState) -> RepairReport {
     let message = if !repaired {
         String::new()
     } else if swaps_wiped > 0 && palette_wiped {
-        format!("{SWAP_VERIFY_MESSAGE} Rich palette was also reset.")
+        format!("{SWAP_VERIFY_MESSAGE} Color palette was also reset.")
     } else if swaps_wiped > 0 {
         SWAP_VERIFY_MESSAGE.to_string()
     } else {
-        "Epic Repair wiped rich palette".into()
+        "Epic Repair wiped color palette".into()
     };
 
     RepairReport {
@@ -203,6 +203,86 @@ pub fn acknowledge_repair(game_dir: &Path, state: &mut IntegrityState) {
     });
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreSwapCheck {
+    pub ok: bool,
+    pub issues: Vec<String>,
+}
+
+#[allow(dead_code)]
+const CRITICAL_PACKAGES: &[&str] = &[
+    "Engine.upk",
+    "TAGame.upk",
+];
+
+#[allow(dead_code)]
+pub fn pre_swap_check(game_dir: &Path) -> PreSwapCheck {
+    let mut issues = Vec::new();
+
+    let cooked = match palette::resolve_cooked_dir(game_dir) {
+        Ok(p) => p,
+        Err(_) => {
+            issues.push("Could not resolve CookedPCConsole directory.".into());
+            return PreSwapCheck { ok: false, issues };
+        }
+    };
+
+    for pkg in CRITICAL_PACKAGES {
+        let upk = cooked.join(pkg);
+        if !upk.exists() {
+            issues.push(format!("Missing critical package: {pkg}"));
+            continue;
+        }
+        match std::fs::metadata(&upk) {
+            Ok(meta) => {
+                if meta.len() == 0 {
+                    issues.push(format!("{pkg} is empty (0 bytes) — game files may be corrupted."));
+                } else if meta.len() < 1024 {
+                    issues.push(format!("{pkg} is suspiciously small ({} bytes).", meta.len()));
+                }
+            }
+            Err(e) => {
+                issues.push(format!("Cannot read {pkg}: {e}"));
+            }
+        }
+
+        if let Ok(data) = std::fs::read(&upk) {
+            if let Err(e) = parser::parse_prefix(&data) {
+                issues.push(format!("{pkg} has an invalid UPK header: {e}"));
+            }
+        }
+    }
+
+    if let Ok(entries) = std::fs::read_dir(&cooked) {
+        let mut bak_count = 0usize;
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str.ends_with(".upk.bak") {
+                bak_count += 1;
+
+                let orig_name = name_str.trim_end_matches(".bak");
+                if !cooked.join(orig_name).exists() {
+                    issues.push(format!(
+                        "Backup exists for {orig_name} but the original is missing — verify game files."
+                    ));
+                }
+            }
+        }
+        if bak_count > 0 {
+            issues.push(format!(
+                "{bak_count} backup file(s) detected. If you recently verified game files, use Restore All before swapping."
+            ));
+        }
+    }
+
+    PreSwapCheck {
+        ok: issues.is_empty(),
+        issues,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -220,5 +300,12 @@ mod tests {
     fn bak_path_appends_bak() {
         let p = bak_path_for(Path::new("Body_Octane_SF.upk"));
         assert!(p.file_name().unwrap().to_string_lossy().ends_with(".upk.bak"));
+    }
+
+    #[test]
+    fn pre_swap_check_empty_dir_returns_error() {
+        let report = pre_swap_check(Path::new(""));
+        assert!(!report.ok);
+        assert!(!report.issues.is_empty());
     }
 }

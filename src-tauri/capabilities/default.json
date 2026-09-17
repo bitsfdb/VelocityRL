@@ -3,36 +3,20 @@
   "identifier": "default",
   "description": "enables the default permissions",
   "windows": [
-    "main"
+    "*"
+  ],
+  "webviews": [
+    "*"
   ],
   "permissions": [
     "core:default",
+    "core:event:default",
+    "core:window:default",
     "core:window:allow-close",
     "core:window:allow-destroy",
     "dialog:default",
     "log:default",
     "process:default",
-    {
-      "identifier": "shell:allow-execute",
-      "allow": [
-        {
-          "name": "bin/velocity-engine",
-          "sidecar": true,
-          "args": [
-            { "validator": "\\S+" },
-            { "validator": "\\S+" },
-            { "validator": "\\S+" },
-            { "validator": "\\S+" },
-            { "validator": "\\S+" },
-            { "validator": "\\S+" },
-            { "validator": "\\S+" },
-            { "validator": "\\S+" },
-            { "validator": "\\S+" },
-            { "validator": "\\S+" }
-          ]
-        }
-      ]
-    },
     "shell:allow-open"
   ]
 }

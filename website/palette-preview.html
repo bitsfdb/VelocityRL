@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RL garage color pickers</title>
+<style>
+  :root {
+    --bg: #07080c;
+    --text: #dce4ec;
+    --muted: #8a96a4;
+    --gap: 2px;
+    --cell: 18px;
+    --radius: 2px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 600px at 20% -10%, #152033 0%, transparent 55%),
+      var(--bg);
+    color: var(--text);
+    font: 13px/1.4 "Segoe UI", sans-serif;
+    padding: 32px 28px 72px;
+  }
+  h1 {
+    font-size: 18px;
+    font-weight: 650;
+    margin: 0 0 6px;
+  }
+  .lede {
+    color: var(--muted);
+    margin: 0 0 28px;
+    max-width: 68ch;
+  }
+  .lede code { color: #c5d0dc; }
+  section { margin-bottom: 36px; }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 28px 40px;
+    align-items: flex-start;
+  }
+  .popover {
+    display: inline-block;
+    background: linear-gradient(180deg, #1a2838 0%, #0e1620 100%);
+    border: 1px solid #243044;
+    padding: 10px 10px 12px;
+  }
+  .popover-label {
+    font-size: 11px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: #9aafc4;
+    margin: 0 0 8px;
+  }
+  .stack-wrap {
+    display: grid;
+    grid-template-columns: 72px max-content;
+    gap: 0 var(--gap);
+    align-items: stretch;
+  }
+  .band-labels {
+    display: grid;
+    grid-template-rows: repeat(3, 1fr);
+    padding: var(--gap) 0;
+  }
+  .band-labels span {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 8px;
+    font-size: 10px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: #9aafc4;
+  }
+  .grid {
+    display: grid;
+    grid-auto-flow: row;
+    gap: var(--gap);
+    background: #000;
+    padding: var(--gap);
+    width: max-content;
+  }
+  .cell {
+    width: var(--cell);
+    height: var(--cell);
+    border-radius: var(--radius);
+  }
+  .cell.empty { outline: 1px solid #1c2836; }
+  .meta {
+    color: var(--muted);
+    font-size: 12px;
+    margin: 8px 0 0;
+  }
+  .meta b { color: var(--text); font-weight: 600; }
+</style>
+</head>
+<body>
+  <h1>In-game garage pickers</h1>
+  <p class="lede">
+    Apply writes this <b>10 × 21</b> stack into every Blue* and Orange* set:
+    Blue V3 on top, Orange V3, Accent hues 0–9 under — same 10-column width,
+    no empty gutter. Accent’s own picker stays 15×7.
+  </p>
+
+  <section>
+    <div class="row">
+      <div>
+        <div class="popover">
+          <div class="popover-label">Source · Blue V3</div>
+          <div id="blue-v3" class="grid" aria-label="BlueTeamV3 10 by 7"></div>
+        </div>
+        <p class="meta"><b>10 × 7</b></p>
+      </div>
+      <div>
+        <div class="popover">
+          <div class="popover-label">Source · Orange V3</div>
+          <div id="orange-v3" class="grid" aria-label="OrangeTeamV3 10 by 7"></div>
+        </div>
+        <p class="meta"><b>10 × 7</b></p>
+      </div>
+      <div>
+        <div class="popover">
+          <div class="popover-label">Source · Accent (unchanged)</div>
+          <div id="accent" class="grid" aria-label="Accent 15 by 7"></div>
+        </div>
+        <p class="meta"><b>15 × 7</b></p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="popover">
+      <div class="popover-label">Apply · every Blue + Orange field</div>
+      <div class="stack-wrap">
+        <div class="band-labels" aria-hidden="true">
+          <span>Blue V3</span>
+          <span>Orange V3</span>
+          <span>Accent</span>
+        </div>
+        <div id="stacked" class="grid" aria-label="Stacked 10 by 21"></div>
+      </div>
+    </div>
+    <p class="meta"><b>10 × 21</b> · 210 cells · Accent export not rewritten.</p>
+  </section>
+
+<script>
+const BLUE_V3 = [
+  "#507F39", "#65B23E", "#72E539", "#5CFC0C", "#4ACC0A", "#3CA508", "#2E7F06",
+  "#397F3F", "#3EB248", "#39E547", "#0CFC20", "#0ACC1A", "#08A515", "#067F10",
+  "#397F64", "#3EB286", "#39E5A3", "#0CFCA0", "#0ACC81", "#08A569", "#067F51",
+  "#397D7F", "#3EAEB2", "#39DFE5", "#0CF4FC", "#0AC5CC", "#08A0A5", "#067B7F",
+  "#396B7F", "#3E91B2", "#39B4E5", "#0CB8FC", "#0A95CC", "#0879A5", "#065D7F",
+  "#395D7F", "#3E7AB2", "#3992E5", "#0C88FC", "#0A6ECC", "#0859A5", "#06447F",
+  "#394F7F", "#3E63B2", "#396FE5", "#0C58FC", "#0A47CC", "#083AA5", "#062C7F",
+  "#39427F", "#3E4DB2", "#3950E5", "#0C2CFC", "#0A24CC", "#081DA5", "#06167F",
+  "#4C397F", "#5D3EB2", "#6739E5", "#4C0CFC", "#3D0ACC", "#3208A5", "#26067F",
+  "#51397F", "#673EB2", "#7539E5", "#600CFC", "#4E0ACC", "#3F08A5", "#30067F"
+];
+
+const ORANGE_V3 = [
+  "#7F7F39", "#B2B23E", "#E5E539", "#FCFC0C", "#CCCC0A", "#A5A508", "#7F7F06",
+  "#7F7039", "#B2993E", "#E5C039", "#FCC80C", "#CCA20A", "#A58308", "#7F6506",
+  "#7F6339", "#B2843E", "#E5A039", "#FC9C0C", "#CC7E0A", "#A56608", "#7F4F06",
+  "#7F5A39", "#B2743E", "#E58939", "#FC7C0C", "#CC640A", "#A55108", "#7F3E06",
+  "#7F5439", "#B26A3E", "#E57B39", "#FC680C", "#CC540A", "#A54408", "#7F3406",
+  "#7F4E39", "#B2613E", "#E56D39", "#FC540C", "#CC440A", "#A53708", "#7F2A06",
+  "#7F4739", "#B2553E", "#E55B39", "#FC3C0C", "#CC300A", "#A52708", "#7F1E06",
+  "#7F3939", "#B23E3E", "#E53939", "#FC0C0C", "#CC0A0A", "#A50808", "#7F0606",
+  "#7F3951", "#B23E67", "#E53975", "#FC0C60", "#CC0A4E", "#A5083F", "#7F0630",
+  "#7F395C", "#B23E78", "#E5398F", "#FC0C84", "#CC0A6B", "#A50857", "#7F0642"
+];
+
+const ACCENT = [
+  "#E5E5E5", "#BFBFBF", "#999999", "#666666", "#3F3F3F", "#262626", "#050505",
+  "#FF7F7F", "#FF5959", "#FF3232", "#FF0000", "#B20000", "#660000", "#330000",
+  "#FF9F7F", "#FF8259", "#FF6532", "#FF3F00", "#B22C00", "#661900", "#330C00",
+  "#FFCF7F", "#FFC059", "#FFB232", "#FF9F00", "#B26F00", "#663F00", "#331F00",
+  "#EFFF7F", "#EAFF59", "#E5FF32", "#DFFF00", "#9CB200", "#596600", "#2C3300",
+  "#AFFF7F", "#97FF59", "#7FFF32", "#5FFF00", "#42B200", "#266600", "#133300",
+  "#7FFF7F", "#59FF59", "#32FF32", "#00FF00", "#00B200", "#006600", "#003300",
+  "#7FFFB2", "#59FF9B", "#32FF84", "#00FF66", "#00B247", "#006628", "#003314",
+  "#7FE9FF", "#59E3FF", "#32DCFF", "#00D4FF", "#0094B2", "#005466", "#002A33",
+  "#7FB0FF", "#5998FF", "#3281FF", "#0061FF", "#0044B2", "#002766", "#001333",
+  "#7F88FF", "#5964FF", "#3240FF", "#0011FF", "#000BB2", "#000666", "#000333",
+  "#AE7FFF", "#9659FF", "#7D32FF", "#5D00FF", "#4100B2", "#250066", "#120033",
+  "#E57FFF", "#DD59FF", "#D632FF", "#CC00FF", "#8E00B2", "#510066", "#280033",
+  "#FF7FD0", "#FF59C2", "#FF32B4", "#FF00A1", "#B20071", "#660040", "#330020",
+  "#FF7F94", "#FF5974", "#FF3255", "#FF002A", "#B2001D", "#660011", "#330008"
+];
+
+const EMPTY = "#000000";
+const TEAM_HUES = 10;
+const ACCENT_HUES = 15;
+const SRC_VALUES = 7;
+
+function stackBlueOrangeAccent(blue, orange, accent) {
+  const valueCount = SRC_VALUES * 3;
+  const out = new Array(TEAM_HUES * valueCount);
+  for (let value = 0; value < valueCount; value++) {
+    const band = Math.floor(value / SRC_VALUES);
+    const local = value % SRC_VALUES;
+    for (let hue = 0; hue < TEAM_HUES; hue++) {
+      const i = value * TEAM_HUES + hue;
+      if (band === 0) out[i] = blue[hue * SRC_VALUES + local];
+      else if (band === 1) out[i] = orange[hue * SRC_VALUES + local];
+      else out[i] = accent[hue * SRC_VALUES + local];
+    }
+  }
+  return out;
+}
+
+function linearHexToSrgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => {
+    const s = Math.pow(c / 255, 1 / 2.2);
+    return Math.min(255, Math.max(0, Math.round(s * 255)));
+  });
+  return "#" + ch.map((c) => c.toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+
+function paintPicker(id, colors, hueCount, valueCount, rowMajor) {
+  const el = document.getElementById(id);
+  if (colors.length !== hueCount * valueCount) {
+    el.textContent = `grid count mismatch (${colors.length} != ${hueCount}*${valueCount})`;
+    return;
+  }
+  el.style.gridTemplateColumns = `repeat(${hueCount}, var(--cell))`;
+  for (let value = 0; value < valueCount; value++) {
+    for (let hue = 0; hue < hueCount; hue++) {
+      const lin = rowMajor
+        ? colors[value * hueCount + hue]
+        : colors[hue * valueCount + value];
+      const srgb = linearHexToSrgb(lin);
+      const d = document.createElement("div");
+      d.className = lin === EMPTY ? "cell empty" : "cell";
+      d.style.background = srgb;
+      d.title = `${srgb}  linear ${lin}  hue ${hue}  value ${value}`;
+      el.appendChild(d);
+    }
+  }
+}
+
+paintPicker("blue-v3", BLUE_V3, 10, 7, false);
+paintPicker("orange-v3", ORANGE_V3, 10, 7, false);
+paintPicker("accent", ACCENT, 15, 7, false);
+paintPicker("stacked", stackBlueOrangeAccent(BLUE_V3, ORANGE_V3, ACCENT), 10, 21, true);
+</script>
+</body>
+</html>

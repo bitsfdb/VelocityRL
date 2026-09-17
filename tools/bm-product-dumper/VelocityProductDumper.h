@@ -7,33 +7,30 @@
 #include <map>
 #include <set>
 
-constexpr auto plugin_version = "1.2";
+constexpr auto plugin_version = "1.3";
 
-// Paint IDs matching Rocket League internal mapping
-// Added unreleased colors 15-18
 static const std::vector<std::string> PAINT_NAMES = {
-    "None",            // 0
-    "Crimson",         // 1
-    "Lime",            // 2
-    "Black",           // 3
-    "Orange",          // 4
-    "Sky Blue",        // 5
-    "Cobalt",          // 6
-    "Saffron",         // 7
-    "Grey",            // 8
-    "Pink",            // 9
-    "Forest Green",    // 10
-    "Purple",          // 11
-    "Titanium White",  // 12
-    "Burnt Sienna",    // 13
-    "Gold",            // 14
-    "Rose Gold",       // 15
-    "White Gold",      // 16
-    "Onyx",            // 17
-    "Platinum"         // 18
+    "None",
+    "Crimson",
+    "Lime",
+    "Black",
+    "Orange",
+    "Sky Blue",
+    "Cobalt",
+    "Saffron",
+    "Grey",
+    "Pink",
+    "Forest Green",
+    "Purple",
+    "Titanium White",
+    "Burnt Sienna",
+    "Gold",
+    "Rose Gold",
+    "White Gold",
+    "Onyx",
+    "Platinum"
 };
 
-// Slot index -> label
 static const std::map<int, std::string> SLOT_NAMES = {
     {0, "Body"},
     {1, "Decal"},
@@ -50,7 +47,6 @@ static const std::map<int, std::string> SLOT_NAMES = {
     {12, "Title"},
 };
 
-// Quality index -> label
 static const std::map<int, std::string> QUALITY_NAMES = {
     {0, "Common"},
     {1, "Uncommon"},
@@ -76,7 +72,7 @@ struct ProductEntry {
     std::string asset_package = "";
     std::string asset_path = "";
     std::string unlock_method = "";
-    // Which paint IDs this item can actually have (1-18)
+
     std::vector<int> paint_ids;
 };
 
@@ -95,5 +91,6 @@ private:
     std::string SlotName(int id);
     std::string QualityName(int id);
     std::string PaintName(int id);
+    std::string ExtractYear(const std::string& s);
     std::string EscapeJson(const std::string& s);
 };

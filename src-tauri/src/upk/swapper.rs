@@ -124,15 +124,28 @@ pub fn paint_slugs(id: i32) -> Vec<String> {
         format!("{id}"),
     ];
     match id {
+        1 => slugs.push("C".into()),
+        2 => slugs.push("L".into()),
+        3 => slugs.push("B".into()),
+        4 => slugs.push("O".into()),
         5 => {
+            slugs.push("S".into());
             slugs.push("SB".into());
             slugs.push("Sky_Blue".into());
         }
-        8 => slugs.push("Gray".into()),
+        6 => slugs.push("K".into()),
+        7 => slugs.push("Y".into()),
+        8 => {
+            slugs.push("G".into());
+            slugs.push("Gray".into());
+        }
+        9 => slugs.push("P".into()),
         10 => {
+            slugs.push("F".into());
             slugs.push("FG".into());
             slugs.push("Forest_Green".into());
         }
+        11 => slugs.push("V".into()),
         12 => {
             slugs.push("TW".into());
             slugs.push("Titanium_White".into());
@@ -140,6 +153,13 @@ pub fn paint_slugs(id: i32) -> Vec<String> {
         _ => {}
     }
     slugs
+}
+
+fn is_thumbnail_companion_upk(filename: &str) -> bool {
+
+    file_stem(filename)
+        .to_ascii_lowercase()
+        .ends_with("_t_sf")
 }
 
 pub fn painted_package_candidates(asset_package: &str, paint_id: i32) -> Vec<String> {
@@ -159,6 +179,9 @@ pub fn painted_package_candidates(asset_package: &str, paint_id: i32) -> Vec<Str
 
 fn find_painted_package(game_dir: &Path, asset_package: &str, paint_id: i32) -> Option<String> {
     for cand in painted_package_candidates(asset_package, paint_id) {
+        if is_thumbnail_companion_upk(&cand) {
+            continue;
+        }
         if game_dir.join(&cand).is_file() {
             return Some(cand);
         }
@@ -210,6 +233,20 @@ fn find_item_by_id(items: &[Item], id: i64) -> Option<&Item> {
     items.iter().find(|i| i.id == id)
 }
 
+fn to_pascal_case(s: &str) -> String {
+    s.split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut c = part.chars();
+            match c.next() {
+                None => String::new(),
+                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("_")
+}
+
 fn infer_name_pairs(target: &Item, donor: &Item) -> Vec<(String, String)> {
     let donor_stem = file_stem(&donor.asset_package);
     let target_stem = file_stem(&target.asset_package);
@@ -226,6 +263,17 @@ fn infer_name_pairs(target: &Item, donor: &Item) -> Vec<(String, String)> {
         .collect();
 
     let mut pairs: Vec<(String, String)> = Vec::new();
+
+    if !donor_parts.is_empty() && !target_parts.is_empty() {
+        let donor_obj = donor_parts.last().unwrap().to_string();
+        let target_obj = target_parts.last().unwrap().to_string();
+        add_pair(&mut pairs, donor_obj.clone(), target_obj.clone());
+        add_pair(&mut pairs, format!("{donor_obj}_TA"), format!("{target_obj}_TA"));
+        add_pair(&mut pairs, format!("{donor_obj}_archetype"), format!("{target_obj}_archetype"));
+
+        add_pair(&mut pairs, donor_parts[0].to_string(), target_parts[0].to_string());
+    }
+
     let len = donor_parts.len().min(target_parts.len());
     for i in 0..len {
         add_pair(
@@ -235,7 +283,24 @@ fn infer_name_pairs(target: &Item, donor: &Item) -> Vec<(String, String)> {
         );
     }
     if !donor_stem.is_empty() && !target_stem.is_empty() {
-        add_pair(&mut pairs, donor_stem, target_stem);
+        add_pair(&mut pairs, donor_stem.clone(), target_stem.clone());
+
+        let donor_base = package_base(&donor_stem);
+        let target_base = package_base(&target_stem);
+        if !donor_base.is_empty() && !target_base.is_empty() {
+            let donor_pascal = to_pascal_case(donor_base);
+            let target_pascal = to_pascal_case(target_base);
+
+            add_pair(&mut pairs, donor_base.to_string(), target_base.to_string());
+            add_pair(&mut pairs, donor_base.to_string(), target_pascal.clone());
+            add_pair(&mut pairs, donor_pascal.clone(), target_base.to_string());
+            add_pair(&mut pairs, donor_pascal.clone(), target_pascal.clone());
+
+            add_pair(&mut pairs, format!("{donor_base}_TA"), format!("{target_pascal}_TA"));
+            add_pair(&mut pairs, format!("{donor_pascal}_TA"), format!("{target_pascal}_TA"));
+            add_pair(&mut pairs, format!("{donor_base}_archetype"), format!("{target_pascal}_archetype"));
+            add_pair(&mut pairs, format!("{donor_pascal}_archetype"), format!("{target_pascal}_archetype"));
+        }
     }
     pairs
 }
@@ -287,10 +352,362 @@ fn name_table_has(header: &[u8], name_count: i32, needle: &str) -> bool {
     }
 }
 
-fn any_old_name_present(header: &[u8], name_count: i32, pairs: &[(String, String)]) -> bool {
-    pairs
-        .iter()
-        .any(|(old, _)| name_table_has(header, name_count, old))
+pub fn read_package_guid(path: &Path) -> Option<[u8; 16]> {
+    let data = read_upk(path).ok()?;
+    let (summary, _) = parser::parse_prefix(&data).ok()?;
+    Some(summary.guid)
+}
+
+pub fn dump_engine_info(game_dir: &Path) {
+    let engine_path = game_dir.join("Engine.upk");
+    match read_upk(&engine_path) {
+        Ok(data) => match parser::parse_prefix(&data) {
+            Ok((s, m)) => {
+                let guid_hex: String = s.guid.iter().map(|b| format!("{:02X}", b)).collect();
+                crate::applog::event(&format!(
+                    "engine_dump: Engine.upk guid={} engine_version={} cooker_version={} header_size={} name_count={} import_count={} export_count={} garbage_size={}",
+                    guid_hex, s.engine_version, s.cooker_version, s.total_header_size,
+                    s.name_count, s.import_count, s.export_count, m.garbage_size,
+                ));
+            }
+            Err(e) => crate::applog::event(&format!("engine_dump: failed to parse Engine.upk: {e}")),
+        },
+        Err(e) => crate::applog::event(&format!("engine_dump: failed to read Engine.upk: {e}")),
+    }
+}
+
+pub fn read_engine_versions(path: &Path) -> Option<(u32, u32)> {
+    let data = read_upk(path).ok()?;
+    let (summary, _) = parser::parse_prefix(&data).ok()?;
+    Some((summary.engine_version, summary.cooker_version))
+}
+
+pub const IMPORT_ENTRY_SIZE: usize = 28;
+
+fn build_name_table(header: &[u8], name_count: i32) -> Vec<String> {
+    let mut names: Vec<String> = Vec::with_capacity(name_count.max(0) as usize);
+    let mut pos = 0usize;
+    for _ in 0..name_count.max(0) {
+        if pos + 4 > header.len() {
+            break;
+        }
+        let fstr_len = i32::from_le_bytes(header[pos..pos + 4].try_into().unwrap_or([0; 4]));
+        let (capacity, name) = if fstr_len > 0 {
+            let cap = fstr_len as usize;
+            if pos + 4 + cap > header.len() {
+                break;
+            }
+            let bytes = &header[pos + 4..pos + 4 + cap];
+            let end = bytes.iter().position(|&b| b == 0).unwrap_or(cap);
+            (cap, String::from_utf8_lossy(&bytes[..end]).into_owned())
+        } else if fstr_len < 0 {
+            let bc = (-fstr_len as usize) * 2;
+            if pos + 4 + bc > header.len() {
+                break;
+            }
+            let bytes = &header[pos + 4..pos + 4 + bc];
+            let words: Vec<u16> = bytes
+                .chunks_exact(2)
+                .map(|b| u16::from_le_bytes([b[0], b[1]]))
+                .collect();
+            let end = words.iter().position(|&w| w == 0).unwrap_or(words.len());
+            (bc, String::from_utf16_lossy(&words[..end]).to_owned())
+        } else {
+            (0, String::new())
+        };
+        names.push(name);
+        pos += 4 + capacity + 8;
+    }
+    names
+}
+
+fn name_at(names: &[String], idx: i32) -> String {
+    names.get(idx.max(0) as usize).cloned().unwrap_or_default()
+}
+
+pub fn find_package_import_linker_indices(
+    header: &[u8],
+    name_offset: i32,
+    name_count: i32,
+    import_offset: i32,
+    import_count: i32,
+    package_name: &str,
+) -> Vec<i32> {
+    let names = build_name_table(header, name_count);
+    let io = (import_offset - name_offset) as usize;
+    let mut result = Vec::new();
+    for i in 0..import_count.max(0) as usize {
+        let off = io + i * IMPORT_ENTRY_SIZE;
+        if off + IMPORT_ENTRY_SIZE > header.len() {
+            break;
+        }
+        let object_name_idx =
+            i32::from_le_bytes(header[off + 20..off + 24].try_into().unwrap_or([0; 4]));
+        if name_at(&names, object_name_idx).eq_ignore_ascii_case(package_name) {
+            result.push(-((i as i32) + 1));
+        }
+    }
+    result
+}
+
+pub fn find_import_linker_indices(
+    header: &[u8],
+    name_offset: i32,
+    name_count: i32,
+    import_offset: i32,
+    import_count: i32,
+    target_name: &str,
+) -> Vec<i32> {
+    let names = build_name_table(header, name_count);
+    let io = (import_offset - name_offset) as usize;
+    let mut result = Vec::new();
+    for i in 0..import_count.max(0) as usize {
+        let off = io + i * IMPORT_ENTRY_SIZE;
+        if off + IMPORT_ENTRY_SIZE > header.len() {
+            break;
+        }
+        let class_pkg_idx = i32::from_le_bytes(header[off..off + 4].try_into().unwrap_or([0; 4]));
+        if name_at(&names, class_pkg_idx).eq_ignore_ascii_case(target_name) {
+            result.push(-((i as i32) + 1));
+        }
+    }
+    result
+}
+
+pub fn find_engine_dependency_linker_indices(
+    header: &[u8],
+    name_offset: i32,
+    name_count: i32,
+    import_offset: i32,
+    import_count: i32,
+) -> Vec<i32> {
+    let mut out = find_engine_package_linker_indices(
+        header,
+        name_offset,
+        name_count,
+        import_offset,
+        import_count,
+    );
+    if out.is_empty() {
+        out = find_import_linker_indices(
+            header,
+            name_offset,
+            name_count,
+            import_offset,
+            import_count,
+            "Engine",
+        );
+    }
+    out
+}
+
+fn find_engine_package_linker_indices(
+    header: &[u8],
+    name_offset: i32,
+    name_count: i32,
+    import_offset: i32,
+    import_count: i32,
+) -> Vec<i32> {
+    let names = build_name_table(header, name_count);
+    let io = (import_offset - name_offset) as usize;
+    let mut result = Vec::new();
+    for i in 0..import_count.max(0) as usize {
+        let off = io + i * IMPORT_ENTRY_SIZE;
+        if off + IMPORT_ENTRY_SIZE > header.len() {
+            break;
+        }
+        let class_name_idx =
+            i32::from_le_bytes(header[off + 8..off + 12].try_into().unwrap_or([0; 4]));
+        let object_name_idx =
+            i32::from_le_bytes(header[off + 20..off + 24].try_into().unwrap_or([0; 4]));
+        if name_at(&names, class_name_idx).eq_ignore_ascii_case("Package")
+            && name_at(&names, object_name_idx).eq_ignore_ascii_case("Engine")
+        {
+            result.push(-((i as i32) + 1));
+        }
+    }
+    result
+}
+
+pub fn read_engine_import_guid_in_header(
+    header: &[u8],
+    summary: &parser::FileSummary,
+    name_offset: i32,
+    header_delta: i32,
+) -> Option<[u8; 16]> {
+    let engine_indices = find_engine_dependency_linker_indices(
+        header,
+        name_offset,
+        summary.name_count,
+        summary.import_offset,
+        summary.import_count,
+    );
+    if engine_indices.is_empty() {
+        return None;
+    }
+    let guid_section_start = (summary.import_export_guids_offset as i64
+        - name_offset as i64
+        + header_delta as i64) as usize;
+    let entry_size = 20;
+    for i in 0..summary.import_guids_count as usize {
+        let off = guid_section_start + i * entry_size;
+        if off + entry_size > header.len() {
+            break;
+        }
+        let pkg_idx = i32::from_le_bytes(header[off..off + 4].try_into().unwrap_or([0; 4]));
+        if engine_indices.contains(&pkg_idx) {
+            let mut guid = [0u8; 16];
+            guid.copy_from_slice(&header[off + 4..off + 20]);
+            return Some(guid);
+        }
+    }
+    None
+}
+
+pub fn patch_engine_versions_in_prefix(
+    data: &mut [u8],
+    summary: &parser::FileSummary,
+    eng_ver: u32,
+    cook_ver: u32,
+) -> bool {
+    let off = summary.engine_version_offset;
+    if off + 8 > data.len() {
+        return false;
+    }
+    let cur_eng = u32::from_le_bytes(data[off..off + 4].try_into().unwrap_or([0; 4]));
+    let cur_cook = u32::from_le_bytes(data[off + 4..off + 8].try_into().unwrap_or([0; 4]));
+    if cur_eng == eng_ver && cur_cook == cook_ver {
+        return false;
+    }
+    data[off..off + 4].copy_from_slice(&eng_ver.to_le_bytes());
+    data[off + 4..off + 8].copy_from_slice(&cook_ver.to_le_bytes());
+    true
+}
+
+pub fn read_prefix_engine_versions(data: &[u8]) -> Option<(u32, u32)> {
+    let (summary, _) = parser::parse_prefix(data).ok()?;
+    let off = summary.engine_version_offset;
+    if off + 8 > data.len() {
+        return None;
+    }
+    Some((
+        u32::from_le_bytes(data[off..off + 4].try_into().ok()?),
+        u32::from_le_bytes(data[off + 4..off + 8].try_into().ok()?),
+    ))
+}
+
+pub fn header_references_stale_engine(
+    header: &[u8],
+    summary: &parser::FileSummary,
+    name_offset: i32,
+    header_delta: i32,
+    current_engine_guid: &[u8; 16],
+) -> bool {
+    if summary.import_export_guids_offset < 0 || summary.import_guids_count <= 0 {
+        return false;
+    }
+    let engine_indices = find_engine_dependency_linker_indices(
+        header,
+        name_offset,
+        summary.name_count,
+        summary.import_offset,
+        summary.import_count,
+    );
+    if engine_indices.is_empty() {
+        return false;
+    }
+    let guid_section_start = (summary.import_export_guids_offset as i64
+        - name_offset as i64
+        + header_delta as i64) as usize;
+    let entry_size = 20;
+    for i in 0..summary.import_guids_count as usize {
+        let off = guid_section_start + i * entry_size;
+        if off + entry_size > header.len() {
+            break;
+        }
+        let pkg_idx = i32::from_le_bytes(header[off..off + 4].try_into().unwrap_or([0; 4]));
+        if engine_indices.contains(&pkg_idx) {
+            let guid = &header[off + 4..off + 20];
+            if guid != current_engine_guid.as_slice() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+pub fn patch_engine_import_guid(
+    header: &mut [u8],
+    summary: &parser::FileSummary,
+    name_offset: i32,
+    header_delta: i32,
+    engine_guid: [u8; 16],
+) -> bool {
+    if summary.import_export_guids_offset < 0 || summary.import_guids_count <= 0 {
+        return false;
+    }
+
+    let engine_indices = find_engine_dependency_linker_indices(
+        header,
+        name_offset,
+        summary.name_count,
+        summary.import_offset,
+        summary.import_count,
+    );
+    if engine_indices.is_empty() {
+        return false;
+    }
+
+    let guid_section_start =
+        (summary.import_export_guids_offset as i64 - name_offset as i64 + header_delta as i64) as usize;
+    let entry_size = 20;
+
+    let mut patched = false;
+    for i in 0..summary.import_guids_count as usize {
+        let off = guid_section_start + i * entry_size;
+        if off + entry_size > header.len() { break; }
+        let pkg_idx = i32::from_le_bytes(
+            header[off..off + 4].try_into().unwrap_or([0; 4])
+        );
+        if engine_indices.contains(&pkg_idx) {
+            header[off + 4..off + 20].copy_from_slice(&engine_guid);
+            patched = true;
+        }
+    }
+    patched
+}
+
+fn replace_file_atomic(from: &Path, to: &Path) -> Result<(), std::io::Error> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        fn wide(p: &Path) -> Vec<u16> {
+            p.as_os_str().encode_wide().chain(std::iter::once(0)).collect()
+        }
+        const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
+        const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn MoveFileExW(existing: *const u16, new: *const u16, flags: u32) -> i32;
+        }
+        let src = wide(from);
+        let dst = wide(to);
+        let ok = unsafe {
+            MoveFileExW(
+                src.as_ptr(),
+                dst.as_ptr(),
+                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+            )
+        };
+        if ok == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        std::fs::rename(from, to)
+    }
 }
 
 fn write_swap_atomically(target: &Path, backup: &Path, data: &[u8]) -> Result<(), SwapError> {
@@ -319,17 +736,13 @@ fn write_swap_atomically(target: &Path, backup: &Path, data: &[u8]) -> Result<()
         )));
     }
 
-    if std::fs::rename(&tmp, target).is_err() {
-        if let Err(e) = std::fs::write(target, data) {
-            let _ = std::fs::copy(backup, target);
-            let _ = std::fs::remove_file(&tmp);
-            return Err(SwapError::Msg(format!(
-                "Failed to write output to {}: {}",
-                target.display(),
-                explain_io(&e)
-            )));
-        }
+    if let Err(e) = replace_file_atomic(&tmp, target) {
         let _ = std::fs::remove_file(&tmp);
+        return Err(SwapError::Msg(format!(
+            "Failed to atomically replace {}: {}",
+            target.display(),
+            explain_io(&e)
+        )));
     }
     Ok(())
 }
@@ -340,6 +753,7 @@ pub fn swap_asset(
     paint_id: i32,
     opts: &SwapOptions,
 ) -> Result<String, SwapError> {
+    dump_engine_info(&opts.game_dir);
     if !(0..=12).contains(&paint_id) {
         return Err(SwapError::Msg(format!(
             "invalid paint id {paint_id} (use 0 for None, or 1–12)"
@@ -401,8 +815,12 @@ pub fn swap_asset(
     let backup_path = target_path.with_file_name(backup_name);
 
     if backup_path.exists() {
+        crate::applog::event(&format!(
+            "swap: blocked by existing backup {}",
+            backup_path.display()
+        ));
         return Err(SwapError::AlreadySwapped(format!(
-            "{} is already swapped — restore it first.",
+            "{} is already swapped — open the Restore tab and click Restore on it first, then swap again.",
             if target.product.is_empty() {
                 target.asset_package.as_str()
             } else {
@@ -412,13 +830,17 @@ pub fn swap_asset(
     }
     if !donor_path.exists() {
         return Err(SwapError::Msg(format!(
-            "donor file not found: {}",
+            "Wanted item file not found: '{}' ({}). Path: {}",
+            donor.asset_package,
+            if donor.product.is_empty() { "item" } else { &donor.product },
             donor_path.display()
         )));
     }
     if !target_path.exists() {
         return Err(SwapError::Msg(format!(
-            "target file not found: {}",
+            "Owned item file not found: '{}' ({}). Path: {}",
+            target.asset_package,
+            if target.product.is_empty() { "item" } else { &target.product },
             target_path.display()
         )));
     }
@@ -501,7 +923,6 @@ pub fn swap_asset(
     }
     let _base_pair_count = pairs.len();
     extend_paint_name_pairs(&mut pairs, paint_id);
-
 
     if pairs.is_empty() {
         return Err(SwapError::Msg(
@@ -815,12 +1236,15 @@ mod tests {
         assert!(crimson.iter().any(|s| s == "P1"));
         let tw = paint_slugs(12);
         assert!(tw.iter().any(|s| s == "TW" || s == "TitaniumWhite"));
+        assert!(!tw.iter().any(|s| s == "T"));
     }
 
     #[test]
-    fn painted_candidates_use_sf_suffix() {
-        let c = painted_package_candidates("Body_Octane_SF.upk", 1);
-        assert!(c.iter().any(|p| p == "Body_Octane_Crimson_SF.upk"));
+    fn thumbnail_companion_is_not_treated_as_paint() {
+        assert!(is_thumbnail_companion_upk("Body_Octane_T_SF.upk"));
+        assert!(!is_thumbnail_companion_upk("Body_Octane_TW_SF.upk"));
+        let c = painted_package_candidates("Body_Octane_SF.upk", 12);
+        assert!(!c.iter().any(|p| p == "Body_Octane_T_SF.upk"));
     }
 
     #[test]

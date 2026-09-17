@@ -2,6 +2,7 @@ const { invoke } = window.__TAURI__.core;
 const { open } = window.__TAURI__.dialog;
 
 const API_BASE = 'https://api.velocityrl.tech';
+const PRIVACY_POLICY_URL = 'https://velocityrl.tech/privacy.html';
 
 function normItemSlot(slot) {
     if (!slot) return '';
@@ -202,6 +203,7 @@ function renderSelectedItem(container, item, onClear) {
     const pName = item.Product || item.product || 'Unknown';
     const pQuality = item.Quality || item.quality || 'Common';
     const pSlot = item.Slot || item.slot || '';
+    const pId = item.ID ?? item.id;
     const pImg = item.image_url || item.src || '';
     const bgClass = qBgMap[pQuality] || 'bg-common';
 
@@ -210,10 +212,24 @@ function renderSelectedItem(container, item, onClear) {
         ${pImg ? `<img src="${escHtml(pImg)}" class="selected-img" />` : ''}
         <h2>${escHtml(pName)}</h2>
         <span class="quality-badge ${bgClass}">${escHtml(pQuality)}</span>
-        <p class="item-slot-label">${escHtml(pSlot)}</p>
+        <p class="item-slot-label">${escHtml(pSlot)}${pId != null ? ` · <span style="color:#5b8cff">ID ${escHtml(String(pId))}</span>` : ''}</p>
     `;
     container.querySelector('.clear-item-btn').addEventListener('click', onClear);
     container.classList.add('selected');
+}
+
+async function initVersionBadge() {
+    try {
+        const info = await invoke('get_build_info');
+        const label = `v${info.version} · ${info.build_number}`;
+        const btn = document.getElementById('version-btn');
+        if (btn) {
+            btn.textContent = `What's New · ${label}`;
+            btn.title = `VelocityRL ${label} (${info.build_hash})`;
+        }
+    } catch (_) {
+        // fallback: keep the hardcoded text from index.html
+    }
 }
 
 async function init() {
@@ -227,9 +243,6 @@ async function init() {
     progressBarContainer = document.getElementById('progress-bar-container');
     progressFill = document.getElementById('progress-fill');
     backupContainer = document.getElementById('backup-container');
-    wirePaintSwatches('swap-paint-swatches', 'swap-paint', 'swap-paint-selected');
-    syncSwapPaintUi();
-    refreshSwapRlHint();
 
     setupSearch(ownedSearch, ownedResults, (item) => {
         ownedItem = item;
@@ -256,7 +269,9 @@ async function init() {
             if (btn.dataset.tab === 'titles-tab') initTitlesTab();
             if (btn.dataset.tab === 'names-tab') initNamesTab();
             if (btn.dataset.tab === 'ranks-tab') initRanksTab();
+            if (btn.dataset.tab === 'tracker-tab') initTrackerTab();
             if (btn.dataset.tab === 'camera-tab') initCameraTab();
+            if (btn.dataset.tab === 'maps-tab') initWorkshopTab();
             if (btn.dataset.tab === 'misc-tab') initMiscTab();
         };
     });
@@ -270,6 +285,10 @@ async function init() {
             btn.classList.add('active');
             document.getElementById(paneId)?.classList.add('active');
             if (paneId === 'restore-pane') refreshBackups();
+            if (paneId === 'presets-pane') refreshPresets();
+            if (paneId === 'maplib-pane') refreshWorkshopLibrary();
+            if (paneId === 'mappresets-pane') refreshWorkshopPresets();
+            if (paneId === 'browser-pane') loadWorkshopCatalog(1, workshopCatalogQuery);
         };
     });
 
@@ -296,8 +315,13 @@ async function init() {
         document.getElementById('game-dir').value = cfg.game_dir || '';
         document.getElementById('settings-modal').classList.add('active');
     };
-    document.getElementById('version-btn').onclick = () => {
+    document.getElementById('version-btn').onclick = async (e) => {
         if (isAppLoading()) return;
+        if (e.shiftKey) {
+            document.getElementById('dev-modal').classList.add('active');
+            await refreshDevPanel();
+            return;
+        }
         openChangelog();
     };
     document.getElementById('close-changelog').onclick = () => document.getElementById('changelog-modal').classList.remove('active');
@@ -312,17 +336,146 @@ async function init() {
     document.getElementById('cancel-settings').onclick = handleCancelSettings;
     document.getElementById('close-settings').onclick = handleSaveSettings;
     document.getElementById('browse-dir').onclick = handleBrowse;
-    document.getElementById('autodetect-dir').onclick = handleAutoDetect;
-    document.getElementById('settings-modal').onclick = (e) => {
+    document.getElementById('autodetect-dir').onclick = handleAutoDetect;    document.getElementById('settings-modal').onclick = (e) => {
         if (e.target === document.getElementById('settings-modal')) handleCancelSettings();
     };
+
+    document.getElementById('close-dev-modal')?.addEventListener('click', () => {
+        document.getElementById('dev-modal').classList.remove('active');
+    });
+    document.getElementById('dev-modal')?.addEventListener('click', (e) => {
+        if (e.target === document.getElementById('dev-modal')) document.getElementById('dev-modal').classList.remove('active');
+    });
+    document.getElementById('dev-refresh-btn')?.addEventListener('click', refreshDevPanel);
+    document.getElementById('dev-save-config-btn')?.addEventListener('click', async () => {
+        const cfgEl = document.getElementById('dev-proxy-config');
+        if (!cfgEl) return;
+        try {
+            JSON.parse(cfgEl.value);
+            await invoke('save_psynet_config_json', { raw: cfgEl.value });
+            showToast('Proxy config saved.', 'success');
+        } catch (e) {
+            showToast('Save failed: ' + e, 'error');
+        }
+    });
+    document.getElementById('dev-save-replay-identity-btn')?.addEventListener('click', async () => {
+        const pidEl = document.getElementById('dev-replay-player-id');
+        const rnEl = document.getElementById('dev-replay-real-name');
+        if (!pidEl || !rnEl) return;
+        try {
+            await invoke('save_replay_identity', { realName: rnEl.value, playerId: pidEl.value });
+            showToast('Replay vault identity saved.', 'success');
+            const cfgEl = document.getElementById('dev-proxy-config');
+            if (cfgEl) {
+                try {
+                    const raw = await invoke('get_psynet_config_json');
+                    cfgEl.value = JSON.stringify(JSON.parse(raw), null, 2);
+                } catch {}
+            }
+        } catch (e) {
+            showToast('Save failed: ' + e, 'error');
+        }
+    });
+    document.getElementById('dev-open-log-btn')?.addEventListener('click', async () => {
+        try {
+            await invoke('open_log_folder');
+        } catch (e) {
+            showToast('Could not open log folder: ' + e, 'error');
+        }
+    });
+    document.getElementById('dev-save-gamedir-btn')?.addEventListener('click', async () => {
+        const input = document.getElementById('dev-game-dir-input');
+        if (!input) return;
+        const c = await invoke('get_config').catch(() => ({}));
+        await invoke('save_config', { config: { ...c, game_dir: input.value.trim() } });
+        showToast('Game dir saved.', 'success');
+    });
+    document.getElementById('dev-restart-proxy-btn')?.addEventListener('click', async () => {
+        try {
+            await invoke('restart_psynet_proxy');
+            showToast('Proxy restarted.', 'success');
+        } catch (e) {
+            showToast('Proxy restart failed: ' + e, 'error');
+        }
+        setTimeout(refreshDevPanel, 1000);
+    });
+    document.getElementById('dev-stop-proxy-btn')?.addEventListener('click', async () => {
+        try {
+            await invoke('stop_psynet_proxy', { revertHosts: false });
+            showToast('Proxy stopped.', 'success');
+        } catch (e) {
+            showToast('Proxy stop failed: ' + e, 'error');
+        }
+        setTimeout(refreshDevPanel, 1000);
+    });
+    document.getElementById('dev-delete-certs-btn')?.addEventListener('click', async () => {
+        const msg = document.getElementById('dev-action-msg');
+        if (msg) msg.textContent = 'Deleting certificates…';
+        try {
+            const res = await invoke('delete_ca_certificates');
+            showToast(res || 'Certificates deleted.', 'success');
+            if (msg) msg.textContent = res || 'Certificates deleted.';
+        } catch (e) {
+            showToast('Delete failed: ' + e, 'error');
+            if (msg) msg.textContent = 'Delete failed: ' + e;
+        }
+        setTimeout(refreshDevPanel, 1000);
+    });
+    document.getElementById('dev-save-proxydir-btn')?.addEventListener('click', async () => {
+        const input = document.getElementById('dev-proxy-dir-input');
+        const msg = document.getElementById('dev-action-msg');
+        if (!input) return;
+        try {
+            const saved = await invoke('save_proxy_dir', { path: input.value.trim() });
+            if (msg) msg.textContent = saved ? `Saved: ${saved}` : 'Proxy dir reset to auto-detect.';
+            setTimeout(refreshDevPanel, 500);
+        } catch (e) {
+            if (msg) msg.textContent = 'Save failed: ' + e;
+        }
+    });
+    document.getElementById('dev-export-diag-btn')?.addEventListener('click', async () => {
+        const msg = document.getElementById('dev-action-msg');
+        if (msg) msg.textContent = 'Bundling diagnostics…';
+        try {
+            const path = await invoke('export_diagnostics');
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(path);
+                }
+            } catch (_) {}
+            if (msg) msg.textContent = `Exported (copied to clipboard!): ${path}`;
+            const dir = path.substring(0, Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/')));
+            if (dir) window.__TAURI__?.core?.invoke('plugin:shell|open', { path: dir });
+        } catch (e) {
+            if (msg) msg.textContent = 'Export failed: ' + e;
+        }
+    });
 
     await loadData();
 }
 
+let loadingPercent = 0;
+const loadingSteps = {
+    'Checking for repairs...': 5,
+    'Loading item database...': 15,
+    'Downloading item database (fallback)...': 20,
+    'Loading config...': 35,
+    'Loading customizations...': 50,
+    'Ensuring PsyNet hosts...': 65,
+    'Starting proxy server...': 80,
+    'Starting up...': 95,
+};
+
 function updateLoadingText(text) {
     const p = document.querySelector('.app-loading-text');
     if (p) p.textContent = text;
+    const fill = document.getElementById('app-loading-fill');
+    const pct = document.getElementById('app-loading-percent');
+    if (loadingSteps[text] !== undefined) {
+        loadingPercent = loadingSteps[text];
+    }
+    if (fill) fill.style.width = loadingPercent + '%';
+    if (pct) pct.textContent = loadingPercent + '%';
 }
 
 async function loadBackups() {
@@ -331,74 +484,80 @@ async function loadBackups() {
 
 async function loadData() {
     try {
-        updateLoadingText('Checking for repairs...');
-        const repair = await invoke('check_integrity').catch(e => { console.warn('Repair failed:', e); return null; });
+        updateStatus('Please Wait...', false);
+        updateLoadingText('Loading config...');
+
+        const [repair, config, itemsResult] = await Promise.all([
+            invoke('check_integrity').catch(e => { console.warn('Repair check failed:', e); return null; }),
+            invoke('get_config').catch(e => { console.warn('Config load failed:', e); return { game_dir: '' }; }),
+            invoke('get_items').catch(() => null),
+        ]);
+
         if (repair && repair.repaired) {
             sessionStorage.setItem('velocityrl_repair_report', JSON.stringify(repair));
         }
-        updateStatus('Please Wait...', false);
-        
-        updateLoadingText('Loading item database...');
-        items = await invoke('get_items').catch(async (e) => {
-            console.warn('API get_items failed, falling back to paginated fetch API...', e);
-            updateLoadingText('Downloading item database (fallback)...');
-            return await fetchItemsFromAPI();
-        });
-        
-        updateLoadingText('Loading config...');
-        const config = await invoke('get_config').catch(e => { console.warn('Config load failed:', e); return { game_dir: '' }; });
+
+        if (itemsResult) {
+            items = itemsResult;
+        } else {
+
+            invoke('get_items').catch(() => {}).then(fetched => {
+                if (fetched) { items = fetched; }
+            });
+        }
+
         if (config && config.game_dir) {
             document.getElementById('game-dir').value = config.game_dir;
+            invoke('repair_engine_refs').then((msg) => {
+                if (!msg) return;
+                const text = String(msg);
+                if (text.includes('Color palette') || text.includes('newer than TAGame') || text.includes('Reset for verify')) {
+                    showToast(text, 'error');
+                } else if (!text.includes('already')) {
+                    showToast(text, 'success');
+                }
+            }).catch(() => {});
         } else {
-            const installs = await invoke('detect_game_dir').catch(() => []);
-            document.getElementById('settings-modal').classList.add('active');
-            if (installs.length === 1) {
+
+            invoke('detect_game_dir').catch(() => []).then(async (installs) => {
+                if (!installs || !installs.length) {
+                    document.getElementById('settings-modal').classList.add('active');
+                    return;
+                }
                 document.getElementById('game-dir').value = installs[0].path;
-            } else if (installs.length > 1) {
-                showInstallChooser(installs);
-            }
+                if (installs.length === 1) {
+                    await invoke('save_config', { config: { ...config, game_dir: installs[0].path } }).catch(() => {});
+                    showToast(`Rocket League detected: ${installs[0].label}`, 'success');
+                    refreshPaletteStatus();
+                } else {
+                    document.getElementById('settings-modal').classList.add('active');
+                    showInstallChooser(installs);
+                }
+            });
         }
+
         updateStatus('bitsfdb', false);
-        invoke('cleanup_temp_files').catch(e => console.warn('Cleanup failed:', e));
+        invoke('cleanup_temp_files').catch(() => {});
 
-        if (!nameSpoofForceOffDone) {
-            nameSpoofForceOffDone = true;
-            await forceNameSpoofOffInConfig();
-        }
+        updateLoadingText('Ensuring PsyNet hosts...');
+        try { await invoke('ensure_psynet_hosts'); } catch (e) { console.warn('psynet hosts:', e); }
 
-        await forceInventorySpoofOffInConfig();
-        await forcePingSpoofOffInConfig();
-        
-        updateLoadingText('Loading customizations...');
-        await hydrateSpoofToolsFromDisk();
-        await refreshPaletteStatus().catch(() => {});
-        attachCloseGuard();
-        
-        // Hosts + proxy BEFORE releasing the loading gate so RL is not launched
-        // against stock config.psynet.gg (logo/MotD/titles/camera are boot-fetched).
-        try {
-            updateLoadingText('Ensuring PsyNet hosts...');
-            const hostsDone = await invoke('ensure_psynet_hosts');
-            if (hostsDone === false) {
-                // If it returned false, it might have triggered UAC and succeeded, or it was already done.
-                // We just log it.
-            }
-        } catch (e) {
-            invoke('append_launch_log', { message: `psynet: boot hosts failed: ${e}` }).catch(() => {});
-        }
-        
         updateLoadingText('Starting proxy server...');
-        await autoStartPsyNetProxy();
-        
+        autoStartPsyNetProxy().catch(e => console.warn('proxy autostart:', e));
+
         updateLoadingText('Starting up...');
+        loadingPercent = 100;
+        const fill = document.getElementById('app-loading-fill');
+        const pct = document.getElementById('app-loading-percent');
+        if (fill) fill.style.width = '100%';
+        if (pct) pct.textContent = '100%';
+        await new Promise(r => setTimeout(r, 150));
         releaseAppLoading();
-        checkForUpdates();
-        if (config.changelog_on_startup !== false) openChangelog();
-        wireReswapButton();
+        wirePresetsUI();
     } catch (err) {
         releaseAppLoading();
         updateStatus('Init Failure', true);
-        alert(`VelocityRL Initialization Failed:\n${err.message || err}`);
+        appDialog({ title: 'Initialization Failed', message: `VelocityRL failed to start:\n${err.message || err}` }).catch(() => {});
         console.error(err);
         invoke('report_diagnostic', { payload: {
             event:     'init_fail',
@@ -430,12 +589,659 @@ function clearWanted() {
 window.clearOwned = clearOwned;
 window.clearWanted = clearWanted;
 
+const RESTORE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>';
+
+let presetsLoadedOnce = false;
+
+let presetModalState = {
+    preset: null,
+    isImport: false,
+    code: null,
+    missingMaps: [],
+    itemsPage: 1,
+    itemsPerPage: 6,
+    mapsPage: 1,
+    mapsPerPage: 4,
+};
+
+async function openPresetPreviewModal(preset, { isImport = false, code = null } = {}) {
+    const modal = document.getElementById('preset-preview-modal');
+    if (!modal) return;
+
+    presetModalState.preset = preset;
+    presetModalState.isImport = isImport;
+    presetModalState.code = code;
+    presetModalState.itemsPage = 1;
+    presetModalState.mapsPage = 1;
+
+    const titleEl = document.getElementById('preset-preview-title');
+    if (titleEl) titleEl.textContent = preset.name || 'Preset Loadout';
+
+    const swaps = preset.swaps || [];
+    const maps = preset.maps || [];
+
+    const badgeItems = document.getElementById('preset-badge-items');
+    if (badgeItems) {
+        badgeItems.textContent = `${swaps.length} / 100 Items`;
+        badgeItems.style.display = swaps.length > 0 ? 'inline-flex' : 'none';
+    }
+    const badgeMaps = document.getElementById('preset-badge-maps');
+    if (badgeMaps) {
+        badgeMaps.textContent = `${maps.length} / 30 Maps`;
+        badgeMaps.style.display = maps.length > 0 ? 'inline-flex' : 'none';
+    }
+
+    const library = await invoke('workshop_get_map_library').catch(() => []);
+    const mapsWithStatus = maps.map(m => {
+        const isDownloaded = library.some(e =>
+            (e.name && m.name && e.name.toLowerCase() === m.name.toLowerCase()) ||
+            (m.download_url && e.source_url === m.download_url) ||
+            (m.id && e.path && e.path.includes(m.id))
+        );
+        return { ...m, isDownloaded };
+    });
+    presetModalState.preset.maps = mapsWithStatus;
+
+    const missingMaps = mapsWithStatus.filter(m => !m.isDownloaded);
+    presetModalState.missingMaps = missingMaps;
+
+    const banner = document.getElementById('preset-download-banner');
+    const bannerTitle = document.getElementById('preset-download-banner-title');
+    const bannerDesc = document.getElementById('preset-download-banner-desc');
+    if (banner && bannerTitle && bannerDesc) {
+        if (maps.length > 0) {
+            banner.style.display = 'block';
+            if (missingMaps.length > 0) {
+                bannerTitle.textContent = `${missingMaps.length} map${missingMaps.length === 1 ? '' : 's'} to download`;
+                bannerDesc.textContent = `${maps.length - missingMaps.length} already in your library. When you proceed, ${missingMaps.length} will be downloaded and saved to your Workshop Library automatically.`;
+            } else {
+                bannerTitle.textContent = `All ${maps.length} map${maps.length === 1 ? '' : 's'} already downloaded`;
+                bannerDesc.textContent = `All maps in this preset are ready locally.`;
+            }
+        } else {
+            banner.style.display = 'none';
+        }
+    }
+
+    const tabItemsBtn = document.getElementById('preset-tab-items-btn');
+    const tabMapsBtn = document.getElementById('preset-tab-maps-btn');
+    const itemsView = document.getElementById('preset-items-view');
+    const mapsView = document.getElementById('preset-maps-view');
+
+    const switchTab = (tab) => {
+        if (tab === 'maps') {
+            tabMapsBtn?.classList.add('active');
+            tabItemsBtn?.classList.remove('active');
+            if (mapsView) mapsView.style.display = 'flex';
+            if (itemsView) itemsView.style.display = 'none';
+            renderPresetMapsPage();
+        } else {
+            tabItemsBtn?.classList.add('active');
+            tabMapsBtn?.classList.remove('active');
+            if (itemsView) itemsView.style.display = 'flex';
+            if (mapsView) mapsView.style.display = 'none';
+            renderPresetItemsPage();
+        }
+    };
+
+    if (tabItemsBtn) {
+        tabItemsBtn.style.display = swaps.length > 0 ? 'inline-block' : 'none';
+        tabItemsBtn.onclick = () => switchTab('items');
+    }
+    if (tabMapsBtn) {
+        tabMapsBtn.style.display = maps.length > 0 ? 'inline-block' : 'none';
+        tabMapsBtn.onclick = () => switchTab('maps');
+    }
+
+    if (swaps.length === 0 && maps.length > 0) {
+        switchTab('maps');
+    } else {
+        switchTab('items');
+    }
+
+    const actionBtn = document.getElementById('preset-preview-action');
+    const progressWrap = document.getElementById('preset-download-progress-wrap');
+    if (progressWrap) progressWrap.style.display = 'none';
+
+    if (actionBtn) {
+        actionBtn.disabled = false;
+        if (isImport) {
+            actionBtn.textContent = missingMaps.length > 0
+                ? `Download ${missingMaps.length} Map${missingMaps.length === 1 ? '' : 's'} & Save`
+                : 'Save Preset';
+        } else {
+            actionBtn.textContent = missingMaps.length > 0
+                ? `Download ${missingMaps.length} Map${missingMaps.length === 1 ? '' : 's'} & Apply`
+                : 'Apply Preset';
+        }
+
+        actionBtn.onclick = async () => {
+            actionBtn.disabled = true;
+            if (missingMaps.length > 0) {
+                if (progressWrap) progressWrap.style.display = 'flex';
+                const pStatus = document.getElementById('preset-download-progress-status');
+                const pCount = document.getElementById('preset-download-progress-count');
+                const pBar = document.getElementById('preset-download-progress-bar');
+                if (pStatus) pStatus.textContent = `Downloading 1 of ${missingMaps.length}: ${missingMaps[0].name}...`;
+                if (pCount) pCount.textContent = `0 / ${missingMaps.length}`;
+                if (pBar) pBar.style.width = '10%';
+
+                try {
+                    await invoke('preset_download_missing_maps', { maps: missingMaps });
+                    if (pBar) pBar.style.width = '100%';
+                    if (pStatus) pStatus.textContent = 'All maps downloaded successfully.';
+                } catch (err) {
+                    showToast(`Some maps failed to download: ${err}`, 'warning');
+                }
+            }
+
+            if (isImport && code) {
+                try {
+                    const saved = await invoke('import_preset_code', { code });
+                    showToast(`Preset <strong>${escHtml(saved.name)}</strong> saved`, 'success');
+                    modal.classList.remove('active');
+                    refreshPresets();
+                } catch (err) {
+                    showToast(String(err), 'error');
+                    actionBtn.disabled = false;
+                }
+            } else if (!isImport && preset.id) {
+                modal.classList.remove('active');
+                await applyPresetDirect(preset);
+            }
+        };
+    }
+
+    const closeBtn = document.getElementById('preset-preview-close');
+    const cancelBtn = document.getElementById('preset-preview-cancel');
+    const closeModal = () => modal.classList.remove('active');
+    if (closeBtn) closeBtn.onclick = closeModal;
+    if (cancelBtn) cancelBtn.onclick = closeModal;
+
+    modal.classList.add('active');
+}
+
+function renderPresetItemsPage() {
+    const swaps = presetModalState.preset?.swaps || [];
+    const list = document.getElementById('preset-items-list');
+    const pageInfo = document.getElementById('preset-items-page-info');
+    const prevBtn = document.getElementById('preset-items-prev');
+    const nextBtn = document.getElementById('preset-items-next');
+    if (!list) return;
+
+    if (!swaps.length) {
+        list.innerHTML = '<div class="backup-empty">No item swaps in this preset.</div>';
+        if (pageInfo) pageInfo.textContent = 'Page 0 of 0';
+        if (prevBtn) prevBtn.disabled = true;
+        if (nextBtn) nextBtn.disabled = true;
+        return;
+    }
+
+    const perPage = presetModalState.itemsPerPage;
+    const totalPages = Math.ceil(swaps.length / perPage) || 1;
+    presetModalState.itemsPage = Math.max(1, Math.min(presetModalState.itemsPage, totalPages));
+    const page = presetModalState.itemsPage;
+
+    const start = (page - 1) * perPage;
+    const itemsToShow = swaps.slice(start, start + perPage);
+
+    list.innerHTML = itemsToShow.map(s => {
+        const slot = normItemSlot(s.slot || 'Item');
+        const paint = s.paint_id > 0 ? `<span class="quality-badge bg-uncommon" style="font-size:9px;padding:2px 5px;">Paint ${s.paint_id}</span>` : '';
+        return `
+            <div class="preset-item-row">
+                <span class="preset-item-slot">${escHtml(slot)}</span>
+                <div class="preset-item-names">
+                    <span style="color:var(--text);font-weight:500;">${escHtml(s.owned_name)}</span>
+                    <span class="preset-item-arrow">→</span>
+                    <span style="color:var(--accent-blue);font-weight:600;">${escHtml(s.wanted_name)}</span>
+                </div>
+                ${paint}
+            </div>
+        `;
+    }).join('');
+
+    if (pageInfo) pageInfo.textContent = `Page ${page} of ${totalPages} (${swaps.length} items)`;
+    if (prevBtn) {
+        prevBtn.disabled = page <= 1;
+        prevBtn.onclick = () => { presetModalState.itemsPage--; renderPresetItemsPage(); };
+    }
+    if (nextBtn) {
+        nextBtn.disabled = page >= totalPages;
+        nextBtn.onclick = () => { presetModalState.itemsPage++; renderPresetItemsPage(); };
+    }
+}
+
+function renderPresetMapsPage() {
+    const maps = presetModalState.preset?.maps || [];
+    const list = document.getElementById('preset-maps-list');
+    const pageInfo = document.getElementById('preset-maps-page-info');
+    const prevBtn = document.getElementById('preset-maps-prev');
+    const nextBtn = document.getElementById('preset-maps-next');
+    if (!list) return;
+
+    if (!maps.length) {
+        list.innerHTML = '<div class="backup-empty" style="grid-column:1/-1;">No workshop maps in this preset.</div>';
+        if (pageInfo) pageInfo.textContent = 'Page 0 of 0';
+        if (prevBtn) prevBtn.disabled = true;
+        if (nextBtn) nextBtn.disabled = true;
+        return;
+    }
+
+    const perPage = presetModalState.mapsPerPage;
+    const totalPages = Math.ceil(maps.length / perPage) || 1;
+    presetModalState.mapsPage = Math.max(1, Math.min(presetModalState.mapsPage, totalPages));
+    const page = presetModalState.mapsPage;
+
+    const start = (page - 1) * perPage;
+    const mapsToShow = maps.slice(start, start + perPage);
+
+    list.innerHTML = mapsToShow.map(m => {
+        const thumb = m.thumbnail_url
+            ? `<img class="preset-map-thumb" src="${escHtml(m.thumbnail_url)}" alt="${escHtml(m.name)}" onerror="this.outerHTML='<div class=\\'preset-map-thumb-placeholder\\'>Map</div>'">`
+            : `<div class="preset-map-thumb-placeholder">Map</div>`;
+        const pill = m.isDownloaded
+            ? `<span class="map-status-pill map-status-downloaded">In Library</span>`
+            : `<span class="map-status-pill map-status-pending">Needs Download</span>`;
+        return `
+            <div class="preset-map-card">
+                ${thumb}
+                <div class="preset-map-info">
+                    <h4 class="preset-map-name" title="${escHtml(m.name)}">${escHtml(m.name)}</h4>
+                    ${pill}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    if (pageInfo) pageInfo.textContent = `Page ${page} of ${totalPages} (${maps.length} maps)`;
+    if (prevBtn) {
+        prevBtn.disabled = page <= 1;
+        prevBtn.onclick = () => { presetModalState.mapsPage--; renderPresetMapsPage(); };
+    }
+    if (nextBtn) {
+        nextBtn.disabled = page >= totalPages;
+        nextBtn.onclick = () => { presetModalState.mapsPage++; renderPresetMapsPage(); };
+    }
+}
+
+async function refreshPresets() {
+    const list = document.getElementById('preset-list');
+    if (!list) return;
+    try {
+        const presets = await invoke('get_presets');
+        if (!presets.length) {
+            list.innerHTML = '<div class="backup-empty">No presets yet. Set up swaps, then click "Save current as preset".</div>';
+        } else {
+            list.innerHTML = '';
+            presets.forEach(p => {
+                const row = document.createElement('div');
+                row.className = 'backup-item';
+                row.style.display = 'flex';
+                row.style.alignItems = 'center';
+                row.style.gap = '10px';
+
+                const swapCount = (p.swaps || []).length;
+                const mapCount = (p.maps || []).length;
+                const swapBadge = `<span class="preset-stat-badge" style="font-size:10px;padding:2px 6px;">${swapCount} items</span>`;
+                const mapBadge = mapCount > 0 ? `<span class="preset-stat-badge" style="font-size:10px;padding:2px 6px;background:rgba(33,150,243,0.1);color:#2196f3;border-color:rgba(33,150,243,0.3);">${mapCount} maps</span>` : '';
+                const summaryLine = (p.swaps || []).slice(0, 3).map(s => `${s.owned_name} → ${s.wanted_name}`).join(', ') + ((p.swaps || []).length > 3 ? '...' : '');
+
+                row.innerHTML = `
+                    <div style="flex:1;min-width:0;">
+                        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                            <strong>${escHtml(p.name)}</strong>
+                            ${swapBadge}
+                            ${mapBadge}
+                        </div>
+                        <div style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;">${escHtml(summaryLine || (mapCount > 0 ? `${mapCount} map(s)` : 'Empty preset'))}</div>
+                    </div>`;
+                const mkBtn = (label, cls, fn) => {
+                    const b = document.createElement('button');
+                    b.className = `action-btn ${cls}`;
+                    b.textContent = label;
+                    b.style.padding = '6px 12px';
+                    b.style.fontSize = '12px';
+                    b.onclick = fn;
+                    return b;
+                };
+                row.appendChild(mkBtn('Apply', '', () => applyPreset(p)));
+                row.appendChild(mkBtn('View', 'action-btn-secondary', () => openPresetPreviewModal(p, { isImport: false })));
+                row.appendChild(mkBtn('Share', 'action-btn-secondary', (e) => sharePreset(p, e.currentTarget)));
+                row.appendChild(mkBtn('Delete', 'action-btn-secondary', async () => {
+                    await invoke('delete_preset', { id: p.id });
+                    refreshPresets();
+                }));
+                list.appendChild(row);
+            });
+        }
+        presetsLoadedOnce = true;
+        refreshSwapHistory();
+    } catch (e) {
+        list.innerHTML = `<div class="backup-empty">Failed to load presets: ${escHtml(String(e))}</div>`;
+    }
+}
+
+async function applyPresetDirect(p) {
+    updateStatus('Applying preset...', false);
+    showProgress(true, 30);
+    try {
+        const results = await invoke('apply_preset', { id: p.id });
+        showProgress(true, 100);
+        const fails = results.filter(r => r.startsWith('FAIL'));
+        if (fails.length === 0) {
+            showToast(`Preset <strong>${escHtml(p.name)}</strong> applied`, 'success');
+        } else {
+            showToast(`Preset applied with ${fails.length} failure(s) — see swap history`, 'warning');
+        }
+        await refreshBackups();
+    } catch (e) {
+        showToast(String(e), 'error');
+    } finally {
+        setTimeout(() => { showProgress(false); updateStatus('bitsfdb', false); }, 1500);
+    }
+}
+
+async function applyPreset(p) {
+    const maps = p.maps || [];
+    const library = await invoke('workshop_get_map_library').catch(() => []);
+    const missing = maps.filter(m => !library.some(e =>
+        (e.name && m.name && e.name.toLowerCase() === m.name.toLowerCase()) ||
+        (m.download_url && e.source_url === m.download_url)
+    ));
+    if (missing.length > 0) {
+        openPresetPreviewModal(p, { isImport: false });
+        return;
+    }
+    const mapNote = maps.length > 0 ? ` Includes ${maps.length} map(s).` : '';
+    if (!(await askConfirm(`Apply preset "${p.name}"? This applies ${(p.swaps || []).length} swap(s).${mapNote}`, 'Apply Preset'))) return;
+    await applyPresetDirect(p);
+}
+
+async function copyText(text) {
+
+    try { await navigator.clipboard.writeText(text); return true; } catch {}
+    try { await invoke('copy_to_clipboard', { text }); return true; } catch {}
+    try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.cssText = 'position:fixed;opacity:0;';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+        return true;
+    } catch { return false; }
+}
+
+function closeShareDropdown() {
+    document.querySelectorAll('.share-dropdown').forEach(d => d.remove());
+}
+
+async function sharePreset(p, anchorEl) {
+    try {
+        closeShareDropdown();
+        const code = await invoke('export_preset_code', { id: p.id });
+        const copied = await copyText(code);
+
+        const dd = document.createElement('div');
+        dd.className = 'share-dropdown';
+        dd.style.cssText = 'position:fixed;z-index:1000;background:var(--bg-secondary,#1a1a1a);border:1px solid var(--border,#333);border-radius:8px;padding:10px 12px;box-shadow:0 8px 24px rgba(0,0,0,.5);max-width:min(420px, calc(100vw - 24px));width:min(420px, calc(100vw - 24px));box-sizing:border-box;left:0;top:0;';
+        dd.innerHTML = `
+            <div style="font-size:12px;font-weight:600;margin-bottom:6px;">${escHtml(p.name)} — code ${copied ? 'copied to clipboard' : 'not copied'}</div>
+            <div style="font-size:11px;color:var(--text-secondary);margin-bottom:8px;">Paste it anywhere to share. It contains the swaps only — no personal info.</div>
+            <button class="action-btn action-btn-secondary" id="share-copy-again" type="button" style="width:100%;">${copied ? 'Copy again' : 'Copy code'}</button>`;
+        dd.querySelector('#share-copy-again')?.addEventListener('click', async () => {
+            const ok = await copyText(code);
+            showToast(ok ? 'Code copied.' : 'Copy failed — select and copy manually.', ok ? 'success' : 'error');
+        });
+
+        document.body.appendChild(dd);
+        const anchor = anchorEl || dd.previousElementSibling;
+        const ar = anchor?.getBoundingClientRect?.() || { left: 24, bottom: 80, top: 40 };
+        dd.style.position = 'fixed';
+        let left = Math.min(ar.left, window.innerWidth - 440);
+        left = Math.max(12, left);
+        let top = ar.bottom + 6;
+        const ddH = dd.offsetHeight || 120;
+        if (top + ddH > window.innerHeight - 12) {
+            top = Math.max(12, ar.top - ddH - 6);
+        }
+        dd.style.left = `${left}px`;
+        dd.style.top = `${top}px`;
+
+        setTimeout(() => {
+            const onOutside = (ev) => {
+                if (!dd.contains(ev.target)) { closeShareDropdown(); document.removeEventListener('mousedown', onOutside); window.removeEventListener('scroll', onScroll, true); }
+            };
+            const onScroll = () => closeShareDropdown();
+            document.addEventListener('mousedown', onOutside);
+            window.addEventListener('scroll', onScroll, true);
+        }, 0);
+    } catch (e) {
+        showToast(String(e), 'error');
+    }
+}
+
+function appDialog({ title = 'VelocityRL', message = '', input = null, okLabel = 'OK', cancelLabel = 'Cancel' } = {}) {
+    return new Promise(resolve => {
+        const overlay = document.getElementById('app-dialog-overlay');
+        if (!overlay) { resolve(input !== null ? (window.prompt(message) || '') : window.confirm(message)); return; }
+        const titleEl = document.getElementById('app-dialog-title');
+        const msgEl = document.getElementById('app-dialog-message');
+        const inputGroup = document.getElementById('app-dialog-input-group');
+        const inputEl = document.getElementById('app-dialog-input');
+        const okBtn = document.getElementById('app-dialog-ok');
+        const cancelBtn = document.getElementById('app-dialog-cancel');
+        const closeBtn = document.getElementById('app-dialog-close');
+        titleEl.textContent = title;
+        msgEl.textContent = message;
+        if (input !== null) {
+            inputGroup.style.display = 'block';
+            inputEl.value = input;
+        } else {
+            inputGroup.style.display = 'none';
+            inputEl.value = '';
+        }
+        okBtn.textContent = okLabel;
+        cancelBtn.textContent = cancelLabel;
+        overlay.classList.add('active');
+        const finish = (value) => {
+            overlay.classList.remove('active');
+            okBtn.onclick = cancelBtn.onclick = closeBtn.onclick = null;
+            inputEl.onkeydown = overlay.onkeydown = null;
+            resolve(value);
+        };
+        okBtn.onclick = () => finish(input !== null ? inputEl.value.trim() : true);
+        cancelBtn.onclick = () => finish(input !== null ? null : false);
+        closeBtn.onclick = () => finish(input !== null ? null : false);
+        inputEl.onkeydown = (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); finish(inputEl.value.trim()); }
+            if (e.key === 'Escape') { e.preventDefault(); finish(null); }
+        };
+        overlay.onkeydown = (e) => {
+            if (e.key === 'Escape') { e.preventDefault(); finish(input !== null ? null : false); }
+        };
+        if (input !== null) setTimeout(() => { inputEl.focus(); inputEl.select(); }, 50);
+    });
+}
+
+function askConfirm(message, title) {
+    return appDialog({ title: title || 'Confirm', message, okLabel: 'OK', cancelLabel: 'Cancel' });
+}
+
+function threeWayDialog({ title = 'VelocityRL', message = '', okLabel = 'OK', extraLabel = 'Option', cancelLabel = 'Cancel' } = {}) {
+    return new Promise(resolve => {
+        const overlay = document.getElementById('app-dialog-overlay');
+        if (!overlay) { resolve(null); return; }
+        const titleEl = document.getElementById('app-dialog-title');
+        const msgEl = document.getElementById('app-dialog-message');
+        const inputGroup = document.getElementById('app-dialog-input-group');
+        const okBtn = document.getElementById('app-dialog-ok');
+        const cancelBtn = document.getElementById('app-dialog-cancel');
+        const closeBtn = document.getElementById('app-dialog-close');
+        titleEl.textContent = title;
+        msgEl.textContent = message;
+        inputGroup.style.display = 'none';
+        okBtn.textContent = okLabel;
+        cancelBtn.textContent = cancelLabel;
+
+        cancelBtn.style.display = 'none';
+        const extraBtn = document.createElement('button');
+        extraBtn.className = 'action-btn action-btn-secondary';
+        extraBtn.type = 'button';
+        extraBtn.textContent = extraLabel;
+        extraBtn.style.marginRight = 'auto';
+        const btnRow = okBtn.parentElement;
+        btnRow.insertBefore(extraBtn, okBtn);
+        overlay.classList.add('active');
+        const finish = (value) => {
+            overlay.classList.remove('active');
+            okBtn.onclick = cancelBtn.onclick = closeBtn.onclick = extraBtn.onclick = null;
+            extraBtn.remove();
+            cancelBtn.style.display = '';
+            resolve(value);
+        };
+        okBtn.onclick = () => finish('ok');
+        extraBtn.onclick = () => finish('extra');
+        cancelBtn.onclick = () => finish(null);
+        closeBtn.onclick = () => finish(null);
+    });
+}
+
+async function refreshSwapHistory() {
+    const list = document.getElementById('preset-history-list');
+    if (!list) return;
+    try {
+        const history = await invoke('get_swap_history');
+        if (!history.length) {
+            list.innerHTML = '<div class="backup-empty">Nothing here yet. Swap something and it shows up.</div>';
+            return;
+        }
+        const kindText = {
+            swap: 'Swapped',
+            restore: 'Restored',
+            preset_apply: 'Used preset',
+            preset_save: 'Saved preset',
+            map_install: 'Loaded map',
+            map_restore: 'Restored map',
+            random: 'Random car',
+            reswap: 'Re-applied all swaps',
+        };
+        const when = (iso) => {
+            try {
+                const d = new Date(iso);
+                const today = new Date().toDateString() === d.toDateString();
+                const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                return today ? time : `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${time}`;
+            } catch { return ''; }
+        };
+        list.innerHTML = history.slice().reverse().map(h => {
+            const what = (h.swaps || []).map(s => `${s.owned_name} is now ${s.wanted_name}`).join(', ');
+            const line = what || h.note || '';
+            const action = kindText[h.kind] || h.kind;
+            return `<div class="backup-item" style="display:flex;align-items:baseline;gap:10px;padding:8px 12px;font-size:13px;">
+                <span style="color:var(--accent-blue);font-weight:600;white-space:nowrap;">${escHtml(action)}</span>
+                <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(line)}</span>
+                <span style="color:var(--muted);white-space:nowrap;font-size:12px;">${escHtml(when(h.at))}</span>
+            </div>`;
+        }).join('');
+    } catch (e) {
+        list.innerHTML = `<div class="backup-empty">History unavailable: ${escHtml(String(e))}</div>`;
+    }
+}
+
+function wirePresetsUI() {
+    const saveBtn = document.getElementById('preset-save-btn');
+    if (saveBtn && saveBtn.dataset.wired !== '1') {
+        saveBtn.dataset.wired = '1';
+        saveBtn.onclick = async () => {
+            const name = await appDialog({ title: 'Save preset', message: 'Preset name:', input: 'My preset', okLabel: 'Save' });
+            if (!name) return;
+            try {
+                await invoke('save_preset', { name: name.trim() });
+                showToast(`Preset <strong>${escHtml(name.trim())}</strong> saved`, 'success');
+                refreshPresets();
+            } catch (e) {
+                showToast(String(e), 'error');
+            }
+        };
+    }
+    document.getElementById('preset-import-btn')?.addEventListener('click', async () => {
+        const code = await appDialog({ title: 'Import preset', message: 'Paste a preset code:', input: '', okLabel: 'Next' });
+        if (!code) return;
+        let preview;
+        try {
+            preview = await invoke('peek_preset_code', { code: code.trim() });
+        } catch (e) {
+            showToast(String(e), 'error');
+            return;
+        }
+
+        await openPresetPreviewModal(preview, { isImport: true, code: code.trim() });
+    });
+    document.getElementById('preset-random-btn')?.addEventListener('click', async () => {
+        try {
+            updateStatus('Rolling random car...', false);
+            const swaps = await invoke('get_swaps').catch(() => []);
+            const ownedIds = (swaps || []).map(s => s.owned_id);
+
+            const plan = await invoke('random_swap_plan', { ownedIds });
+            const previewItems = plan.map(p => `• ${p.wanted_name} (${p.owned_name})`).join('\n');
+            if (!(await askConfirm(`Randomize car with ${plan.length} item categories?\n\n${previewItems}\n\nThis loadout will also be saved to your Presets.`, 'Randomize Car'))) {
+                updateStatus('bitsfdb', false);
+                return;
+            }
+
+            showProgress(true, 40);
+            const results = await invoke('apply_swap_plan', { plan });
+            showProgress(true, 80);
+            const fails = results.filter(r => r.startsWith('FAIL'));
+
+            let presetName = 'Random Car';
+            try {
+                const existing = await invoke('get_presets').catch(() => []);
+                let num = 1;
+                while (existing.some(p => p.name === `Random Car ${num}`)) {
+                    num++;
+                }
+                presetName = `Random Car ${num}`;
+                await invoke('save_preset', { name: presetName });
+                refreshPresets();
+            } catch (err) {
+                console.warn('Auto-save random car preset:', err);
+            }
+
+            showProgress(true, 100);
+            if (fails.length === 0) {
+                showToast(`🎲 Random car applied and saved as <strong>${escHtml(presetName)}</strong>!`, 'success');
+            } else {
+                showToast(`Random car applied with ${fails.length} error(s) and saved as <strong>${escHtml(presetName)}</strong>`, 'warning');
+            }
+            await refreshBackups();
+        } catch (e) {
+            showToast(String(e), 'error');
+        } finally {
+            setTimeout(() => { showProgress(false); updateStatus('bitsfdb', false); }, 1500);
+        }
+    });
+    document.getElementById('preset-history-clear')?.addEventListener('click', async () => {
+        try {
+            await invoke('clear_swap_history');
+            refreshSwapHistory();
+        } catch (e) {
+            showToast(String(e), 'error');
+        }
+    });
+}
+
 async function refreshBackups() {
     if (!backupContainer) return;
+    wireReswapButton();
     backupContainer.innerHTML = '<div class="backup-empty">Scanning for backups...</div>';
     try {
         const backups = await invoke('get_backups');
-        
+
         try {
             const swaps = await invoke('get_swaps');
             const reswapBtn = document.getElementById('reswap-btn');
@@ -447,7 +1253,7 @@ async function refreshBackups() {
             return;
         }
         backupContainer.innerHTML = '';
-        backups.forEach(file => {
+        backups.forEach((file, i) => {
             const div = document.createElement('div');
             div.className = 'backup-item';
             let pImg = file.image_url || '';
@@ -463,18 +1269,25 @@ async function refreshBackups() {
                     pImg = matched.image_url;
                 }
             }
+            const swapLabel = file.swap_from && file.swap_to
+                ? `${escHtml(file.swap_from)} is now ${escHtml(file.swap_to)}`
+                : '';
+            const thumb = (src) => src
+                ? `<img src="${escHtml(src)}" class="flyout-img" style="width: 44px; height: 44px; border-radius: 6px; object-fit: contain; background: rgba(0,0,0,0.2);" onerror="this.style.display='none'" />`
+                : '';
             div.innerHTML = `
-                <div style="display: flex; align-items: center; gap: 12px;">
-                    ${pImg ? `<img src="${escHtml(pImg)}" class="flyout-img" style="width: 40px; height: 40px; border-radius: 6px; object-fit: contain; background: rgba(0,0,0,0.2);" />` : '<div class="flyout-img" style="width: 40px; height: 40px; border-radius: 6px; background: rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>'}
-                    <div>
+                <div style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0;">
+                    ${thumb(pImg)}
+                    ${file.swap_to_image ? thumb(file.swap_to_image) : ''}
+                    <div style="min-width:0;">
                         <div class="backup-name">${escHtml(file.name)}</div>
-                        <div class="backup-date">Modified Product</div>
+                        ${swapLabel ? `<div class="backup-date" style="color:var(--accent-blue);">${swapLabel}</div>` : `<div class="backup-date">Modified Product</div>`}
                     </div>
                 </div>
-                <div class="restore-mini-btn" title="Restore this file">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-blue)" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-                </div>
-            `;
+                <div class="restore-mini-btn" title="Restore this file" data-restore-index="${i}" style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:6px;background:var(--bg-secondary);border:1px solid var(--border);cursor:pointer;color:var(--text);font-size:12px;white-space:nowrap;flex-shrink:0;">
+                    ${RESTORE_SVG}
+                    <span>Restore</span>
+                </div>`;
             div.querySelector('.restore-mini-btn').onclick = (e) => {
                 e.stopPropagation();
                 restoreSingle(file.path);
@@ -484,6 +1297,7 @@ async function refreshBackups() {
     } catch (err) {
         console.error(err);
         backupContainer.innerHTML = '<div class="backup-empty backup-empty-error">Failed to retrieve backup list.</div>';
+        try { await invoke('append_launch_log', { message: `ui: get_backups failed: ${String(err)}` }); } catch {}
     }
 }
 
@@ -576,13 +1390,14 @@ function renderResults(matches, resultsDiv, selectionHandler) {
         div.className = 'flyout-row';
         const pName = item.Product || item.product || 'Unknown';
         const pSlot = item.Slot || item.slot || '';
+        const pId = item.ID ?? item.id;
         const pImg = item.image_url || item.src || '';
 
         div.innerHTML = `
-            ${pImg ? `<img src="${escHtml(pImg)}" class="flyout-img" />` : '<div class="flyout-img"></div>'}
+            ${pImg ? `<img src="${escHtml(pImg)}" class="flyout-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="flyout-img" style="display:none;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>` : '<div class="flyout-img" style="display:flex;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>'}
             <div class="flyout-info">
                 <span class="item-name">${escHtml(pName)}</span>
-                <span style="font-size: 10px; color: var(--text-secondary)">${escHtml(pSlot)}</span>
+                <span style="font-size: 10px; color: var(--text-secondary)">${escHtml(pSlot)}${pId != null ? ` · <span style="color:#5b8cff">ID ${escHtml(String(pId))}</span>` : ''}</span>
             </div>
         `;
         div.onclick = () => {
@@ -605,7 +1420,7 @@ const UNPAINTABLE_SLOTS = new Set([
     'avatarborder', 'avatar',
 ]);
 
-const PAINT_HINT_UNPAINTABLE = "No painted UPK for this item — use None, or set Paintable in items.json";
+const PAINT_HINT_UNPAINTABLE = "Unavailable — paint swaps cause items to become invisible in-game. Coming in a later update.";
 
 function coercePaintableFlag(value) {
     if (value == null || value === '') return null;
@@ -724,7 +1539,7 @@ function setPaintBlockEnabled(opts) {
 
 function syncSwapPaintUi() {
 
-    const enabled = !wantedItem || itemIsPaintable(wantedItem);
+    const enabled = false;
     setPaintBlockEnabled({
         blockId: 'swap-paint-block',
         swatchId: 'swap-paint-swatches',
@@ -753,6 +1568,80 @@ async function refreshSwapRlHint() {
     } catch {
         hint.hidden = true;
     }
+}
+
+(function wireKillRl() {
+    document.getElementById('kill-rl-btn')?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const btn = e.currentTarget;
+        btn.textContent = 'Stopping...';
+        btn.style.pointerEvents = 'none';
+        try {
+            const result = await invoke('kill_rocket_league');
+            showToast(result || 'Rocket League closed', 'success');
+            setTimeout(() => refreshSwapRlHint(), 1500);
+        } catch (err) {
+            showToast(String(err), 'error');
+            btn.textContent = 'close it now';
+            btn.style.pointerEvents = '';
+        }
+    });
+})();
+
+let rlToastShown = false;
+let rlRunningPoll = null;
+function startRlRunningPoll() {
+    if (rlRunningPoll) return;
+    rlRunningPoll = setInterval(async () => {
+        if (isAppLoading()) return;
+        try {
+            const running = await invoke('is_rocket_league_running');
+            if (running && !rlToastShown) {
+                rlToastShown = true;
+                showRlRunningToast();
+            } else if (!running) {
+                rlToastShown = false;
+            }
+        } catch {}
+    }, 5000);
+}
+function showRlRunningToast() {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+    const toast = document.createElement('div');
+    toast.className = 'toast warning';
+    toast.id = 'rl-running-toast';
+    toast.innerHTML = `
+        <div class="toast-content">
+            <div style="margin-bottom:6px;font-weight:600;">Rocket League is running</div>
+            <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">Close it before swapping or restoring items.</div>
+            <a href="#" id="toast-kill-rl-btn" style="font-weight:700;color:#fff;text-decoration:underline;cursor:pointer;">Close Rocket League</a>
+        </div>
+    `;
+    container.appendChild(toast);
+    toast.querySelector('#toast-kill-rl-btn')?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const link = e.currentTarget;
+        link.textContent = 'Stopping...';
+        link.style.pointerEvents = 'none';
+        try {
+            const result = await invoke('kill_rocket_league');
+            showToast(result || 'Rocket League closed', 'success');
+            toast.remove();
+            rlToastShown = false;
+        } catch (err) {
+            showToast(String(err), 'error');
+            link.textContent = 'Close Rocket League';
+            link.style.pointerEvents = '';
+        }
+    });
+    setTimeout(() => {
+        if (toast.parentNode) {
+            toast.style.animation = 'toastSlideOut 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards';
+            setTimeout(() => toast.remove(), 300);
+            rlToastShown = false;
+        }
+    }, 5000);
 }
 
 async function openSettingsForPath() {
@@ -786,7 +1675,7 @@ async function handleApply() {
         const wantedId = (wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id).toString();
         let paintId = Number(document.getElementById('swap-paint')?.value || 0);
         if (!itemIsPaintable(wantedItem)) paintId = 0;
-        await invoke('apply_swap', { ownedId, wantedId, paintId });
+        const swapResult = await invoke('apply_swap', { ownedId, wantedId, paintId });
         clearInterval(interval);
         interval = null;
         showProgress(true, 100);
@@ -795,14 +1684,21 @@ async function handleApply() {
         const wantedName = wantedItem.product || wantedItem.Product || 'item';
         const paintName = paintLabel(paintId);
         const paintBit = paintId > 0 ? ` (${escHtml(paintName)})` : '';
-        showToast(`🎉 Swapped <strong>${escHtml(ownedName)}</strong> → <strong>${escHtml(wantedName)}</strong>${paintBit}`, 'success');
+        showToast(`Swapped <strong>${escHtml(ownedName)}</strong> → <strong>${escHtml(wantedName)}</strong>${paintBit}`, 'success');
+
+        if (swapResult && swapResult.includes && swapResult.includes('Warnings:')) {
+            const warningPart = swapResult.split('Warnings:\n')[1];
+            if (warningPart) {
+                showToast(`${escHtml(warningPart.trim())}`, 'warning');
+            }
+        }
         setTimeout(() => { showProgress(false); updateStatus('bitsfdb', false); }, 3000);
     } catch (err) {
         if (interval) clearInterval(interval);
         updateStatus('Swap Failed', true);
         showProgress(false);
         const msg = String(err);
-        if (msg.includes('Game directory not set') || msg.includes('Game directory not configured') || msg.includes('game_dir') || msg.includes('file not found') || msg.includes('donor file') || msg.includes('target file')) {
+        if (msg.includes('Game directory not set') || msg.includes('Game directory not configured') || msg.includes('Game directory not valid')) {
             showGameDirToast();
         } else {
             showToast(msg, 'error');
@@ -896,7 +1792,10 @@ async function handleAutoDetect() {
         showToast('Could not auto-detect Rocket League. Please browse manually.', 'error');
     } else if (installs.length === 1) {
         document.getElementById('game-dir').value = installs[0].path;
-        showToast(`${installs[0].label} install detected`, 'success');
+        const existing = await invoke('get_config').catch(() => ({}));
+        await invoke('save_config', { config: { ...existing, game_dir: installs[0].path } }).catch(() => {});
+        showToast(`${installs[0].label} install detected and saved`, 'success');
+        refreshPaletteStatus();
     } else {
         showInstallChooser(installs);
     }
@@ -913,10 +1812,14 @@ function showInstallChooser(installs) {
         const btn = document.createElement('button');
         btn.className = 'chooser-btn';
         btn.innerHTML = `<strong>${escHtml(install.label)}</strong><span>${escHtml(install.path)}</span>`;
-        btn.onclick = () => {
+        btn.onclick = async () => {
             document.getElementById('game-dir').value = install.path;
+            const existing = await invoke('get_config').catch(() => ({}));
+            await invoke('save_config', { config: { ...existing, game_dir: install.path } }).catch(() => {});
             container.innerHTML = '';
-            showToast(`${install.label} selected`, 'success');
+            container.style.display = 'none';
+            showToast(`${install.label} selected and saved`, 'success');
+            refreshPaletteStatus();
         };
         container.appendChild(btn);
     });
@@ -926,7 +1829,16 @@ function showInstallChooser(installs) {
 async function handleBrowse() {
     const dir = await open({ directory: true, multiple: false, title: 'Select Rocket League CookedPCConsole folder' });
     if (dir) {
-        document.getElementById('game-dir').value = dir;
+        let finalDir = dir;
+        try {
+            const resolved = await invoke('validate_game_dir', { path: dir });
+            if (resolved) finalDir = resolved;
+        } catch (_) {}
+        document.getElementById('game-dir').value = finalDir;
+        const existing = await invoke('get_config').catch(() => ({}));
+        await invoke('save_config', { config: { ...existing, game_dir: finalDir } }).catch(() => {});
+        showToast('Game path selected and saved', 'success');
+        refreshPaletteStatus();
     }
 }
 
@@ -959,17 +1871,139 @@ async function checkForUpdates() {
         document.getElementById('install-update-link')?.addEventListener('click', async (e) => {
             e.preventDefault();
             toast.remove();
-            showToast('Downloading update, please wait...', 'warning');
+            const progToast = document.createElement('div');
+            progToast.className = 'toast warning';
+            progToast.innerHTML = `<div class="toast-content">Downloading update v${escHtml(version)}... <span id="update-progress-pct">0%</span></div>
+                <div style="height:4px;background:rgba(255,255,255,.15);border-radius:2px;margin-top:6px;overflow:hidden;">
+                    <div id="update-progress-fill" style="height:100%;width:0%;background:currentColor;border-radius:2px;transition:width .3s;"></div>
+                </div>`;
+            document.getElementById('toast-container')?.appendChild(progToast);
+
+            let failed = false;
             try {
-                await invoke('install_update');
-                showToast('Update installed! Restarting...', 'success');
-                setTimeout(() => window.__TAURI__.process.relaunch(), 2000);
-            } catch (err) {
-                showToast(`Update failed: ${escHtml(String(err))}`, 'error');
+                const { listen } = window.__TAURI__.event;
+                const unProgress = await listen('updater://progress', (ev) => {
+                    const { percent } = ev.payload || {};
+                    const fill = document.getElementById('update-progress-fill');
+                    const pct = document.getElementById('update-progress-pct');
+                    if (fill && typeof percent === 'number') fill.style.width = `${percent}%`;
+                    if (pct && typeof percent === 'number') pct.textContent = `${percent}%`;
+                });
+                const unFail = await listen('updater://failed', () => {
+                    failed = true;
+                    progToast.remove();
+                });
+                try {
+                    await invoke('install_update');
+                    unProgress();
+                    unFail();
+                    if (failed) return;
+                    progToast.remove();
+                    showToast('Update installed! Restarting...', 'success');
+                    setTimeout(() => window.__TAURI__.process.relaunch(), 2000);
+                } catch (err) {
+                    unProgress();
+                    unFail();
+                    progToast.remove();
+                    if (!failed) showToast(`Update failed: ${escHtml(String(err))}`, 'error');
+                }
+            } catch (_) {
+
+                try {
+                    await invoke('install_update');
+                    showToast('Update installed! Restarting...', 'success');
+                    setTimeout(() => window.__TAURI__.process.relaunch(), 2000);
+                } catch (err) {
+                    showToast(`Update failed: ${escHtml(String(err))}`, 'error');
+                }
             }
         });
     } catch (err) {
         invoke('append_launch_log', { message: `updater: unexpected invoke error: ${err}` }).catch(() => {});
+    }
+}
+
+async function refreshDevPanel() {
+    try {
+        const cfg = await invoke('get_config').catch(() => ({}));
+        const gameDirInput = document.getElementById('dev-game-dir-input');
+        if (gameDirInput && !gameDirInput.dataset.wired) {
+            gameDirInput.value = cfg.game_dir || '';
+            gameDirInput.dataset.wired = '1';
+            gameDirInput.addEventListener('change', async () => {
+                const c = await invoke('get_config').catch(() => ({}));
+                await invoke('save_config', { config: { ...c, game_dir: gameDirInput.value.trim() } });
+                showToast('Game dir saved.', 'success');
+            });
+        }
+
+        const proxyDirInput = document.getElementById('dev-proxy-dir-input');
+        if (proxyDirInput) {
+
+            if (document.activeElement !== proxyDirInput) {
+                const override = await invoke('get_proxy_dir_override').catch(() => null);
+                const status = await invoke('get_psynet_status').catch(() => ({}));
+                proxyDirInput.value = override || status.proxy_dir || '';
+            }
+            if (!proxyDirInput.dataset.wired) {
+                proxyDirInput.dataset.wired = '1';
+                proxyDirInput.addEventListener('change', async () => {
+                    const msg = document.getElementById('dev-action-msg');
+                    try {
+                        const saved = await invoke('save_proxy_dir', { path: proxyDirInput.value.trim() });
+                        if (msg) msg.textContent = saved ? `Saved: ${saved}` : 'Proxy dir reset to auto-detect.';
+                    } catch (e) {
+                        if (msg) msg.textContent = 'Save failed: ' + e;
+                    }
+                });
+            }
+        }
+
+        const logDirEl = document.getElementById('dev-log-dir');
+        try {
+            const logDir = await invoke('get_logs_dir');
+            if (logDirEl) logDirEl.textContent = `Log dir: ${logDir}`;
+        } catch (e) {
+            if (logDirEl) logDirEl.textContent = `Log dir: error - ${e}`;
+        }
+
+        const proxyEl = document.getElementById('dev-proxy-status');
+        try {
+            const status = await invoke('get_psynet_status');
+            if (proxyEl) proxyEl.textContent = `Proxy: ${status.running ? 'running' : 'stopped'}`;
+        } catch (e) {
+            if (proxyEl) proxyEl.textContent = `Proxy: error - ${e}`;
+        }
+
+        const pidEl = document.getElementById('dev-replay-player-id');
+        const rnEl = document.getElementById('dev-replay-real-name');
+        if (pidEl && rnEl) {
+            try {
+                const id = await invoke('get_replay_identity');
+                if (document.activeElement !== pidEl) pidEl.value = id.player_id || '';
+                if (document.activeElement !== rnEl) rnEl.value = id.real_name || '';
+            } catch {}
+        }
+
+        const logEl = document.getElementById('dev-log-output');
+        if (logEl) {
+            const tail = await invoke('get_log_tail', { lines: 100 });
+            logEl.textContent = tail;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        const cfgEl = document.getElementById('dev-proxy-config');
+        if (cfgEl) {
+            try {
+                const raw = await invoke('get_psynet_config_json');
+                const parsed = JSON.parse(raw);
+                cfgEl.value = JSON.stringify(parsed, null, 2);
+            } catch (e) {
+                cfgEl.value = '// Error loading config: ' + e;
+            }
+        }
+    } catch (err) {
+        console.warn('Dev panel refresh failed:', err);
     }
 }
 
@@ -983,7 +2017,7 @@ function showGameDirToast() {
         <div class="toast-content">
             <div style="margin-bottom:8px;font-weight:600;">Game path not set or incorrect</div>
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-                <a href="#" id="gd-fix-btn" style="font-weight:700;color:#fff;text-decoration:underline;cursor:pointer;">Fix →</a>
+                <a href="#" id="gd-fix-btn" style="font-weight:700;color:#fff;text-decoration:underline;cursor:pointer;">Fix</a>
                 <span style="color:var(--text-secondary);font-size:11px;">·</span>
                 <a href="#" id="gd-auto-btn" style="font-size:12px;color:var(--accent-blue);text-decoration:underline;cursor:pointer;">Not sure what to pick? Click me!</a>
             </div>
@@ -1017,7 +2051,7 @@ function semverGte(tag, min) {
 function formatChangelogNotes(raw) {
     const match = (raw || '').match(/<!--\s*release notes\s*-->([\s\S]*?)<!--\s*\/release notes\s*-->/i);
     let text = match ? match[1].trim() : (raw || 'No notes.');
-    // Drop internal/engineering dump lines from GitHub release bodies.
+
     text = text
         .split('\n')
         .filter(line => !/\b(MITM|PerCon|ws\.rlpp|api\.rlpp|openssl_trust|ClassPropertyConfig)\b/i.test(line))
@@ -1035,13 +2069,12 @@ function formatChangelogNotes(raw) {
 }
 
 const TITLE_SPOOF_KEY = 'velocityrl_title_spoof';
-const NAME_SPOOF_KEY = 'velocityrl_name_spoof';
 const LOGO_SPOOF_KEY = 'velocityrl_logo_spoof';
 const BLOG_SPOOF_KEY = 'velocityrl_blog_spoof';
 const FAKE_RANKS_KEY = 'velocityrl_fake_ranks';
 const CAMERA_SPOOF_KEY = 'velocityrl_camera_spoof';
-const DEFAULT_SEASON23_LOGO_URL = 'https://rl-cdn.psyonix.com/LogoImages/S23/rl_season-logo_23_EN_1.png';
-const DEFAULT_BLOG_MOTD = '<a href="https://discord.gg/2HhBNbrGMj"><font color="#66CCFF"><u>VelocityRL</u></font></a>';
+const DEFAULT_SEASON23_LOGO_URL = 'https://api.velocityrl.tech/thumbnails/rl_jpn.png';
+const DEFAULT_BLOG_MOTD = 'Use VelocityRL';
 const DEFAULT_CAMERA_LIMITS = {
     fov: { min: 60, max: 1000, interval: 1 },
     height: { min: 40, max: 1000, interval: 1 },
@@ -1092,10 +2125,8 @@ function flashButtonLabel(el, feedback, ms = 1500, onDone) {
 
 function loadSavedSpoof() {
     let titles = {};
-    let name = {};
     try { titles = JSON.parse(localStorage.getItem(TITLE_SPOOF_KEY) || '{}'); } catch {  }
-    try { name = JSON.parse(localStorage.getItem(NAME_SPOOF_KEY) || '{}'); } catch {  }
-    return { ...titles, ...name };
+    return { ...titles };
 }
 
 function normalizeHex6(raw) {
@@ -1265,7 +2296,6 @@ function readLocalJson(key) {
     try { return JSON.parse(localStorage.getItem(key) || '{}'); } catch { return {}; }
 }
 
-/** Prefer proxy file (psynet_config.json); fall back to localStorage per tool. */
 function toolSliceFromDiskOrLocal(disk, key, field) {
     if (disk && disk[field] != null && typeof disk[field] === 'object') {
         return disk[field];
@@ -1292,11 +2322,6 @@ async function writeTitleSpoofConfig() {
     await invoke('save_psynet_spoof', { payload: titleSpoofPayload() });
 }
 
-/**
- * Boot: load each tool from tools/psynet_proxy/go_mitm/psynet_config.json
- * into localStorage + in-memory title swaps so tabs restore without re-Save.
- * Returns a merge payload for writing back to the proxy file.
- */
 async function hydrateSpoofToolsFromDisk() {
     let disk = {};
     try {
@@ -1306,7 +2331,6 @@ async function hydrateSpoofToolsFromDisk() {
         disk = {};
     }
 
-    // Titles
     if (Array.isArray(disk.swaps) || disk.equip_title_id) {
         const titleSaved = {
             enabled: disk.enabled !== false && (Array.isArray(disk.swaps) ? disk.swaps.length > 0 : !!disk.equip_title_id),
@@ -1324,7 +2348,6 @@ async function hydrateSpoofToolsFromDisk() {
         loadTitleSwapsFromStorage();
     }
 
-    // Fake ranks
     {
         const fr = toolSliceFromDiskOrLocal(disk, FAKE_RANKS_KEY, 'fake_ranks');
         const fake_ranks = (fr && typeof fr === 'object' && ('enabled' in fr || fr.playlists || fr.reward_levels))
@@ -1333,7 +2356,6 @@ async function hydrateSpoofToolsFromDisk() {
         localStorage.setItem(FAKE_RANKS_KEY, JSON.stringify({ fake_ranks }));
     }
 
-    // Camera
     {
         const cam = toolSliceFromDiskOrLocal(disk, CAMERA_SPOOF_KEY, 'camera_spoof');
         const camera_spoof = (cam && typeof cam === 'object' && ('enabled' in cam || cam.fov))
@@ -1347,14 +2369,13 @@ async function hydrateSpoofToolsFromDisk() {
         localStorage.setItem(CAMERA_SPOOF_KEY, JSON.stringify({ camera_spoof }));
     }
 
-    // Logo
     {
         const ls = toolSliceFromDiskOrLocal(disk, LOGO_SPOOF_KEY, 'logo_spoof');
         let logo_spoof;
         if (ls && typeof ls === 'object' && ('enabled' in ls || ls.logo_url != null)) {
             const enabled = !!ls.enabled;
             let logo_url = String(ls.logo_url || '').trim();
-            // Enabled with empty URL is inactive in Go — keep the toggle honest.
+
             if (enabled && !logo_url) logo_url = DEFAULT_SEASON23_LOGO_URL;
             logo_spoof = { enabled, logo_url };
         } else {
@@ -1363,7 +2384,6 @@ async function hydrateSpoofToolsFromDisk() {
         localStorage.setItem(LOGO_SPOOF_KEY, JSON.stringify({ logo_spoof }));
     }
 
-    // Blog / MotD
     {
         const bs = toolSliceFromDiskOrLocal(disk, BLOG_SPOOF_KEY, 'blog_spoof');
         const blog_spoof = (bs && typeof bs === 'object' && ('enabled' in bs || bs.motd != null))
@@ -1372,7 +2392,6 @@ async function hydrateSpoofToolsFromDisk() {
         localStorage.setItem(BLOG_SPOOF_KEY, JSON.stringify({ blog_spoof }));
     }
 
-    // Push into DOM now so toggles/queues match disk before the user opens a tab.
     applyHydratedToolsToUi();
 
     return payloadFromHydratedLocal();
@@ -1406,7 +2425,6 @@ function applyHydratedToolsToUi() {
     if (blogMotd) blogMotd.value = blog.motd || DEFAULT_BLOG_MOTD;
 }
 
-/** Full proxy write from hydrated localStorage (boot only — not every Save). */
 function payloadFromHydratedLocal() {
     ensureTitleSwapsLoaded();
     const titles = titleSpoofPayload();
@@ -1431,21 +2449,15 @@ function payloadFromHydratedLocal() {
         camera_spoof,
         logo_spoof,
         blog_spoof,
-        ping_spoof: { enabled: false, ms: 0 },
-        inventory_spoof: { enabled: false, items: [] },
     };
 }
 
-/**
- * Boot write must never downgrade logo/MotD that are still enabled on disk
- * (e.g. hydrate saw {} after a transient read miss, then invented enabled:false).
- */
 function preserveEnabledLogoBlogFromDisk(payload, disk) {
     const out = { ...payload };
     if (disk?.logo_spoof?.enabled) {
         const diskUrl = String(disk.logo_spoof.logo_url || '').trim();
         const outUrl = String(out.logo_spoof?.logo_url || '').trim();
-        // Never invent enabled:false over disk, and never wipe a disk URL with "".
+
         if (!out.logo_spoof?.enabled || !outUrl) {
             out.logo_spoof = {
                 enabled: true,
@@ -1464,13 +2476,18 @@ function preserveEnabledLogoBlogFromDisk(payload, disk) {
     return out;
 }
 
-function anySpoofToolEnabled(payload) {
+async function anySpoofToolEnabled(payload) {
     const p = payload || payloadFromHydratedLocal();
     if (p.enabled && p.swaps?.length) return true;
     if (p.fake_ranks?.enabled) return true;
     if (p.camera_spoof?.enabled) return true;
     if (p.logo_spoof?.enabled) return true;
     if (p.blog_spoof?.enabled) return true;
+    if (PALETTE_UI_DISABLED) return false;
+    try {
+        const pal = await invoke('get_palette_status');
+        if (pal?.applied) return true;
+    } catch {   }
     return false;
 }
 
@@ -1581,10 +2598,9 @@ async function autoStartPsyNetProxy() {
         const disk = await invoke('get_psynet_spoof') || {};
         payload = preserveEnabledLogoBlogFromDisk(payload, disk);
         applyHydratedToolsToUi();
-    } catch { /* ignore */ }
+    } catch {   }
     try {
-        // Always refresh proxy file from hydrated tool state (hot-reload if already up).
-        // Merge write keeps logo_spoof/blog_spoof when other tools Save; boot includes them.
+
         await invoke('save_psynet_spoof', { payload });
     } catch (e) {
         invoke('append_launch_log', { message: `psynet: boot write spoof failed: ${e}` }).catch(() => {});
@@ -1596,11 +2612,7 @@ async function autoStartPsyNetProxy() {
             invoke('append_launch_log', { message: 'psynet: existing proxy healthy - boot config written (hot-reload), skip restart' }).catch(() => {});
             return;
         }
-    } catch { /* ignore */ }
-    if (!anySpoofToolEnabled(payload)) {
-        invoke('append_launch_log', { message: 'psynet: no spoof tools enabled - skip auto-start' }).catch(() => {});
-        return;
-    }
+    } catch {   }
     try {
         showToast('Starting PsyNet proxy - approve UAC if prompted…', 'success');
         const st = await invoke('start_psynet_proxy', {});
@@ -1624,16 +2636,9 @@ async function ensurePsyNetFromApp(reason) {
                 showToast(`${reason} saved — proxy running (hot-reload). Keep VelocityRL open.`, 'success');
                 return true;
             }
-            showToast(`Starting PsyNet proxy (${reason}) — approve UAC if prompted…`, 'success');
-            const st = await invoke('start_psynet_proxy', {});
-            setProxyUi(!!st.running);
-            if (st.running) {
-                showToast('PsyNet proxy running. Keep VelocityRL open.', 'success');
-            }
-            return !!st.running;
-        } catch (e) {
+            return false;
+        } catch {
             setProxyUi(false);
-            showToast(String(e), 'error');
             return false;
         } finally {
             proxyEnsurePromise = null;
@@ -1642,7 +2647,6 @@ async function ensurePsyNetFromApp(reason) {
     return proxyEnsurePromise;
 }
 
-/** Single-flight Save: merge one tool slice into psynet_config.json (does not wipe others). */
 async function runToolSave(btn, reason, partialPayload, { enabled = true } = {}) {
     if (isAppLoading() || spoofSaveInFlight) return null;
     if (btn?.dataset.saving === '1' || btn?.dataset.labelFlashing === '1') return null;
@@ -1677,7 +2681,19 @@ function promptCloseModal() {
             if (settled) return;
             settled = true;
             document.removeEventListener('keydown', onKey);
-            overlay.classList.remove('active');
+            if (choice !== 'stay') {
+
+                const choices = document.getElementById('close-psynet-choices');
+                const shutting = document.getElementById('close-psynet-shutting-down');
+                if (choices) choices.style.display = 'none';
+                if (shutting) shutting.style.display = 'block';
+                const title = document.getElementById('close-psynet-title');
+                if (title) title.textContent = 'Shutting down…';
+
+                overlay.onclick = null;
+            } else {
+                overlay.classList.remove('active');
+            }
             resolve(choice);
         };
         const onKey = (e) => {
@@ -1696,10 +2712,20 @@ function promptCloseModal() {
 
 async function stopProxyOnClose(revertHosts) {
     try {
-        await invoke('stop_psynet_proxy', { revertHosts });
+        await Promise.race([
+            invoke('stop_psynet_proxy', { revertHosts }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+        ]);
     } catch (e) {
         console.warn('stop_psynet_proxy on close:', e);
     }
+}
+
+function finishAppClose(appWindow, revertHosts) {
+    closeInProgress = true;
+    invoke('force_exit').catch(() => {
+        try { appWindow.destroy(); } catch {}
+    });
 }
 
 function attachCloseGuard() {
@@ -1708,18 +2734,9 @@ function attachCloseGuard() {
     if (!winApi?.getCurrentWindow) return;
     closeGuardAttached = true;
     const appWindow = winApi.getCurrentWindow();
-    appWindow.onCloseRequested(async (event) => {
+    appWindow.onCloseRequested((event) => {
         event.preventDefault();
-        if (closeModalOpen || closeInProgress) return;
-
-        closeModalOpen = true;
-        const choice = await promptCloseModal();
-        closeModalOpen = false;
-        if (choice === 'stay') return;
-
-        closeInProgress = true;
-        await stopProxyOnClose(choice === 'revert');
-        await appWindow.destroy();
+        finishAppClose(appWindow, true);
     });
 }
 
@@ -1733,171 +2750,6 @@ const PAINT_NAMES = {
     6: 'Cobalt', 7: 'Saffron', 8: 'Grey', 9: 'Pink', 10: 'Forest Green',
     11: 'Purple', 12: 'Titanium White',
 };
-
-let namesTabReady = false;
-
-const NAME_SPOOF_UNAVAILABLE = true;
-let nameSpoofForceOffDone = false;
-
-function updateNamePreview() {
-    const fromEl = document.getElementById('name-preview-from');
-    const toEl = document.getElementById('name-preview-to');
-    const real = document.getElementById('name-spoof-real')?.value?.trim() || 'bitss.';
-    const display = document.getElementById('name-spoof-display')?.value?.trim() || 'evil bits';
-    if (fromEl) fromEl.textContent = real || '—';
-    if (toEl) toEl.textContent = display || '—';
-}
-
-function mergeNameSpoofLocalPlayerId(player_id) {
-    if (NAME_SPOOF_UNAVAILABLE) return;
-    let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(NAME_SPOOF_KEY) || '{}'); } catch {  }
-    const name_spoof = { ...(saved.name_spoof || {}), player_id };
-    localStorage.setItem(NAME_SPOOF_KEY, JSON.stringify({ ...saved, name_spoof }));
-}
-
-let playerIdPollTimer = null;
-
-async function refreshLearnedPlayerId() {
-    if (NAME_SPOOF_UNAVAILABLE) return;
-    const playerIdEl = document.getElementById('name-spoof-player-id');
-    if (!playerIdEl || document.activeElement === playerIdEl) return;
-    try {
-        const st = await invoke('get_psynet_status');
-        const pid = (st.player_id || '').trim();
-        if (!pid || playerIdEl.value.trim()) return;
-        playerIdEl.value = pid;
-        mergeNameSpoofLocalPlayerId(pid);
-    } catch {  }
-}
-
-async function forceInventorySpoofOffInConfig() {
-    try { localStorage.removeItem('velocityrl_inventory_spoof'); } catch {  }
-    try {
-        await invoke('save_psynet_spoof', {
-            payload: {
-                enabled: true,
-                method: 'raw',
-                inventory_spoof: { enabled: false, items: [] },
-            },
-        });
-    } catch {  }
-}
-
-async function forcePingSpoofOffInConfig() {
-    try { localStorage.removeItem('velocityrl_ping_spoof'); } catch {  }
-    try {
-        await invoke('save_psynet_spoof', {
-            payload: {
-                enabled: true,
-                method: 'raw',
-                ping_spoof: { enabled: false, ms: 0 },
-            },
-        });
-    } catch {  }
-}
-
-async function forceNameSpoofOffInConfig() {
-    let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(NAME_SPOOF_KEY) || '{}'); } catch {  }
-    const prev = saved.name_spoof || {};
-    const name_spoof = {
-        enabled: false,
-        display_name: prev.display_name || saved.display_name || saved.custom_name || '',
-        real_name: prev.real_name || '',
-        player_id: prev.player_id || '',
-        replace_all_player_names: false,
-        broker: true,
-        classprop_name: false,
-        websocket: false,
-        ws_enabled: false,
-    };
-    localStorage.setItem(NAME_SPOOF_KEY, JSON.stringify({
-        ...saved,
-        name_spoof,
-        display_name: name_spoof.display_name,
-        custom_name: name_spoof.display_name,
-    }));
-    try {
-        await invoke('save_psynet_spoof', {
-            payload: {
-                enabled: true,
-                method: 'raw',
-                custom_name: name_spoof.display_name,
-                name_spoof,
-            },
-        });
-    } catch {  }
-}
-
-function lockNameSpoofControls() {
-    const ids = [
-        'name-spoof-enabled',
-        'name-spoof-display',
-        'name-spoof-real',
-        'name-spoof-player-id',
-        'name-spoof-lab-all',
-        'name-spoof-save-btn',
-    ];
-    for (const id of ids) {
-        const el = document.getElementById(id);
-        if (!el) continue;
-        el.disabled = true;
-        el.setAttribute('aria-disabled', 'true');
-        if (el.tagName === 'INPUT' && (el.type === 'text' || el.type === 'search')) {
-            el.readOnly = true;
-            el.tabIndex = -1;
-        }
-    }
-    const card = document.querySelector('#names-tab .name-spoof-disabled, #names-tab .spoof-card');
-    if (card) {
-        card.classList.add('name-spoof-disabled');
-        card.setAttribute('aria-disabled', 'true');
-    }
-}
-
-function initNamesTab() {
-    const enabledEl = document.getElementById('name-spoof-enabled');
-    const displayEl = document.getElementById('name-spoof-display');
-    const realEl = document.getElementById('name-spoof-real');
-    const playerIdEl = document.getElementById('name-spoof-player-id');
-    const labEl = document.getElementById('name-spoof-lab-all');
-    const saveBtn = document.getElementById('name-spoof-save-btn');
-    if (!enabledEl || !saveBtn) return;
-
-    let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(NAME_SPOOF_KEY) || '{}'); } catch {  }
-    const ns = saved.name_spoof || {};
-
-    enabledEl.checked = false;
-    if (displayEl) displayEl.value = ns.display_name || saved.display_name || saved.custom_name || '';
-    if (realEl) realEl.value = ns.real_name || '';
-    if (playerIdEl) playerIdEl.value = ns.player_id || '';
-    if (labEl) labEl.checked = false;
-    syncNameSpoofSwitchAria(enabledEl);
-    syncNameSpoofSwitchAria(labEl);
-    updateNamePreview();
-    lockNameSpoofControls();
-
-    if (playerIdPollTimer) {
-        clearInterval(playerIdPollTimer);
-        playerIdPollTimer = null;
-    }
-
-    if (NAME_SPOOF_UNAVAILABLE && !nameSpoofForceOffDone) {
-        nameSpoofForceOffDone = true;
-        forceNameSpoofOffInConfig();
-    }
-
-    if (namesTabReady) return;
-    namesTabReady = true;
-
-    saveBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        showToast('Name spoof is not available yet.', 'error');
-    });
-}
 
 const RANK_ICON_CDN = 'https://trackercdn.com/cdn/tracker.gg/rocket-league/ranks/';
 const RANK_PLAYLISTS = [
@@ -1929,7 +2781,6 @@ function seasonRewardMeta(level) {
     return SEASON_REWARD_LEVELS.find((r) => r.level === level) || null;
 }
 
-/** Season reward "wins this level" is capped at 10 (UI max + legacy config clamp). */
 function clampSeasonLevelWins(n) {
     const v = Number(n);
     if (!Number.isFinite(v)) return null;
@@ -1937,12 +2788,31 @@ function clampSeasonLevelWins(n) {
 }
 
 function clampFakeRanksRewardWins(fake_ranks) {
-    if (!fake_ranks || typeof fake_ranks !== 'object' || !fake_ranks.reward_levels) return fake_ranks;
-    const wins = fake_ranks.reward_levels.season_level_wins;
-    if (!Number.isFinite(wins)) return fake_ranks;
-    const clamped = clampSeasonLevelWins(wins);
-    if (clamped === null) return fake_ranks;
-    fake_ranks.reward_levels.season_level_wins = clamped;
+    if (!fake_ranks || typeof fake_ranks !== 'object') return fake_ranks;
+    if (fake_ranks.reward_levels) {
+        const wins = fake_ranks.reward_levels.season_level_wins;
+        if (Number.isFinite(wins)) {
+            const clamped = clampSeasonLevelWins(wins);
+            if (clamped !== null) fake_ranks.reward_levels.season_level_wins = clamped;
+        }
+        if (Number.isFinite(fake_ranks.reward_levels.season_level)) {
+            fake_ranks.reward_levels.season_level = Math.max(0, Math.min(8, Math.round(fake_ranks.reward_levels.season_level)));
+        }
+    }
+    if (fake_ranks.playlists && typeof fake_ranks.playlists === 'object') {
+        Object.keys(fake_ranks.playlists).forEach((pid) => {
+            const ov = fake_ranks.playlists[pid];
+            if (ov && typeof ov === 'object') {
+                if (Number.isFinite(ov.display_mmr)) {
+                    ov.display_mmr = Math.max(0, Math.min(3000, Math.round(ov.display_mmr)));
+                    ov.mu = Number(((ov.display_mmr - 100) / 20).toFixed(4));
+                }
+                if (Number.isFinite(ov.tier)) {
+                    ov.tier = Math.max(0, Math.min(22, Math.round(ov.tier)));
+                }
+            }
+        });
+    }
     return fake_ranks;
 }
 
@@ -1999,7 +2869,20 @@ let fakeRanksQueueOrder = [];
 
 let fakeRanksPlaylistState = {};
 
-let fakeRanksAddFormState = { tier: 19, mmr: rankMeta(19).mmr };
+const MMR_MIN = 0;
+
+function clampMmr(val, fallback = 0) {
+    if (val === '' || val === null || val === undefined) {
+        return fallback != null ? clampMmr(fallback, 0) : 0;
+    }
+    const n = Number(val);
+    if (!Number.isFinite(n)) {
+        return fallback != null ? clampMmr(fallback, 0) : 0;
+    }
+    return Math.max(MMR_MIN, Math.round(n));
+}
+
+let fakeRanksAddFormState = { tier: 19, mmr: clampMmr(rankMeta(19).mmr) };
 
 function playlistLabel(id) {
     return RANK_PLAYLISTS.find((p) => p.id === id)?.label || `Playlist ${id}`;
@@ -2023,13 +2906,16 @@ function rankDivisionForTier(tier) {
     return (tier - 1) % 3;
 }
 
-function rankOverrideFromState(tier, displayMmr) {
+function rankOverrideFromState(tier, displayMmr, division = 0) {
     const meta = rankMeta(tier);
-    const mmr = Number.isFinite(displayMmr) ? displayMmr : meta.mmr;
+    const mmr = clampMmr(displayMmr, meta.mmr);
+    const mu = Number(((mmr - 100) / 20).toFixed(4));
+    const div = (tier <= 0 || tier >= 22) ? 0 : Math.max(0, Math.min(3, Number(division) || 0));
     return {
         display_mmr: mmr,
-        tier,
-        division: rankDivisionForTier(tier),
+        mu,
+        tier: Math.max(0, Math.min(22, Number(tier) || 0)),
+        division: div,
     };
 }
 
@@ -2040,15 +2926,15 @@ function tierFromOverride(ov) {
 }
 
 function mmrFromOverride(ov, tier) {
-    if (ov && Number.isFinite(ov.display_mmr)) return Number(ov.display_mmr);
-    if (ov && Number.isFinite(ov.mu)) return Math.round(ov.mu * 20 + 100);
-    return rankMeta(tier).mmr;
+    if (ov && Number.isFinite(ov.display_mmr)) return clampMmr(ov.display_mmr);
+    if (ov && Number.isFinite(ov.mu)) return clampMmr(ov.mu * 20 + 100);
+    return clampMmr(rankMeta(tier).mmr);
 }
 
 function ensureFakeRanksEntry(id, fallbackTier = 19) {
     if (!fakeRanksPlaylistState[id]) {
         const tier = fallbackTier;
-        fakeRanksPlaylistState[id] = { tier, mmr: rankMeta(tier).mmr };
+        fakeRanksPlaylistState[id] = { tier, mmr: clampMmr(rankMeta(tier).mmr), division: 0 };
     }
 }
 
@@ -2057,6 +2943,7 @@ function syncFakeRanksAddFormUi() {
     const icon = document.getElementById('fake-ranks-add-rank-icon');
     const name = document.getElementById('fake-ranks-add-rank-name');
     const mmrInput = document.getElementById('fake-ranks-add-mmr');
+    const divSelect = document.getElementById('fake-ranks-add-division');
     if (icon) {
         icon.src = rankIconSrc(fakeRanksAddFormState.tier);
         icon.alt = meta.name;
@@ -2064,7 +2951,10 @@ function syncFakeRanksAddFormUi() {
     }
     if (name) name.textContent = meta.name;
     if (mmrInput && document.activeElement !== mmrInput) {
-        mmrInput.value = String(Math.round(fakeRanksAddFormState.mmr ?? meta.mmr));
+        mmrInput.value = String(clampMmr(fakeRanksAddFormState.mmr ?? meta.mmr));
+    }
+    if (divSelect) {
+        divSelect.disabled = (fakeRanksAddFormState.tier <= 0 || fakeRanksAddFormState.tier >= 22);
     }
 }
 
@@ -2102,9 +2992,18 @@ function renderFakeRanksQueue() {
     }
     if (removeAll) removeAll.hidden = false;
     list.innerHTML = fakeRanksQueueOrder.map((id, i) => {
-        const st = fakeRanksPlaylistState[id] || { tier: 19, mmr: rankMeta(19).mmr };
+        const st = fakeRanksPlaylistState[id] || { tier: 19, mmr: rankMeta(19).mmr, division: 0 };
         const meta = rankMeta(st.tier);
-        const mmr = Math.round(st.mmr ?? meta.mmr);
+        const mmr = clampMmr(st.mmr ?? meta.mmr);
+        const hasDiv = st.tier > 0 && st.tier < 22;
+        const curDiv = st.division ?? 0;
+        const divHtml = hasDiv ? `
+            <select class="rank-queue-division-select" data-playlist="${escHtml(id)}" aria-label="${escHtml(playlistLabel(id))} Division">
+                <option value="0"${curDiv === 0 ? ' selected' : ''}>Div I</option>
+                <option value="1"${curDiv === 1 ? ' selected' : ''}>Div II</option>
+                <option value="2"${curDiv === 2 ? ' selected' : ''}>Div III</option>
+                <option value="3"${curDiv === 3 ? ' selected' : ''}>Div IV</option>
+            </select>` : '';
         return `<div class="backup-item" data-playlist="${escHtml(id)}">
             <div>
                 <div class="backup-name rank-queue-row-preview">
@@ -2112,7 +3011,8 @@ function renderFakeRanksQueue() {
                     <span class="rank-queue-sep">·</span>
                     <img class="rank-playlist-icon rank-queue-icon" src="${rankIconSrc(st.tier)}" width="22" height="22" alt="${escHtml(meta.name)}">
                     <span class="rank-queue-rank">${escHtml(meta.name)}</span>
-                    <input type="number" class="rank-queue-mmr-input" data-playlist="${escHtml(id)}" min="0" max="3000" step="1" inputmode="numeric" autocomplete="off" value="${mmr}" aria-label="${escHtml(playlistLabel(id))} MMR">
+                    ${divHtml}
+                    <input type="number" class="rank-queue-mmr-input" data-playlist="${escHtml(id)}" min="0" step="1" inputmode="numeric" autocomplete="off" value="${mmr}" aria-label="${escHtml(playlistLabel(id))} MMR">
                 </div>
                 <div class="backup-date">Playlist ${escHtml(id)}</div>
             </div>
@@ -2122,12 +3022,39 @@ function renderFakeRanksQueue() {
             </div>
         </div>`;
     }).join('');
+    list.querySelectorAll('.rank-queue-division-select').forEach((sel) => {
+        sel.addEventListener('change', () => {
+            const pid = sel.dataset.playlist;
+            ensureFakeRanksEntry(pid);
+            fakeRanksPlaylistState[pid].division = Number(sel.value) || 0;
+        });
+    });
     list.querySelectorAll('.rank-queue-mmr-input').forEach((input) => {
         input.addEventListener('input', () => {
             const pid = input.dataset.playlist;
-            const n = Number(input.value);
             ensureFakeRanksEntry(pid);
-            fakeRanksPlaylistState[pid].mmr = Number.isFinite(n) ? n : null;
+            const val = input.value;
+            if (val === '') {
+                fakeRanksPlaylistState[pid].mmr = null;
+                return;
+            }
+            let n = Number(val);
+            if (Number.isFinite(n)) {
+                if (n < MMR_MIN) {
+                    n = MMR_MIN;
+                    input.value = String(MMR_MIN);
+                }
+                fakeRanksPlaylistState[pid].mmr = n;
+            }
+        });
+        input.addEventListener('blur', () => {
+            const pid = input.dataset.playlist;
+            ensureFakeRanksEntry(pid);
+            const st = fakeRanksPlaylistState[pid];
+            const meta = rankMeta(st.tier);
+            const clamped = clampMmr(input.value, st.mmr ?? meta.mmr);
+            input.value = String(clamped);
+            st.mmr = clamped;
         });
     });
     list.querySelectorAll('[data-edit-playlist]').forEach((btn) => {
@@ -2149,15 +3076,21 @@ function addFakeRanksPlaylistFromForm() {
     if (isAppLoading()) return;
     const sel = document.getElementById('fake-ranks-playlist-add');
     const mmrInput = document.getElementById('fake-ranks-add-mmr');
+    const divSelect = document.getElementById('fake-ranks-add-division');
     const id = sel?.value?.trim();
     if (!id) {
         showToast('All playlists are already configured.', 'error');
         return;
     }
-    const mmrVal = mmrInput?.value !== '' ? Number(mmrInput.value) : fakeRanksAddFormState.mmr;
+    const meta = rankMeta(fakeRanksAddFormState.tier);
+    const rawVal = mmrInput?.value !== '' ? mmrInput.value : fakeRanksAddFormState.mmr;
+    const mmrVal = clampMmr(rawVal, meta.mmr);
+    const divVal = Number(divSelect?.value) || 0;
+    const isNoDivTier = fakeRanksAddFormState.tier <= 0 || fakeRanksAddFormState.tier >= 22;
     fakeRanksPlaylistState[id] = {
         tier: fakeRanksAddFormState.tier,
-        mmr: Number.isFinite(mmrVal) ? mmrVal : rankMeta(fakeRanksAddFormState.tier).mmr,
+        mmr: mmrVal,
+        division: isNoDivTier ? 0 : divVal,
     };
     if (!fakeRanksQueueOrder.includes(id)) fakeRanksQueueOrder.push(id);
     renderFakeRanksQueue();
@@ -2202,12 +3135,12 @@ function openFakeRanksPicker(target, anchorEl) {
             const meta = rankMeta(tier);
             if (target === '__add__') {
                 fakeRanksAddFormState.tier = tier;
-                if (!fakeRanksAddFormState.mmr) fakeRanksAddFormState.mmr = meta.mmr;
+                fakeRanksAddFormState.mmr = clampMmr(meta.mmr);
                 syncFakeRanksAddFormUi();
             } else {
                 ensureFakeRanksEntry(target, tier);
                 fakeRanksPlaylistState[target].tier = tier;
-                if (!fakeRanksPlaylistState[target].mmr) fakeRanksPlaylistState[target].mmr = meta.mmr;
+                fakeRanksPlaylistState[target].mmr = clampMmr(meta.mmr);
                 renderFakeRanksQueue();
             }
             closeFakeRanksPicker();
@@ -2234,8 +3167,10 @@ function fakeRanksPayloadFromUi() {
         const st = fakeRanksPlaylistState[id];
         if (!st) return;
         const mmrInput = document.querySelector(`.rank-queue-mmr-input[data-playlist="${id}"]`);
-        const mmrVal = mmrInput?.value !== '' ? Number(mmrInput.value) : (st.mmr ?? null);
-        playlists[id] = rankOverrideFromState(st.tier, mmrVal);
+        const meta = rankMeta(st.tier);
+        const rawMmr = mmrInput && mmrInput.value !== '' ? mmrInput.value : (st.mmr ?? meta.mmr);
+        const mmrVal = clampMmr(rawMmr, meta.mmr);
+        playlists[id] = rankOverrideFromState(st.tier, mmrVal, st.division ?? 0);
     });
     const fake_ranks = { enabled, playlists };
     const seasonRaw = seasonEl?.value?.trim() ?? '';
@@ -2265,6 +3200,7 @@ function applyLegacyDefaultToPlaylists(fr) {
         fakeRanksPlaylistState[id] = {
             tier,
             mmr: mmrFromOverride(def, tier),
+            division: Number(def.division) || 0,
         };
         if (!fakeRanksQueueOrder.includes(id)) fakeRanksQueueOrder.push(id);
     });
@@ -2272,7 +3208,7 @@ function applyLegacyDefaultToPlaylists(fr) {
 
 function loadFakeRanksFromSaved(saved) {
     buildSeasonRewardSelect();
-    const fr = saved.fake_ranks || {};
+    const fr = saved?.fake_ranks || (saved && ('enabled' in saved || saved.playlists || saved.reward_levels) ? saved : {});
     const enabledEl = document.getElementById('fake-ranks-enabled');
     const seasonEl = document.getElementById('fake-ranks-season-level');
     const winsEl = document.getElementById('fake-ranks-season-wins');
@@ -2287,13 +3223,14 @@ function loadFakeRanksFromSaved(saved) {
             const tier = tierFromOverride(ov);
             fakeRanksPlaylistState[id] = {
                 tier,
-                mmr: mmrFromOverride(ov, tier),
+                mmr: clampMmr(mmrFromOverride(ov, tier)),
+                division: Number(ov.division) || 0,
             };
             fakeRanksQueueOrder.push(id);
         });
     }
     applyLegacyDefaultToPlaylists(fr);
-    fakeRanksAddFormState = { tier: 19, mmr: rankMeta(19).mmr };
+    fakeRanksAddFormState = { tier: 19, mmr: clampMmr(rankMeta(19).mmr), division: 0 };
     if (seasonEl) seasonEl.value = '';
     if (winsEl) winsEl.value = '';
     if (fr.reward_levels) {
@@ -2330,9 +3267,27 @@ function initRanksTab() {
         e.stopPropagation();
         openFakeRanksPicker('__add__', e.currentTarget);
     });
-    document.getElementById('fake-ranks-add-mmr')?.addEventListener('input', (e) => {
-        const n = Number(e.target.value);
-        fakeRanksAddFormState.mmr = Number.isFinite(n) ? n : null;
+    const addMmrEl = document.getElementById('fake-ranks-add-mmr');
+    addMmrEl?.addEventListener('input', (e) => {
+        const val = e.target.value;
+        if (val === '') {
+            fakeRanksAddFormState.mmr = null;
+            return;
+        }
+        let n = Number(val);
+        if (Number.isFinite(n)) {
+            if (n < MMR_MIN) {
+                n = MMR_MIN;
+                e.target.value = String(MMR_MIN);
+            }
+            fakeRanksAddFormState.mmr = n;
+        }
+    });
+    addMmrEl?.addEventListener('blur', (e) => {
+        const meta = rankMeta(fakeRanksAddFormState.tier);
+        const clamped = clampMmr(e.target.value, meta.mmr);
+        e.target.value = String(clamped);
+        fakeRanksAddFormState.mmr = clamped;
     });
     document.getElementById('fake-ranks-add-btn')?.addEventListener('click', addFakeRanksPlaylistFromForm);
     document.getElementById('fake-ranks-remove-all-btn')?.addEventListener('click', removeAllFakeRanksPlaylists);
@@ -2349,7 +3304,7 @@ function initRanksTab() {
         if (isAppLoading() || spoofSaveInFlight) return;
         const enabled = !!enabledEl.checked;
         const fake_ranks = fakeRanksPayloadFromUi();
-        const hasPlaylists = fake_ranks.playlists && Object.keys(fake_ranks.playlists).length;
+        const hasPlaylists = fake_ranks.playlists && Object.keys(fake_ranks.playlists).length > 0;
         const hasRewardLevels = fake_ranks.reward_levels && (
             Number.isFinite(fake_ranks.reward_levels.season_level)
             || Number.isFinite(fake_ranks.reward_levels.season_level_wins)
@@ -2359,10 +3314,15 @@ function initRanksTab() {
             return;
         }
         try {
-            await runToolSave(saveBtn, 'fake ranks', { fake_ranks }, { enabled });
+
             localStorage.setItem(FAKE_RANKS_KEY, JSON.stringify({ fake_ranks }));
+            await runToolSave(saveBtn, 'fake ranks', { fake_ranks }, { enabled });
             flashButtonLabel(saveBtn, enabled ? 'Saved' : 'Saved (off)');
-            if (!enabled) showToast('Fake ranks off.', 'success');
+            if (!enabled) {
+                showToast('Fake ranks off.', 'success');
+            } else if (!psynetProxyRunning) {
+                showToast('Fake ranks saved.', 'success');
+            }
         } catch (e) {
             showToast(String(e), 'error');
         }
@@ -2480,9 +3440,9 @@ function wireReswapButton() {
 
     reswapBtn.addEventListener('click', async (e) => {
         if (isAppLoading()) return;
-        const confirmed = await window.__TAURI__.dialog.ask(
-            'This action is irreversible and should only be used if you have recently verified your game files in the Epic Games launcher.\n\nAre you sure you want to reswap all items?', 
-            { title: 'Reswap All Items', kind: 'warning' }
+        const confirmed = await askConfirm(
+            'This action is irreversible and should only be used if you have recently verified your game files in the Epic Games launcher.\n\nAre you sure you want to reswap all items?',
+            'Reswap All Items'
         );
         if (!confirmed) return;
 
@@ -2512,6 +3472,26 @@ function wireReswapButton() {
 }
 let paletteBusy = false;
 
+const PALETTE_UI_DISABLED = false;
+
+function setPaletteUnavailable() {
+    const block = document.getElementById('palette-disabled-block');
+    block?.classList.add('is-disabled');
+    block?.setAttribute('aria-disabled', 'true');
+    const toggle = document.getElementById('rich-palette-enabled');
+    const applyBtn = document.getElementById('palette-apply-btn');
+    const restoreBtn = document.getElementById('palette-restore-btn');
+    if (toggle) {
+        toggle.disabled = true;
+        toggle.checked = false;
+        syncNameSpoofSwitchAria(toggle);
+    }
+    if (applyBtn) applyBtn.disabled = true;
+    if (restoreBtn) restoreBtn.disabled = true;
+    document.getElementById('palette-switch-row')?.classList.remove('is-applied');
+    invoke('sync_palette_psynet_config', { forceEnabled: false }).catch(() => {});
+}
+
 function setPaletteBusy(busy) {
     paletteBusy = !!busy;
     if (!paletteBusy) return;
@@ -2522,6 +3502,14 @@ function setPaletteBusy(busy) {
 }
 
 function syncPaletteUi(applied, status) {
+    if (PALETTE_UI_DISABLED) {
+        setPaletteUnavailable();
+        return;
+    }
+
+    const block = document.getElementById('palette-disabled-block');
+    block?.classList.remove('is-disabled');
+    block?.removeAttribute('aria-disabled');
     const toggle = document.getElementById('rich-palette-enabled');
     const row = document.getElementById('palette-switch-row');
     const applyBtn = document.getElementById('palette-apply-btn');
@@ -2530,7 +3518,7 @@ function syncPaletteUi(applied, status) {
     const hasBackup = !!status?.backup_present;
     if (toggle) {
         toggle.checked = on;
-        toggle.disabled = true;
+        toggle.disabled = false;
         syncNameSpoofSwitchAria(toggle);
     }
     row?.classList.toggle('is-applied', on);
@@ -2539,15 +3527,21 @@ function syncPaletteUi(applied, status) {
 }
 
 async function refreshPaletteStatus() {
+    if (PALETTE_UI_DISABLED) {
+        setPaletteUnavailable();
+        return;
+    }
     try {
         const st = await invoke('get_palette_status');
         syncPaletteUi(!!st.applied, st);
+        await invoke('sync_palette_psynet_config').catch(() => {});
     } catch {
         syncPaletteUi(false);
     }
 }
 
 async function runPaletteAction(btn, command, doneLabel, fallbackMsg) {
+    if (PALETTE_UI_DISABLED) return;
     if (isAppLoading() || paletteBusy) return;
     setPaletteBusy(true);
     let result = null;
@@ -2568,7 +3562,157 @@ async function runPaletteAction(btn, command, doneLabel, fallbackMsg) {
     }
 }
 
+async function wireLaunchOnStartup() {
+    const toggle = document.getElementById('launch-on-startup');
+    if (!toggle || toggle.dataset.wired === '1') return;
+    toggle.dataset.wired = '1';
+    toggle.checked = await invoke('get_launch_on_startup').catch(() => false);
+    syncNameSpoofSwitchAria(toggle);
+    toggle.addEventListener('change', async () => {
+        try {
+            await invoke('set_launch_on_startup', { enable: toggle.checked });
+            showToast(toggle.checked ? 'VelocityRL will start when you log in.' : 'VelocityRL will no longer start on login.', 'success');
+        } catch (e) {
+            toggle.checked = await invoke('get_launch_on_startup').catch(() => false);
+            syncNameSpoofSwitchAria(toggle);
+            showToast(String(e), 'error');
+        }
+    });
+}
+
+async function wireReplayOptIn() {
+    const toggle = document.getElementById('replay-opt-in');
+    const hint = document.getElementById('replay-status-hint');
+    if (!toggle || toggle.dataset.wired === '1') return;
+    toggle.dataset.wired = '1';
+    const cfg = await invoke('get_config').catch(() => ({}));
+    toggle.checked = !!cfg.replay_opt_in;
+    syncNameSpoofSwitchAria(toggle);
+    toggle.addEventListener('change', async () => {
+        const c = await invoke('get_config').catch(() => ({ game_dir: '' }));
+        await invoke('save_config', { config: { ...c, replay_opt_in: toggle.checked } }).catch(() => {});
+        if (hint) {
+            hint.style.display = 'block';
+            hint.textContent = toggle.checked
+                ? 'Replay archiving is on. Your replays will be saved securely after each match.'
+                : 'Replay archiving is off.';
+            setTimeout(() => { hint.style.display = 'none'; }, 4000);
+        }
+
+        if (toggle.checked) {
+            const status = await invoke('replay_token_status').catch(() => null);
+            if (status && !status.registered) {
+                await invoke('register_replay_token').catch(() => {});
+            }
+        }
+        updateReplayVaultVisibility(toggle.checked);
+        invoke('append_launch_log', { message: `replays: opt-in ${toggle.checked ? 'enabled' : 'disabled'}` }).catch(() => {});
+    });
+
+    wireReplayVault();
+    updateReplayVaultVisibility(toggle.checked);
+}
+
+function updateReplayVaultVisibility(enabled) {
+    const vault = document.getElementById('replay-vault');
+    if (vault) vault.style.display = enabled ? 'block' : 'none';
+}
+
+function wireReplayVault() {
+    const refreshBtn = document.getElementById('replay-vault-refresh');
+    if (!refreshBtn || refreshBtn.dataset.wired === '1') return;
+    refreshBtn.dataset.wired = '1';
+    refreshBtn.addEventListener('click', async () => {
+        refreshBtn.disabled = true;
+        const oldLabel = refreshBtn.textContent;
+        refreshBtn.textContent = 'Loading…';
+        try {
+            let data = await invoke('get_my_replays');
+            if (!data.registered) {
+
+                await invoke('register_replay_token').catch(() => {});
+                data = await invoke('get_my_replays').catch(() => ({ registered: false, total: 0, replays: [] }));
+            }
+            renderReplayVault(data);
+        } catch (e) {
+            renderReplayVaultError(String(e));
+        } finally {
+            refreshBtn.disabled = false;
+            refreshBtn.textContent = oldLabel;
+        }
+    });
+}
+
+function renderReplayVault(data) {
+    const list = document.getElementById('replay-vault-list');
+    const count = document.getElementById('replay-vault-count');
+    if (!list) return;
+    list.style.display = 'block';
+    list.innerHTML = '';
+    if (count) {
+        count.style.display = 'inline';
+        count.textContent = `${data.total} saved`;
+    }
+    if (!data.replays || data.replays.length === 0) {
+        list.innerHTML = '<p class="field-hint">No replays saved yet. Play a match with archiving on and it will show up here.</p>';
+        return;
+    }
+    for (const r of data.replays) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:10px; padding:7px 10px; border:1px solid var(--border-color, #333); border-radius:8px; margin-bottom:6px;';
+        const label = document.createElement('span');
+        label.style.cssText = 'min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;';
+        const when = r.uploaded_at ? new Date(r.uploaded_at).toLocaleString() : '';
+        label.textContent = [r.map || r.filename, r.match_type, when].filter(Boolean).join(' — ');
+        const link = document.createElement('a');
+        link.href = '#';
+        link.textContent = 'Download';
+        link.style.cssText = 'flex:none; color:var(--accent-blue, #4af);';
+        link.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            const url = r.download_url;
+            if (url) window.__TAURI__?.core?.invoke('plugin:shell|open', { path: url });
+        });
+        row.appendChild(label);
+        row.appendChild(link);
+        list.appendChild(row);
+    }
+}
+
+function renderReplayVaultError(msg) {
+    const list = document.getElementById('replay-vault-list');
+    if (!list) return;
+    list.style.display = 'block';
+    list.innerHTML = `<p class="field-hint">Could not load replays: ${escHtml(msg)}</p>`;
+    const count = document.getElementById('replay-vault-count');
+    if (count) count.style.display = 'none';
+}
+
 function initMiscTab() {
+    refreshPaletteStatus();
+
+    const paletteApply = document.getElementById('palette-apply-btn');
+    const paletteRestore = document.getElementById('palette-restore-btn');
+    const paletteToggle = document.getElementById('rich-palette-enabled');
+
+    if (initMiscTab._wired) return;
+    initMiscTab._wired = true;
+
+    paletteToggle?.addEventListener('change', () => {
+        if (paletteToggle.checked) {
+            runPaletteAction(paletteApply, 'apply_rich_palette', 'Applied', 'Color palette on. Restart Rocket League.');
+        } else {
+            runPaletteAction(paletteRestore, 'restore_rich_palette', 'Restored', 'Color palette off.');
+        }
+    });
+
+    paletteApply?.addEventListener('click', () => runPaletteAction(
+        paletteApply, 'apply_rich_palette', 'Applied', 'Color palette on. Restart Rocket League.',
+    ));
+    paletteRestore?.addEventListener('click', () => runPaletteAction(
+        paletteRestore, 'restore_rich_palette', 'Restored', 'Color palette off.',
+    ));
+
     const enabledEl = document.getElementById('logo-spoof-enabled');
     const urlEl = document.getElementById('logo-spoof-url');
     const saveBtn = document.getElementById('logo-spoof-save-btn');
@@ -2576,58 +3720,32 @@ function initMiscTab() {
     const blogEnabledEl = document.getElementById('blog-spoof-enabled');
     const blogMotdEl = document.getElementById('blog-spoof-motd');
     const blogSaveBtn = document.getElementById('blog-spoof-save-btn');
-    const paletteApply = document.getElementById('palette-apply-btn');
-    const paletteRestore = document.getElementById('palette-restore-btn');
-    if (!enabledEl || !urlEl || !saveBtn) return;
 
-    // Do not reload the form on every tab visit — that wiped unsaved custom URLs.
-    if (saveBtn.dataset.wired === '1') {
-        refreshPaletteStatus();
-        return;
-    }
-    saveBtn.dataset.wired = '1';
+    if (enabledEl && urlEl && saveBtn) {
+        let saved = {};
+        try { saved = JSON.parse(localStorage.getItem(LOGO_SPOOF_KEY) || '{}'); } catch { }
+        const ls = saved.logo_spoof || {};
+        enabledEl.checked = !!ls.enabled;
+        syncNameSpoofSwitchAria(enabledEl);
+        urlEl.value = ls.logo_url || saved.logo_url || DEFAULT_SEASON23_LOGO_URL;
 
-    let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(LOGO_SPOOF_KEY) || '{}'); } catch {  }
-    const ls = saved.logo_spoof || {};
-    enabledEl.checked = !!ls.enabled;
-    syncNameSpoofSwitchAria(enabledEl);
-    urlEl.value = ls.logo_url || saved.logo_url || DEFAULT_SEASON23_LOGO_URL;
-
-    let blogSaved = {};
-    try { blogSaved = JSON.parse(localStorage.getItem(BLOG_SPOOF_KEY) || '{}'); } catch {  }
-    const bs = blogSaved.blog_spoof || {};
-    if (blogEnabledEl) {
-        blogEnabledEl.checked = !!bs.enabled;
-        syncNameSpoofSwitchAria(blogEnabledEl);
-    }
-    if (blogMotdEl) blogMotdEl.value = bs.motd || blogSaved.motd || DEFAULT_BLOG_MOTD;
-
-    refreshPaletteStatus();
-    try {
-        const raw = sessionStorage.getItem('velocityrl_repair_report');
-        if (raw) showRepairBanner(JSON.parse(raw));
-    } catch {  }
-    invoke('check_integrity').then((r) => {
-        if (r?.repaired) {
-            sessionStorage.setItem('velocityrl_repair_report', JSON.stringify(r));
-            showRepairBanner(r);
+        let blogSaved = {};
+        try { blogSaved = JSON.parse(localStorage.getItem(BLOG_SPOOF_KEY) || '{}'); } catch { }
+        const bs = blogSaved.blog_spoof || {};
+        if (blogEnabledEl) {
+            blogEnabledEl.checked = !!bs.enabled;
+            syncNameSpoofSwitchAria(blogEnabledEl);
         }
-    }).catch(() => {});
+        if (blogMotdEl) blogMotdEl.value = bs.motd || blogSaved.motd || DEFAULT_BLOG_MOTD;
 
-    enabledEl.addEventListener('change', () => syncNameSpoofSwitchAria(enabledEl));
-    blogEnabledEl?.addEventListener('change', () => syncNameSpoofSwitchAria(blogEnabledEl));
-    defaultLink?.addEventListener('click', (e) => {
-        e.preventDefault();
-        urlEl.value = DEFAULT_SEASON23_LOGO_URL;
-        showToast('Season 23 default set.', 'success');
-    });
-    paletteApply?.addEventListener('click', () => runPaletteAction(
-        paletteApply, 'apply_rich_palette', 'Applied', 'Palette on. Restart Rocket League.',
-    ));
-    paletteRestore?.addEventListener('click', () => runPaletteAction(
-        paletteRestore, 'restore_rich_palette', 'Restored', 'Palette off.',
-    ));
+        enabledEl.addEventListener('change', () => syncNameSpoofSwitchAria(enabledEl));
+        blogEnabledEl?.addEventListener('change', () => syncNameSpoofSwitchAria(blogEnabledEl));
+        defaultLink?.addEventListener('click', (e) => {
+            e.preventDefault();
+            urlEl.value = DEFAULT_SEASON23_LOGO_URL;
+            showToast('Default logo set.', 'success');
+        });
+    }
     saveBtn.addEventListener('click', async () => {
         if (isAppLoading() || spoofSaveInFlight) return;
         const logo_url = urlEl.value.trim();
@@ -2959,17 +4077,15 @@ function selectDisplay(title, toast) {
     const text = title?.text || title?.Text || '';
     const set = (eid, v) => { const el = document.getElementById(eid); if (el) el.value = v; };
     const customEl = document.getElementById('title-custom-text');
-    const keepCustom = userEditedCustomText && !!(customEl?.value?.trim());
+    const hasCustom = !!(customEl?.value?.trim());
     set('title-display-id', id);
 
-    if (!keepCustom) set('title-custom-text', text);
+    if (!hasCustom) set('title-custom-text', text);
     setSelectedSlot('display-selected', title, 'Search below - or type custom text');
     renderDisplayList(document.getElementById('display-search')?.value || '');
     updateTitlePreview();
     if (toast && id) {
-        const shown = keepCustom
-            ? (customEl.value.trim() || text || id)
-            : (text || id);
+        const shown = (customEl?.value?.trim()) || text || id;
         showToast(`Look set: ${formatTitleText(shown)}`, 'success');
     }
 }
@@ -3119,8 +4235,7 @@ function renderTitleRows(listEl, rows, activeId, onPick) {
             <span class="title-row-meta">${escHtml(meta)}</span>
         </div>`;
     }).join('');
-    
-    // Use event delegation to avoid binding 200 event listeners on every keystroke
+
     if (!listEl.dataset.delegated) {
         listEl.dataset.delegated = 'true';
         listEl.addEventListener('click', (e) => {
@@ -3170,7 +4285,7 @@ async function saveTitleSpoof() {
     }
     ensureTitleSwapsLoaded();
     titleSwaps = titleSwaps.filter((s) => s.equip_title_id !== entry.equip_title_id);
-    titleSwaps.push(entry);
+    titleSwaps.unshift(entry);
     try {
         persistTitleSpoofLocal();
         await runToolSave(applyBtn, 'titles', titleSpoofPayload(), { enabled: true });
@@ -3237,39 +4352,1341 @@ async function restoreAllTitleSwaps() {
     }
 }
 
-async function openChangelog() {
+const CHANGELOG_CACHE_KEY = 'velocityrl_changelog_cache';
+const CHANGELOG_CACHE_TTL = 30 * 60 * 1000;
+
+function renderChangelog(releases) {
+    const body = document.getElementById('changelog-body');
+    const list = Array.isArray(releases) ? releases : (releases?.releases || []);
+    if (!list.length) { body.innerHTML = '<div style="color:var(--text-secondary);padding:20px;">No releases found.</div>'; return; }
+    body.innerHTML = list.map(r => {
+        const tag = r.tag_name || r.name || 'Release';
+        const date = r.published_at ? new Date(r.published_at).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' }) : '';
+        return `
+            <div class="changelog-release" style="margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid rgba(255,255,255,0.08);">
+                <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;">
+                    <div class="changelog-release-tag" style="font-size:15px;font-weight:700;color:var(--accent);">${escHtml(tag)}</div>
+                    <div class="changelog-release-date" style="font-size:12px;color:var(--muted);">${escHtml(date)}</div>
+                </div>
+                <div class="changelog-release-body" style="font-size:13px;line-height:1.5;">${formatChangelogNotes(r.body || '')}</div>
+            </div>`;
+    }).join('');
+}
+
+async function openChangelog(forceRefresh = false) {
     document.getElementById('changelog-modal').classList.add('active');
     invoke('get_config').catch(() => ({})).then(cfg => {
         const btn = document.getElementById('toggle-changelog-startup');
         if (btn) btn.textContent = cfg.changelog_on_startup === false ? 'Show on startup' : "Don't show on startup";
     });
     const body = document.getElementById('changelog-body');
+
+    if (!forceRefresh) {
+        try {
+            const cached = JSON.parse(localStorage.getItem(CHANGELOG_CACHE_KEY) || 'null');
+            if (cached && cached.releases && (Date.now() - cached.ts) < CHANGELOG_CACHE_TTL) {
+                renderChangelog(cached.releases);
+                return;
+            }
+        } catch {}
+    }
+
     try {
-        const res = await fetch('https://api.github.com/repos/bitsfdb/VelocityRL/releases?per_page=20');
-        if (!res.ok) throw new Error('fetch failed');
-        const releases = await res.json();
-        const filtered = releases.filter(r => semverGte(r.tag_name || '', '2.0.0'));
-        if (!filtered.length) { body.innerHTML = '<div style="color:var(--text-secondary);padding:20px;">No releases yet.</div>'; return; }
-        body.innerHTML = filtered.map(r => {
-            const date = r.published_at ? new Date(r.published_at).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' }) : '';
-            return `
-                <div class="changelog-release">
-                    <div class="changelog-release-tag">${escHtml(r.tag_name || r.name)}</div>
-                    <div class="changelog-release-date">${date}</div>
-                    <div class="changelog-release-body">${formatChangelogNotes(r.body)}</div>
-                </div>`;
-        }).join('');
-    } catch {
-        body.innerHTML = '<div style="color:var(--text-secondary);padding:20px;">Could not load changelog. <a href="#" onclick="window.__TAURI__.core.invoke(\'plugin:shell|open\', { path: \'https://github.com/bitsfdb/VelocityRL/releases\' }); return false;" style="color:var(--accent-blue);">View on GitHub instead</a>.</div>';
+        let releases = null;
+        try {
+            const res = await fetch('https://api.velocityrl.tech/v2/changelog');
+            if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data)) releases = data;
+                else if (Array.isArray(data?.releases)) releases = data.releases;
+            }
+        } catch (_) {}
+
+        if (!releases) {
+            const ghRes = await fetch('https://api.github.com/repos/bitsfdb/VelocityRL/releases?per_page=50');
+            if (ghRes.ok) releases = await ghRes.json();
+        }
+
+        if (releases && Array.isArray(releases) && releases.length) {
+            try {
+                localStorage.setItem(CHANGELOG_CACHE_KEY, JSON.stringify({ ts: Date.now(), releases }));
+            } catch {}
+            renderChangelog(releases);
+            return;
+        }
+        throw new Error('No release data found');
+    } catch (err) {
+        try {
+            const cached = JSON.parse(localStorage.getItem(CHANGELOG_CACHE_KEY) || 'null');
+            if (cached && cached.releases) {
+                renderChangelog(cached.releases);
+                return;
+            }
+        } catch {}
+
+        body.innerHTML = `
+            <div class="changelog-release">
+                <div class="changelog-release-tag">v2.0.0-alpha.1</div>
+                <div class="changelog-release-date">${new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' })}</div>
+                <div class="changelog-release-body">Item swapping, palette support, titles, fake ranks, camera limits, season logo, and PsyNet proxy.</div>
+            </div>
+            <div style="color:var(--text-secondary);padding:12px 0;font-size:12px;">Could not load changelog. <a href="#" onclick="window.__TAURI__.core.invoke('plugin:shell|open', { path: 'https://api.velocityrl.tech/v2/changelog' }); return false;" style="color:var(--accent-blue);">View on website</a>.</div>`;
     }
 }
 
+let workshopCatalogPage = 1;
+let workshopCatalogTotalPages = 1;
+let workshopCatalogQuery = '';
+let isCatalogLoading = false;
+
+async function loadWorkshopCatalog(page = 1, query = '') {
+    const grid = document.getElementById('workshop-catalog-grid');
+    const pageInfo = document.getElementById('workshop-catalog-page-info');
+    const prevBtn = document.getElementById('workshop-catalog-prev-btn');
+    const nextBtn = document.getElementById('workshop-catalog-next-btn');
+    if (!grid) return;
+
+    workshopCatalogPage = Number(page) || 1;
+    workshopCatalogQuery = String(query || '').trim();
+    isCatalogLoading = true;
+
+    grid.innerHTML = `
+        <div style="grid-column: 1 / -1; text-align: center; padding: 48px 20px; color: var(--text-secondary);">
+            <div class="spinner" style="width: 28px; height: 28px; margin: 0 auto 12px; border: 3px solid rgba(255,255,255,0.1); border-top-color: var(--accent-blue); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+            <div>Loading maps…</div>
+        </div>
+    `;
+
+    try {
+        const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('BakkesPlugins request timed out after 15s. Check internet connection.')), 15000)
+        );
+
+        const fetchPromise = invoke('workshop_fetch_bakkes_maps', {
+            page: workshopCatalogPage,
+            query: workshopCatalogQuery || null,
+        });
+
+        const data = await Promise.race([fetchPromise, timeoutPromise]);
+
+        const items = data.items || [];
+        workshopCatalogTotalPages = data.totalPages || 1;
+
+        if (pageInfo) pageInfo.textContent = `Page ${data.page || workshopCatalogPage} of ${workshopCatalogTotalPages}`;
+        if (prevBtn) prevBtn.disabled = (data.page || workshopCatalogPage) <= 1;
+        if (nextBtn) nextBtn.disabled = !data.hasNextPage;
+
+        if (items.length === 0) {
+            grid.innerHTML = `
+                <div style="grid-column: 1 / -1; text-align: center; padding: 48px 20px; color: var(--text-secondary);">
+                    <div style="font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 6px;">No maps found</div>
+                    <div style="font-size: 12px;">Try searching for different keywords (e.g. "Rings", "Dribble", "Aerial")</div>
+                </div>
+            `;
+            return;
+        }
+
+        grid.innerHTML = '';
+        items.forEach(map => {
+            const card = document.createElement('div');
+            card.className = 'map-catalog-card';
+
+            const sizeMb = map.latestVersionFileSizeBytes ? (map.latestVersionFileSizeBytes / (1024 * 1024)).toFixed(1) + ' MB' : '';
+            const banner = map.bannerUrl || '';
+            if (banner) {
+                try {
+                    localStorage.setItem('vrl_map_thumb_' + map.name.toLowerCase().trim(), banner);
+                    if (map.id) localStorage.setItem('vrl_map_thumb_id_' + map.id, banner);
+                } catch {}
+            }
+            const author = (map.member && map.member.displayName) ? map.member.displayName : 'Community';
+            const desc = map.shortDescription || '';
+            const tags = (map.tags || []).slice(0, 3).map(t => `<span class="tracker-badge neutral" style="font-size:10px; padding:2px 8px;">${escHtml(t.shortName || t.key)}</span>`).join('');
+
+            card.innerHTML = `
+                <div class="map-catalog-thumb">
+                    <span class="map-catalog-thumb-placeholder">MAP</span>
+                    ${banner ? `<img src="${escHtml(banner)}" alt="${escHtml(map.name)}" onerror="this.style.opacity='0';">` : ''}
+                    ${sizeMb ? `<span class="map-catalog-size-badge">${sizeMb}</span>` : ''}
+                </div>
+                <div class="map-catalog-content">
+                    <div class="map-catalog-title" title="${escHtml(map.name)}">${escHtml(map.name)}</div>
+                    <div class="map-catalog-author">by ${escHtml(author)}</div>
+                    <div class="map-catalog-desc">${escHtml(desc || 'Rocket League custom workshop map.')}</div>
+                    <div class="map-catalog-tags">
+                        ${tags}
+                    </div>
+                    <button type="button" class="action-btn map-catalog-install-btn" data-id="${map.id}" data-name="${escHtml(map.name)}" style="margin-top:8px; width:100%; font-size:12px; padding:7px 0; font-weight:600;">Download & Install</button>
+                </div>
+            `;
+            grid.appendChild(card);
+        });
+
+        // Wire install buttons
+        grid.querySelectorAll('.map-catalog-install-btn').forEach(btn => {
+            btn.onclick = async (e) => {
+                e.preventDefault();
+                const mapId = btn.dataset.id;
+                const mapName = btn.dataset.name;
+                const mapItem = items.find(m => String(m.id) === String(mapId));
+                const banner = mapItem?.bannerUrl || '';
+                btn.disabled = true;
+                btn.textContent = 'Fetching version…';
+
+                const progressWrap = document.getElementById('workshop-url-progress');
+                const progressFill = document.getElementById('workshop-url-progress-fill');
+                const progressText = document.getElementById('workshop-url-progress-text');
+
+                if (progressWrap) {
+                    progressWrap.style.display = 'flex';
+                    if (progressFill) { progressFill.classList.add('indeterminate'); progressFill.style.width = '100%'; }
+                    if (progressText) progressText.textContent = `Resolving download for ${mapName}…`;
+                }
+
+                try {
+                    const versions = await invoke('workshop_fetch_bakkes_versions', {
+                        mapId: parseInt(mapId, 10),
+                    });
+
+                    let edgeUrl = null;
+                    if (Array.isArray(versions) && versions.length > 0) {
+                        edgeUrl = versions[0].edgeUrl || versions[0].url;
+                    } else if (versions && typeof versions === 'object') {
+                        edgeUrl = versions.edgeUrl || versions.url;
+                    }
+
+                    if (!edgeUrl) {
+                        throw new Error('No valid download files found for this map.');
+                    }
+
+                    btn.textContent = 'Downloading…';
+                    if (progressText) progressText.textContent = `Downloading ${mapName}…`;
+
+                    if (edgeUrl.toLowerCase().endsWith('.zip')) {
+                        const imported = await invoke('workshop_import_bakkes_zip', { zipUrl: edgeUrl });
+                        await invoke('workshop_install_custom_map', {
+                            sourcePath: imported.path,
+                            name: mapName,
+                        });
+                        if (banner) {
+                            try {
+                                localStorage.setItem('vrl_map_thumb_' + mapName.toLowerCase().trim(), banner);
+                                localStorage.setItem('vrl_map_thumb_path_' + imported.path, banner);
+                            } catch {}
+                            await invoke('workshop_set_map_thumbnail', { pathOrName: imported.path, thumbnailUrl: banner }).catch(() => {});
+                        }
+                    } else {
+                        await invoke('workshop_install_map_from_url', {
+                            url: edgeUrl,
+                            name: mapName,
+                        });
+                        if (banner) {
+                            try {
+                                localStorage.setItem('vrl_map_thumb_' + mapName.toLowerCase().trim(), banner);
+                            } catch {}
+                            await invoke('workshop_set_map_thumbnail', { pathOrName: mapName, thumbnailUrl: banner }).catch(() => {});
+                        }
+                    }
+
+                    showToast(`"${mapName}" installed! In Rocket League: select Underpass in Free Play or Exhibition to play.`, 'success');
+                    btn.textContent = 'Installed ✓';
+                    btn.style.background = '#1b5e20';
+                    await refreshWorkshopInstalled();
+                } catch (err) {
+                    showToast(`Download failed: ${err.message || err}`, 'error');
+                    btn.disabled = false;
+                    btn.textContent = 'Download & Install';
+                } finally {
+                    if (progressWrap) {
+                        setTimeout(() => { progressWrap.style.display = 'none'; }, 2000);
+                    }
+                }
+            };
+        });
+
+    } catch (e) {
+        grid.innerHTML = `
+            <div style="grid-column: 1 / -1; text-align: center; padding: 48px 20px; color: var(--text-secondary);">
+                <div style="font-size: 14px; color: #ff5252; margin-bottom: 8px;">Failed to load BakkesPlugins map catalog</div>
+                <div style="font-size: 12px; margin-bottom: 12px;">${escHtml(e.message || e)}</div>
+                <button type="button" class="action-btn action-btn-secondary" id="workshop-catalog-retry-btn">Retry</button>
+            </div>
+        `;
+        document.getElementById('workshop-catalog-retry-btn')?.addEventListener('click', () => loadWorkshopCatalog(1, ''));
+    } finally {
+        isCatalogLoading = false;
+    }
+}
+
+async function initWorkshopTab() {
+    if (!initWorkshopTab._wired) {
+        initWorkshopTab._wired = true;
+
+        const searchInput = document.getElementById('workshop-catalog-search');
+        const searchBtn = document.getElementById('workshop-catalog-search-btn');
+        const prevBtn = document.getElementById('workshop-catalog-prev-btn');
+        const nextBtn = document.getElementById('workshop-catalog-next-btn');
+
+        if (searchBtn && searchInput) {
+            const doSearch = () => loadWorkshopCatalog(1, searchInput.value);
+            searchBtn.onclick = doSearch;
+            searchInput.onkeydown = (e) => { if (e.key === 'Enter') doSearch(); };
+        }
+
+        if (prevBtn) {
+            prevBtn.onclick = () => {
+                if (workshopCatalogPage > 1) {
+                    loadWorkshopCatalog(workshopCatalogPage - 1, workshopCatalogQuery);
+                }
+            };
+        }
+
+        if (nextBtn) {
+            nextBtn.onclick = () => {
+                if (workshopCatalogPage < workshopCatalogTotalPages) {
+                    loadWorkshopCatalog(workshopCatalogPage + 1, workshopCatalogQuery);
+                }
+            };
+        }
+
+        const progressWrap = document.getElementById('workshop-url-progress');
+        const progressFill = document.getElementById('workshop-url-progress-fill');
+        const progressText = document.getElementById('workshop-url-progress-text');
+
+        window.__TAURI__?.event?.listen('map-download-progress', (evt) => {
+            const p = evt?.payload || {};
+            if (!progressWrap) return;
+            progressWrap.style.display = 'flex';
+            const indeterminate = !(typeof p.percent === 'number' && p.percent >= 0);
+            if (progressFill) {
+                progressFill.classList.toggle('indeterminate', indeterminate);
+                progressFill.style.width = indeterminate ? '100%' : `${p.percent}%`;
+            }
+            const pctEl = document.getElementById('workshop-url-progress-pct');
+            if (progressText) {
+                if (p.phase === 'install') {
+                    progressText.textContent = 'Installing map…';
+                    if (pctEl) pctEl.textContent = '';
+                    return;
+                }
+                const mb = (p.downloaded / (1024 * 1024)).toFixed(1);
+                progressText.textContent = indeterminate
+                    ? `Downloading map… ${mb} MB`
+                    : p.total > 0
+                        ? `Downloading map… ${p.percent}% — ${(p.downloaded / (1024 * 1024)).toFixed(1)} / ${(p.total / (1024 * 1024)).toFixed(1)} MB`
+                        : `Downloading map… ${mb} MB`;
+            }
+            if (pctEl) pctEl.textContent = indeterminate ? '' : `${p.percent}%`;
+        });
+
+        const urlInstall = async () => {
+            const inp = document.getElementById('workshop-url-input');
+            const url = (inp?.value || '').trim();
+            if (!url) { showToast('Paste a direct .upk or .zip URL first.', 'error'); return; }
+            const btn = document.getElementById('workshop-url-btn');
+            if (btn) { btn.disabled = true; btn.textContent = 'Downloading…'; }
+            if (progressWrap) {
+                progressWrap.style.display = 'flex';
+                if (progressFill) progressFill.style.width = '0%';
+                if (progressText) progressText.textContent = 'Starting…';
+            }
+            try {
+                if (url.toLowerCase().endsWith('.zip')) {
+                    const imported = await invoke('workshop_import_bakkes_zip', { zipUrl: url });
+                    await invoke('workshop_install_custom_map', {
+                        sourcePath: imported.path,
+                        name: null,
+                    });
+                } else {
+                    await invoke('workshop_install_map_from_url', { url, name: null });
+                }
+                showToast('Map loaded! Join Underpass in Rocket League (Free Play or Exhibition) to play.', 'success');
+                if (inp) inp.value = '';
+                await refreshWorkshopInstalled();
+                await refreshWorkshopLibrary();
+            } catch (e) {
+                showToast(String(e), 'error');
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = 'Install from URL'; }
+                setTimeout(() => { if (progressWrap) progressWrap.style.display = 'none'; }, 1500);
+            }
+        };
+
+        document.getElementById('workshop-url-btn')?.addEventListener('click', urlInstall);
+        document.getElementById('workshop-url-input')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') urlInstall();
+        });
+
+        document.getElementById('workshop-restore-btn')?.addEventListener('click', async () => {
+            try {
+                await invoke('workshop_restore_original_map');
+                showToast('Original Underpass map restored.', 'success');
+                await refreshWorkshopInstalled();
+            } catch (e) {
+                showToast(String(e), 'error');
+            }
+        });
+
+        const dropArea = document.getElementById('workshop-drop-area');
+        const pickAndInstall = async () => {
+            const picked = await open({
+                multiple: false,
+                directory: false,
+                title: 'Pick a map .upk file',
+                filters: [{ name: 'Unreal package', extensions: ['upk'] }],
+            });
+            if (!picked) return;
+            const name = await appDialog({
+                title: 'Name this map',
+                message: 'What should this map show as in VelocityRL?',
+                input: picked.split(/[\\/]/).pop().replace(/\.upk$/i, ''),
+                okLabel: 'Install',
+            });
+
+            if (name === null) return;
+            try {
+                const inst = await invoke('workshop_install_custom_map', {
+                    sourcePath: picked,
+                    name: (name || '').trim() || null,
+                });
+                showToast(`"${inst.map_name}" loaded! Join Underpass in Rocket League (Free Play or Exhibition) to play.`, 'success');
+                await refreshWorkshopInstalled();
+                await refreshWorkshopLibrary();
+            } catch (e) {
+                showToast(String(e), 'error');
+            }
+        };
+        dropArea?.addEventListener('click', pickAndInstall);
+
+        document.getElementById('workshop-add-map-btn')?.addEventListener('click', pickAndInstall);
+
+        document.getElementById('workshop-preset-save-btn')?.addEventListener('click', async () => {
+            const name = await appDialog({ title: 'Save map preset', message: 'Map preset name:', input: 'My map', okLabel: 'Save' });
+            if (!name || !name.trim()) return;
+            try {
+                const preset = await invoke('workshop_save_map_preset', { name: name.trim() });
+                showToast(`Map preset <strong>${escHtml(preset.name)}</strong> saved.`, 'success');
+                refreshWorkshopPresets();
+            } catch (e) {
+                showToast(String(e), 'error');
+            }
+        });
+
+        window.__TAURI__?.event?.listen('bakkes-map-imported', async (evt) => {
+            const p = evt?.payload || {};
+            const progressWrap = document.getElementById('workshop-url-progress');
+            const progressFill = document.getElementById('workshop-url-progress-fill');
+            if (progressWrap) {
+                if (progressFill) progressFill.classList.remove('indeterminate');
+                setTimeout(() => { progressWrap.style.display = 'none'; }, 1200);
+            }
+            if (p.error) showToast(`Map import failed: ${p.error}`, 'error');
+            else showToast(`Map "${p.name}" added to your custom maps.`, 'success');
+            await refreshWorkshopLibrary();
+        });
+
+        window.__TAURI__?.event?.listen('workshop-map-restored', async () => {
+            showToast('Game closed — original Underpass restored automatically.', 'info');
+            await refreshWorkshopInstalled();
+        });
+    }
+
+    loadWorkshopCatalog(workshopCatalogPage, workshopCatalogQuery);
+    await refreshWorkshopLibrary();
+    await refreshWorkshopInstalled();
+    await refreshWorkshopPresets();
+}
+
+function resolveThumbnailSrc(src) {
+    if (!src) return '';
+    if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:')) return src;
+    if (window.__TAURI__?.core?.convertFileSrc) {
+        return window.__TAURI__.core.convertFileSrc(src);
+    }
+    return src;
+}
+
+function getMapThumbnailUrl(name, path, explicitThumb) {
+    if (explicitThumb) return explicitThumb;
+    if (path) {
+        const pThumb = localStorage.getItem('vrl_map_thumb_path_' + path);
+        if (pThumb) return pThumb;
+    }
+    if (name) {
+        const cleanName = name.toLowerCase().trim();
+        const nThumb = localStorage.getItem('vrl_map_thumb_' + cleanName);
+        if (nThumb) return nThumb;
+        for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith('vrl_map_thumb_')) {
+                const sub = k.replace('vrl_map_thumb_', '');
+                if (sub && (cleanName.includes(sub) || sub.includes(cleanName.slice(0, 10)))) {
+                    return localStorage.getItem(k);
+                }
+            }
+        }
+    }
+    return '';
+}
+
+async function autoFetchMissingThumbnail(mapName) {
+    if (!mapName) return null;
+    const clean = mapName.toLowerCase().trim();
+    if (localStorage.getItem('vrl_map_thumb_' + clean)) return localStorage.getItem('vrl_map_thumb_' + clean);
+    try {
+        const firstWord = mapName.replace(/[^a-zA-Z0-9 ]/g, ' ').trim().split(' ')[0];
+        const res = await invoke('workshop_fetch_bakkes_maps', { page: 1, query: firstWord });
+        const items = res?.items || [];
+        const match = items.find(m => m.name.toLowerCase().includes(clean) || clean.includes(m.name.toLowerCase()) || m.name.toLowerCase().startsWith(clean.slice(0, 8)));
+        if (match && match.bannerUrl) {
+            localStorage.setItem('vrl_map_thumb_' + clean, match.bannerUrl);
+            return match.bannerUrl;
+        }
+    } catch {}
+    return null;
+}
+
+async function refreshWorkshopLibrary() {
+    const list = document.getElementById('workshop-library-list');
+    if (!list) return;
+    list.innerHTML = '';
+
+    const guideBanner = document.createElement('div');
+    guideBanner.className = 'map-how-to-play-banner';
+    guideBanner.innerHTML = `
+        <div class="map-how-to-play-icon">ℹ️</div>
+        <div class="map-how-to-play-text">
+            <strong>How to play your custom map in Rocket League:</strong><br>
+            Custom maps replace the <em>Underpass</em> arena. After loading a map below, start Rocket League and join:
+            <span style="display:block;margin-top:2px;">• <strong>Play → Training → Free Play → Underpass</strong></span>
+            <span style="display:block;">• Or <strong>Play → Custom Games → Exhibition Match → Arena: Underpass</strong></span>
+        </div>
+    `;
+    list.appendChild(guideBanner);
+
+    let installed = null;
+    try { installed = await invoke('workshop_get_installed'); } catch {}
+
+    const replacedWrap = document.createElement('div');
+    replacedWrap.style.cssText = 'margin-bottom:14px;';
+    const replacedTitle = document.createElement('p');
+    replacedTitle.className = 'switch-title';
+    replacedTitle.style.cssText = 'margin:0 0 6px 0;font-weight:600;font-size:12px;';
+    replacedTitle.textContent = 'Replaced in-game';
+    replacedWrap.appendChild(replacedTitle);
+
+    if (installed) {
+        const row = document.createElement('div');
+        row.className = 'backup-item';
+        row.style.cssText = 'display:flex;align-items:center;gap:12px;border:1px solid var(--accent-blue);padding:8px 12px;border-radius:6px;background:#181818;';
+
+        const thumbWrap = document.createElement('div');
+        thumbWrap.className = 'map-item-thumb-wrap';
+        let thumbUrl = getMapThumbnailUrl(installed.map_name, installed.source_path, installed.thumbnail_url);
+        if (thumbUrl) {
+            const img = document.createElement('img');
+            img.src = resolveThumbnailSrc(thumbUrl);
+            img.className = 'map-item-thumb';
+            img.alt = installed.map_name;
+            img.onerror = () => { img.style.display = 'none'; fallback.style.display = 'flex'; };
+            thumbWrap.appendChild(img);
+        }
+        const fallback = document.createElement('div');
+        fallback.className = 'map-item-thumb-fallback';
+        fallback.textContent = 'MAP';
+        if (thumbUrl) fallback.style.display = 'none';
+        thumbWrap.appendChild(fallback);
+        row.appendChild(thumbWrap);
+
+        if (!thumbUrl && installed.map_name) {
+            autoFetchMissingThumbnail(installed.map_name).then(fetched => {
+                if (fetched) {
+                    fallback.style.display = 'none';
+                    let img = thumbWrap.querySelector('img');
+                    if (!img) {
+                        img = document.createElement('img');
+                        img.className = 'map-item-thumb';
+                        img.alt = installed.map_name;
+                        thumbWrap.appendChild(img);
+                    }
+                    img.src = resolveThumbnailSrc(fetched);
+                    img.style.display = 'block';
+                }
+            });
+        }
+
+        const info = document.createElement('div');
+        info.style.cssText = 'flex:1;min-width:0;';
+        const nm = document.createElement('p');
+        nm.className = 'switch-title';
+        nm.style.cssText = 'margin:0;font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;';
+        nm.textContent = installed.map_name;
+
+        const activeBadge = document.createElement('span');
+        activeBadge.className = 'map-active-pill';
+        activeBadge.textContent = 'ACTIVE';
+        nm.appendChild(activeBadge);
+
+        const sub = document.createElement('p');
+        sub.className = 'field-hint';
+        sub.style.cssText = 'margin:2px 0 0 0;font-size:11px;color:var(--text-secondary);';
+        sub.innerHTML = '<span style="color:var(--accent-blue);font-weight:600;">Active in-game:</span> Join <strong style="color:#fff;">Underpass</strong> in Free Play or Exhibition to play.';
+        info.appendChild(nm);
+        info.appendChild(sub);
+
+        const restoreBtn = document.createElement('button');
+        restoreBtn.className = 'action-btn action-btn-secondary';
+        restoreBtn.type = 'button';
+        restoreBtn.textContent = 'Restore Original';
+        restoreBtn.addEventListener('click', async () => {
+            restoreBtn.disabled = true;
+            try {
+                await invoke('workshop_restore');
+                showToast('Original Underpass restored.', 'success');
+                await refreshWorkshopLibrary();
+                await refreshWorkshopInstalled();
+            } catch (e) {
+                showToast(String(e), 'error');
+                restoreBtn.disabled = false;
+            }
+        });
+        row.appendChild(info);
+        row.appendChild(restoreBtn);
+        replacedWrap.appendChild(row);
+    } else {
+        const empty = document.createElement('div');
+        empty.className = 'backup-empty';
+        empty.textContent = 'Nothing replaced — the game is using the original Underpass.';
+        replacedWrap.appendChild(empty);
+    }
+    list.appendChild(replacedWrap);
+
+    const dlTitle = document.createElement('p');
+    dlTitle.className = 'switch-title';
+    dlTitle.style.cssText = 'margin:0 0 6px 0;font-weight:600;font-size:12px;';
+    dlTitle.textContent = 'Downloaded maps';
+    list.appendChild(dlTitle);
+
+    let lib = [];
+    try { lib = await invoke('workshop_get_map_library'); } catch (e) {
+        const err = document.createElement('div');
+        err.className = 'backup-empty';
+        err.textContent = `Could not load library: ${String(e)}`;
+        list.appendChild(err);
+        return;
+    }
+    if (!lib.length) {
+        const empty = document.createElement('div');
+        empty.className = 'backup-empty';
+        empty.textContent = 'No custom maps yet. Grab one from the Maps catalog or click "Add map file".';
+        list.appendChild(empty);
+        return;
+    }
+    for (const entry of lib) {
+        const row = document.createElement('div');
+        row.className = 'backup-item';
+        row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:#181818;margin-bottom:6px;';
+
+        const thumbWrap = document.createElement('div');
+        thumbWrap.className = 'map-item-thumb-wrap';
+        let thumbUrl = getMapThumbnailUrl(entry.name, entry.path, entry.thumbnail_url);
+        if (thumbUrl) {
+            const img = document.createElement('img');
+            img.src = resolveThumbnailSrc(thumbUrl);
+            img.className = 'map-item-thumb';
+            img.alt = entry.name;
+            img.onerror = () => { img.style.display = 'none'; fallback.style.display = 'flex'; };
+            thumbWrap.appendChild(img);
+        }
+        const fallback = document.createElement('div');
+        fallback.className = 'map-item-thumb-fallback';
+        fallback.textContent = 'MAP';
+        if (thumbUrl) fallback.style.display = 'none';
+        thumbWrap.appendChild(fallback);
+        row.appendChild(thumbWrap);
+
+        if (!thumbUrl && entry.name) {
+            autoFetchMissingThumbnail(entry.name).then(fetched => {
+                if (fetched) {
+                    fallback.style.display = 'none';
+                    let img = thumbWrap.querySelector('img');
+                    if (!img) {
+                        img = document.createElement('img');
+                        img.className = 'map-item-thumb';
+                        img.alt = entry.name;
+                        thumbWrap.appendChild(img);
+                    }
+                    img.src = resolveThumbnailSrc(fetched);
+                    img.style.display = 'block';
+                }
+            });
+        }
+
+        const info = document.createElement('div');
+        info.style.cssText = 'flex:1;min-width:0;';
+        const nm = document.createElement('p');
+        nm.className = 'switch-title';
+        nm.style.cssText = 'margin:0;font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;';
+        nm.textContent = entry.name;
+        nm.title = entry.path;
+
+        const active = installed && installed.source_path &&
+            installed.source_path.toLowerCase() === String(entry.path).toLowerCase();
+        if (active) {
+            const badge = document.createElement('span');
+            badge.className = 'map-active-pill';
+            badge.textContent = 'LOADED (UNDERPASS)';
+            nm.appendChild(badge);
+        }
+        info.appendChild(nm);
+        const loadBtn = document.createElement('button');
+        loadBtn.className = 'action-btn';
+        loadBtn.type = 'button';
+        loadBtn.textContent = active ? 'Reload' : 'Load';
+        loadBtn.addEventListener('click', async () => {
+            loadBtn.disabled = true;
+            try {
+                const inst = await invoke('workshop_install_from_library', { path: entry.path });
+                showToast(`"${inst.map_name}" loaded! Join Underpass in Rocket League (Free Play or Exhibition) to play.`, 'success');
+                await refreshWorkshopLibrary();
+                await refreshWorkshopInstalled();
+            } catch (e) {
+                showToast(String(e), 'error');
+            } finally {
+                loadBtn.disabled = false;
+            }
+        });
+        const delBtn = document.createElement('button');
+        delBtn.className = 'action-btn action-btn-secondary';
+        delBtn.type = 'button';
+        delBtn.textContent = 'Remove';
+        delBtn.addEventListener('click', async () => {
+            try {
+                await invoke('workshop_remove_from_library', { path: entry.path });
+                refreshWorkshopLibrary();
+            } catch (e) {
+                showToast(String(e), 'error');
+            }
+        });
+        row.appendChild(info);
+        row.appendChild(loadBtn);
+        row.appendChild(delBtn);
+        list.appendChild(row);
+    }
+}
+
+async function refreshWorkshopPresets() {
+    const list = document.getElementById('workshop-preset-list');
+    if (!list) return;
+    try {
+        const presets = await invoke('workshop_get_map_presets');
+        if (!presets.length) {
+            list.innerHTML = '<div class="backup-empty">No map presets yet. Install a map, then click "Save loaded map as preset".</div>';
+            return;
+        }
+        list.innerHTML = '';
+        for (const p of presets) {
+            const row = document.createElement('div');
+            row.className = 'backup-item';
+            row.style.cssText = 'display:flex;align-items:center;gap:10px;';
+            const info = document.createElement('div');
+            info.style.cssText = 'flex:1;min-width:0;';
+            const nm = document.createElement('p');
+            nm.className = 'switch-title';
+            nm.style.cssText = 'margin:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+            nm.textContent = p.name;
+            nm.title = p.name;
+            const sub = document.createElement('p');
+            sub.className = 'field-hint';
+            sub.style.cssText = 'margin:0;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+            sub.textContent = p.map_name;
+            sub.title = p.map_name;
+            info.appendChild(nm);
+            info.appendChild(sub);
+            const applyBtn = document.createElement('button');
+            applyBtn.className = 'action-btn';
+            applyBtn.type = 'button';
+            applyBtn.textContent = 'Load';
+            applyBtn.addEventListener('click', async () => {
+                applyBtn.disabled = true;
+                try {
+                    const msg = await invoke('workshop_apply_map_preset', { id: p.id });
+                    showToast(msg, 'success');
+                    await refreshWorkshopInstalled();
+                } catch (e) {
+                    showToast(String(e), 'error');
+                } finally {
+                    applyBtn.disabled = false;
+                }
+            });
+            const delBtn = document.createElement('button');
+            delBtn.className = 'action-btn action-btn-secondary';
+            delBtn.type = 'button';
+            delBtn.textContent = 'Delete';
+            delBtn.addEventListener('click', async () => {
+                try {
+                    await invoke('workshop_delete_map_preset', { id: p.id });
+                    refreshWorkshopPresets();
+                } catch (e) {
+                    showToast(String(e), 'error');
+                }
+            });
+            row.appendChild(info);
+            row.appendChild(applyBtn);
+            row.appendChild(delBtn);
+            list.appendChild(row);
+        }
+    } catch (e) {
+        list.innerHTML = `<div class="backup-empty">Failed to load map presets: ${escHtml(String(e))}</div>`;
+    }
+}
+
+async function refreshWorkshopInstalled() {
+    const status = document.getElementById('workshop-installed-status');
+    if (!status) return;
+    let inst = null;
+    try { inst = await invoke('workshop_get_installed'); } catch {}
+    if (inst) {
+        status.style.display = 'block';
+        status.textContent = `Loaded map: ${inst.map_name}`;
+    } else {
+        status.style.display = 'none';
+    }
+}
+
+async function searchWorkshopMaps() {
+    const input = document.getElementById('workshop-search-input');
+    const results = document.getElementById('workshop-results');
+    if (!input || !results) return;
+    const q = input.value.trim();
+    results.innerHTML = '<p class="field-hint">Searching…</p>';
+    try {
+        const maps = await invoke('workshop_search_maps', { query: q });
+        results.innerHTML = '';
+        if (!maps.length) {
+            results.innerHTML = '<p class="field-hint">No maps found.</p>';
+            return;
+        }
+        const grid = document.createElement('div');
+        grid.style.cssText = 'display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:10px;';
+        for (const m of maps) {
+            const card = document.createElement('div');
+            card.style.cssText = 'border:1px solid var(--border);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;background:rgba(255,255,255,0.02);';
+            if (m.preview_url) {
+                const img = document.createElement('img');
+                img.src = m.preview_url;
+                img.alt = m.name;
+                img.loading = 'lazy';
+                img.style.cssText = 'width:100%;aspect-ratio:16/9;object-fit:cover;display:block;background:#1a1a1a;';
+                img.onerror = () => img.remove();
+                card.appendChild(img);
+            }
+            const body = document.createElement('div');
+            body.style.cssText = 'padding:8px 10px 10px;display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;';
+            const nm = document.createElement('div');
+            nm.style.cssText = 'font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+            nm.textContent = m.name;
+            nm.title = m.name;
+            const sub = document.createElement('div');
+            sub.className = 'field-hint';
+            sub.style.cssText = 'margin:0;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+            const sizeTxt = m.size_bytes ? ` — ${(m.size_bytes / (1024 * 1024)).toFixed(1)} MB` : '';
+            sub.textContent = [m.author, m.id + sizeTxt].filter(Boolean).join(' — ');
+            sub.title = sub.textContent;
+            const btn = document.createElement('button');
+            btn.className = 'action-btn';
+            btn.type = 'button';
+            btn.style.cssText = 'margin-top:8px;width:100%;';
+            btn.textContent = 'Install';
+            btn.addEventListener('click', async () => {
+                btn.disabled = true;
+                btn.textContent = 'Installing…';
+                try {
+                    await invoke('workshop_install_map', { mapId: m.id, mapName: m.name });
+                    showToast(`"${m.name}" loaded. Start an Underpass match in-game.`, 'success');
+                    await refreshWorkshopInstalled();
+                } catch (e) {
+                    showToast(String(e), 'error');
+                } finally {
+                    btn.disabled = false;
+                    btn.textContent = 'Install';
+                }
+            });
+            body.appendChild(nm);
+            body.appendChild(sub);
+            body.appendChild(btn);
+            card.appendChild(body);
+            grid.appendChild(card);
+        }
+        results.appendChild(grid);
+    } catch (e) {
+        results.innerHTML = '';
+        const msg = String(e);
+        results.innerHTML = `<p class="field-hint">${escHtml(msg)}</p>`;
+    }
+}
+
+let trackerSessionCache = null;
+let isOverlayLocked = true;
+
+async function initTrackerModule() {
+    try {
+        const config = await invoke('get_config').catch(() => ({ game_dir: '' }));
+        if (config && config.game_dir) {
+            invoke('tracker_ensure_stats_api', { gameDir: config.game_dir }).catch(() => {});
+        }
+        const session = await invoke('tracker_load_session');
+        trackerSessionCache = session;
+        if (typeof session.is_locked === 'boolean') {
+            isOverlayLocked = session.is_locked;
+        }
+        bindTrackerEvents();
+    } catch (e) {
+        console.warn('initTrackerModule error:', e);
+    }
+}
+
+async function initTrackerTab() {
+    try {
+        const session = await invoke('tracker_load_session');
+        trackerSessionCache = session;
+        if (typeof session.is_locked === 'boolean') {
+            isOverlayLocked = session.is_locked;
+        }
+
+        const masterSw = document.getElementById('tracker-master-enabled');
+        const posSel = document.getElementById('tracker-position-select');
+        const scaleSlider = document.getElementById('tracker-scale-slider');
+        const scaleInput = document.getElementById('tracker-scale-input');
+        const opacitySlider = document.getElementById('tracker-opacity-slider');
+        const opacityInput = document.getElementById('tracker-opacity-input');
+        const lockBtn = document.getElementById('tracker-toggle-lock-btn');
+
+        const winDeltaInput = document.getElementById('tracker-win-delta-input');
+        const lossDeltaInput = document.getElementById('tracker-loss-delta-input');
+
+        if (masterSw) masterSw.checked = session.master_enabled !== false;
+        if (posSel) posSel.value = session.position.startsWith('custom:') ? 'custom' : (session.position || 'top-right');
+        if (scaleSlider) scaleSlider.value = session.scale || 100;
+        if (scaleInput) scaleInput.value = session.scale || 100;
+        if (opacitySlider) opacitySlider.value = session.opacity || 85;
+        if (opacityInput) opacityInput.value = session.opacity || 85;
+        if (winDeltaInput) winDeltaInput.value = session.win_delta || 9;
+        if (lossDeltaInput) lossDeltaInput.value = session.loss_delta || 9;
+        if (lockBtn) {
+            lockBtn.textContent = isOverlayLocked ? 'Unlock Position to Move' : 'Lock Overlay Position';
+            lockBtn.className = isOverlayLocked ? 'action-btn action-btn-secondary' : 'action-btn';
+        }
+
+        const activeStyle = session.overlay_style || 'circle';
+        document.querySelectorAll('.theme-style-btn, .tracker-style-opt').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.style === activeStyle);
+            btn.classList.toggle('is-active', btn.dataset.style === activeStyle);
+        });
+
+        bindTrackerEvents();
+    } catch (e) {
+        console.warn('initTrackerTab error:', e);
+    }
+}
+
+function bindTrackerEvents() {
+    if (bindTrackerEvents._wired) return;
+    bindTrackerEvents._wired = true;
+
+    const masterSw = document.getElementById('tracker-master-enabled');
+    const posSel = document.getElementById('tracker-position-select');
+    const lockBtn = document.getElementById('tracker-toggle-lock-btn');
+    const testBtn = document.getElementById('tracker-test-preview-btn');
+    const centerBtn = document.getElementById('tracker-center-overlay-btn');
+    const closeBtn = document.getElementById('tracker-close-overlay-btn');
+    const resetSessionBtn = document.getElementById('tracker-reset-session-btn');
+
+    if (resetSessionBtn) {
+        resetSessionBtn.onclick = async (e) => {
+            e.preventDefault();
+            try {
+                await invoke('reset_session');
+                trackerSessionCache = await invoke('tracker_load_session').catch(() => null);
+                showToast('Tracker session stats reset (MMR ±0, Wins 0, Losses 0, Streak 0).', 'success');
+            } catch (err) {
+                showToast(`Could not reset session: ${err.message || err}`, 'error');
+            }
+        };
+    }
+
+    if (lockBtn) {
+        lockBtn.onclick = async (e) => {
+            e.preventDefault();
+            isOverlayLocked = !isOverlayLocked;
+            lockBtn.textContent = isOverlayLocked ? 'Unlock Position to Move' : 'Lock Overlay Position';
+            lockBtn.className = isOverlayLocked ? 'action-btn action-btn-secondary' : 'action-btn';
+            if (!trackerSessionCache) trackerSessionCache = await invoke('tracker_load_session');
+            if (trackerSessionCache.master_enabled) {
+                await invoke('tracker_open_overlay_window', { style: trackerSessionCache.overlay_style || 'circle' }).catch(() => {});
+            }
+            await invoke('tracker_set_overlay_locked', { locked: isOverlayLocked }).catch(() => {});
+            showToast(isOverlayLocked ? 'Overlay locked in position for gameplay.' : 'Overlay unlocked! Drag it anywhere on your screen.', 'success');
+        };
+
+        window.__TAURI__?.event?.listen('tracker-overlay-locked', (evt) => {
+            if (typeof evt?.payload === 'boolean') {
+                isOverlayLocked = evt.payload;
+                lockBtn.textContent = isOverlayLocked ? 'Unlock Position to Move' : 'Lock Overlay Position';
+                lockBtn.className = isOverlayLocked ? 'action-btn action-btn-secondary' : 'action-btn';
+            }
+        });
+    }
+
+    if (testBtn) {
+        testBtn.onclick = async (e) => {
+            e.preventDefault();
+            try {
+                if (!trackerSessionCache) trackerSessionCache = await invoke('tracker_load_session');
+                await invoke('tracker_open_overlay_window', { style: trackerSessionCache.overlay_style || 'circle' });
+                await invoke('tracker_set_overlay_locked', { locked: false });
+                showToast('Tracker overlay opened on screen in position mode.', 'success');
+            } catch (err) {
+                console.error('testBtn overlay launch failed:', err);
+                showToast(`Could not open overlay: ${err.message || err}`, 'error');
+            }
+        };
+    }
+
+    if (centerBtn) {
+        centerBtn.onclick = async (e) => {
+            e.preventDefault();
+            if (!trackerSessionCache) trackerSessionCache = await invoke('tracker_load_session');
+            await invoke('tracker_open_overlay_window', { style: trackerSessionCache.overlay_style || 'circle' }).catch(() => {});
+            await invoke('tracker_center_overlay').catch(() => {});
+            showToast('Tracker overlay centered on primary screen.', 'success');
+        };
+    }
+
+    if (closeBtn) {
+        closeBtn.onclick = async (e) => {
+            e.preventDefault();
+            await invoke('tracker_close_overlay_window').catch(() => {});
+            showToast('Tracker overlay hidden.', 'info');
+        };
+    }
+
+    if (masterSw) {
+        masterSw.onchange = async () => {
+            if (!trackerSessionCache) trackerSessionCache = await invoke('tracker_load_session');
+            trackerSessionCache.master_enabled = masterSw.checked;
+            await saveTrackerSession(trackerSessionCache);
+            if (trackerSessionCache.master_enabled) {
+                await invoke('tracker_open_overlay_window', { style: trackerSessionCache.overlay_style || 'circle' }).catch(() => {});
+
+                try {
+                    const config = await invoke('get_config').catch(() => ({ game_dir: '' }));
+                    if (config && config.game_dir) {
+                        const rewritten = await invoke('tracker_ensure_stats_api', { gameDir: config.game_dir });
+                        if (rewritten) {
+                            showToast('Stats API files updated — restart Rocket League for changes to apply.', 'success');
+                        } else {
+                            showToast('Stats API already configured ✓', 'info');
+                        }
+                    } else {
+                        showToast('Set your Rocket League path in Settings so Stats API can be configured.', 'error');
+                    }
+                } catch (err) {
+                    showToast(`Stats API check failed: ${err.message || err}`, 'error');
+                }
+            } else {
+                await invoke('tracker_close_overlay_window').catch(() => {});
+            }
+        };
+    }
+
+    if (posSel) {
+        posSel.onchange = async () => {
+            if (!trackerSessionCache) trackerSessionCache = await invoke('tracker_load_session');
+            trackerSessionCache.position = posSel.value;
+            await saveTrackerSession(trackerSessionCache);
+            await invoke('tracker_position_overlay', { pos: posSel.value }).catch(() => {});
+        };
+    }
+
+    const scaleSlider = document.getElementById('tracker-scale-slider');
+    const scaleInput = document.getElementById('tracker-scale-input');
+    const opacitySlider = document.getElementById('tracker-opacity-slider');
+    const opacityInput = document.getElementById('tracker-opacity-input');
+
+    const updateScale = async (val) => {
+        const num = Math.max(1, Math.min(250, parseInt(val, 10) || 100));
+        if (scaleSlider) scaleSlider.value = num;
+        if (scaleInput) scaleInput.value = num;
+        if (!trackerSessionCache) trackerSessionCache = await invoke('tracker_load_session');
+        trackerSessionCache.scale = num;
+        invoke('tracker_apply_scale_opacity', {
+            scale: num,
+            opacity: trackerSessionCache.opacity ?? 85
+        }).catch(() => {});
+        await saveTrackerSession(trackerSessionCache);
+    };
+
+    const updateOpacity = async (val) => {
+        const num = Math.max(10, Math.min(100, parseInt(val, 10) || 85));
+        if (opacitySlider) opacitySlider.value = num;
+        if (opacityInput) opacityInput.value = num;
+        if (!trackerSessionCache) trackerSessionCache = await invoke('tracker_load_session');
+        trackerSessionCache.opacity = num;
+        invoke('tracker_apply_scale_opacity', {
+            scale: trackerSessionCache.scale ?? 100,
+            opacity: num
+        }).catch(() => {});
+        await saveTrackerSession(trackerSessionCache);
+    };
+
+    if (scaleSlider) scaleSlider.oninput = (e) => updateScale(e.target.value);
+    if (scaleInput) {
+        scaleInput.oninput = (e) => updateScale(e.target.value);
+        scaleInput.onchange = (e) => updateScale(e.target.value);
+    }
+    document.querySelectorAll('.scale-preset-btn').forEach(btn => {
+        btn.onclick = () => updateScale(btn.dataset.scale);
+    });
+
+    if (opacitySlider) opacitySlider.oninput = (e) => updateOpacity(e.target.value);
+    if (opacityInput) {
+        opacityInput.oninput = (e) => updateOpacity(e.target.value);
+        opacityInput.onchange = (e) => updateOpacity(e.target.value);
+    }
+    document.querySelectorAll('.opacity-preset-btn').forEach(btn => {
+        btn.onclick = () => updateOpacity(btn.dataset.opacity);
+    });
+
+    const winDeltaInput = document.getElementById('tracker-win-delta-input');
+    const lossDeltaInput = document.getElementById('tracker-loss-delta-input');
+    const updateDeltas = async () => {
+        if (!trackerSessionCache) trackerSessionCache = await invoke('tracker_load_session');
+        if (winDeltaInput) trackerSessionCache.win_delta = Math.max(1, parseInt(winDeltaInput.value, 10) || 9);
+        if (lossDeltaInput) trackerSessionCache.loss_delta = Math.max(1, parseInt(lossDeltaInput.value, 10) || 9);
+        await saveTrackerSession(trackerSessionCache);
+    };
+    if (winDeltaInput) winDeltaInput.onchange = updateDeltas;
+    if (lossDeltaInput) lossDeltaInput.onchange = updateDeltas;
+
+    const styleOpts = document.querySelectorAll('.theme-style-btn, .tracker-style-opt');
+    styleOpts.forEach(opt => {
+        opt.onclick = async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!trackerSessionCache) trackerSessionCache = await invoke('tracker_load_session');
+            styleOpts.forEach(o => {
+                o.classList.remove('active');
+                o.classList.remove('is-active');
+            });
+            opt.classList.add('active');
+            opt.classList.add('is-active');
+            trackerSessionCache.overlay_style = opt.dataset.style;
+            await saveTrackerSession(trackerSessionCache);
+            window.__TAURI__?.event?.emit('tracker-style-changed', opt.dataset.style);
+            await invoke('tracker_open_overlay_window', { style: opt.dataset.style }).catch(() => {});
+        };
+    });
+}
+
+function sanitizeTrackerName(name, playerId) {
+    if (name && !name.startsWith('Epic|') && name.trim()) return name.trim();
+    if (playerId && !playerId.startsWith('Epic|') && playerId.trim()) return playerId.trim();
+    return 'Player';
+}
+
+async function saveTrackerSession(session) {
+    try {
+        await invoke('tracker_save_session', { session });
+    } catch (e) {
+        console.warn('saveTrackerSession failed:', e);
+    }
+}
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 
-window.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('privacy-link').addEventListener('click', (e) => {
+window.addEventListener('DOMContentLoaded', async () => {
+
+    setTimeout(() => {
+        if (appLoading) {
+            console.warn('App loading safety watchdog triggered — releasing overlay');
+            releaseAppLoading();
+        }
+    }, 3500);
+
+    document.getElementById('privacy-link')?.addEventListener('click', (e) => {
         e.preventDefault();
-        window.__TAURI__.core.invoke('plugin:shell|open', { path: 'https://velocityrl.tech/privacy.html' });
+        window.__TAURI__?.core?.invoke('open_external_url', { url: PRIVACY_POLICY_URL });
     });
-    init();
+
+    try {
+        await init();
+    } catch (err) {
+        console.error('Fatal error during init():', err);
+        releaseAppLoading();
+    }
+
+    initVersionBadge();
+
+    try {
+        await initFeatures();
+    } catch (err) {
+        console.warn('initFeatures non-fatal error:', err);
+    }
+
+    try {
+        await initTrackerModule();
+    } catch (err) {
+        console.warn('initTrackerModule non-fatal error:', err);
+    }
 });
+
+async function initFeatures() {
+    try {
+        const feat = await invoke('get_features');
+        if (!feat) return;
+
+        if (feat.build_outdated) {
+            showOutdatedBuildModal(feat);
+            return;
+        }
+
+        const mainWrap = document.querySelector('.main-wrap');
+
+        // Cleanup any legacy banners erroneously attached directly to body
+        document.body.querySelectorAll(':scope > #maintenance-banner, :scope > #announcement-banner').forEach(el => el.remove());
+
+        const existingMBanner = document.getElementById('maintenance-banner');
+        if (feat.maintenance?.enabled) {
+            let mBanner = existingMBanner;
+            if (!mBanner) {
+                mBanner = document.createElement('div');
+                mBanner.id = 'maintenance-banner';
+                mBanner.style.cssText = 'background: rgba(220, 38, 38, 0.95); color: #fff; text-align: center; padding: 10px 16px; font-weight: 600; font-size: 13px; z-index: 9999; display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; border-bottom: 1px solid rgba(255,255,255,0.15);';
+                if (mainWrap) mainWrap.prepend(mBanner);
+            }
+            mBanner.textContent = feat.maintenance.message || 'VelocityRL servers undergoing routine maintenance.';
+        } else if (existingMBanner) {
+            existingMBanner.remove();
+        }
+
+        const existingABanner = document.getElementById('announcement-banner');
+        if (feat.announcement?.active && feat.announcement?.text) {
+            let aBanner = existingABanner;
+            if (!aBanner) {
+                aBanner = document.createElement('div');
+                aBanner.id = 'announcement-banner';
+                aBanner.style.cssText = 'background: rgba(37, 99, 235, 0.9); color: #fff; text-align: center; padding: 8px 16px; font-weight: 500; font-size: 12px; z-index: 9998; display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; border-bottom: 1px solid rgba(255,255,255,0.1);';
+                if (mainWrap) mainWrap.prepend(aBanner);
+            }
+            aBanner.textContent = feat.announcement.text;
+        } else if (existingABanner) {
+            existingABanner.remove();
+        }
+
+        if (feat.flags) {
+            // Fake Ranks
+            const ranksNav = document.querySelector('.nav-item[data-tab="ranks-tab"]');
+            if (ranksNav) {
+                ranksNav.style.display = feat.flags.fake_ranks === false ? 'none' : '';
+            }
+            if (feat.flags.fake_ranks === false) {
+                const ranksTab = document.getElementById('ranks-tab');
+                if (ranksTab && ranksTab.classList.contains('active')) {
+                    document.querySelector('.nav-item[data-tab="swapper-tab"]')?.click();
+                }
+            }
+
+            // Custom Titles
+            const titlesNav = document.querySelector('.nav-item[data-tab="titles-tab"]');
+            if (titlesNav) {
+                titlesNav.style.display = feat.flags.custom_titles === false ? 'none' : '';
+            }
+
+            // Camera Spoof
+            const cameraNav = document.querySelector('.nav-item[data-tab="camera-tab"]');
+            if (cameraNav) {
+                cameraNav.style.display = feat.flags.camera_spoof === false ? 'none' : '';
+            }
+
+            // Live Tracker Overlay
+            const trackerNav = document.querySelector('.nav-item[data-tab="tracker-tab"]');
+            if (trackerNav) {
+                trackerNav.style.display = feat.flags.live_tracker_overlay === false ? 'none' : '';
+            }
+
+            // Item Swapper
+            const swapperNav = document.querySelector('.nav-item[data-tab="swapper-tab"]');
+            if (swapperNav) {
+                swapperNav.style.display = feat.flags.item_swapper === false ? 'none' : '';
+            }
+
+            // Workshop upload
+            if (feat.flags.workshop_upload_enabled === false) {
+                const uploadTab = document.getElementById('workshop-upload-tab');
+                if (uploadTab) uploadTab.style.display = 'none';
+            }
+        }
+    } catch (e) {
+        console.warn('initFeatures non-fatal error:', e);
+    }
+}
+
+function showOutdatedBuildModal(feat) {
+    const modal = document.getElementById('outdated-build-modal');
+    if (!modal) return;
+
+    const clientBuildEl = document.getElementById('outdated-client-build');
+    const updateBtn = document.getElementById('outdated-update-btn');
+    const websiteBtn = document.getElementById('outdated-website-btn');
+    const exitBtn = document.getElementById('outdated-exit-btn');
+    const updateStatus = document.getElementById('outdated-update-status');
+
+    if (clientBuildEl) clientBuildEl.textContent = String(feat.client_build_num || 'Unknown');
+
+    modal.classList.add('active');
+
+    const sidebar = document.querySelector('.sidebar');
+    const mainWrap = document.querySelector('.main-wrap');
+    if (sidebar) sidebar.setAttribute('inert', '');
+    if (mainWrap) mainWrap.setAttribute('inert', '');
+
+    if (updateBtn) {
+        updateBtn.onclick = async () => {
+            updateBtn.disabled = true;
+            updateBtn.textContent = 'Checking for updates...';
+            if (updateStatus) updateStatus.textContent = 'Contacting update server...';
+            try {
+                const version = await invoke('check_for_updates');
+                if (version) {
+                    if (updateStatus) updateStatus.textContent = `Update available: v${version}. Downloading & installing...`;
+                    await invoke('install_update');
+                    if (updateStatus) updateStatus.textContent = `Update v${version} installed! Restart VelocityRL to apply.`;
+                    updateBtn.textContent = 'Restart Now';
+                    updateBtn.disabled = false;
+                    updateBtn.onclick = () => window.__TAURI__?.core?.invoke('plugin:process|restart');
+                } else {
+                    if (updateStatus) updateStatus.textContent = 'No automatic update package found. Please download from the website.';
+                    updateBtn.disabled = false;
+                    updateBtn.textContent = 'Check Again';
+                }
+            } catch (err) {
+                if (updateStatus) updateStatus.textContent = 'Update error: ' + err;
+                updateBtn.disabled = false;
+                updateBtn.textContent = 'Retry Update';
+            }
+        };
+    }
+
+    if (websiteBtn) {
+        websiteBtn.onclick = () => {
+            invoke('open_external_url', { url: 'https://velocityrl.tech' }).catch(() => {});
+        };
+    }
+
+    if (exitBtn) {
+        exitBtn.onclick = () => {
+            invoke('force_exit').catch(() => {});
+        };
+    }
+}
+
