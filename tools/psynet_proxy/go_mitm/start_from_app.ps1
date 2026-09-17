@@ -284,7 +284,13 @@ try {
             if (-not $py -and (Test-Path $candidate)) { $py = $candidate }
         }
         if (-not $py) {
-            throw "Python not found in elevated PATH and certs are missing. Run gen_certs.py once as your user, or install Python."
+            throw @"
+Python not found and MITM certs are missing (server.crt/server.key/velocityrl_ca.crt).
+This usually means the installer was built without shipping PsyNet assets.
+Developer machines that ran gen_certs.py locally still work; tester builds need
+CI to run tools/psynet_proxy/go_mitm/prepare_ship_assets.ps1 before tauri build.
+Install Python + cryptography and re-run, or reinstall a build that bundles certs.
+"@
         }
         Log "using python: $py"
         & $py (Join-Path $here "gen_certs.py")

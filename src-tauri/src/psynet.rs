@@ -329,7 +329,7 @@ fn find_proxy_dir() -> Result<PathBuf, String> {
         return Ok(dir);
     }
 
-    Err("Could not find tools/psynet_proxy/go_mitm (need psynet_proxy.exe + start_from_app.ps1). Build: cd tools/psynet_proxy/go_mitm; go build -o psynet_proxy.exe .".into())
+    Err("Could not find bundled psynet_proxy (need psynet_proxy.exe + start_from_app.ps1). Release builds must run tools/psynet_proxy/go_mitm/prepare_ship_assets.ps1 before tauri build. Local: cd tools/psynet_proxy/go_mitm; go build -o psynet_proxy.exe .".into())
 }
 
 fn config_path(dir: &Path) -> PathBuf {
@@ -1339,10 +1339,13 @@ pub async fn start_psynet_proxy(
     stop_proxy_before_start(&dir, false);
 
     let starter = dir.join("start_from_app.ps1");
-    run_elevated_ps1(&starter).map_err(|e| {
+    if let Err(e) = run_elevated_ps1(&starter) {
         crate::applog::event(&format!("psynet: elevated setup failed: {e}"));
-        e
-    })?;
+        // start_from_app may have already written hosts before failing — undo that
+        // so Rocket League can still reach Epic Online Services / PsyNet.
+        stop_proxy_before_start(&dir, true);
+        return Err(e);
+    }
 
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     loop {
@@ -1363,6 +1366,7 @@ pub async fn start_psynet_proxy(
                 port443_owner.as_deref().unwrap_or("unknown")
             );
             crate::applog::event(&format!("psynet: {msg}"));
+            stop_proxy_before_start(&dir, true);
             return Err(msg);
         }
         if alive && port443_ok {
@@ -1376,6 +1380,7 @@ pub async fn start_psynet_proxy(
                 format!("Proxy did not stay running.\n{detail}")
             };
             crate::applog::event(&format!("psynet: {msg}"));
+            stop_proxy_before_start(&dir, true);
             return Err(msg);
         }
         if std::time::Instant::now() >= deadline {
@@ -1387,6 +1392,7 @@ pub async fn start_psynet_proxy(
                 "Proxy process is up but loopback :443 is held by {owner}. Quit that process, approve UAC, and restart the proxy."
             );
             crate::applog::event(&format!("psynet: {msg}"));
+            stop_proxy_before_start(&dir, true);
             return Err(msg);
         }
     }

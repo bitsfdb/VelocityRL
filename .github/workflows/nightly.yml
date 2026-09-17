@@ -57,6 +57,42 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          # Match tools/psynet_proxy/go_mitm/go.mod (currently go 1.26).
+          go-version: 'stable'
+
+      - name: Build PsyNet proxy and MITM certificates
+        shell: pwsh
+        run: |
+          pip install cryptography
+          Push-Location tools/psynet_proxy/go_mitm
+          python gen_certs.py
+          if ($LASTEXITCODE -ne 0) { throw "gen_certs.py failed" }
+          go build -o psynet_proxy.exe .
+          if ($LASTEXITCODE -ne 0) { throw "go build psynet_proxy.exe failed" }
+          $required = @(
+            'psynet_proxy.exe',
+            'start_from_app.ps1',
+            'stop_proxy.ps1',
+            'velocityrl_ca.crt',
+            'velocityrl_ca.key',
+            'server.crt',
+            'server.key',
+            'leaf_api.rlpp.psynet.gg.crt',
+            'leaf_api.rlpp.psynet.gg.key',
+            'leaf_config.psynet.gg.crt',
+            'leaf_config.psynet.gg.key',
+            'leaf_ws.rlpp.psynet.gg.crt',
+            'leaf_ws.rlpp.psynet.gg.key'
+          )
+          foreach ($f in $required) {
+            if (-not (Test-Path -LiteralPath $f)) { throw "missing ship asset: $f" }
+          }
+          Write-Host "PsyNet ship assets OK ($($required.Count) files)"
+          Pop-Location
+
       - name: Delete existing nightly release
         continue-on-error: true
         run: gh release delete nightly --repo ${{ github.repository }} --yes --cleanup-tag

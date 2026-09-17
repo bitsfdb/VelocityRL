@@ -374,19 +374,10 @@ async function loadData() {
         await refreshPaletteStatus().catch(() => {});
         attachCloseGuard();
         
-        // Hosts + proxy BEFORE releasing the loading gate so RL is not launched
-        // against stock config.psynet.gg (logo/MotD/titles/camera are boot-fetched).
-        try {
-            updateLoadingText('Ensuring PsyNet hosts...');
-            const hostsDone = await invoke('ensure_psynet_hosts');
-            if (hostsDone === false) {
-                // If it returned false, it might have triggered UAC and succeeded, or it was already done.
-                // We just log it.
-            }
-        } catch (e) {
-            invoke('append_launch_log', { message: `psynet: boot hosts failed: ${e}` }).catch(() => {});
-        }
-        
+        // Start proxy (which installs CA + hosts) only when spoof tools need it.
+        // NEVER redirect config.psynet.gg before the proxy is healthy — a dangling
+        // hosts entry makes Rocket League fail Epic Online Services / PsyNet login
+        // for testers who never get psynet_proxy.exe listening on :443.
         updateLoadingText('Starting proxy server...');
         await autoStartPsyNetProxy();
         
@@ -1575,6 +1566,27 @@ async function refreshProxyStatus() {
     }
 }
 
+/** If hosts still point at loopback but the proxy is down, revert them so RL/EOS can connect. */
+async function revertOrphanPsyNetHosts(reason) {
+    try {
+        const st = await invoke('get_psynet_status');
+        if (st?.running) return;
+        if (!st?.hosts_redirected) return;
+        invoke('append_launch_log', {
+            message: `psynet: reverting orphan config.psynet.gg hosts (${reason})`,
+        }).catch(() => {});
+        await invoke('stop_psynet_proxy', { revertHosts: true });
+        showToast(
+            'Cleared stuck PsyNet hosts redirect so Rocket League can reach Epic Online Services. Re-enable a spoof tool to start the proxy again.',
+            'error',
+        );
+    } catch (e) {
+        invoke('append_launch_log', {
+            message: `psynet: orphan hosts revert failed: ${e}`,
+        }).catch(() => {});
+    }
+}
+
 async function autoStartPsyNetProxy() {
     let payload = payloadFromHydratedLocal();
     try {
@@ -1599,6 +1611,7 @@ async function autoStartPsyNetProxy() {
     } catch { /* ignore */ }
     if (!anySpoofToolEnabled(payload)) {
         invoke('append_launch_log', { message: 'psynet: no spoof tools enabled - skip auto-start' }).catch(() => {});
+        await revertOrphanPsyNetHosts('no spoof tools enabled');
         return;
     }
     try {
@@ -1607,11 +1620,14 @@ async function autoStartPsyNetProxy() {
         setProxyUi(st.running);
         if (st.running) {
             showToast('PsyNet proxy up. Launch Rocket League only after this toast.', 'success');
+        } else {
+            await revertOrphanPsyNetHosts('proxy reported not running');
         }
     } catch (e) {
         setProxyUi(false);
         invoke('append_launch_log', { message: `psynet: auto-start failed: ${e}` }).catch(() => {});
         showToast(e, 'error');
+        await revertOrphanPsyNetHosts('proxy auto-start failed');
     }
 }
 
@@ -1629,11 +1645,14 @@ async function ensurePsyNetFromApp(reason) {
             setProxyUi(!!st.running);
             if (st.running) {
                 showToast('PsyNet proxy running. Keep VelocityRL open.', 'success');
+                return true;
             }
-            return !!st.running;
+            await revertOrphanPsyNetHosts(`save ensure (${reason}) not running`);
+            return false;
         } catch (e) {
             setProxyUi(false);
             showToast(String(e), 'error');
+            await revertOrphanPsyNetHosts(`save ensure (${reason}) failed`);
             return false;
         } finally {
             proxyEnsurePromise = null;
