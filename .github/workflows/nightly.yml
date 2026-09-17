@@ -22,16 +22,6 @@ jobs:
         with:
           node-version: lts/*
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
-
-      - name: Build PsyNet proxy
-        run: |
-          cd tools/psynet_proxy/go_mitm
-          go build -o psynet_proxy.exe .
-
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
@@ -49,6 +39,26 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm install
+
+      # Native in-process Rust MITM (src-tauri/src/proxy.rs) — no Go sidecar.
+      - name: Assert native PsyNet cert compile inputs
+        shell: pwsh
+        run: |
+          $certs = Join-Path $PWD 'src-tauri/resources/certs'
+          $required = @(
+            'velocityrl_ca.crt',
+            'leaf_config.psynet.gg.crt',
+            'leaf_config.psynet.gg.key',
+            'leaf_ws.rlpp.psynet.gg.crt',
+            'leaf_ws.rlpp.psynet.gg.key'
+          )
+          foreach ($f in $required) {
+            $p = Join-Path $certs $f
+            if (-not (Test-Path -LiteralPath $p)) {
+              throw "missing native proxy compile asset: $p"
+            }
+          }
+          Write-Host "Native PsyNet cert inputs OK"
 
       - name: Delete existing nightly release
         continue-on-error: true

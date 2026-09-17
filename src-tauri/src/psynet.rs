@@ -881,7 +881,7 @@ fn run_elevated_script(_script_text: &str) -> Result<(), String> {
 }
 
 #[cfg(windows)]
-const BUNDLED_CA_THUMBPRINT: &str = "05969B177719D7613DBED10B7FBE4A0DD846EB7A";
+const BUNDLED_CA_THUMBPRINT: &str = "38A28A81A89A71CA078369073BD2F0597422983C";
 
 #[cfg(windows)]
 pub fn is_user_ca_installed() -> bool {
@@ -1237,8 +1237,8 @@ pub async fn start_psynet_proxy(
         return Ok(status_for(Some(dir), true));
     }
 
-    ensure_config_hosts()?;
-
+    // Bind :443 BEFORE rewriting hosts. If listen fails, never leave
+    // config.psynet.gg → loopback (that presents as RL/EOS online failure).
     #[cfg(windows)]
     if let Some(pid) = crate::winprobe::loopback_443_owner() {
         if pid != std::process::id() {
@@ -1247,18 +1247,29 @@ pub async fn start_psynet_proxy(
                 "Another process owns loopback :443 ({name}, PID {pid}). Quit that process, then start the proxy again."
             );
             crate::applog::event(&format!("psynet: {msg}"));
+            let _ = revert_config_hosts();
             return Err(msg);
         }
     }
 
-    crate::proxy::start_native_proxy().await.map_err(|e| {
+    if let Err(e) = crate::proxy::start_native_proxy().await {
         crate::applog::event(&format!("psynet: start_native_proxy failed: {e}"));
-        e
-    })?;
+        let _ = revert_config_hosts();
+        return Err(e);
+    }
 
     // Start the plain-HTTP WS broker that RL connects to via PsyNetUrl rewrite.
     if let Err(e) = crate::proxy::start_ws_broker().await {
         crate::applog::event(&format!("psynet: start_ws_broker failed (non-fatal): {e}"));
+    }
+
+    if let Err(e) = ensure_config_hosts() {
+        crate::applog::event(&format!(
+            "psynet: hosts/CA setup failed after listen — stopping proxy: {e}"
+        ));
+        crate::proxy::stop_native_proxy(true);
+        let _ = revert_config_hosts();
+        return Err(e);
     }
 
     *state.running.lock().map_err(|e| e.to_string())? = true;
@@ -1361,12 +1372,18 @@ pub async fn restart_psynet_proxy(
     let cfg = read_or_default_spoof(&dir)?;
     crate::proxy::set_spoof_config(cfg).await;
 
-    ensure_config_hosts()?;
+    if let Err(e) = crate::proxy::start_native_proxy().await {
+        crate::applog::event(&format!("psynet: restart listen failed: {e}"));
+        let _ = revert_config_hosts();
+        return Err(e);
+    }
 
-    crate::proxy::start_native_proxy().await.map_err(|e| {
-        crate::applog::event(&format!("psynet: restart failed: {e}"));
-        e
-    })?;
+    if let Err(e) = ensure_config_hosts() {
+        crate::applog::event(&format!("psynet: restart hosts failed: {e}"));
+        crate::proxy::stop_native_proxy(true);
+        let _ = revert_config_hosts();
+        return Err(e);
+    }
 
     *state.running.lock().map_err(|e| e.to_string())? = true;
     let flushed = crate::winprobe::flush_dns_cache();
