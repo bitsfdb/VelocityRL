@@ -23,9 +23,19 @@ header {
 }
 
 .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
     color: #e8e8e8;
     text-decoration: none;
     font-weight: 600;
+}
+
+.brand img {
+    display: block;
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
 }
 
 nav a {

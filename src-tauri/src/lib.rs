@@ -6,10 +6,48 @@ use tauri::Manager;
 
 mod applog;
 mod integrity;
+mod jobobject;
+mod presets;
 mod psynet;
 pub mod upk;
+pub mod workshop;
+pub mod tracker;
+mod winprobe;
+pub mod proxy;
+pub mod features;
 
-fn default_true() -> bool { true }
+pub(crate) fn default_true() -> bool { true }
+
+pub(crate) fn app_config_dir_of(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path().app_config_dir().ok()
+}
+
+pub(crate) fn now_iso8601_utc() -> String {
+
+    let d = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = d.as_secs();
+    let days = secs / 86_400;
+    let rem = secs % 86_400;
+    let (h, m, s) = (rem / 3600, (rem % 3600) / 60, rem % 60);
+
+    let z = days as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = if month <= 2 { y + 1 } else { y };
+    format!("{year:04}-{month:02}-{day:02}T{h:02}:{m:02}:{s:02}Z")
+}
+
+fn record_swap_history(app: &tauri::AppHandle, kind: &str, entries: &[SwapEntry], note: &str) {
+    presets::append_history(app, kind, entries, note);
+}
 
 #[derive(Serialize, Deserialize, Clone)]
 struct Config {
@@ -20,6 +58,9 @@ struct Config {
     privacy_version: String,
     #[serde(default = "default_true")]
     changelog_on_startup: bool,
+
+    #[serde(default)]
+    launch_on_startup: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -79,11 +120,24 @@ struct Item {
     dlc: String,
 }
 
-fn norm_item_slot(slot: &str) -> String {
+pub fn norm_item_slot(slot: &str) -> String {
     slot.to_lowercase()
         .chars()
         .filter(|c| !c.is_whitespace() && *c != '_' && *c != '-')
         .collect()
+}
+
+pub(crate) fn is_non_swappable(item: &Item) -> bool {
+    let pkg = item.asset_package.to_lowercase();
+
+    if pkg == "bots_sf.upk" || pkg.starts_with("bot") || pkg == "tagame.upk" || pkg == "tagame" || pkg.starts_with("tagame") {
+        return true;
+    }
+
+    if pkg.is_empty() || pkg == "none" {
+        return true;
+    }
+    false
 }
 
 fn attr_flag(value: &serde_json::Value) -> Option<bool> {
@@ -138,23 +192,39 @@ struct BackupFile {
     path: String,
     #[serde(default)]
     image_url: String,
+    #[serde(default)]
+    swap_from: String,
+    #[serde(default)]
+    swap_to: String,
+    #[serde(default)]
+    swap_to_image: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-struct SwapEntry {
-    owned_id:  i32,
-    wanted_id: i32,
+pub struct SwapEntry {
+    pub owned_id:  i32,
+    pub wanted_id: i32,
     #[serde(default)]
-    owned_name:  String,
+    pub owned_name:  String,
     #[serde(default)]
-    wanted_name: String,
+    pub wanted_name: String,
     #[serde(default)]
-    paint_id: i32,
+    pub paint_id: i32,
     #[serde(default)]
-    asset_package: String,
+    pub asset_package: String,
 }
 
-static ITEMS_CACHE: std::sync::OnceLock<Vec<Item>> = std::sync::OnceLock::new();
+static ITEMS_CACHE: std::sync::RwLock<Option<Vec<Item>>> = std::sync::RwLock::new(None);
+
+fn get_cached_items() -> Option<Vec<Item>> {
+    ITEMS_CACHE.read().ok().and_then(|guard| guard.clone())
+}
+
+fn set_cached_items(items: Vec<Item>) {
+    if let Ok(mut guard) = ITEMS_CACHE.write() {
+        *guard = Some(items);
+    }
+}
 
 const DIAGNOSTIC_URL: Option<&str> = option_env!("DIAGNOSTIC_URL");
 const DIAGNOSTIC_SECRET: Option<&str> = option_env!("DIAGNOSTIC_SECRET");
@@ -174,6 +244,7 @@ async fn send_diagnostic(mut payload: serde_json::Value) {
         });
     }
     let client = reqwest::Client::builder()
+        .user_agent(app_user_agent())
         .timeout(std::time::Duration::from_secs(5))
         .build()
         .unwrap_or_default();
@@ -185,123 +256,320 @@ async fn send_diagnostic(mut payload: serde_json::Value) {
         .await;
 }
 
-#[tauri::command]
-async fn get_items(app: tauri::AppHandle) -> Result<Vec<Item>, String> {
-    if let Some(cached) = ITEMS_CACHE.get() {
-        return Ok(cached.clone());
+fn populate_thumbnails(items: &mut [Item]) {
+    const THUMB_BASE: &str = "https://api.velocityrl.tech/thumbnails/";
+    for item in items.iter_mut() {
+        if item.image_url.is_empty() && !item.asset_package.is_empty() {
+            let stem = item.asset_package
+                .to_lowercase()
+                .replace("_sf.upk", "")
+                .replace(".upk", "");
+            item.image_url = format!("{}{}_t.png", THUMB_BASE, stem);
+        }
+    }
+}
+
+pub(crate) fn app_user_agent() -> String {
+    format!(
+        "VelocityRL/{} ({}; {})",
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    )
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+struct CatalogMetadata {
+    #[serde(default)]
+    etag: Option<String>,
+    #[serde(default)]
+    last_modified: Option<String>,
+}
+
+fn read_catalog_meta(dir: &Path) -> CatalogMetadata {
+    let path = dir.join("items.meta.json");
+    if let Ok(bytes) = fs::read(&path) {
+        if let Ok(meta) = serde_json::from_slice::<CatalogMetadata>(&bytes) {
+            return meta;
+        }
+    }
+    let ver_path = dir.join("items.ver");
+    if let Ok(ver) = fs::read_to_string(&ver_path) {
+        let v = ver.trim();
+        if !v.is_empty() {
+            return CatalogMetadata {
+                etag: Some(v.to_string()),
+                last_modified: None,
+            };
+        }
+    }
+    CatalogMetadata::default()
+}
+
+fn write_catalog_meta(dir: &Path, meta: &CatalogMetadata) {
+    let path = dir.join("items.meta.json");
+    if let Ok(data) = serde_json::to_vec(meta) {
+        let _ = fs::write(&path, data);
+    }
+    if let Some(etag) = &meta.etag {
+        let _ = fs::write(dir.join("items.ver"), etag);
+    }
+}
+
+fn get_catalog_dirs(app: &tauri::AppHandle) -> (PathBuf, Option<PathBuf>) {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .or_else(|_| app.path().app_config_dir())
+        .unwrap_or_else(|_| PathBuf::from("."));
+    let config_dir = app.path().app_config_dir().ok();
+    (data_dir, config_dir)
+}
+
+fn load_raw_items_json(app: &tauri::AppHandle) -> Result<String, String> {
+    let (data_dir, config_dir) = get_catalog_dirs(app);
+    let mut candidates = vec![data_dir.join("items.json")];
+    if let Some(cfg) = config_dir {
+        candidates.push(cfg.join("items.json"));
+    }
+    for p in candidates {
+        if p.is_file() {
+            if let Ok(s) = fs::read_to_string(&p) {
+                return Ok(s);
+            }
+        }
+    }
+    Err("Items database missing — check your internet connection and try again.".to_string())
+}
+
+async fn parse_items_slice(bytes: Vec<u8>) -> Result<Vec<Item>, String> {
+    tokio::task::spawn_blocking(move || {
+        let resp = serde_json::from_slice::<ItemsResponse>(&bytes)
+            .map_err(|e| format!("JSON parse error: {e}"))?;
+        let mut items = match resp {
+            ItemsResponse::Database { items } => items,
+            ItemsResponse::List(items) => items,
+        };
+        populate_thumbnails(&mut items);
+        Ok(items)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {e}"))?
+}
+
+async fn persist_catalog(
+    items: Vec<Item>,
+    data_dir: PathBuf,
+    config_dir: Option<PathBuf>,
+    meta: Option<CatalogMetadata>,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let _ = fs::create_dir_all(&data_dir);
+        let serialized = serde_json::to_vec(&serde_json::json!({ "Items": items }))
+            .map_err(|e| format!("JSON serialize error: {e}"))?;
+
+        let primary_path = data_dir.join("items.json");
+        fs::write(&primary_path, &serialized)
+            .map_err(|e| format!("Failed to write {}: {e}", primary_path.display()))?;
+
+        if let Some(ref cfg) = config_dir {
+            if cfg != &data_dir {
+                let _ = fs::create_dir_all(cfg);
+                let _ = fs::write(cfg.join("items.json"), &serialized);
+            }
+        }
+
+        if let Some(meta) = meta {
+            write_catalog_meta(&data_dir, &meta);
+            if let Some(ref cfg) = config_dir {
+                if cfg != &data_dir {
+                    write_catalog_meta(cfg, &meta);
+                }
+            }
+        }
+
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Task join error: {e}"))?
+}
+
+async fn fetch_catalog_update(
+    client: &reqwest::Client,
+    url: &str,
+    meta: &CatalogMetadata,
+) -> Result<Option<(Vec<u8>, CatalogMetadata)>, String> {
+    let mut req = client.get(url);
+    if let Some(etag) = &meta.etag {
+        req = req.header(reqwest::header::IF_NONE_MATCH, etag.as_str());
+    }
+    if let Some(lm) = &meta.last_modified {
+        req = req.header(reqwest::header::IF_MODIFIED_SINCE, lm.as_str());
     }
 
-    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
-    let cache_path = config_dir.join("items.json");
+    let resp = req.send().await.map_err(|e| e.to_string())?;
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
+    if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
+        log::info!("Catalog at {url} is not modified (HTTP 304), retaining cached version");
+        return Ok(None);
+    }
+
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {} from {}", resp.status(), url));
+    }
+
+    let new_etag = resp
+        .headers()
+        .get(reqwest::header::ETAG)
+        .and_then(|v| v.to_str().ok())
+        .map(String::from);
+    let new_lm = resp
+        .headers()
+        .get(reqwest::header::LAST_MODIFIED)
+        .and_then(|v| v.to_str().ok())
+        .map(String::from);
+
+    let bytes = resp.bytes().await.map_err(|e| e.to_string())?.to_vec();
+
+    Ok(Some((
+        bytes,
+        CatalogMetadata {
+            etag: new_etag.or_else(|| meta.etag.clone()),
+            last_modified: new_lm.or_else(|| meta.last_modified.clone()),
+        },
+    )))
+}
+
+async fn background_check_items_update(data_dir: PathBuf, config_dir: Option<PathBuf>) {
+    let client = match reqwest::Client::builder()
+        .user_agent(app_user_agent())
+        .timeout(std::time::Duration::from_secs(6))
         .build()
-        .map_err(|e| e.to_string())?;
+    {
+        Ok(c) => c,
+        Err(_) => return,
+    };
 
-    let ver_url = "https://api.velocityrl.tech/items.ver";
+    let meta = read_catalog_meta(&data_dir);
     let api_url = "https://api.velocityrl.tech/items.json";
     let github_url = "https://raw.githubusercontent.com/CrunchyRL/RLUPKTools/refs/heads/main/items.json";
 
-    let mut should_download = true;
-    let cache_ver_path = config_dir.join("items.ver");
+    let result = match fetch_catalog_update(&client, api_url, &meta).await {
+        Ok(res) => Ok(res),
+        Err(e) => {
+            log::warn!("Primary catalog update check failed ({e}), trying GitHub fallback");
+            fetch_catalog_update(&client, github_url, &meta).await
+        }
+    };
 
-    // Check version if local cache exists
-    if cache_path.exists() {
-        if let Ok(resp) = client.get(ver_url).send().await {
-            if let Ok(remote_ver) = resp.text().await {
-                let remote_ver = remote_ver.trim();
-                if let Ok(local_ver) = fs::read_to_string(&cache_ver_path) {
-                    if local_ver.trim() == remote_ver {
-                        should_download = false;
-                    }
-                }
-                if should_download {
-                    fs::write(&cache_ver_path, remote_ver).ok();
-                }
+    match result {
+        Ok(None) => {
+            // 304 Not Modified: cache is current and retained
+        }
+        Ok(Some((bytes, new_meta))) => {
+            if let Ok(items) = parse_items_slice(bytes).await {
+                set_cached_items(items.clone());
+                let _ = persist_catalog(items, data_dir, config_dir, Some(new_meta)).await;
             }
         }
-    }
-
-    let mut fetched_content = None;
-    if should_download {
-        if let Ok(resp) = client.get(api_url).send().await {
-            if let Ok(text) = resp.text().await {
-                fetched_content = Some(text);
-            }
-        }
-
-        if fetched_content.is_none() {
-            if let Ok(resp) = client.get(github_url).send().await {
-                if let Ok(text) = resp.text().await {
-                    fetched_content = Some(text);
-                }
-            }
+        Err(e) => {
+            log::warn!("Catalog update check failed: {e}");
         }
     }
+}
 
-    fn populate_thumbnails(items: &mut [Item]) {
-        const THUMB_BASE: &str = "https://api.velocityrl.tech/thumbnails/";
-        for item in items.iter_mut() {
-            if item.image_url.is_empty() && !item.asset_package.is_empty() {
-                let stem = item.asset_package
-                    .to_lowercase()
-                    .replace("_sf.upk", "")
-                    .replace(".upk", "");
-                item.image_url = format!("{}{}_t.png", THUMB_BASE, stem);
-            }
-        }
+#[tauri::command]
+async fn get_items(app: tauri::AppHandle) -> Result<Vec<Item>, String> {
+    if let Some(cached) = get_cached_items() {
+        return Ok(cached);
     }
 
-    if let Some(content) = fetched_content {
-        if let Ok(resp) = serde_json::from_str::<ItemsResponse>(&content) {
-            let mut items = match resp {
-                ItemsResponse::Database { items } => items,
-                ItemsResponse::List(items) => items,
-            };
-            populate_thumbnails(&mut items);
-            fs::create_dir_all(&config_dir).ok();
-            let serialized = serde_json::to_string(&serde_json::json!({"Items": items})).unwrap_or_default();
-            fs::write(&cache_path, &serialized).ok();
-            let _ = ITEMS_CACHE.set(items.clone());
-            return Ok(items);
-        }
-    }
+    let (data_dir, config_dir) = get_catalog_dirs(&app);
+    let cache_path = data_dir.join("items.json");
 
-    if cache_path.exists() {
-        if let Ok(content) = fs::read_to_string(&cache_path) {
-            if let Ok(resp) = serde_json::from_str::<ItemsResponse>(&content) {
-                let mut items = match resp {
-                    ItemsResponse::Database { items } => items,
-                    ItemsResponse::List(items) => items,
-                };
-                populate_thumbnails(&mut items);
-                let _ = ITEMS_CACHE.set(items.clone());
+    let candidate_cache = if cache_path.is_file() {
+        Some(cache_path.clone())
+    } else if let Some(ref cfg) = config_dir {
+        let cfg_path = cfg.join("items.json");
+        if cfg_path.is_file() {
+            Some(cfg_path)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    if let Some(local_path) = candidate_cache {
+        if let Ok(bytes) = fs::read(&local_path) {
+            if let Ok(items) = parse_items_slice(bytes).await {
+                set_cached_items(items.clone());
+
+                let d_dir = data_dir.clone();
+                let c_dir = config_dir.clone();
+                tauri::async_runtime::spawn(async move {
+                    background_check_items_update(d_dir, c_dir).await;
+                });
+
                 return Ok(items);
             }
         }
     }
 
-    if let Ok(resource_path) = app.path().resource_dir() {
-        let bundled = resource_path.join("items.json");
-        if bundled.exists() {
-            if let Ok(content) = fs::read_to_string(&bundled) {
-                if let Ok(resp) = serde_json::from_str::<ItemsResponse>(&content) {
-                    let mut items = match resp {
-                        ItemsResponse::Database { items } => items,
-                        ItemsResponse::List(items) => items,
-                    };
+    let mut bundled_candidates = Vec::new();
+    if let Ok(res_dir) = app.path().resource_dir() {
+        bundled_candidates.push(res_dir.join("items.json"));
+        bundled_candidates.push(res_dir.join("resources").join("items.json"));
+    }
+    bundled_candidates.push(PathBuf::from("resources").join("items.json"));
 
-                    populate_thumbnails(&mut items);
-                    
-                    fs::create_dir_all(&config_dir).ok();
-                    let serialized = serde_json::to_string(&serde_json::json!({"Items": items})).unwrap_or_default();
-                    fs::write(&cache_path, &serialized).ok();
-                    let _ = ITEMS_CACHE.set(items.clone());
+    for bundled in bundled_candidates {
+        if bundled.is_file() {
+            if let Ok(bytes) = fs::read(&bundled) {
+                if let Ok(items) = parse_items_slice(bytes).await {
+                    set_cached_items(items.clone());
+
+                    let d_dir = data_dir.clone();
+                    let c_dir = config_dir.clone();
+                    let items_for_save = items.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = persist_catalog(items_for_save, d_dir.clone(), c_dir.clone(), None).await;
+                        background_check_items_update(d_dir, c_dir).await;
+                    });
+
                     return Ok(items);
                 }
             }
         }
+    }
+
+    let client = reqwest::Client::builder()
+        .user_agent(app_user_agent())
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let api_url = "https://api.velocityrl.tech/items.json";
+    let github_url = "https://raw.githubusercontent.com/CrunchyRL/RLUPKTools/refs/heads/main/items.json";
+
+    let empty_meta = CatalogMetadata::default();
+    let fetch_res = match fetch_catalog_update(&client, api_url, &empty_meta).await {
+        Ok(Some(res)) => Some(res),
+        _ => fetch_catalog_update(&client, github_url, &empty_meta).await.ok().flatten(),
+    };
+
+    if let Some((bytes, meta)) = fetch_res {
+        let items = parse_items_slice(bytes).await?;
+        set_cached_items(items.clone());
+
+        let d_dir = data_dir.clone();
+        let c_dir = config_dir.clone();
+        let items_for_save = items.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = persist_catalog(items_for_save, d_dir, c_dir, Some(meta)).await;
+        });
+
+        return Ok(items);
     }
 
     Err("Failed to load items database".into())
@@ -315,8 +583,81 @@ async fn get_config(app: tauri::AppHandle) -> Result<Config, String> {
         let config: Config = serde_json::from_str(&content).map_err(|e| e.to_string())?;
         Ok(config)
     } else {
-        Ok(Config { game_dir: "".to_string(), privacy_agreed: false, privacy_version: "".to_string(), changelog_on_startup: true })
+        Ok(Config { game_dir: "".to_string(), privacy_agreed: false, privacy_version: "".to_string(), changelog_on_startup: true, launch_on_startup: false })
     }
+}
+
+const STARTUP_TASK_NAME: &str = "VelocityRL";
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+fn scheduled_task_exists() -> bool {
+    if !cfg!(windows) {
+        return false;
+    }
+    let mut cmd = std::process::Command::new("schtasks");
+    cmd.args(["/Query", "/TN", STARTUP_TASK_NAME])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let out = cmd.status();
+    matches!(out, Ok(s) if s.success())
+}
+
+#[tauri::command]
+async fn get_launch_on_startup() -> Result<bool, String> {
+    Ok(scheduled_task_exists())
+}
+
+#[tauri::command]
+async fn set_launch_on_startup(enable: bool) -> Result<(), String> {
+    if !cfg!(windows) {
+        return Err("Startup task is only supported on Windows".into());
+    }
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    if enable {
+        let mut cmd = std::process::Command::new("schtasks");
+        cmd.args([
+            "/Create",
+            "/TN", STARTUP_TASK_NAME,
+            "/TR", &format!("\"{}\"", exe.display()),
+            "/SC", "ONLOGON",
+            "/RL", "HIGHEST",
+            "/F",
+        ]);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+        let out = cmd.output().map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            return Err(format!(
+                "Could not create startup task: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
+        }
+    } else if scheduled_task_exists() {
+        let mut cmd = std::process::Command::new("schtasks");
+        cmd.args(["/Delete", "/TN", STARTUP_TASK_NAME, "/F"]);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+        let out = cmd.output().map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            return Err(format!(
+                "Could not remove startup task: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn normalize_game_dir(game_dir: &str) -> String {
@@ -345,6 +686,7 @@ async fn get_backups(app: tauri::AppHandle) -> Result<Vec<BackupFile>, String> {
     if config.game_dir.is_empty() { return Ok(vec![]); }
 
     let items = get_items(app.clone()).await.unwrap_or_default();
+    let swaps = load_swaps(&app);
     let mut backups = Vec::new();
     let dir = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
         .map_err(|e| e.to_string())?;
@@ -352,10 +694,20 @@ async fn get_backups(app: tauri::AppHandle) -> Result<Vec<BackupFile>, String> {
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.file_name()
+            let file_name_lower = path.file_name()
                 .and_then(|n| n.to_str())
-                .map_or(false, |n| n.ends_with(".upk.bak"))
-            {
+                .map(|n| n.to_lowercase())
+                .unwrap_or_default();
+
+            if file_name_lower.ends_with(".upk.bak") {
+
+                if file_name_lower == "tagame.upk.bak"
+                    || file_name_lower == "engine.upk.bak"
+                    || file_name_lower.starts_with("labs_underpass_p")
+                {
+                    continue;
+                }
+
                 let file_name = path.file_name().unwrap().to_string_lossy().to_string();
                 let clean_name = file_name.to_lowercase()
                     .replace(".upk.bak", "")
@@ -375,10 +727,22 @@ async fn get_backups(app: tauri::AppHandle) -> Result<Vec<BackupFile>, String> {
                 let display_name = matched_item.map(|i| i.product.clone()).unwrap_or(file_name);
                 let image_url = matched_item.map(|i| i.image_url.clone()).unwrap_or_default();
 
+                let swap_entry = matched_item.and_then(|item| swaps.iter().find(|s| s.owned_id == item.id));
+                let (swap_from, swap_to) = swap_entry
+                    .map(|s| (s.owned_name.clone(), s.wanted_name.clone()))
+                    .unwrap_or_default();
+                let swap_to_image = swap_entry
+                    .and_then(|s| items.iter().find(|i| i.id == s.wanted_id))
+                    .map(|i| i.image_url.clone())
+                    .unwrap_or_default();
+
                 backups.push(BackupFile {
                     name: display_name,
                     path: path.to_string_lossy().to_string(),
                     image_url,
+                    swap_from,
+                    swap_to,
+                    swap_to_image,
                 });
             }
         }
@@ -474,13 +838,14 @@ async fn apply_rich_palette(app: tauri::AppHandle) -> Result<upk::PaletteStatus,
     }
     let st = upk::palette::apply(
         Path::new(&config.game_dir),
-        include_str!("../../python/keys.txt"),
-        include_str!("../../python/keys_map.json"),
+        include_str!("../resources/keys.txt"),
+        include_str!("../resources/keys_map.json"),
     )
     .map_err(|e| explain_palette_error(e.to_string()))?;
     let mut state = load_integrity(&app);
     integrity::mark_palette_on(&mut state, &st.fingerprint);
     save_integrity(&app, &state)?;
+    let _ = psynet::merge_palette_spoof(true);
     Ok(st)
 }
 
@@ -498,33 +863,8 @@ async fn restore_rich_palette(app: tauri::AppHandle) -> Result<upk::PaletteStatu
     let mut state = load_integrity(&app);
     integrity::mark_palette_off(&mut state);
     save_integrity(&app, &state)?;
+    let _ = psynet::merge_palette_spoof(false);
     Ok(st)
-}
-
-#[tauri::command]
-async fn cleanup_temp_files(_app: tauri::AppHandle) -> Result<String, String> {
-    Ok("OK".to_string())
-}
-
-#[tauri::command]
-async fn fetch_catalog(_app: tauri::AppHandle, _token: String, _account: String) -> Result<String, String> {
-    Err("Not yet implemented — Rust UPK engine coming soon".to_string())
-}
-
-#[tauri::command]
-async fn replace_export(
-    _app: tauri::AppHandle,
-    _target_pkg: String,
-    _target_path: String,
-    _donor_pkg: String,
-    _donor_path: String,
-) -> Result<String, String> {
-    Err("Not yet implemented — Rust UPK engine coming soon".to_string())
-}
-
-#[tauri::command]
-async fn set_custom_pfp(_app: tauri::AppHandle, _png_path: String) -> Result<String, String> {
-    Err("Not yet implemented — Rust UPK engine coming soon".to_string())
 }
 
 #[tauri::command]
@@ -612,9 +952,24 @@ async fn apply_swap(
     wanted_id: String,
     paint_id: Option<i32>,
 ) -> Result<String, String> {
-    let config = get_config(app.clone()).await?;
+    if !features::is_build_supported() {
+        return Err("VelocityRL build is outdated. Please update to the latest version.".into());
+    }
+    let mut config = get_config(app.clone()).await?;
     if config.game_dir.is_empty() {
-        return Err("Game directory not set".to_string());
+        if let Ok(installs) = detect_game_dir().await {
+            if let Some(first) = installs.first() {
+                let _ = save_config(app.clone(), Config {
+                    game_dir: first.path.clone(),
+                    ..config.clone()
+                }).await;
+                config.game_dir = first.path.clone();
+                applog::event(&format!("apply_swap: auto-configured game_dir to '{}'", config.game_dir));
+            }
+        }
+    }
+    if config.game_dir.is_empty() {
+        return Err("Game directory not set. Open Settings and select your Rocket League CookedPCConsole folder.".to_string());
     }
     let mut paint_id = paint_id.unwrap_or(0);
     if !(0..=12).contains(&paint_id) {
@@ -633,19 +988,43 @@ async fn apply_swap(
         }
     }
 
-    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
-    let items_json = fs::read_to_string(config_dir.join("items.json"))
-        .map_err(|_| "Items database missing — check your internet connection and try again.".to_string())?;
+    let items_json = load_raw_items_json(&app)?;
 
-    let game_dir = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
-        .unwrap_or_else(|_| PathBuf::from(&config.game_dir));
-    let opts = upk::SwapOptions {
-        game_dir,
-        items_json,
-        keys_txt: include_str!("../../python/keys.txt").to_string(),
-        keys_map_json: include_str!("../../python/keys_map.json").to_string(),
+    let game_dir = match upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
+        Ok(dir) => dir,
+        Err(_) => {
+            let p = PathBuf::from(&config.game_dir);
+            if !p.exists() || !p.join("TAGame.upk").exists() {
+                return Err(format!(
+                    "Game directory not valid: '{}'. Please open Settings and select your Rocket League CookedPCConsole folder.",
+                    config.game_dir
+                ));
+            }
+            p
+        }
     };
-    let result = run_swap_caught(&owned_id, &wanted_id, paint_id, &opts)?;
+
+    applog::event(&format!(
+        "apply_swap: starting owned_id={} wanted_id={} paint_id={} game_dir='{}'",
+        owned_id, wanted_id, paint_id, game_dir.display()
+    ));
+
+    let opts = upk::SwapOptions {
+        game_dir: game_dir.clone(),
+        items_json,
+        keys_txt: include_str!("../resources/keys.txt").to_string(),
+        keys_map_json: include_str!("../resources/keys_map.json").to_string(),
+    };
+    let result = match run_swap_caught(&owned_id, &wanted_id, paint_id, &opts) {
+        Ok(res) => {
+            applog::event(&format!("apply_swap: succeeded for owned_id={} wanted_id={}", owned_id, wanted_id));
+            res
+        }
+        Err(err) => {
+            applog::event(&format!("apply_swap: failed for owned_id={} wanted_id={}: {}", owned_id, wanted_id, err));
+            return Err(err);
+        }
+    };
 
     let oid: i32 = owned_id.parse().unwrap_or(0);
     let wid: i32 = wanted_id.parse().unwrap_or(0);
@@ -664,6 +1043,7 @@ async fn apply_swap(
             .map(|i| i.asset_package.clone())
             .unwrap_or_default(),
     });
+    record_swap_history(&app, "swap", swaps.last().map(|s| std::slice::from_ref(s)).unwrap_or(&[]), "");
     save_swaps(&app, &swaps);
 
     if let Some(pkg) = owned.map(|i| i.asset_package.as_str()).filter(|p| !p.is_empty()) {
@@ -695,6 +1075,7 @@ async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<()
     if let Some(item) = items.iter().find(|i| i.asset_package.to_lowercase().replace(".upk","") == stem) {
         let mut swaps = load_swaps(&app);
         swaps.retain(|s| s.owned_id != item.id);
+        record_swap_history(&app, "restore", &[], &format!("restored {}", item.product));
         save_swaps(&app, &swaps);
         let mut state = load_integrity(&app);
         integrity::clear_swap_package(&mut state, &item.asset_package);
@@ -728,13 +1109,16 @@ fn build_swap_opts(game_dir: PathBuf, items_json: String) -> upk::SwapOptions {
     upk::SwapOptions {
         game_dir,
         items_json,
-        keys_txt: include_str!("../../python/keys.txt").to_string(),
-        keys_map_json: include_str!("../../python/keys_map.json").to_string(),
+        keys_txt: include_str!("../resources/keys.txt").to_string(),
+        keys_map_json: include_str!("../resources/keys_map.json").to_string(),
     }
 }
 
 #[tauri::command]
 async fn reswap_all(app: tauri::AppHandle) -> Result<String, String> {
+    if !features::is_build_supported() {
+        return Err("VelocityRL build is outdated. Please update to the latest version.".into());
+    }
     let config = get_config(app.clone()).await?;
     if config.game_dir.is_empty() {
         return Err("Game directory not set".to_string());
@@ -746,10 +1130,7 @@ async fn reswap_all(app: tauri::AppHandle) -> Result<String, String> {
         );
     }
     let _ = get_items(app.clone()).await;
-    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
-    let items_json = fs::read_to_string(config_dir.join("items.json")).map_err(|_| {
-        "Items database missing — check your internet connection and try again.".to_string()
-    })?;
+    let items_json = load_raw_items_json(&app)?;
     let game_dir = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
         .unwrap_or_else(|_| PathBuf::from(&config.game_dir));
     let items = get_items(app.clone()).await.unwrap_or_default();
@@ -818,7 +1199,284 @@ async fn reswap_all(app: tauri::AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn copy_to_clipboard(text: String) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use std::io::Write;
+        let mut child = std::process::Command::new("cmd")
+            .args(["/C", "clip"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map_err(|e| format!("clipboard failed: {e}"))?;
+        if let Some(stdin) = child.stdin.as_mut() {
+
+            let utf16: Vec<u8> = text.encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
+            stdin.write_all(&utf16).map_err(|e| format!("clipboard write failed: {e}"))?;
+        }
+        let _ = child.wait();
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = text;
+        Err("clipboard is Windows-only".into())
+    }
+}
+
+#[tauri::command]
+fn force_exit(_app: tauri::AppHandle) {
+    applog::event("exit: force_exit invoked — killing proxy and exiting process");
+    psynet::kill_proxy_on_exit();
+    std::process::exit(0);
+}
+
+#[tauri::command]
+fn open_external_url(url: String) {
+    applog::event(&format!("open_external_url: {url}"));
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("explorer.exe").arg(&url).spawn();
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+    }
+}
+
+#[tauri::command]
+async fn repair_engine_refs(app: tauri::AppHandle) -> Result<String, String> {
+    let config = get_config(app.clone()).await?;
+    if config.game_dir.is_empty() {
+        return Err("Game directory not set".to_string());
+    }
+    let game_dir = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
+        .unwrap_or_else(|_| PathBuf::from(&config.game_dir));
+    let cooked = game_dir.clone();
+
+    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<String, String> {
+        let engine_path = cooked.join("Engine.upk");
+        let tagame_path = cooked.join("TAGame.upk");
+        let (eng, _) = upk::parser::parse_prefix(&fs::read(&engine_path).map_err(|e| format!("read Engine.upk: {e}"))?)
+            .map_err(|e| format!("parse Engine.upk: {e}"))?;
+        let mut tag = fs::read(&tagame_path).map_err(|e| format!("read TAGame.upk: {e}"))?;
+        let (sum, _) = upk::parser::parse_prefix(&tag).map_err(|e| format!("parse TAGame.upk: {e}"))?;
+        if sum.engine_version == eng.engine_version && sum.cooker_version == eng.cooker_version {
+            return Ok("TAGame.upk already matches Engine.upk — nothing to do.".into());
+        }
+        let old = (sum.engine_version, sum.cooker_version);
+        let changed = upk::swapper::patch_engine_versions_in_prefix(&mut tag, &sum, eng.engine_version, eng.cooker_version);
+        if !changed {
+            return Err("could not patch TAGame.upk version fields".into());
+        }
+        fs::write(&tagame_path, &tag).map_err(|e| format!("write TAGame.upk: {e}"))?;
+        Ok(format!("patched TAGame.upk engine/cooker version {:?} -> {:?}", old, (eng.engine_version, eng.cooker_version)))
+    }));
+    match res {
+        Ok(Ok(msg)) => {
+            applog::event(&format!("repair_engine_refs: {msg}"));
+            Ok(msg)
+        }
+        Ok(Err(e)) => Err(e),
+        Err(_) => Err("Engine reference repair failed unexpectedly.".into()),
+    }
+}
+
+#[tauri::command]
+async fn reset_tagame_for_verify(app: tauri::AppHandle) -> Result<String, String> {
+    let config = get_config(app.clone()).await?;
+    if config.game_dir.is_empty() {
+        return Err("Game directory not set".to_string());
+    }
+    let game_dir = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
+        .unwrap_or_else(|_| PathBuf::from(&config.game_dir));
+    let tagame = game_dir.join("TAGame.upk");
+    let bak = integrity::bak_path_for(&tagame);
+    if !bak.exists() {
+        return Err("No TAGame.upk backup found — nothing to reset.".into());
+    }
+    let bak_s = bak.to_string_lossy().into_owned();
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        upk::restore_single(&bak_s)
+    })) {
+        Ok(Ok(())) => {
+
+            let mut swaps = load_swaps(&app);
+            swaps.clear();
+            save_swaps(&app, &swaps);
+            applog::event("reset_tagame_for_verify: TAGame.upk restored from backup");
+            Ok("TAGame.upk restored. Now verify game files in Epic/Steam.".into())
+        }
+        Ok(Err(e)) => Err(explain_upk_lock(e.to_string(), "TAGame.upk")),
+        Err(_) => Err("Reset failed unexpectedly. Close Rocket League and try again.".into()),
+    }
+}
+
+#[tauri::command]
+async fn sync_palette_psynet_config(app: tauri::AppHandle) -> Result<(), String> {
+
+    let config = get_config(app.clone()).await?;
+    if config.game_dir.is_empty() {
+        return Ok(());
+    }
+    let state = load_integrity(&app);
+    let applied = state.palette_active;
+    let enabled = psynet::merge_palette_spoof(applied).is_ok();
+    if enabled {
+        applog::event(&format!("psynet: palette_spoof synced -> {applied}"));
+    }
+    Ok(())
+}
+
+fn user_rl_logs_dir() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        let profile = std::env::var("USERPROFILE").ok()?;
+        let p = PathBuf::from(profile);
+        let candidates = [
+            p.join("Documents").join("My Games").join("Rocket League").join("TAGame").join("Logs"),
+            p.join("OneDrive").join("Documents").join("My Games").join("Rocket League").join("TAGame").join("Logs"),
+            p.join("OneDrive").join("Documentos").join("My Games").join("Rocket League").join("TAGame").join("Logs"),
+            p.join("Documentos").join("My Games").join("Rocket League").join("TAGame").join("Logs"),
+        ];
+        for c in &candidates {
+            if c.exists() {
+                return Some(c.clone());
+            }
+        }
+    }
+    None
+}
+
+#[tauri::command]
+async fn export_diagnostics(app: tauri::AppHandle) -> Result<String, String> {
+    use std::io::Write;
+    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let logs_dir = app
+        .path()
+        .app_log_dir()
+        .unwrap_or_else(|_| config_dir.clone());
+
+    let out_dir = config_dir.join("diagnostics");
+    fs::create_dir_all(&out_dir).map_err(|e| e.to_string())?;
+    let stamp = presets::utc_filename_stamp();
+    let zip_path = out_dir.join(format!("velocityrl-diagnostics-{stamp}.zip"));
+
+    let zip_file = fs::File::create(&zip_path).map_err(|e| e.to_string())?;
+    let mut zip = zip::ZipWriter::new(zip_file);
+    let opts =
+        zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+
+    let add_file = |zip: &mut zip::ZipWriter<std::fs::File>, name: &str, path: &Path| {
+        let read_result = fs::read(path).or_else(|_| {
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::OpenOptionsExt;
+                if let Ok(mut file) = std::fs::OpenOptions::new()
+                    .read(true)
+                    .share_mode(7)
+                    .open(path)
+                {
+                    let mut data = Vec::new();
+                    if std::io::Read::read_to_end(&mut file, &mut data).is_ok() {
+                        return Ok(data);
+                    }
+                }
+            }
+            Err(std::io::Error::new(std::io::ErrorKind::Other, "could not read file"))
+        });
+
+        if let Ok(data) = read_result {
+            if zip.start_file(name, opts).is_ok() {
+                let _ = zip.write_all(&data);
+            }
+        }
+    };
+
+    for f in ["config.json", "swaps.json", "items.json", "items.ver", "integrity.json"] {
+        add_file(&mut zip, f, &config_dir.join(f));
+    }
+    if let Ok(entries) = fs::read_dir(&logs_dir) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_file() {
+                if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
+                    add_file(&mut zip, &format!("logs/{name}"), &p);
+                }
+            }
+        }
+    }
+
+    if let Some(rl_logs) = user_rl_logs_dir() {
+        let launch_log = rl_logs.join("Launch.log");
+        if launch_log.exists() {
+            add_file(&mut zip, "game_logs/Launch.log", &launch_log);
+        }
+        if let Ok(entries) = fs::read_dir(&rl_logs) {
+            let mut backup_logs: Vec<PathBuf> = entries
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| {
+                    p.is_file()
+                        && p.file_name()
+                            .and_then(|n| n.to_str())
+                            .map_or(false, |s| s.starts_with("Launch-backup") && s.ends_with(".log"))
+                })
+                .collect();
+            backup_logs.sort_by(|a, b| b.cmp(a));
+            for backup in backup_logs.into_iter().take(2) {
+                if let Some(name) = backup.file_name().and_then(|n| n.to_str()) {
+                    add_file(&mut zip, &format!("game_logs/{name}"), &backup);
+                }
+            }
+        }
+    }
+
+    if let Ok(cfg) = psynet::get_psynet_config_json().await {
+        if zip.start_file("psynet_config.json", opts).is_ok() {
+            let _ = zip.write_all(cfg.as_bytes());
+        }
+    }
+    if let Ok(dir) = psynet::resolve_proxy_dir_for_diag() {
+        if zip.start_file("proxy_dir.txt", opts).is_ok() {
+            let _ = zip.write_all(dir.to_string_lossy().as_bytes());
+        }
+        for log_name in ["psynet_proxy.log", "start_from_app.log", "real_skill.json"] {
+            let log_file = dir.join(log_name);
+            add_file(&mut zip, &format!("proxy/{log_name}"), &log_file);
+        }
+    }
+    if let Ok(info) = applog::get_debug_info(app.clone()) {
+        let mut sys = String::new();
+        for (k, v) in &info {
+            sys.push_str(&format!("{k}: {v}\n"));
+        }
+        sys.push_str(&format!(
+            "app_version: {}\nbuild_number: {}\nbuild_hash: {}\n",
+            env!("CARGO_PKG_VERSION"),
+            env!("VRL_BUILD_NUMBER"),
+            env!("VRL_BUILD_HASH")
+        ));
+        if zip.start_file("system.txt", opts).is_ok() {
+            let _ = zip.write_all(sys.as_bytes());
+        }
+    }
+    let _ = zip.finish();
+
+    let path_str = zip_path.to_string_lossy().into_owned();
+    applog::event(&format!("diagnostics: exported {path_str}"));
+    Ok(path_str)
+}
+
+#[tauri::command]
 async fn report_diagnostic(payload: serde_json::Value) -> Result<(), String> {
+    applog::event(&format!(
+        "frontend diagnostic: event={} context={} message={}",
+        payload.get("event").and_then(|v| v.as_str()).unwrap_or(""),
+        payload.get("context").and_then(|v| v.as_str()).unwrap_or(""),
+        payload.get("message").and_then(|v| v.as_str()).unwrap_or("")
+    ));
     send_diagnostic(payload).await;
     Ok(())
 }
@@ -833,36 +1491,52 @@ struct DetectedInstall {
 async fn detect_game_dir() -> Result<Vec<DetectedInstall>, String> {
     let mut results: Vec<DetectedInstall> = Vec::new();
 
-    let steam_candidates = [
-        r"C:\Program Files (x86)\Steam\steamapps\common\rocketleague\TAGame\CookedPCConsole",
-        r"C:\Program Files\Steam\steamapps\common\rocketleague\TAGame\CookedPCConsole",
-        r"D:\SteamLibrary\steamapps\common\rocketleague\TAGame\CookedPCConsole",
-        r"E:\SteamLibrary\steamapps\common\rocketleague\TAGame\CookedPCConsole",
-        r"F:\SteamLibrary\steamapps\common\rocketleague\TAGame\CookedPCConsole",
-        r"G:\SteamLibrary\steamapps\common\rocketleague\TAGame\CookedPCConsole",
-    ];
-    let epic_candidates = [
-        r"C:\Program Files\Epic Games\rocketleague\TAGame\CookedPCConsole",
-        r"C:\Program Files (x86)\Epic Games\rocketleague\TAGame\CookedPCConsole",
-        r"D:\Epic Games\rocketleague\TAGame\CookedPCConsole",
-        r"E:\Epic Games\rocketleague\TAGame\CookedPCConsole",
-        r"F:\Epic Games\rocketleague\TAGame\CookedPCConsole",
-    ];
-
     let add_unique = |list: &mut Vec<DetectedInstall>, label: &str, path: String| {
-        if !list.iter().any(|e| e.path == path) {
+        if !list.iter().any(|e| e.path.eq_ignore_ascii_case(&path)) {
             list.push(DetectedInstall { label: label.to_string(), path });
         }
     };
 
-    for path in &steam_candidates {
-        if std::path::Path::new(path).exists() {
-            add_unique(&mut results, "Steam", path.to_string());
+    #[cfg(target_os = "windows")]
+    {
+        if let Some((_, pid)) = crate::psynet::rocket_league_process() {
+            if let Some(exe_path) = crate::winprobe::process_path(pid) {
+                if let Ok(cooked) = upk::palette::resolve_cooked_dir(&exe_path) {
+                    add_unique(&mut results, "Running Rocket League", cooked.to_string_lossy().into_owned());
+                }
+            }
         }
     }
-    for path in &epic_candidates {
-        if std::path::Path::new(path).exists() {
-            add_unique(&mut results, "Epic Games", path.to_string());
+
+    for drive in ["C", "D", "E", "F", "G", "H", "X", "Z"] {
+        let steam_cands = [
+            format!(r"{drive}:\Program Files (x86)\Steam\steamapps\common\rocketleague\TAGame\CookedPCConsole"),
+            format!(r"{drive}:\Program Files\Steam\steamapps\common\rocketleague\TAGame\CookedPCConsole"),
+            format!(r"{drive}:\SteamLibrary\steamapps\common\rocketleague\TAGame\CookedPCConsole"),
+            format!(r"{drive}:\Steam\steamapps\common\rocketleague\TAGame\CookedPCConsole"),
+            format!(r"{drive}:\Games\Steam\steamapps\common\rocketleague\TAGame\CookedPCConsole"),
+        ];
+        for path in steam_cands {
+            let p = std::path::Path::new(&path);
+            if p.join("TAGame.upk").exists() {
+                add_unique(&mut results, "Steam", path);
+            }
+        }
+
+        let epic_cands = [
+            format!(r"{drive}:\Program Files\Epic Games\rocketleague\TAGame\CookedPCConsole"),
+            format!(r"{drive}:\Program Files (x86)\Epic Games\rocketleague\TAGame\CookedPCConsole"),
+            format!(r"{drive}:\Epic Games\rocketleague\TAGame\CookedPCConsole"),
+            format!(r"{drive}:\rocketleague\TAGame\CookedPCConsole"),
+            format!(r"{drive}:\games\rocketleague\TAGame\CookedPCConsole"),
+            format!(r"{drive}:\Games\rocketleague\TAGame\CookedPCConsole"),
+            format!(r"{drive}:\Games\Epic Games\rocketleague\TAGame\CookedPCConsole"),
+        ];
+        for path in epic_cands {
+            let p = std::path::Path::new(&path);
+            if p.join("TAGame.upk").exists() {
+                add_unique(&mut results, "Epic Games", path);
+            }
         }
     }
 
@@ -916,6 +1590,24 @@ async fn detect_game_dir() -> Result<Vec<DetectedInstall>, String> {
     }
 
     Ok(results)
+}
+
+#[derive(Serialize)]
+struct BuildInfo {
+    version: &'static str,
+    build_number: &'static str,
+    build_hash: &'static str,
+    build_id: i64,
+}
+
+#[tauri::command]
+fn get_build_info() -> BuildInfo {
+    BuildInfo {
+        version: env!("CARGO_PKG_VERSION"),
+        build_number: env!("VRL_BUILD_NUMBER"),
+        build_hash: env!("VRL_BUILD_HASH"),
+        build_id: features::VRL_BUILD_ID,
+    }
 }
 
 #[tauri::command]
@@ -982,16 +1674,21 @@ fn create_main_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
         .config()
         .app
         .windows
-        .first()
+        .iter()
+        .find(|w| w.label == "main")
+        .or_else(|| app.config().app.windows.first())
         .cloned()
         .ok_or("missing window config")?;
     let mut last_err: Option<String> = None;
     for attempt in 1u32..=6 {
         match tauri::WebviewWindowBuilder::from_config(app.handle(), &cfg)?
-            .focused(false)
+            .focused(true)
+            .on_download(workshop::bakkes_download_interceptor())
             .build()
         {
             Ok(win) => {
+                let _ = win.show();
+                let _ = win.unminimize();
                 let _ = win.set_focus();
                 if attempt > 1 {
                     applog::event(&format!("webview created on attempt {attempt}"));
@@ -1011,9 +1708,31 @@ fn create_main_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+
+    jobobject::init_job_object();
+
     tauri::Builder::default()
+
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            applog::event(&format!("single-instance: argv={:?}", argv));
+
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.unminimize();
+                let _ = win.show();
+                let _ = win.set_focus();
+            }
+        }))
         .plugin(
             tauri_plugin_log::Builder::default()
+                .level(log::LevelFilter::Info)
+                .filter(|metadata| {
+
+                    !metadata
+                        .target()
+                        .starts_with("tokio_tungstenite")
+                        && !metadata.target().starts_with("tungstenite")
+                        && !metadata.target().starts_with("rustls")
+                })
                 .targets([
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
                         file_name: Some("velocityrl".into()),
@@ -1023,16 +1742,34 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(psynet::PsyNetState::default())
         .setup(|app| {
+            let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
             let dir = applog::init(app.handle());
             create_main_window(app)?;
-            applog::event(&format!("app setup complete; logs at {}", dir.display()));
-            // Kill proxy on force-close (Ctrl+C / Task Manager / kill)
+            let tracker_state = tracker::init(app.handle());
+            app.manage(tracker_state);
+
+            let _ = tracker::create_overlay_window(app);
+
+            // Load proxy dir override from config if present
+            psynet::load_proxy_dir_override(app.handle());
+
+            // Sync color palette status to psynet proxy so OrangeTeamV2 override is active
+            let integrity = load_integrity(app.handle());
+            let _ = psynet::merge_palette_spoof(integrity.palette_active);
+
+            applog::event(&format!(
+                "app setup complete; build {} (v{}, hash {}) logs at {}",
+                env!("VRL_BUILD_NUMBER"),
+                env!("CARGO_PKG_VERSION"),
+                env!("VRL_BUILD_HASH"),
+                dir.display()
+            ));
+
             std::thread::spawn(|| {
                 if let Ok(()) = ctrlc::set_handler(|| {
                     psynet::kill_proxy_on_exit();
@@ -1047,18 +1784,59 @@ pub fn run() {
                     Ok(false) => applog::event("psynet: boot hosts added config.psynet.gg"),
                     Err(e) => applog::event(&format!("psynet: boot hosts failed: {e}")),
                 }
+                // Auto-start the native proxy immediately after hosts/cert are ready.
+                tauri::async_runtime::spawn(async {
+                    let _ = psynet::clear_rocket_league_cache();
+                    if crate::proxy::is_proxy_running() {
+                        applog::event("psynet: proxy already running at boot");
+                        return;
+                    }
+                    // Load spoof config so the proxy has it ready before RL connects.
+                    if let Some(cfg) = psynet::load_active_spoof_from_disk() {
+                        crate::proxy::set_spoof_config(cfg).await;
+                    }
+                    match crate::proxy::start_native_proxy().await {
+                        Ok(()) => applog::event("psynet: native proxy auto-started on port 443"),
+                        Err(e) => applog::event(&format!("psynet: proxy auto-start failed: {e}")),
+                    }
+                    match crate::proxy::start_ws_broker().await {
+                        Ok(()) => applog::event("psynet: WS broker auto-started on port 27505"),
+                        Err(e) => applog::event(&format!("psynet: WS broker auto-start failed (non-fatal): {e}")),
+                    }
+                });
             });
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    if window.label() == "main" {
+                        applog::event("exit: main window close requested — terminating application");
+                        psynet::kill_proxy_on_exit();
+                        std::process::exit(0);
+                    } else if window.label() == "tracker_overlay" {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                }
+                tauri::WindowEvent::Destroyed => {
+                    if window.label() == "main" {
+                        psynet::kill_proxy_on_exit();
+                        std::process::exit(0);
+                    }
+                }
+                _ => {}
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_items,
             get_config,
             save_config,
+            get_launch_on_startup,
+            set_launch_on_startup,
             get_backups,
             apply_swap,
             reswap_all,
-            replace_export,
-            set_custom_pfp,
             restore_backups,
             restore_single_backup,
             check_integrity,
@@ -1066,24 +1844,91 @@ pub fn run() {
             get_palette_status,
             apply_rich_palette,
             restore_rich_palette,
-            cleanup_temp_files,
-            fetch_catalog,
             report_diagnostic,
             check_for_updates,
+            get_build_info,
             install_update,
             get_swaps,
             delete_swap,
+            presets::get_presets,
+            presets::save_preset,
+            presets::delete_preset,
+            presets::apply_preset,
+            presets::export_preset_code,
+            presets::import_preset_code,
+            presets::peek_preset_code,
+            presets::preset_download_missing_maps,
+            presets::random_swap_plan,
+            presets::apply_swap_plan,
+            presets::get_swap_history,
+            presets::clear_swap_history,
             detect_game_dir,
             validate_game_dir,
             applog::append_launch_log,
             applog::get_logs_dir,
+            applog::get_log_tail,
+            applog::open_log_folder,
             psynet::save_psynet_spoof,
             psynet::get_psynet_spoof,
             psynet::get_psynet_status,
             psynet::ensure_psynet_hosts,
             psynet::start_psynet_proxy,
             psynet::stop_psynet_proxy,
+            psynet::restart_psynet_proxy,
             psynet::is_rocket_league_running,
+            psynet::clear_rocket_league_cache,
+            psynet::get_psynet_config_json,
+            psynet::save_psynet_config_json,
+            psynet::get_proxy_dir_override,
+            psynet::save_proxy_dir,
+            psynet::delete_ca_certificates,
+            export_diagnostics,
+            copy_to_clipboard,
+            force_exit,
+            open_external_url,
+            repair_engine_refs,
+            reset_tagame_for_verify,
+            sync_palette_psynet_config,
+            features::get_features,
+            workshop::workshop_get_auth,
+            workshop::workshop_search_maps,
+            workshop::workshop_fetch_bakkes_maps,
+            workshop::workshop_fetch_bakkes_versions,
+            workshop::workshop_get_installed,
+            workshop::workshop_install_custom_map,
+            workshop::workshop_import_bakkes_zip,
+            workshop::workshop_install_map_from_url,
+            workshop::workshop_get_map_library,
+            workshop::workshop_install_from_library,
+            workshop::workshop_remove_from_library,
+            workshop::workshop_get_map_presets,
+            workshop::workshop_save_map_preset,
+            workshop::workshop_apply_map_preset,
+            workshop::workshop_delete_map_preset,
+            workshop::workshop_install_map,
+            workshop::workshop_restore,
+            workshop::workshop_set_map_thumbnail,
+            tracker::get_overlay_state,
+            tracker::get_connection_status,
+            tracker::reset_session,
+            tracker::update_player_skill,
+            tracker::tracker_set_playlist,
+            tracker::set_player_identity,
+            tracker::set_overlay_config,
+            tracker::set_click_through,
+            tracker::test_simulate_match,
+            tracker::tracker_open_overlay_window,
+            tracker::tracker_close_overlay_window,
+            tracker::tracker_set_overlay_locked,
+            tracker::tracker_position_overlay,
+            tracker::tracker_start_dragging,
+            tracker::tracker_move_overlay_by,
+            tracker::tracker_center_overlay,
+            tracker::tracker_load_session,
+            tracker::tracker_save_session,
+            tracker::tracker_ensure_stats_api,
+            tracker::tracker_set_overlay_size,
+            tracker::tracker_apply_scale_opacity,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

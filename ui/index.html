@@ -19,6 +19,8 @@
             <div class="nav-item" data-tab="names-tab">Names<span class="nav-wip">WIP</span></div>
             <div class="nav-item" data-tab="ranks-tab">Fake Ranks</div>
             <div class="nav-item" data-tab="camera-tab">Camera</div>
+            <div class="nav-item" data-tab="maps-tab">Maps</div>
+            <div class="nav-item" data-tab="tracker-tab">Tracker Overlay</div>
             <div class="nav-item" data-tab="misc-tab">Miscellaneous</div>
         </nav>
 
@@ -41,6 +43,7 @@
                 <div class="subtab-strip" role="tablist">
                     <button type="button" class="subtab-btn active" data-subtab="swaps-pane">Swaps</button>
                     <button type="button" class="subtab-btn" data-subtab="restore-pane">Restore</button>
+                    <button type="button" class="subtab-btn" data-subtab="presets-pane">Presets</button>
                 </div>
 
                 <div id="swaps-pane" class="subtab-pane active">
@@ -108,13 +111,13 @@
                         <select id="swap-paint" class="spawn-paint-select" aria-hidden="true" tabindex="-1" disabled>
                             <option value="0">None</option>
                         </select>
-                        <p id="swap-paint-hint" class="field-hint" style="display:block; color: var(--accent-red, #e05);">⚠ Paint swaps are disabled — selecting a paint causes items to become invisible in-game and may crash Rocket League. Coming in a later update.</p>
+                        <p id="swap-paint-hint" class="field-hint" style="display:block; color: var(--accent-red, #e05);">Unavailable — paint swaps cause items to become invisible in-game. Coming in a later update.</p>
                     </div>
 
                     <div class="swapper-controls">
                         <button id="apply-swap" class="action-btn" disabled>Swap Items</button>
                     </div>
-                    <p id="swap-rl-hint" class="field-hint" hidden>Rocket League is running — close it before swapping or restoring.</p>
+                    <p id="swap-rl-hint" class="field-hint" hidden>Rocket League is running — <a href="#" id="kill-rl-btn" style="color:var(--accent-blue);font-weight:600;text-decoration:underline;">close it now</a> before swapping or restoring.</p>
                 </div>
 
                 <div id="restore-pane" class="subtab-pane">
@@ -127,6 +130,41 @@
                         <div style="display: flex; gap: 12px; margin-top: 12px;">
                             <button id="restore-btn" class="action-btn action-btn-secondary" disabled>Restore All Items</button>
                             <button id="reswap-btn" class="action-btn" style="background: var(--accent-blue); color: #fff;" disabled>Reswap All Items</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="presets-pane" class="subtab-pane">
+                    <h2 class="section-title">Presets</h2>
+                    <p class="section-desc">Save your active swaps as a loadout, share it with a code, or roll a random car.</p>
+                    <div class="swapper-controls">
+                        <button id="preset-save-btn" class="action-btn" type="button">Save current as preset</button>
+                        <button id="preset-import-btn" class="action-btn action-btn-secondary" type="button">Import code</button>
+                        <button id="preset-random-btn" class="action-btn" type="button" style="background: var(--accent-blue); color: #fff;">Randomize car</button>
+                    </div>
+                    <div id="preset-list" class="backup-list" style="margin-top:12px;">
+                        <div class="backup-empty">Loading presets...</div>
+                    </div>
+                    <div class="card spoof-card" style="margin-top:14px;">
+                        <div class="settings-group">
+                            <label class="switch-row" for="preset-history-toggle">
+                                <input type="checkbox" id="preset-history-toggle" class="switch-input" role="switch" checked>
+                                <span class="switch-ui" aria-hidden="true">
+                                    <span class="switch-track"><span class="switch-thumb"></span></span>
+                                    <span class="switch-state">
+                                        <span class="switch-state-on">On</span>
+                                        <span class="switch-state-off">Off</span>
+                                    </span>
+                                </span>
+                                <span class="switch-copy">
+                                    <span class="switch-title">Swap history</span>
+                                    <span class="switch-hint">Local log of swaps, restores, and presets</span>
+                                </span>
+                            </label>
+                        </div>
+                        <div id="preset-history-list" class="backup-list" style="max-height:260px; overflow:auto;"></div>
+                        <div class="swapper-controls" style="margin-top:8px;">
+                            <button id="preset-history-clear" class="action-btn action-btn-secondary" type="button">Clear history</button>
                         </div>
                     </div>
                 </div>
@@ -157,7 +195,6 @@
                         </section>
 
                         <div class="title-pick-bridge" aria-hidden="true">
-                            <span class="title-pick-arrow">→</span>
                             <span class="title-pick-bridge-label">becomes</span>
                         </div>
 
@@ -247,71 +284,18 @@
 
             <div id="names-tab" class="tab-content">
                 <h2 class="section-title">Names <span class="section-wip" title="Work in progress">WIP</span></h2>
+                <p class="section-desc">Display-name spoofing is coming later. Other PsyNet spoofs (ranks, titles) are unaffected.</p>
                 <div class="wip-banner" role="status">
                     <div class="wip-banner-text">
                         <strong>Not available</strong>
-                        <span>Name spoof is not working yet and is fully disabled. Controls below cannot be used — check back in a later update.</span>
-                    </div>
-                </div>
-                <p class="section-desc">Display-name spoofing is coming later. Other PsyNet spoofs (ranks, titles) are unaffected.</p>
-                <div class="card spoof-card name-spoof-disabled" aria-disabled="true">
-                    <div class="settings-group">
-                        <label class="switch-row" for="name-spoof-enabled">
-                            <input type="checkbox" id="name-spoof-enabled" class="switch-input" role="switch" disabled aria-disabled="true">
-                            <span class="switch-ui" aria-hidden="true">
-                                <span class="switch-track"><span class="switch-thumb"></span></span>
-                                <span class="switch-state">
-                                    <span class="switch-state-on">On</span>
-                                    <span class="switch-state-off">Off</span>
-                                </span>
-                            </span>
-                            <span class="switch-copy">
-                                <span class="switch-title">Name spoof <span class="inline-wip">WIP</span></span>
-                                <span class="switch-hint">Unavailable — not working yet</span>
-                            </span>
-                        </label>
-                    </div>
-                    <div class="name-preview" id="name-spoof-preview" aria-live="polite">
-                        <span class="name-preview-chip name-preview-from" id="name-preview-from">bitss.</span>
-                        <span class="name-preview-arrow" aria-hidden="true">→</span>
-                        <span class="name-preview-chip name-preview-to" id="name-preview-to">evil bits</span>
-                    </div>
-                    <div class="settings-group">
-                        <label for="name-spoof-display">Display name</label>
-                        <input type="text" id="name-spoof-display" placeholder="evil bits" maxlength="32" autocomplete="off" spellcheck="false" disabled aria-disabled="true" readonly tabindex="-1">
-                    </div>
-                    <div class="settings-group">
-                        <label for="name-spoof-real">Your Epic name</label>
-                        <input type="text" id="name-spoof-real" placeholder="bitss." maxlength="32" autocomplete="off" spellcheck="false" disabled aria-disabled="true" readonly tabindex="-1">
-                        <p class="field-hint">Exact in-game name to replace (case-sensitive).</p>
-                    </div>
-                    <details class="name-advanced">
-                        <summary>Advanced</summary>
-                        <div class="settings-group">
-                            <label for="name-spoof-player-id">Player ID</label>
-                            <input type="text" id="name-spoof-player-id" placeholder="Epic|…|0" autocomplete="off" spellcheck="false" disabled aria-disabled="true" readonly tabindex="-1">
-                            <p class="field-hint">Epic|…|0 for WS name scrub. Set manually or learned from WS traffic when empty.</p>
-                        </div>
-                        <label class="switch-row switch-row-compact" for="name-spoof-lab-all">
-                            <input type="checkbox" id="name-spoof-lab-all" class="switch-input" role="switch" disabled aria-disabled="true">
-                            <span class="switch-ui" aria-hidden="true">
-                                <span class="switch-track"><span class="switch-thumb"></span></span>
-                            </span>
-                            <span class="switch-copy">
-                                <span class="switch-title">Lab: all nametags</span>
-                                <span class="switch-hint">Every PlayerName on wire shows your spoof (testing only)</span>
-                            </span>
-                        </label>
-                    </details>
-                    <div class="swapper-controls">
-                        <button id="name-spoof-save-btn" class="action-btn" type="button" disabled aria-disabled="true" title="Name spoof is not available yet">Save name spoof</button>
+                        <span>Name spoof is not working yet and is fully disabled. Check back in a later update.</span>
                     </div>
                 </div>
             </div>
 
             <div id="ranks-tab" class="tab-content">
                 <h2 class="section-title">Fake Ranks</h2>
-                <p class="section-desc">Override ranked badges, MMR, and season reward tier per playlist.</p>
+
                 <div class="card spoof-card">
                     <div class="settings-group">
                         <label class="switch-row" for="fake-ranks-enabled">
@@ -346,7 +330,13 @@
                                 <img class="rank-playlist-icon" id="fake-ranks-add-rank-icon" src="ranks/tier-19.png" width="28" height="28" alt="">
                                 <span class="rank-playlist-name" id="fake-ranks-add-rank-name">Grand Champion I</span>
                             </button>
-                            <input type="number" id="fake-ranks-add-mmr" min="0" max="3000" step="1" inputmode="numeric" autocomplete="off" placeholder="MMR" aria-label="MMR value">
+                            <select id="fake-ranks-add-division" aria-label="Division">
+                                <option value="0">Div I</option>
+                                <option value="1">Div II</option>
+                                <option value="2">Div III</option>
+                                <option value="3">Div IV</option>
+                            </select>
+                            <input type="number" id="fake-ranks-add-mmr" min="0" step="1" inputmode="numeric" autocomplete="off" placeholder="MMR" aria-label="MMR value">
                         </div>
                     </div>
                     <div class="swapper-controls">
@@ -381,7 +371,7 @@
                             </span>
                             <span class="switch-copy">
                                 <span class="switch-title">Camera limits</span>
-                                <span class="switch-hint">Raises the in-game FOV, height, and distance slider limits</span>
+
                             </span>
                         </label>
                     </div>
@@ -416,30 +406,104 @@
                 </div>
             </div>
 
-            <div id="misc-tab" class="tab-content">
-                <h2 class="section-title">Miscellaneous</h2>
-                <p class="section-desc">Season logo + bottom main menu text. Start VelocityRL and wait for the proxy before launching RL.</p>
-                <div class="card spoof-card">
-                    <div class="settings-group">
-                        <label class="switch-row palette-switch-row" for="rich-palette-enabled" id="palette-switch-row">
-                            <input type="checkbox" id="rich-palette-enabled" class="switch-input" role="switch" disabled>
-                            <span class="switch-ui" aria-hidden="true">
-                                <span class="switch-track"><span class="switch-thumb"></span></span>
-                                <span class="switch-state">
-                                    <span class="switch-state-on">Applied</span>
-                                    <span class="switch-state-off">Off</span>
-                                </span>
-                            </span>
-                            <span class="switch-copy">
-                                <span class="switch-title">Rich color palette</span>
-                            </span>
-                        </label>
+            <div id="maps-tab" class="tab-content">
+                <div class="subtab-strip" role="tablist">
+                    <button type="button" class="subtab-btn active" data-subtab="browser-pane">Maps</button>
+                    <button type="button" class="subtab-btn" data-subtab="maplib-pane">Library</button>
+                    <button type="button" class="subtab-btn" data-subtab="mappresets-pane">Presets</button>
+                </div>
+
+                <div id="workshop-url-progress" style="display:none;flex-direction:column;gap:4px;background:rgba(255,255,255,0.03);padding:10px;border-radius:8px;border:1px solid var(--border);margin-bottom:8px;">
+                    <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-muted, #aaa);">
+                        <span id="workshop-url-progress-text">Downloading map…</span>
+                        <span id="workshop-url-progress-pct">0%</span>
                     </div>
-                    <div class="swapper-controls">
-                        <button id="palette-apply-btn" class="action-btn" type="button" disabled>Apply</button>
-                        <button id="palette-restore-btn" class="action-btn action-btn-secondary" type="button" disabled>Restore</button>
+                    <div class="progress-container" style="height:6px;border-radius:3px;overflow:hidden;background:rgba(255,255,255,0.08);">
+                        <div id="workshop-url-progress-fill" class="progress-fill" style="height:100%;width:0%;background:var(--accent-blue, #2196f3);transition:width .2s;"></div>
                     </div>
                 </div>
+
+                <div id="browser-pane" class="subtab-pane active">
+                    <div class="browser-toolbar" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between;">
+                        <div style="display:flex;gap:8px;align-items:center;flex:1;min-width:260px;">
+                            <input type="text" id="workshop-catalog-search" placeholder="Search BakkesPlugins maps (e.g. Rings, Dribble, Aerial)..." style="flex:1;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:12px;">
+                            <button id="workshop-catalog-search-btn" class="action-btn" type="button">Search</button>
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <button id="workshop-catalog-prev-btn" class="action-btn action-btn-secondary" type="button" disabled>← Previous</button>
+                            <span id="workshop-catalog-page-info" style="font-size:12px;color:var(--text-secondary);font-weight:600;">Page 1</span>
+                            <button id="workshop-catalog-next-btn" class="action-btn action-btn-secondary" type="button">Next →</button>
+                        </div>
+                    </div>
+
+                    <div id="workshop-catalog-grid" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(230px, 1fr));gap:14px;max-height:calc(100vh - 270px);overflow-y:auto;padding-right:6px;">
+                        <div style="grid-column:1/-1;text-align:center;padding:40px 20px;color:var(--text-secondary);">
+                            <div class="spinner" style="width:28px;height:28px;margin:0 auto 12px;border:3px solid rgba(255,255,255,0.1);border-top-color:var(--accent-blue);border-radius:50%;animation:spin 1s linear infinite;"></div>
+                            <div>Loading BakkesPlugins Maps catalog…</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="maplib-pane" class="subtab-pane">
+                    <div class="card spoof-card">
+                        <p class="switch-title" style="font-weight:600;font-size:13px;margin:0 0 6px 0;">Install map from URL or file</p>
+                        <p class="switch-hint" style="margin:0 0 10px 0;">Paste a direct .upk or .zip link, or select a downloaded .upk map from your computer.</p>
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                            <input type="text" id="workshop-url-input" placeholder="Paste direct .upk or .zip map URL here..." style="flex:1;min-width:220px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:12px;">
+                            <button id="workshop-url-btn" class="action-btn" type="button" style="white-space:nowrap;">Install from URL</button>
+                            <button id="workshop-add-map-btn" class="action-btn action-btn-secondary" type="button" style="white-space:nowrap;">Add map file (.upk)</button>
+                            <button id="workshop-restore-btn" class="action-btn action-btn-secondary" type="button" style="white-space:nowrap;">Restore original map</button>
+                        </div>
+                    </div>
+
+                    <div class="card spoof-card">
+                        <div style="display:flex;align-items:center;gap:10px;">
+                            <p class="switch-title" style="font-weight:600;font-size:13px;flex:1;margin:0;">Your custom maps</p>
+                        </div>
+                        <div id="workshop-library-list" class="backup-list" style="margin-top:6px;"></div>
+                    </div>
+                </div>
+
+                <div id="mappresets-pane" class="subtab-pane">
+                    <div class="card spoof-card">
+                        <div style="display:flex;align-items:center;gap:10px;">
+                            <p class="switch-title" style="font-weight:600;font-size:13px;flex:1;margin:0;">Map presets</p>
+                            <button id="workshop-preset-save-btn" class="action-btn" type="button">Save loaded map as preset</button>
+                        </div>
+                        <p class="switch-hint" style="display:block;margin-top:4px;">Save a loaded map under a name to switch between your favorites in one click. Separate from item-swap presets.</p>
+                        <div id="workshop-preset-list" class="backup-list" style="margin-top:6px;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="misc-tab" class="tab-content">
+                <h2 class="section-title">Miscellaneous</h2>
+
+                <div class="card spoof-card palette-card">
+                    <div id="palette-disabled-block" class="palette-disabled-block">
+                        <div class="swapper-header">
+                            <label class="switch-row palette-switch-row" for="rich-palette-enabled" id="palette-switch-row">
+                                <input type="checkbox" id="rich-palette-enabled" class="switch-input" role="switch" disabled>
+                                <span class="switch-ui" aria-hidden="true">
+                                    <span class="switch-track"><span class="switch-thumb"></span></span>
+                                    <span class="switch-state">
+                                        <span class="switch-state-on">On</span>
+                                        <span class="switch-state-off">Off</span>
+                                    </span>
+                                </span>
+                                <span class="switch-copy">
+                                    <span class="switch-title">Color palette</span>
+                                    <span class="switch-desc">Unlocks custom team car colors and extended palette options in Rocket League.</span>
+                                </span>
+                            </label>
+                        </div>
+                    <div class="swapper-controls palette-actions">
+                        <button id="palette-apply-btn" class="action-btn" type="button">Apply</button>
+                        <button id="palette-restore-btn" class="action-btn action-btn-secondary" type="button" disabled>Restore</button>
+                    </div>
+                    </div>
+                </div>
+
                 <div class="card spoof-card">
                     <div class="settings-group">
                         <label class="switch-row" for="logo-spoof-enabled">
@@ -460,7 +524,7 @@
                     <div class="settings-group">
                         <label for="logo-spoof-url">Logo URL</label>
                         <input type="text" id="logo-spoof-url" placeholder="https://rl-cdn.psyonix.com/LogoImages/S23/..." autocomplete="off" spellcheck="false">
-                        <a href="#" id="logo-spoof-default" class="titles-bg-default-link logo-spoof-default-link">Season 23 default</a>
+                        <a href="#" id="logo-spoof-default" class="titles-bg-default-link logo-spoof-default-link">Reset to default</a>
                     </div>
                     <div class="swapper-controls">
                         <button id="logo-spoof-save-btn" class="action-btn" type="button">Save season logo</button>
@@ -488,6 +552,94 @@
                     </div>
                     <div class="swapper-controls">
                         <button id="blog-spoof-save-btn" class="action-btn" type="button">Save</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tracker-tab" class="tab-content">
+                <h2 class="section-title">Tracker Overlay</h2>
+                <p class="section-desc">Track win streaks, match wins, and losses automatically on screen.</p>
+
+                <div class="tracker-borderless-banner">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0; color:#ff9f43;"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    <span><strong>Notice:</strong> You must set Rocket League Video Settings to <strong>Borderless</strong> (or Windowed) for the tracker overlay to show in-game!</span>
+                </div>
+
+                <div class="card spoof-card">
+                    <h3>Overlay Theme & Style</h3>
+                    <div class="swapper-themes-grid" style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-top:10px;">
+                        <button type="button" class="theme-style-btn active" data-style="circle" style="padding:10px 8px; background:var(--panel-hover); border:1px solid var(--accent); border-radius:6px; color:var(--text); cursor:pointer; text-align:center;">
+                            <strong style="display:block; font-size:12px;">Boost Hugger</strong>
+                            <span style="font-size:10px; color:var(--text-secondary);">Curved 4 cards</span>
+                        </button>
+                        <button type="button" class="theme-style-btn" data-style="minimal" style="padding:10px 8px; background:var(--panel-hover); border:1px solid var(--border); border-radius:6px; color:var(--text); cursor:pointer; text-align:center;">
+                            <strong style="display:block; font-size:12px;">Minimal Card</strong>
+                            <span style="font-size:10px; color:var(--text-secondary);">Ultra-compact bar</span>
+                        </button>
+                        <button type="button" class="theme-style-btn" data-style="redesigned" style="padding:10px 8px; background:var(--panel-hover); border:1px solid var(--border); border-radius:6px; color:var(--text); cursor:pointer; text-align:center;">
+                            <strong style="display:block; font-size:12px;">Floating Card</strong>
+                            <span style="font-size:10px; color:var(--text-secondary);">2x2 Grid tile</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="card spoof-card">
+                    <div class="settings-group">
+                        <label class="switch-row" for="tracker-master-enabled">
+                            <input type="checkbox" id="tracker-master-enabled" class="switch-input" role="switch">
+                            <span class="switch-ui" aria-hidden="true">
+                                <span class="switch-track"><span class="switch-thumb"></span></span>
+                                <span class="switch-state">
+                                    <span class="switch-state-on">On</span>
+                                    <span class="switch-state-off">Off</span>
+                                </span>
+                            </span>
+                            <span class="switch-copy">
+                                <span class="switch-title">Enable Tracker Overlay</span>
+                                <span class="switch-hint">Automatically calculates MMR gain/loss and win streaks</span>
+                            </span>
+                        </label>
+                    </div>
+
+                </div>
+
+                <div class="card spoof-card">
+                    <h3>Overlay Customization & Placement</h3>
+                    <div class="settings-group" style="margin-top:12px;">
+                        <div style="max-width:320px;">
+                            <label for="tracker-position-select">Screen Position</label>
+                            <select id="tracker-position-select" style="width:100%; background:var(--input-bg); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:8px;">
+                                <option value="top-right">Top Right (Default)</option>
+                                <option value="top-left">Top Left</option>
+                                <option value="bottom-right">Bottom Right</option>
+                                <option value="bottom-left">Bottom Left</option>
+                                <option value="custom">Custom (Free Drag)</option>
+                            </select>
+                        </div>
+                    </div>
+
+
+                    <div class="settings-group" style="margin-top:14px; display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.02); padding:12px 14px; border-radius:8px; border:1px solid var(--border);">
+                        <div>
+                            <span style="font-size:13px; color:#fff; font-weight:normal;">Overlay Positioning & Mouse Locking</span>
+                            <div style="font-size:11px; color:var(--text-secondary); margin-top:2px;">Unlock to drag overlay across screen; lock to pass clicks through to game during play.</div>
+                        </div>
+                        <button type="button" id="tracker-toggle-lock-btn" class="action-btn action-btn-secondary" style="padding:8px 16px; font-size:12px; font-weight:700; white-space:nowrap;">Unlock Position to Move</button>
+                    </div>
+                    <div style="font-size:11px; color:var(--muted); margin-top:8px;">Tip: For overlays to render over Rocket League, set <strong>Video Settings</strong> in-game to <strong>Borderless Windowed</strong>.</div>
+                </div>
+
+                <div class="card spoof-card">
+                    <h3>Overlay Launch & In-Game Behavior</h3>
+                    <p style="font-size:12px; color:var(--text-secondary); margin-top:4px; line-height:1.5;">
+                        When enabled, the tracker HUD floats above Rocket League automatically when the game is running.
+                        In-game stats (MMR, net gain/loss, match streak) update automatically after every match.
+                    </p>
+                    <div style="display:flex; gap:10px; margin-top:14px; flex-wrap:wrap;">
+                        <button type="button" id="tracker-test-preview-btn" class="action-btn action-btn-secondary" style="font-size:12px; padding:8px 16px;">Test Overlay (Open on Screen)</button>
+                        <button type="button" id="tracker-center-overlay-btn" class="action-btn action-btn-secondary" style="font-size:12px; padding:8px 16px;">Center Overlay on Screen</button>
+                        <button type="button" id="tracker-close-overlay-btn" class="action-btn action-btn-secondary" style="font-size:12px; padding:8px 16px;">Hide Overlay</button>
+                        <button type="button" id="tracker-reset-session-btn" class="action-btn action-btn-secondary" style="font-size:12px; padding:8px 16px; color:#ff6b6b; border-color:rgba(255,107,107,0.3);">Reset Session Stats</button>
                     </div>
                 </div>
             </div>
@@ -520,8 +672,24 @@
                     </div>
                 </div>
             </div>
+            <div class="settings-group" style="margin-top:14px;">
+                <label class="switch-row" for="launch-on-startup">
+                    <input type="checkbox" id="launch-on-startup" class="switch-input" role="switch">
+                    <span class="switch-ui" aria-hidden="true">
+                        <span class="switch-track"><span class="switch-thumb"></span></span>
+                        <span class="switch-state">
+                            <span class="switch-state-on">On</span>
+                            <span class="switch-state-off">Off</span>
+                        </span>
+                    </span>
+                    <span class="switch-copy">
+                        <span class="switch-title">Start VelocityRL on startup</span>
+                        <span class="switch-hint">Automatically starts VelocityRL in background on login</span>
+                    </span>
+                </label>
+            </div>
             <div id="install-chooser" style="display:none;"></div>
-            <p class="settings-footer-note"><a id="privacy-link" href="#">Privacy Policy</a></p>
+            <p class="settings-footer-note"><a id="privacy-link" href="https://velocityrl.tech/privacy.html" target="_blank" rel="noopener noreferrer">Privacy Policy</a></p>
             <button id="close-settings" class="action-btn">Save</button>
         </div>
     </div>
@@ -529,12 +697,37 @@
     <div id="close-psynet-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="close-psynet-title">
         <div class="modal">
             <h2 id="close-psynet-title">PsyNet proxy is running</h2>
-            <p>Closing VelocityRL will disconnect Rocket League from PsyNet. The game will not work until VelocityRL is running or hosts are restored.</p>
-            <div class="close-choice-actions">
-                <button type="button" class="action-btn" data-close-choice="revert">Close and remove hosts</button>
-                <button type="button" class="action-btn action-btn-secondary" data-close-choice="keep-hosts">Close without removing hosts</button>
-                <button type="button" class="action-btn action-btn-secondary" data-close-choice="stay">Keep VelocityRL running</button>
+            <div id="close-psynet-choices">
+                <p>Closing VelocityRL will disconnect Rocket League from PsyNet. The game will not work until VelocityRL is running or hosts are restored.</p>
+                <div class="close-choice-actions">
+                    <button type="button" class="action-btn" data-close-choice="revert">Close and remove hosts</button>
+                    <button type="button" class="action-btn action-btn-secondary" data-close-choice="keep-hosts">Close without removing hosts</button>
+                    <button type="button" class="action-btn action-btn-secondary" data-close-choice="stay">Keep VelocityRL running</button>
+                </div>
             </div>
+            <div id="close-psynet-shutting-down" style="display:none;text-align:center;padding:16px 0;">
+                <p style="font-size:14px;color:var(--text-secondary);margin-bottom:8px;">Please wait — shutting down proxy safely…</p>
+                <p style="font-size:11px;color:var(--text-secondary);opacity:0.6;">Do not force-close VelocityRL</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="outdated-build-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="outdated-build-title">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="outdated-build-title">Build Outdated</h2>
+            </div>
+            <p style="color:var(--text-secondary); margin-bottom:16px;">This build of VelocityRL is outdated and is no longer supported. All features have been locked. Please update to the latest version to continue.</p>
+            <div style="background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:10px 14px; margin-bottom:16px; font-family:monospace; font-size:12px; display:flex; flex-direction:column; gap:6px;">
+                <div style="display:flex; justify-content:space-between;"><span style="color:var(--muted);">Current Build:</span> <span id="outdated-client-build" style="color:var(--danger); font-weight:600;">—</span></div>
+                <div style="display:flex; justify-content:space-between;"><span style="color:var(--muted);">Status:</span> <span style="color:var(--danger); font-weight:600;">Blacklisted Build</span></div>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+                <button id="outdated-update-btn" class="action-btn" type="button">Check for Updates</button>
+                <button id="outdated-website-btn" class="action-btn action-btn-secondary" type="button">Download from Website</button>
+                <button id="outdated-exit-btn" class="path-btn" type="button" style="text-align:center; justify-content:center; color:var(--muted);">Exit</button>
+            </div>
+            <p id="outdated-update-status" style="font-size:12px; color:var(--muted); text-align:center; margin:12px 0 0; min-height:16px;"></p>
         </div>
     </div>
 
@@ -553,10 +746,127 @@
         </div>
     </div>
 
+    <div id="dev-modal" class="modal-overlay">
+        <div class="modal modal-wide">
+            <div class="modal-header">
+                <h2>Debug</h2>
+                <div id="close-dev-modal" class="close-modal-btn">×</div>
+            </div>
+            <div class="dev-info-row" style="display:flex;align-items:center;gap:8px;">
+                <label style="font-size:11px;color:var(--text-secondary);white-space:nowrap;">Game dir:</label>
+                <input id="dev-game-dir-input" type="text" style="flex:1;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:11px;font-family:monospace;" placeholder="C:\...\RocketLeague\TAGame\CookedPCConsole" />
+            </div>
+            <div class="dev-info-row" style="display:flex;align-items:center;gap:8px;">
+                <label style="font-size:11px;color:var(--text-secondary);white-space:nowrap;">Proxy dir:</label>
+                <input id="dev-proxy-dir-input" type="text" style="flex:1;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:11px;font-family:monospace;" placeholder="Auto-detected (leave empty to reset to auto)" />
+                <button id="dev-save-proxydir-btn" class="path-btn"><span>Save Proxy Dir</span></button>
+            </div>
+
+            <div class="dev-info-row">
+                <span class="dev-info-label" id="dev-proxy-status">Proxy: —</span>
+            </div>
+            <p style="font-size:11px;color:var(--text-secondary);margin:8px 0 4px;font-weight:600;">Proxy Config (psynet_config.json)</p>
+            <textarea id="dev-proxy-config" style="width:100%;height:200px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;font-family:monospace;font-size:11px;resize:vertical;" spellcheck="false" placeholder="Loading..."></textarea>
+            <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+                <button id="dev-refresh-btn" class="path-btn"><span>Refresh</span></button>
+                <button id="dev-save-config-btn" class="path-btn"><span>Save Config</span></button>
+                <button id="dev-save-gamedir-btn" class="path-btn"><span>Save Game Dir</span></button>
+                <button id="dev-restart-proxy-btn" class="path-btn"><span>Restart Proxy</span></button>
+                <button id="dev-stop-proxy-btn" class="path-btn"><span>Stop Proxy</span></button>
+                <button id="dev-delete-certs-btn" class="path-btn" style="color:var(--danger, #ff5252);"><span>Delete Certificates</span></button>
+                <button id="dev-open-log-btn" class="path-btn"><span>Open Log Folder</span></button>
+                <button id="dev-export-diag-btn" class="path-btn"><span>Export Diagnostics</span></button>
+            </div>
+            <p id="dev-action-msg" style="font-size:11px;color:var(--text-secondary);margin:6px 0 0;min-height:14px;user-select:text;-webkit-user-select:text;word-break:break-all;cursor:text;"></p>
+            <p style="font-size:11px;color:var(--text-secondary);margin:8px 0 4px;font-weight:600;">Log Output</p>
+            <div class="dev-log-output" id="dev-log-output">Loading logs...</div>
+        </div>
+    </div>
+
     <div id="toast-container"></div>
     <div id="app-loading-overlay" class="app-loading-overlay" role="status" aria-live="polite" aria-busy="true">
-        <p class="app-loading-text">Loading…</p>
+        <div class="app-loading-inner">
+            <p class="app-loading-text">Loading…</p>
+            <div class="app-loading-bar-wrap">
+                <div class="app-loading-bar-fill" id="app-loading-fill"></div>
+            </div>
+            <p class="app-loading-percent" id="app-loading-percent">0%</p>
+        </div>
     </div>
+    <div id="app-dialog-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="app-dialog-title">
+        <div class="modal" style="max-width:440px;">
+            <div class="modal-header">
+                <h2 id="app-dialog-title">VelocityRL</h2>
+                <div id="app-dialog-close" class="close-modal-btn">×</div>
+            </div>
+            <p id="app-dialog-message" style="white-space:pre-wrap;"></p>
+            <div class="settings-group" id="app-dialog-input-group" style="display:none;">
+                <input type="text" id="app-dialog-input" autocomplete="off" spellcheck="false">
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px;">
+                <button id="app-dialog-cancel" class="action-btn action-btn-secondary" type="button">Cancel</button>
+                <button id="app-dialog-ok" class="action-btn" type="button">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="preset-preview-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="preset-preview-title">
+        <div class="modal" style="max-width:620px; width:92vw; max-height:86vh; display:flex; flex-direction:column; overflow:hidden;">
+            <div class="modal-header" style="margin-bottom:8px;">
+                <h2 id="preset-preview-title">Preset Details</h2>
+                <div id="preset-preview-close" class="close-modal-btn">×</div>
+            </div>
+
+            <div id="preset-preview-stats" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
+                <span id="preset-badge-items" class="preset-stat-badge">0 / 100 Items</span>
+                <span id="preset-badge-maps" class="preset-stat-badge">0 / 30 Maps</span>
+            </div>
+
+            <div id="preset-download-banner" style="display:none; padding:10px 12px; border-radius:6px; background:rgba(33,150,243,0.1); border:1px solid rgba(33,150,243,0.3); margin-bottom:12px; font-size:12px; line-height:1.4;">
+                <strong id="preset-download-banner-title" style="display:block; margin-bottom:2px;">Maps Download Status</strong>
+                <div id="preset-download-banner-desc" style="color:var(--text-secondary);"></div>
+            </div>
+
+            <div class="subtab-strip" id="preset-preview-subtabs" style="margin-bottom:12px;">
+                <button type="button" class="subtab-btn active" id="preset-tab-items-btn">Items to Swap</button>
+                <button type="button" class="subtab-btn" id="preset-tab-maps-btn">Workshop Maps</button>
+            </div>
+
+            <div id="preset-items-view" style="flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden;">
+                <div id="preset-items-list" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:6px; padding-right:4px;"></div>
+                <div id="preset-items-pagination" style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; padding-top:8px; border-top:1px solid var(--border);">
+                    <button type="button" id="preset-items-prev" class="action-btn action-btn-secondary" style="padding:4px 12px; font-size:12px;">← Prev</button>
+                    <span id="preset-items-page-info" style="font-size:12px; color:var(--text-secondary); font-weight:600;">Page 1 of 1</span>
+                    <button type="button" id="preset-items-next" class="action-btn action-btn-secondary" style="padding:4px 12px; font-size:12px;">Next →</button>
+                </div>
+            </div>
+
+            <div id="preset-maps-view" style="flex:1; min-height:0; display:none; flex-direction:column; overflow:hidden;">
+                <div id="preset-maps-list" style="flex:1; overflow-y:auto; display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:10px; padding-right:4px;"></div>
+                <div id="preset-maps-pagination" style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; padding-top:8px; border-top:1px solid var(--border);">
+                    <button type="button" id="preset-maps-prev" class="action-btn action-btn-secondary" style="padding:4px 12px; font-size:12px;">← Prev</button>
+                    <span id="preset-maps-page-info" style="font-size:12px; color:var(--text-secondary); font-weight:600;">Page 1 of 1</span>
+                    <button type="button" id="preset-maps-next" class="action-btn action-btn-secondary" style="padding:4px 12px; font-size:12px;">Next →</button>
+                </div>
+            </div>
+
+            <div id="preset-download-progress-wrap" style="display:none; flex-direction:column; gap:4px; margin-top:10px;">
+                <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-secondary);">
+                    <span id="preset-download-progress-status">Downloading maps…</span>
+                    <span id="preset-download-progress-count"></span>
+                </div>
+                <div class="progress-container" style="height:6px; border-radius:3px; background:rgba(255,255,255,0.08); overflow:hidden;">
+                    <div id="preset-download-progress-bar" style="width:0%; height:100%; background:var(--accent-blue); transition:width 0.2s;"></div>
+                </div>
+            </div>
+
+            <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:14px; padding-top:10px; border-top:1px solid var(--border);">
+                <button id="preset-preview-cancel" class="action-btn action-btn-secondary" type="button">Cancel</button>
+                <button id="preset-preview-action" class="action-btn" type="button" style="background:var(--accent-blue); color:#fff;">Apply Preset</button>
+            </div>
+        </div>
+    </div>
+
     <script src="main.js"></script>
 </body>
 </html>

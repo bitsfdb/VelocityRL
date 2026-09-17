@@ -1,14 +1,12 @@
 [package]
 name = "velocity-rl"
-version = "2.0.1"
+version = "2.0.0"
 description = "A Tauri App"
 authors = ["bitsfdb"]
 license = "GNU license v3.0"
 repository = "github.com/bitsfdb/VelocityRL.git"
 edition = "2021"
 rust-version = "1.77.2"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
 name = "app_lib"
@@ -21,19 +19,43 @@ tauri-build = { version = "2.6.1", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.11.1", features = [] }
+tauri = { version = "2.11.1", features = ["unstable"] }
 tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
-tauri-plugin-fs = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-process = "2"
+tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
-reqwest = { version = "0.13.3", features = ["json"] }
+reqwest = { version = "0.13.3", features = ["json", "gzip"] }
 aes = "0.8"
 cipher = { version = "0.4", features = ["block-padding"] }
 flate2 = "1.0"
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
+hmac = "0.12"
+sha2 = "0.10"
+sha1 = "0.10"
+rand = "0.8"
 base64 = { version = "0.22", features = [] }
 ctrlc = "3"
+tokio = { version = "1", features = ["time", "sync", "macros"] }
+tokio-tungstenite = { version = "0.26", default-features = false, features = ["connect", "handshake"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+tokio-rustls = "0.26.5"
+rustls-pemfile = "2.2.0"
+hyper = { version = "1.11.1", features = ["server", "http1"] }
+http-body-util = "0.1.5"
+hyper-util = { version = "0.1.20", features = ["tokio", "server", "service"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winreg = "0.52"
+windows-sys = { version = "0.59", features = [
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_Networking_WinSock",
+] }

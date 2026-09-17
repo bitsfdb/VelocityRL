@@ -2,7 +2,6 @@ pub mod crypto;
 pub mod parser;
 pub mod compression;
 pub mod nametable;
-pub mod reencrypt;
 pub mod swapper;
 pub mod palette;
 

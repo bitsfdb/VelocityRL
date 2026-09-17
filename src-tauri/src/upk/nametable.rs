@@ -64,7 +64,6 @@ pub fn rebuild_with_rename(
     depends_offset: i32,
     name_idx: usize,
     new_name: &str,
-    old_flags: u64,
 ) -> Result<Vec<u8>, String> {
     let no = name_offset as usize;
     let io = import_offset as usize;
@@ -131,18 +130,21 @@ pub fn rebuild_with_rename(
     Ok(out)
 }
 
-fn patch_prefix_offset(data: &mut Vec<u8>, old_val: i32, new_val: i32) {
+fn patch_prefix_offset(data: &mut [u8], old_val: i32, new_val: i32) {
     if old_val == new_val { return; }
-    let old_bytes = old_val.to_le_bytes();
-    let new_bytes = new_val.to_le_bytes();
-
-    let limit = data.len().min(1024);
-    let mut i = 0;
-    while i + 4 <= limit {
-        if data[i..i+4] == old_bytes {
-            data[i..i+4].copy_from_slice(&new_bytes);
+    if let Ok(summary) = super::parser::find_summary_offsets(data) {
+        let targets = [
+            summary.import_offset_offset,
+            summary.export_offset_offset,
+            summary.depends_offset_offset,
+        ];
+        let old_bytes = old_val.to_le_bytes();
+        let new_bytes = new_val.to_le_bytes();
+        for off in targets {
+            if off + 4 <= data.len() && data[off..off + 4] == old_bytes {
+                data[off..off + 4].copy_from_slice(&new_bytes);
+            }
         }
-        i += 1;
     }
 }
 
@@ -184,7 +186,6 @@ pub fn apply_name_pairs(
                     cur_depends_offset,
                     idx,
                     new_str,
-                    slot.flags,
                 )?;
                 let delta = new_data.len() as i64 - data.len() as i64;
                 *data = new_data;
@@ -198,9 +199,7 @@ pub fn apply_name_pairs(
 }
 
 struct NameSlotInfo {
-    fstring_data_offset: usize,
     fstr_len_raw: i32,
-    flags: u64,
     name: String,
 }
 
@@ -228,11 +227,8 @@ fn parse_name_slots(data: &[u8], name_offset: i32, name_count: i32) -> Result<Ve
         };
         let flags_off = pos + 4 + capacity;
         if flags_off + 8 > data.len() { return Err("name entry flags overrun".into()); }
-        let flags = u64_at(data, flags_off)?;
         slots.push(NameSlotInfo {
-            fstring_data_offset: pos + 4,
             fstr_len_raw: fstr_len,
-            flags,
             name,
         });
         pos += 4 + capacity + 8;
@@ -443,6 +439,11 @@ pub fn apply_name_pairs_inplace(
             let region = &mut data[slot.fstring_data_offset..slot.fstring_data_offset + slot.fstring_capacity];
             for (i, b) in region.iter_mut().enumerate() {
                 *b = if i < new_str.len() { new_str.as_bytes()[i] } else { 0 };
+            }
+
+            if needed < slot.fstring_capacity {
+                let new_len = (new_str.len() + 1) as i32;
+                data[fstr_start..fstr_start + 4].copy_from_slice(&new_len.to_le_bytes());
             }
 
             slots[idx].name = new_str.clone();

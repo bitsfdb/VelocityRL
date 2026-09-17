@@ -1,17 +1,3 @@
-#!/usr/bin/env python3
-"""Annotate items.json with Paintable based on painted UPK files on disk.
-
-VelocityRL paint swaps need a dedicated painted package (e.g. Body_Octane_Black_SF.upk)
-or matching name-table variants inside the base UPK. This tool only checks for
-dedicated painted packages (fast, no decryption).
-
-Usage:
-  python tools/annotate_paintable.py "E:\\games\\rocketleague\\TAGame\\CookedPCConsole"
-  python tools/annotate_paintable.py "E:\\games\\rocketleague\\TAGame\\CookedPCConsole" --in-place
-
-Writes annotated items.json to Downloads by default.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -36,17 +22,14 @@ PAINT_NAMES = [
     "Titanium White",
 ]
 
-
 def file_stem(path: str) -> str:
     return Path(path).stem
-
 
 def package_base(stem: str) -> str:
     for suffix in ("_sf", "_SF", "_Sf"):
         if stem.endswith(suffix):
             return stem[: -len(suffix)]
     return stem
-
 
 def paint_slugs(paint_id: int) -> list[str]:
     if paint_id < 1 or paint_id > 12:
@@ -63,15 +46,18 @@ def paint_slugs(paint_id: int) -> list[str]:
         str(paint_id),
     ]
     if paint_id == 5:
-        slugs.extend(["SB", "Sky_Blue"])
+        slugs.extend(["S", "SB", "Sky_Blue"])
     elif paint_id == 8:
-        slugs.append("Gray")
+        slugs.extend(["G", "Gray"])
     elif paint_id == 10:
-        slugs.extend(["FG", "Forest_Green"])
+        slugs.extend(["F", "FG", "Forest_Green"])
     elif paint_id == 12:
         slugs.extend(["TW", "Titanium_White"])
+    else:
+        short = {1: "C", 2: "L", 3: "B", 4: "O", 6: "K", 7: "Y", 9: "P", 11: "V"}
+        if paint_id in short:
+            slugs.append(short[paint_id])
     return slugs
-
 
 def painted_package_candidates(asset_package: str, paint_id: int) -> list[str]:
     stem = file_stem(asset_package)
@@ -85,16 +71,19 @@ def painted_package_candidates(asset_package: str, paint_id: int) -> list[str]:
         out.append(f"{base}_{slug}.upk")
     return out
 
+def is_thumbnail_companion_upk(filename: str) -> bool:
+    return file_stem(filename).lower().endswith("_t_sf")
 
 def has_painted_upk(game_dir: Path, asset_package: str) -> bool:
     if not asset_package:
         return False
     for paint_id in range(1, 13):
         for cand in painted_package_candidates(asset_package, paint_id):
+            if is_thumbnail_companion_upk(cand):
+                continue
             if (game_dir / cand).is_file():
                 return True
     return False
-
 
 def load_items(path: Path) -> tuple[dict, list[dict]]:
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -104,7 +93,6 @@ def load_items(path: Path) -> tuple[dict, list[dict]]:
     if not isinstance(items, list):
         raise SystemExit(f"{path} has no Items array")
     return data, items
-
 
 def main() -> int:
     repo = Path(__file__).resolve().parents[1]
@@ -152,7 +140,6 @@ def main() -> int:
     print(f"Paintable: {painted} / {len(items)} items (dedicated painted UPK on disk)")
     print("Items without a painted UPK file are Paintable=false — RL inventory paint still works in-game.")
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

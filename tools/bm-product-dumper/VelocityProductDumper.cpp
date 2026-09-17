@@ -34,8 +34,6 @@ void VelocityProductDumper::onUnload()
     cvarManager->log("VelocityRL Product Dumper unloaded.");
 }
 
-// ─── Helpers ─────────────────────────────────────────────────
-
 std::filesystem::path VelocityProductDumper::GetOutputDir()
 {
     char path[MAX_PATH];
@@ -61,6 +59,21 @@ std::string VelocityProductDumper::PaintName(int id)
     if (id >= 0 && id < static_cast<int>(PAINT_NAMES.size()))
         return PAINT_NAMES[id];
     return "Unknown_" + std::to_string(id);
+}
+
+std::string VelocityProductDumper::ExtractYear(const std::string& s)
+{
+    for (size_t i = 0; i + 4 <= s.size(); i++) {
+        if (s[i] >= '0' && s[i] <= '9' &&
+            s[i + 1] >= '0' && s[i + 1] <= '9' &&
+            s[i + 2] >= '0' && s[i + 2] <= '9' &&
+            s[i + 3] >= '0' && s[i + 3] <= '9') {
+            std::string y = s.substr(i, 4);
+            if (y >= "1900" && y <= "2100")
+                return y;
+        }
+    }
+    return "";
 }
 
 static std::string UnlockMethodName(unsigned char id)
@@ -91,8 +104,6 @@ std::string VelocityProductDumper::EscapeJson(const std::string& s)
     return out;
 }
 
-// ─── Command handlers ────────────────────────────────────────
-
 void VelocityProductDumper::DumpAllProducts(std::vector<std::string> args)
 {
     DoDump(false);
@@ -102,8 +113,6 @@ void VelocityProductDumper::DumpPaintableOnly(std::vector<std::string> args)
 {
     DoDump(true);
 }
-
-// ─── Core dump logic ─────────────────────────────────────────
 
 void VelocityProductDumper::DoDump(bool paintableOnly)
 {
@@ -121,8 +130,7 @@ void VelocityProductDumper::DoDump(bool paintableOnly)
         return;
     }
 
-    // Scan owned inventory items for painted variants
-    std::map<int, std::set<int>> inventoryPaints; // product_id -> set of paint_ids
+    std::map<int, std::set<int>> inventoryPaints;
     try {
         auto ownedProducts = itemsWrapper.GetOwnedProducts();
         int ownedCount = ownedProducts.Count();
@@ -146,7 +154,7 @@ void VelocityProductDumper::DoDump(bool paintableOnly)
                         if (attrType.find("Painted") != std::string::npos) {
                             ProductAttribute_PaintedWrapper painted(attr.memory_address);
                             int paintId = painted.GetPaintID();
-                            if (paintId > 0 && paintId <= 18) { // Up to Platinum (18)
+                            if (paintId > 0 && paintId <= 18) {
                                 inventoryPaints[pid].insert(paintId);
                             }
                         }
@@ -159,7 +167,6 @@ void VelocityProductDumper::DoDump(bool paintableOnly)
         cvarManager->log("Warning: Could not scan owned items. Paint data will use flags only.");
     }
 
-    // Collect product data
     std::vector<ProductEntry> entries;
     entries.reserve(totalCount);
     int paintableCount = 0;
@@ -174,19 +181,16 @@ void VelocityProductDumper::DoDump(bool paintableOnly)
             ProductEntry entry;
             entry.product_id = product.GetID();
 
-            // Label
             try {
                 auto lbl = product.GetLabel();
                 if (!lbl.IsNull()) entry.label = lbl.ToString();
             } catch (...) {}
 
-            // Long label
             try {
                 auto ll = product.GetLongLabel();
                 if (!ll.IsNull()) entry.long_label = ll.ToString();
             } catch (...) {}
 
-            // Slot
             try {
                 auto slotW = product.GetSlot();
                 if (!slotW.IsNull()) {
@@ -203,36 +207,30 @@ void VelocityProductDumper::DoDump(bool paintableOnly)
                 }
             } catch (...) {}
 
-            // Quality
             try {
                 entry.quality_id = static_cast<int>(product.GetQuality());
                 entry.quality = QualityName(entry.quality_id);
             } catch (...) {}
 
-            // Paintable
             try {
                 entry.paintable = product.IsPaintable();
                 if (entry.paintable) paintableCount++;
             } catch (...) {}
 
-            // Unlock method
             try {
                 unsigned char um = product.GetUnlockMethod();
                 entry.unlock_method = UnlockMethodName(um);
             } catch (...) {}
 
-            // Asset package
             try {
                 entry.asset_package = product.GetAssetPackageName();
             } catch (...) {}
 
-            // Asset path
             try {
                 auto ap = product.GetAssetPath();
                 if (!ap.IsNull()) entry.asset_path = ap.ToString();
             } catch (...) {}
 
-            // Paint colors for paintable items
             if (entry.paintable) {
                 auto invIt = inventoryPaints.find(entry.product_id);
                 if (invIt != inventoryPaints.end() && !invIt->second.empty()) {
@@ -255,7 +253,10 @@ void VelocityProductDumper::DoDump(bool paintableOnly)
         std::to_string(paintableCount) + " paintable, " +
         std::to_string(errorCount) + " errors).");
 
-    // ─── Write JSON ──────────────────────────────────────────
+    std::map<std::string, int> labelFreq;
+    for (const auto& e : entries) {
+        labelFreq[e.label + "\x01" + e.slot]++;
+    }
 
     auto outDir = GetOutputDir();
     std::filesystem::create_directories(outDir);
@@ -277,9 +278,29 @@ void VelocityProductDumper::DoDump(bool paintableOnly)
     for (size_t i = 0; i < entries.size(); i++)
     {
         const auto& e = entries[i];
+        const bool duplicateLabel = labelFreq[e.label + "\x01" + e.slot] > 1;
+
+        std::string year = ExtractYear(e.asset_package);
+        if (year.empty()) year = ExtractYear(e.long_label);
+
+        std::string displayLabel = e.label;
+        bool renamed = false;
+        if (duplicateLabel) {
+            renamed = true;
+            if (!year.empty() && e.label.find(year) == std::string::npos) {
+                displayLabel = e.label + " (" + year + ")";
+            } else {
+                displayLabel = e.label + " (ID " + std::to_string(e.product_id) + ")";
+            }
+        }
+
         ofs << "    {\n";
         ofs << "      \"ID\": " << e.product_id << ",\n";
-        ofs << "      \"Product\": \"" << EscapeJson(e.label) << "\",\n";
+        ofs << "      \"Product\": \"" << EscapeJson(displayLabel) << "\",\n";
+        if (renamed)
+            ofs << "      \"ProductClean\": \"" << EscapeJson(e.label) << "\",\n";
+        if (!year.empty())
+            ofs << "      \"Year\": \"" << EscapeJson(year) << "\",\n";
         if (!e.long_label.empty() && e.long_label != e.label)
             ofs << "      \"LongLabel\": \"" << EscapeJson(e.long_label) << "\",\n";
         ofs << "      \"Slot\": \"" << EscapeJson(e.slot) << "\",\n";
@@ -291,7 +312,7 @@ void VelocityProductDumper::DoDump(bool paintableOnly)
             ofs << "      \"Paints\": [";
             for (size_t p = 0; p < e.paint_ids.size(); p++) {
                 int pid = e.paint_ids[p];
-                // ALWAYS use our built-in UI names instead of internal game asset names (e.g., Red_00)
+
                 std::string pname = PaintName(pid);
 
                 ofs << "\n        { \"id\": " << pid
