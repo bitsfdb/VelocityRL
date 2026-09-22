@@ -107,6 +107,14 @@ pub fn ca_cert_bytes() -> &'static [u8] {
     CA_CERT_PEM
 }
 
+pub fn leaf_config_cert_bytes() -> &'static [u8] {
+    LEAF_CONFIG_CERT_PEM
+}
+
+pub fn leaf_ws_cert_bytes() -> &'static [u8] {
+    LEAF_WS_CERT_PEM
+}
+
 pub fn is_proxy_running() -> bool {
     PROXY_RUNNING.load(Ordering::SeqCst)
 }
