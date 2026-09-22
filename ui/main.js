@@ -1,5 +1,10 @@
-const { invoke } = window.__TAURI__.core;
-const { open } = window.__TAURI__.dialog;
+const invoke = (...args) => window.__TAURI__?.core?.invoke(...args);
+const openDialog = async (options) => {
+    if (window.__TAURI__?.dialog?.open) {
+        return await window.__TAURI__.dialog.open(options);
+    }
+    return await invoke('plugin:dialog|open', { options });
+};
 
 const API_BASE = 'https://api.velocityrl.tech';
 const PRIVACY_POLICY_URL = 'https://velocityrl.tech/privacy.html';
@@ -23,6 +28,66 @@ let currentCategory = 'All';
 let ownedSearch, wantedSearch, ownedResults, wantedResults, applyBtn, statusText, progressBarContainer, progressFill, backupContainer;
 let swapBusy = false;
 
+let currentLanguage = 'en';
+let localeData = {};
+
+async function loadLocale(lang) {
+    try {
+        const res = await fetch(`locales/locale_${lang}.json`);
+        if (res.ok) {
+            return await res.json();
+        }
+    } catch (e) {
+        console.warn('Failed to load locale file:', e);
+    }
+    return null;
+}
+
+function getNestedTranslation(obj, path) {
+    if (!obj || !path) return null;
+    return path.split('.').reduce((prev, curr) => (prev && prev[curr] !== undefined) ? prev[curr] : null, obj);
+}
+
+function t(key, fallback = '') {
+    const val = getNestedTranslation(localeData, key);
+    return val !== null && val !== undefined ? val : fallback;
+}
+
+async function setAppLanguage(lang) {
+    if (!lang || !['en', 'es', 'fr', 'de'].includes(lang)) {
+        lang = 'en';
+    }
+    currentLanguage = lang;
+    const loaded = await loadLocale(lang);
+    if (loaded) {
+        localeData = loaded;
+        if (loaded.logs && typeof loaded.logs === 'object') {
+            invoke('set_app_locale_logs', { logs: loaded.logs }).catch(() => {});
+        }
+    }
+
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        const translation = getNestedTranslation(localeData, key);
+        if (translation) {
+            el.textContent = translation;
+        }
+    });
+
+    document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+        const key = el.getAttribute('data-i18n-placeholder');
+        const translation = getNestedTranslation(localeData, key);
+        if (translation) {
+            el.setAttribute('placeholder', translation);
+        }
+    });
+
+    const langSelect = document.getElementById('app-language');
+    if (langSelect && langSelect.value !== lang) {
+        langSelect.value = lang;
+    }
+}
+
 let appLoading = true;
 let swallowUiUntil = 0;
 
@@ -32,7 +97,7 @@ function isAppLoading() {
 
 function setShellInert(on) {
     document.querySelector('.sidebar')?.toggleAttribute('inert', on);
-    document.querySelector('.main-wrap')?.toggleAttribute('inert', on);
+    document.querySelector('main')?.toggleAttribute('inert', on);
 }
 
 function releaseAppLoading() {
@@ -47,20 +112,21 @@ function releaseAppLoading() {
         overlay.setAttribute('aria-busy', 'false');
         overlay.setAttribute('aria-hidden', 'true');
     }
-    validate();
+    validateSwapInputs();
     const restoreBtn = document.getElementById('restore-btn');
     if (restoreBtn && restoreBtn.dataset.busy !== '1') restoreBtn.disabled = false;
 }
 
 function wireLoadingGate() {
-    const block = (e) => {
-        if (e.target.closest?.('#settings-modal')) return;
+    const preventEventBubbling = (e) => {
+        if (e.shiftKey) return;
+        if (e.target.closest?.('#version-btn') || e.target.closest?.('#dev-modal') || e.target.closest?.('#changelog-modal') || e.target.closest?.('#settings-modal')) return;
         if (!isAppLoading()) return;
         e.preventDefault();
         e.stopImmediatePropagation();
     };
-    document.addEventListener('pointerdown', block, true);
-    document.addEventListener('click', block, true);
+    document.addEventListener('pointerdown', preventEventBubbling, true);
+    document.addEventListener('click', preventEventBubbling, true);
 }
 
 async function fetchItemsFromAPI() {
@@ -120,6 +186,30 @@ function formatError(err) {
     return String(err);
 }
 
+function linkifyUrls(text) {
+    if (!text) return '';
+    const str = String(text);
+    const urlRegex = /(https?:\/\/[^\s<"']+)/g;
+    let lastIdx = 0;
+    let match;
+    let html = '';
+    while ((match = urlRegex.exec(str)) !== null) {
+        html += escHtml(str.substring(lastIdx, match.index));
+        let url = match[0];
+        let trailing = '';
+        if (/[.,;)]$/.test(url) && !url.includes('(')) {
+            trailing = url.slice(-1);
+            url = url.slice(0, -1);
+        }
+        const safeUrl = escHtml(url);
+        const jsUrl = url.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        html += `<a href="#" class="toast-external-link" style="text-decoration:underline;color:#60a5fa;font-weight:600;word-break:break-all;" onclick="event.preventDefault(); event.stopPropagation(); window.__TAURI__.core.invoke('plugin:shell|open', { path: '${jsUrl}' })">${safeUrl}</a>` + escHtml(trailing);
+        lastIdx = match.index + match[0].length;
+    }
+    html += escHtml(str.substring(lastIdx));
+    return html;
+}
+
 function showToast(message, type = 'success') {
     if (type !== 'error') return;
     const container = document.getElementById('toast-container');
@@ -134,7 +224,7 @@ function showToast(message, type = 'success') {
 
     if (type === 'error') {
         const discordLink = 'https://discord.gg/2HhBNbrGMj';
-        contentEl.innerHTML = `<div class="toast-error-body">${escHtml(raw)}</div><a href="#" class="toast-link" onclick="event.preventDefault(); window.__TAURI__.core.invoke('plugin:shell|open', { path: '${discordLink}' })">Join Support Discord</a>`;
+        contentEl.innerHTML = `<div class="toast-error-body">${linkifyUrls(raw)}</div><a href="#" class="toast-link" onclick="event.preventDefault(); window.__TAURI__.core.invoke('plugin:shell|open', { path: '${discordLink}' })">Join Support Discord</a>`;
         const copyBtn = document.createElement('button');
         copyBtn.className = 'toast-copy-btn';
         copyBtn.type = 'button';
@@ -234,6 +324,7 @@ async function initVersionBadge() {
 
 async function init() {
     wireLoadingGate();
+    initVersionBadge();
     ownedSearch = document.getElementById('owned-search');
     wantedSearch = document.getElementById('wanted-search');
     ownedResults = document.getElementById('owned-results');
@@ -248,14 +339,14 @@ async function init() {
         ownedItem = item;
         renderSelectedItem(document.getElementById('owned-selected'), item, clearOwned);
         ownedSearch.value = item.Product || item.product || 'Unknown';
-        validate();
+        validateSwapInputs();
     });
 
     setupSearch(wantedSearch, wantedResults, (item) => {
         wantedItem = item;
         renderSelectedItem(document.getElementById('wanted-selected'), item, clearWanted);
         wantedSearch.value = item.Product || item.product || 'Unknown';
-        validate();
+        validateSwapInputs();
     });
 
     document.querySelectorAll('.nav-item[data-tab]').forEach(btn => {
@@ -311,19 +402,35 @@ async function init() {
     };
     document.getElementById('settings-btn').onclick = async () => {
         if (isAppLoading()) return;
-        const cfg = await invoke('get_config').catch(() => ({ game_dir: '' }));
+        const cfg = await invoke('get_config').catch(() => ({ game_dir: '', language: 'en' }));
         document.getElementById('game-dir').value = cfg.game_dir || '';
+        const langSelect = document.getElementById('app-language');
+        if (langSelect) langSelect.value = cfg.language || currentLanguage || 'en';
         document.getElementById('settings-modal').classList.add('active');
     };
-    document.getElementById('version-btn').onclick = async (e) => {
-        if (isAppLoading()) return;
-        if (e.shiftKey) {
-            document.getElementById('dev-modal').classList.add('active');
-            await refreshDevPanel();
-            return;
-        }
-        openChangelog();
-    };
+    const versionBtn = document.getElementById('version-btn');
+    if (versionBtn) {
+        versionBtn.onclick = async (e) => {
+            e.preventDefault();
+            if (e.shiftKey) {
+                document.getElementById('dev-modal')?.classList.add('active');
+                await refreshDevPanel();
+                return;
+            }
+            openChangelog();
+        };
+        versionBtn.onkeydown = async (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                if (e.shiftKey) {
+                    document.getElementById('dev-modal')?.classList.add('active');
+                    await refreshDevPanel();
+                    return;
+                }
+                openChangelog();
+            }
+        };
+    }
     document.getElementById('close-changelog').onclick = () => document.getElementById('changelog-modal').classList.remove('active');
     document.getElementById('changelog-modal').onclick = (e) => { if (e.target === document.getElementById('changelog-modal')) document.getElementById('changelog-modal').classList.remove('active'); };
     document.getElementById('toggle-changelog-startup').onclick = async () => {
@@ -333,10 +440,20 @@ async function init() {
         document.getElementById('toggle-changelog-startup').textContent = newVal ? "Don't show on startup" : 'Show on startup';
         showToast(newVal ? 'Changelog will show on startup' : "Changelog hidden on startup", 'success');
     };
+    document.getElementById('refresh-changelog-btn')?.addEventListener('click', () => openChangelog(true));
     document.getElementById('cancel-settings').onclick = handleCancelSettings;
     document.getElementById('close-settings').onclick = handleSaveSettings;
     document.getElementById('browse-dir').onclick = handleBrowse;
-    document.getElementById('autodetect-dir').onclick = handleAutoDetect;    document.getElementById('settings-modal').onclick = (e) => {
+    document.getElementById('autodetect-dir').onclick = handleAutoDetect;
+    document.getElementById('app-language')?.addEventListener('change', async (e) => {
+        const newLang = e.target.value;
+        await setAppLanguage(newLang);
+        const cfg = await invoke('get_config').catch(() => ({}));
+        await invoke('save_config', { config: { ...cfg, language: newLang } }).catch(() => {});
+        const toastMsg = newLang === 'es' ? 'Idioma cambiado a Español' : newLang === 'fr' ? 'Langue changée en Français' : newLang === 'de' ? 'Sprache auf Deutsch geändert' : 'Language set to English';
+        showToast(toastMsg, 'success');
+    });
+    document.getElementById('settings-modal').onclick = (e) => {
         if (e.target === document.getElementById('settings-modal')) handleCancelSettings();
     };
 
@@ -347,6 +464,24 @@ async function init() {
         if (e.target === document.getElementById('dev-modal')) document.getElementById('dev-modal').classList.remove('active');
     });
     document.getElementById('dev-refresh-btn')?.addEventListener('click', refreshDevPanel);
+    document.getElementById('dev-check-psynet-btn')?.addEventListener('click', async () => {
+        const msg = document.getElementById('dev-action-msg');
+        if (msg) msg.textContent = 'Testing config.psynet.gg connection…';
+        try {
+            const health = await invoke('check_config_psynet');
+            if (health.ok) {
+                if (msg) msg.textContent = 'config.psynet.gg OK';
+                showToast('config.psynet.gg OK', 'success');
+            } else {
+                if (msg) msg.innerHTML = `FAIL: ${linkifyUrls(health.details)}`;
+                showToast(`Check failed: ${health.details}`, 'error');
+            }
+            setTimeout(refreshDevPanel, 500);
+        } catch (e) {
+            if (msg) msg.innerHTML = 'Check failed: ' + linkifyUrls(formatError(e));
+            showToast('Check error: ' + e, 'error');
+        }
+    });
     document.getElementById('dev-save-config-btn')?.addEventListener('click', async () => {
         const cfgEl = document.getElementById('dev-proxy-config');
         if (!cfgEl) return;
@@ -433,22 +568,26 @@ async function init() {
             if (msg) msg.textContent = 'Save failed: ' + e;
         }
     });
-    document.getElementById('dev-export-diag-btn')?.addEventListener('click', async () => {
-        const msg = document.getElementById('dev-action-msg');
-        if (msg) msg.textContent = 'Bundling diagnostics…';
+    const triggerExportDiagnostics = async (msgEl) => {
+        if (msgEl) msgEl.textContent = 'Bundling diagnostics…';
         try {
             const path = await invoke('export_diagnostics');
-            try {
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                    await navigator.clipboard.writeText(path);
-                }
-            } catch (_) {}
-            if (msg) msg.textContent = `Exported (copied to clipboard!): ${path}`;
-            const dir = path.substring(0, Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/')));
-            if (dir) window.__TAURI__?.core?.invoke('plugin:shell|open', { path: dir });
+            if (msgEl) msgEl.textContent = `Zip copied to clipboard: ${path}`;
+            showToast('Zip copied to clipboard! Paste directly into Discord or chat.', 'success');
         } catch (e) {
-            if (msg) msg.textContent = 'Export failed: ' + e;
+            if (msgEl) msgEl.textContent = 'Export failed: ' + e;
+            showToast('Export failed: ' + e, 'error');
         }
+    };
+    document.getElementById('settings-dev-panel-btn')?.addEventListener('click', async () => {
+        document.getElementById('dev-modal')?.classList.add('active');
+        await refreshDevPanel();
+    });
+    document.getElementById('settings-export-diag-btn')?.addEventListener('click', () => {
+        triggerExportDiagnostics(document.getElementById('settings-action-msg'));
+    });
+    document.getElementById('dev-export-diag-btn')?.addEventListener('click', () => {
+        triggerExportDiagnostics(document.getElementById('dev-action-msg'));
     });
 
     await loadData();
@@ -489,9 +628,15 @@ async function loadData() {
 
         const [repair, config, itemsResult] = await Promise.all([
             invoke('check_integrity').catch(e => { console.warn('Repair check failed:', e); return null; }),
-            invoke('get_config').catch(e => { console.warn('Config load failed:', e); return { game_dir: '' }; }),
+            invoke('get_config').catch(e => { console.warn('Config load failed:', e); return { game_dir: '', language: 'en' }; }),
             invoke('get_items').catch(() => null),
         ]);
+
+        if (config && config.language) {
+            await setAppLanguage(config.language);
+        } else {
+            await setAppLanguage('en');
+        }
 
         if (repair && repair.repaired) {
             sessionStorage.setItem('velocityrl_repair_report', JSON.stringify(repair));
@@ -521,6 +666,8 @@ async function loadData() {
 
             invoke('detect_game_dir').catch(() => []).then(async (installs) => {
                 if (!installs || !installs.length) {
+                    const langSelect = document.getElementById('app-language');
+                    if (langSelect) langSelect.value = currentLanguage;
                     document.getElementById('settings-modal').classList.add('active');
                     return;
                 }
@@ -576,7 +723,7 @@ function clearOwned() {
     container.innerHTML = emptyStateHtml();
     container.classList.remove('selected');
     document.getElementById('owned-search').value = '';
-    validate();
+    validateSwapInputs();
 }
 
 function clearWanted() {
@@ -585,7 +732,7 @@ function clearWanted() {
     container.innerHTML = emptyStateHtml();
     container.classList.remove('selected');
     document.getElementById('wanted-search').value = '';
-    validate();
+    validateSwapInputs();
 }
 
 window.clearOwned = clearOwned;
@@ -1048,21 +1195,21 @@ function appDialog({ title = 'VelocityRL', message = '', input = null, okLabel =
         okBtn.textContent = okLabel;
         cancelBtn.textContent = cancelLabel;
         overlay.classList.add('active');
-        const finish = (value) => {
+        const closeDialogWithValue = (value) => {
             overlay.classList.remove('active');
             okBtn.onclick = cancelBtn.onclick = closeBtn.onclick = null;
             inputEl.onkeydown = overlay.onkeydown = null;
             resolve(value);
         };
-        okBtn.onclick = () => finish(input !== null ? inputEl.value.trim() : true);
-        cancelBtn.onclick = () => finish(input !== null ? null : false);
-        closeBtn.onclick = () => finish(input !== null ? null : false);
+        okBtn.onclick = () => closeDialogWithValue(input !== null ? inputEl.value.trim() : true);
+        cancelBtn.onclick = () => closeDialogWithValue(input !== null ? null : false);
+        closeBtn.onclick = () => closeDialogWithValue(input !== null ? null : false);
         inputEl.onkeydown = (e) => {
-            if (e.key === 'Enter') { e.preventDefault(); finish(inputEl.value.trim()); }
-            if (e.key === 'Escape') { e.preventDefault(); finish(null); }
+            if (e.key === 'Enter') { e.preventDefault(); closeDialogWithValue(inputEl.value.trim()); }
+            if (e.key === 'Escape') { e.preventDefault(); closeDialogWithValue(null); }
         };
         overlay.onkeydown = (e) => {
-            if (e.key === 'Escape') { e.preventDefault(); finish(input !== null ? null : false); }
+            if (e.key === 'Escape') { e.preventDefault(); closeDialogWithValue(input !== null ? null : false); }
         };
         if (input !== null) setTimeout(() => { inputEl.focus(); inputEl.select(); }, 50);
     });
@@ -1097,17 +1244,17 @@ function threeWayDialog({ title = 'VelocityRL', message = '', okLabel = 'OK', ex
         const btnRow = okBtn.parentElement;
         btnRow.insertBefore(extraBtn, okBtn);
         overlay.classList.add('active');
-        const finish = (value) => {
+        const closeDialogWithValue = (value) => {
             overlay.classList.remove('active');
             okBtn.onclick = cancelBtn.onclick = closeBtn.onclick = extraBtn.onclick = null;
             extraBtn.remove();
             cancelBtn.style.display = '';
             resolve(value);
         };
-        okBtn.onclick = () => finish('ok');
-        extraBtn.onclick = () => finish('extra');
-        cancelBtn.onclick = () => finish(null);
-        closeBtn.onclick = () => finish(null);
+        okBtn.onclick = () => closeDialogWithValue('ok');
+        extraBtn.onclick = () => closeDialogWithValue('extra');
+        cancelBtn.onclick = () => closeDialogWithValue(null);
+        closeBtn.onclick = () => closeDialogWithValue(null);
     });
 }
 
@@ -1130,7 +1277,7 @@ async function refreshSwapHistory() {
             random: 'Random car',
             reswap: 'Re-applied all swaps',
         };
-        const when = (iso) => {
+        const formatTimestamp = (iso) => {
             try {
                 const d = new Date(iso);
                 const today = new Date().toDateString() === d.toDateString();
@@ -1145,7 +1292,7 @@ async function refreshSwapHistory() {
             return `<div class="backup-item" style="display:flex;align-items:baseline;gap:10px;padding:8px 12px;font-size:13px;">
                 <span style="color:var(--accent-blue);font-weight:600;white-space:nowrap;">${escHtml(action)}</span>
                 <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(line)}</span>
-                <span style="color:var(--muted);white-space:nowrap;font-size:12px;">${escHtml(when(h.at))}</span>
+                <span style="color:var(--muted);white-space:nowrap;font-size:12px;">${escHtml(formatTimestamp(h.at))}</span>
             </div>`;
         }).join('');
     } catch (e) {
@@ -1216,7 +1363,7 @@ function wirePresetsUI() {
 
             showProgress(true, 100);
             if (fails.length === 0) {
-                showToast(`🎲 Random car applied and saved as <strong>${escHtml(presetName)}</strong>!`, 'success');
+                showToast(`Random car applied and saved as <strong>${escHtml(presetName)}</strong>!`, 'success');
             } else {
                 showToast(`Random car applied with ${fails.length} error(s) and saved as <strong>${escHtml(presetName)}</strong>`, 'warning');
             }
@@ -1274,13 +1421,13 @@ async function refreshBackups() {
             const swapLabel = file.swap_from && file.swap_to
                 ? `${escHtml(file.swap_from)} is now ${escHtml(file.swap_to)}`
                 : '';
-            const thumb = (src) => src
+            const renderThumbnailHtml = (src) => src
                 ? `<img src="${escHtml(src)}" class="flyout-img" style="width: 44px; height: 44px; border-radius: 6px; object-fit: contain; background: rgba(0,0,0,0.2);" onerror="this.style.display='none'" />`
                 : '';
             div.innerHTML = `
                 <div style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0;">
-                    ${thumb(pImg)}
-                    ${file.swap_to_image ? thumb(file.swap_to_image) : ''}
+                    ${renderThumbnailHtml(pImg)}
+                    ${file.swap_to_image ? renderThumbnailHtml(file.swap_to_image) : ''}
                     <div style="min-width:0;">
                         <div class="backup-name">${escHtml(file.name)}</div>
                         ${swapLabel ? `<div class="backup-date" style="color:var(--accent-blue);">${swapLabel}</div>` : `<div class="backup-date">Modified Product</div>`}
@@ -1334,6 +1481,7 @@ function showProgress(show, percent = 0) {
 }
 
 function setupSearch(input, resultsDiv, selectionHandler) {
+    if (!input || !resultsDiv) return;
     input.addEventListener('input', (e) => {
         const term = e.target.value.toLowerCase();
 
@@ -1553,7 +1701,7 @@ function syncSwapPaintUi() {
     });
 }
 
-function validate() {
+function validateSwapInputs() {
     syncSwapPaintUi();
     if (!applyBtn) return;
     const oSlot = ownedItem ? normSlot(ownedItem.Slot || ownedItem.slot) : '';
@@ -1561,6 +1709,8 @@ function validate() {
     const typesMatch = !ownedItem || !wantedItem || oSlot === wSlot;
     applyBtn.disabled = appLoading || swapBusy || !(ownedItem && wantedItem && typesMatch);
 }
+
+const validate = validateSwapInputs;
 
 async function refreshSwapRlHint() {
     const hint = document.getElementById('swap-rl-hint');
@@ -1717,7 +1867,7 @@ async function handleApply() {
     } finally {
         if (interval) clearInterval(interval);
         swapBusy = false;
-        validate();
+        validateSwapInputs();
     }
 }
 
@@ -1772,9 +1922,12 @@ async function handleSaveSettings() {
     }
 
     const existing = await invoke('get_config').catch(() => ({}));
-    const savedDir = await invoke('save_config', { config: { ...existing, game_dir: input.value.trim() } })
+    const langSelect = document.getElementById('app-language');
+    const selectedLang = langSelect ? langSelect.value : (existing.language || currentLanguage || 'en');
+    const savedDir = await invoke('save_config', { config: { ...existing, game_dir: input.value.trim(), language: selectedLang } })
         .catch(e => { console.warn('Save config failed:', e); return input.value.trim(); });
     if (savedDir) input.value = savedDir;
+    await setAppLanguage(selectedLang);
     document.getElementById('settings-modal').classList.remove('active');
     document.getElementById('install-chooser').style.display = 'none';
     showToast(dir ? 'Settings saved' : 'Game path cleared', 'success');
@@ -1782,8 +1935,10 @@ async function handleSaveSettings() {
 }
 
 async function handleCancelSettings() {
-    const existing = await invoke('get_config').catch(() => ({ game_dir: '' }));
+    const existing = await invoke('get_config').catch(() => ({ game_dir: '', language: 'en' }));
     document.getElementById('game-dir').value = existing.game_dir || '';
+    const langSelect = document.getElementById('app-language');
+    if (langSelect) langSelect.value = existing.language || currentLanguage || 'en';
     document.getElementById('settings-modal').classList.remove('active');
     document.getElementById('install-chooser').style.display = 'none';
 }
@@ -1829,7 +1984,7 @@ function showInstallChooser(installs) {
 }
 
 async function handleBrowse() {
-    const dir = await open({ directory: true, multiple: false, title: 'Select Rocket League CookedPCConsole folder' });
+    const dir = await openDialog({ directory: true, multiple: false, title: 'Select Rocket League CookedPCConsole folder' });
     if (dir) {
         let finalDir = dir;
         try {
@@ -1972,7 +2127,14 @@ async function refreshDevPanel() {
         const proxyEl = document.getElementById('dev-proxy-status');
         try {
             const status = await invoke('get_psynet_status');
-            if (proxyEl) proxyEl.textContent = `Proxy: ${status.running ? 'running' : 'stopped'}`;
+            if (proxyEl) {
+                let statusText = `Proxy: ${status.running ? 'running' : 'stopped'}`;
+                if (status.config_health) {
+                    const ch = status.config_health;
+                    statusText += ` | config.psynet.gg: ${ch.ok ? 'OK' : 'FAIL'}`;
+                }
+                proxyEl.textContent = statusText;
+            }
         } catch (e) {
             if (proxyEl) proxyEl.textContent = `Proxy: error - ${e}`;
         }
@@ -2252,6 +2414,21 @@ function ensureTitleSwapsLoaded() {
     if (!titleSwapsLoaded) loadTitleSwapsFromStorage();
 }
 
+/** Catalog Text for a title id (empty if unknown / custom). */
+function catalogTitleText(id) {
+    const tid = String(id || '').trim();
+    if (!tid || tid === 'custom') return '';
+    const t = findTitleById(tid);
+    return String(t?.text || t?.Text || '').trim();
+}
+
+/** Typed custom text, else the look title's normal catalog text. */
+function effectiveLookText(customText, displayId) {
+    const typed = String(customText || '').trim();
+    if (typed) return typed;
+    return catalogTitleText(displayId);
+}
+
 function pickerSwapEntry() {
     const custom = document.getElementById('title-custom-text')?.value?.trim() || '';
     let displayId = document.getElementById('title-display-id')?.value?.trim() || '';
@@ -2260,6 +2437,8 @@ function pickerSwapEntry() {
     const entry = normalizeSwapEntry({
         equip_title_id: document.getElementById('title-equip-id')?.value?.trim() || '',
         display_title_id: displayId,
+        // Persist empty custom_text when falling back to catalog look text so the
+        // proxy copies the live config Text for display_title_id.
         custom_text: custom,
         category: lookCategory(),
         title_color: readTitleColorFromForm(),
@@ -2611,12 +2790,12 @@ async function autoStartPsyNetProxy() {
         const st = await invoke('get_psynet_status');
         if (st.running) {
             setProxyUi(true);
-            invoke('append_launch_log', { message: 'psynet: existing proxy healthy - boot config written (hot-reload), skip restart' }).catch(() => {});
+            invoke('append_launch_log', { message: 'psynet: existing proxy healthy - boot config written, skip restart' }).catch(() => {});
             return;
         }
     } catch {   }
     try {
-        showToast('Starting PsyNet proxy - approve UAC if prompted…', 'success');
+        showToast('Starting PsyNet proxy…', 'success');
         const st = await invoke('start_psynet_proxy', {});
         setProxyUi(st.running);
         if (st.running) {
@@ -2634,8 +2813,18 @@ async function ensurePsyNetFromApp(reason) {
     proxyEnsurePromise = (async () => {
         try {
             await refreshProxyStatus();
+            if (!psynetProxyRunning) {
+                try {
+                    const st = await invoke('start_psynet_proxy', {});
+                    setProxyUi(st.running);
+                } catch (e) {
+                    setProxyUi(false);
+                    showToast('Proxy start: ' + e, 'error');
+                    return false;
+                }
+            }
             if (psynetProxyRunning) {
-                showToast(`${reason} saved — proxy running (hot-reload). Keep VelocityRL open.`, 'success');
+                showToast(`${reason} saved — proxy running. Keep VelocityRL open.`, 'success');
                 return true;
             }
             return false;
@@ -2679,7 +2868,7 @@ function promptCloseModal() {
     if (!overlay) return Promise.resolve('stay');
     return new Promise((resolve) => {
         let settled = false;
-        const finish = (choice) => {
+        const resolveModalChoice = (choice) => {
             if (settled) return;
             settled = true;
             document.removeEventListener('keydown', onKey);
@@ -2699,13 +2888,13 @@ function promptCloseModal() {
             resolve(choice);
         };
         const onKey = (e) => {
-            if (e.key === 'Escape') finish('stay');
+            if (e.key === 'Escape') resolveModalChoice('stay');
         };
         overlay.querySelectorAll('[data-close-choice]').forEach((btn) => {
-            btn.onclick = () => finish(btn.dataset.closeChoice);
+            btn.onclick = () => resolveModalChoice(btn.dataset.closeChoice);
         });
         overlay.onclick = (e) => {
-            if (e.target === overlay) finish('stay');
+            if (e.target === overlay) resolveModalChoice('stay');
         };
         document.addEventListener('keydown', onKey);
         overlay.classList.add('active');
@@ -2884,7 +3073,7 @@ function clampMmr(val, fallback = 0) {
     return Math.max(MMR_MIN, Math.round(n));
 }
 
-let fakeRanksAddFormState = { tier: 19, mmr: clampMmr(rankMeta(19).mmr) };
+let fakeRanksAddFormState = { tier: 19, mmr: clampMmr(rankMeta(19).mmr), division: 0 };
 
 function playlistLabel(id) {
     return RANK_PLAYLISTS.find((p) => p.id === id)?.label || `Playlist ${id}`;
@@ -2957,6 +3146,7 @@ function syncFakeRanksAddFormUi() {
     }
     if (divSelect) {
         divSelect.disabled = (fakeRanksAddFormState.tier <= 0 || fakeRanksAddFormState.tier >= 22);
+        divSelect.value = String(fakeRanksAddFormState.division ?? 0);
     }
 }
 
@@ -2998,9 +3188,9 @@ function renderFakeRanksQueue() {
         const meta = rankMeta(st.tier);
         const mmr = clampMmr(st.mmr ?? meta.mmr);
         const hasDiv = st.tier > 0 && st.tier < 22;
-        const curDiv = st.division ?? 0;
+        const curDiv = hasDiv ? (st.division ?? 0) : 0;
         const divHtml = hasDiv ? `
-            <select class="rank-queue-division-select" data-playlist="${escHtml(id)}" aria-label="${escHtml(playlistLabel(id))} Division">
+            <select class="rank-queue-division-select" data-playlist="${escHtml(id)}" aria-label="${escHtml(playlistLabel(id))} Division" title="Change division">
                 <option value="0"${curDiv === 0 ? ' selected' : ''}>Div I</option>
                 <option value="1"${curDiv === 1 ? ' selected' : ''}>Div II</option>
                 <option value="2"${curDiv === 2 ? ' selected' : ''}>Div III</option>
@@ -3011,15 +3201,17 @@ function renderFakeRanksQueue() {
                 <div class="backup-name rank-queue-row-preview">
                     <span class="rank-queue-playlist">${escHtml(playlistLabel(id))}</span>
                     <span class="rank-queue-sep">·</span>
-                    <img class="rank-playlist-icon rank-queue-icon" src="${rankIconSrc(st.tier)}" width="22" height="22" alt="${escHtml(meta.name)}">
-                    <span class="rank-queue-rank">${escHtml(meta.name)}</span>
+                    <span class="rank-queue-rank-wrap" data-edit-playlist="${escHtml(id)}" title="Click to edit rank & division">
+                        <img class="rank-playlist-icon rank-queue-icon" src="${rankIconSrc(st.tier)}" width="22" height="22" alt="${escHtml(meta.name)}">
+                        <span class="rank-queue-rank">${escHtml(meta.name)}</span>
+                    </span>
                     ${divHtml}
-                    <input type="number" class="rank-queue-mmr-input" data-playlist="${escHtml(id)}" min="0" step="1" inputmode="numeric" autocomplete="off" value="${mmr}" aria-label="${escHtml(playlistLabel(id))} MMR">
+                    <input type="number" class="rank-queue-mmr-input" data-playlist="${escHtml(id)}" min="0" step="1" inputmode="numeric" autocomplete="off" value="${mmr}" aria-label="${escHtml(playlistLabel(id))} MMR" title="Custom MMR">
                 </div>
                 <div class="backup-date">Playlist ${escHtml(id)}</div>
             </div>
             <div class="rank-queue-actions">
-                <button type="button" class="rank-queue-edit-btn" data-edit-playlist="${escHtml(id)}" title="Change rank">Edit rank</button>
+                <button type="button" class="rank-queue-edit-btn" data-edit-playlist="${escHtml(id)}" title="Change rank & division">Edit rank</button>
                 <div class="restore-mini-btn" data-remove-index="${i}" title="Remove playlist">Remove</div>
             </div>
         </div>`;
@@ -3028,7 +3220,14 @@ function renderFakeRanksQueue() {
         sel.addEventListener('change', () => {
             const pid = sel.dataset.playlist;
             ensureFakeRanksEntry(pid);
-            fakeRanksPlaylistState[pid].division = Number(sel.value) || 0;
+            const val = Number(sel.value) || 0;
+            fakeRanksPlaylistState[pid].division = val;
+            if (fakeRanksPickerTarget === pid) {
+                const pop = document.getElementById('fake-ranks-picker-popover');
+                pop?.querySelectorAll('.rank-picker-div-btn').forEach((b) => {
+                    b.classList.toggle('is-active', Number(b.dataset.division) === val);
+                });
+            }
         });
     });
     list.querySelectorAll('.rank-queue-mmr-input').forEach((input) => {
@@ -3087,7 +3286,7 @@ function addFakeRanksPlaylistFromForm() {
     const meta = rankMeta(fakeRanksAddFormState.tier);
     const rawVal = mmrInput?.value !== '' ? mmrInput.value : fakeRanksAddFormState.mmr;
     const mmrVal = clampMmr(rawVal, meta.mmr);
-    const divVal = Number(divSelect?.value) || 0;
+    const divVal = Number(divSelect?.value) ?? fakeRanksAddFormState.division ?? 0;
     const isNoDivTier = fakeRanksAddFormState.tier <= 0 || fakeRanksAddFormState.tier >= 22;
     fakeRanksPlaylistState[id] = {
         tier: fakeRanksAddFormState.tier,
@@ -3118,39 +3317,134 @@ function openFakeRanksPicker(target, anchorEl) {
     const pop = document.getElementById('fake-ranks-picker-popover');
     if (!pop || !anchorEl) return;
     let activeTier;
+    let activeDiv;
+    let titleText;
     if (target === '__add__') {
-        activeTier = fakeRanksAddFormState.tier;
+        activeTier = fakeRanksAddFormState.tier ?? 19;
+        activeDiv = fakeRanksAddFormState.division ?? 0;
+        titleText = 'Select Rank & Division';
     } else {
-        const st = fakeRanksPlaylistState[target] || { tier: 19, mmr: rankMeta(19).mmr };
+        const st = fakeRanksPlaylistState[target] || { tier: 19, mmr: rankMeta(19).mmr, division: 0 };
         activeTier = st.tier;
+        activeDiv = st.division ?? 0;
+        titleText = playlistLabel(target);
     }
-    pop.innerHTML = RL_RANKS.map((r) => (
-        `<button type="button" class="rank-tier-btn rank-tier-btn-compact" data-tier="${r.tier}" role="option" title="${escHtml(r.name)}">`
-        + `<img src="${rankIconSrc(r.tier)}" width="28" height="28" alt="">`
-        + `<span>${escHtml(r.name)}</span>`
-        + '</button>'
-    )).join('');
+    const hasDiv = activeTier > 0 && activeTier < 22;
+
+    pop.innerHTML = `
+        <div class="rank-picker-header">
+            <span class="rank-picker-title">${escHtml(titleText)}</span>
+            <button type="button" class="rank-picker-done-btn" title="Done">Done</button>
+        </div>
+        <div class="rank-picker-div-section">
+            <div class="rank-picker-section-label">Division</div>
+            <div class="rank-picker-div-bar" role="radiogroup" aria-label="Division">
+                <button type="button" class="rank-picker-div-btn${hasDiv && activeDiv === 0 ? ' is-active' : ''}" data-division="0"${hasDiv ? '' : ' disabled'}>Div I</button>
+                <button type="button" class="rank-picker-div-btn${hasDiv && activeDiv === 1 ? ' is-active' : ''}" data-division="1"${hasDiv ? '' : ' disabled'}>Div II</button>
+                <button type="button" class="rank-picker-div-btn${hasDiv && activeDiv === 2 ? ' is-active' : ''}" data-division="2"${hasDiv ? '' : ' disabled'}>Div III</button>
+                <button type="button" class="rank-picker-div-btn${hasDiv && activeDiv === 3 ? ' is-active' : ''}" data-division="3"${hasDiv ? '' : ' disabled'}>Div IV</button>
+            </div>
+            ${!hasDiv ? '<div class="rank-picker-div-note">No divisions for SSL / Unranked</div>' : ''}
+        </div>
+        <div class="rank-picker-section-label">Rank</div>
+        <div class="rank-picker-tier-list" role="listbox">
+            ${RL_RANKS.map((r) => (
+                `<button type="button" class="rank-tier-btn rank-tier-btn-compact${Number(r.tier) === activeTier ? ' is-active' : ''}" data-tier="${r.tier}" role="option" title="${escHtml(r.name)}">`
+                + `<img src="${rankIconSrc(r.tier)}" width="26" height="26" alt="">`
+                + `<span>${escHtml(r.name)}</span>`
+                + '</button>'
+            )).join('')}
+        </div>
+    `;
+
+    pop.querySelector('.rank-picker-done-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeFakeRanksPicker();
+    });
+
+    pop.querySelectorAll('.rank-picker-div-btn').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (btn.disabled) return;
+            const div = Number(btn.dataset.division) || 0;
+            pop.querySelectorAll('.rank-picker-div-btn').forEach((b) => {
+                b.classList.toggle('is-active', Number(b.dataset.division) === div);
+            });
+            if (target === '__add__') {
+                fakeRanksAddFormState.division = div;
+                syncFakeRanksAddFormUi();
+            } else {
+                ensureFakeRanksEntry(target);
+                fakeRanksPlaylistState[target].division = div;
+                renderFakeRanksQueue();
+            }
+        });
+    });
+
     pop.querySelectorAll('.rank-tier-btn').forEach((btn) => {
-        btn.classList.toggle('is-active', Number(btn.dataset.tier) === activeTier);
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
             const tier = Number(btn.dataset.tier);
             const meta = rankMeta(tier);
+            const canHaveDiv = tier > 0 && tier < 22;
+
+            pop.querySelectorAll('.rank-tier-btn').forEach((b) => {
+                b.classList.toggle('is-active', Number(b.dataset.tier) === tier);
+            });
+
+            pop.querySelectorAll('.rank-picker-div-btn').forEach((b) => {
+                b.disabled = !canHaveDiv;
+                if (!canHaveDiv) {
+                    b.classList.toggle('is-active', Number(b.dataset.division) === 0);
+                }
+            });
+
+            let noteEl = pop.querySelector('.rank-picker-div-note');
+            if (!canHaveDiv) {
+                if (!noteEl) {
+                    noteEl = document.createElement('div');
+                    noteEl.className = 'rank-picker-div-note';
+                    noteEl.textContent = 'No divisions for SSL / Unranked';
+                    pop.querySelector('.rank-picker-div-section')?.appendChild(noteEl);
+                }
+            } else if (noteEl) {
+                noteEl.remove();
+            }
+
             if (target === '__add__') {
                 fakeRanksAddFormState.tier = tier;
                 fakeRanksAddFormState.mmr = clampMmr(meta.mmr);
+                if (!canHaveDiv) fakeRanksAddFormState.division = 0;
                 syncFakeRanksAddFormUi();
             } else {
                 ensureFakeRanksEntry(target, tier);
                 fakeRanksPlaylistState[target].tier = tier;
                 fakeRanksPlaylistState[target].mmr = clampMmr(meta.mmr);
+                if (!canHaveDiv) fakeRanksPlaylistState[target].division = 0;
                 renderFakeRanksQueue();
             }
-            closeFakeRanksPicker();
         });
     });
+
     const rect = anchorEl.getBoundingClientRect();
-    pop.style.top = `${rect.bottom + 6}px`;
-    pop.style.left = `${Math.min(rect.left, window.innerWidth - 280)}px`;
+    const popWidth = 290;
+    const popHeight = 380;
+    const pad = 10;
+
+    let top = rect.bottom + 6;
+    if (top + popHeight > window.innerHeight && rect.top - popHeight - 6 >= 0) {
+        top = rect.top - popHeight - 6;
+    } else {
+        top = Math.min(top, Math.max(pad, window.innerHeight - popHeight - pad));
+    }
+
+    let left = rect.left;
+    if (left + popWidth > window.innerWidth - pad) {
+        left = Math.max(pad, window.innerWidth - popWidth - pad);
+    }
+
+    pop.style.top = `${Math.max(pad, Math.round(top))}px`;
+    pop.style.left = `${Math.max(pad, Math.round(left))}px`;
     pop.classList.remove('hidden');
 }
 
@@ -3169,10 +3463,13 @@ function fakeRanksPayloadFromUi() {
         const st = fakeRanksPlaylistState[id];
         if (!st) return;
         const mmrInput = document.querySelector(`.rank-queue-mmr-input[data-playlist="${id}"]`);
+        const divSelect = document.querySelector(`.rank-queue-division-select[data-playlist="${id}"]`);
         const meta = rankMeta(st.tier);
         const rawMmr = mmrInput && mmrInput.value !== '' ? mmrInput.value : (st.mmr ?? meta.mmr);
         const mmrVal = clampMmr(rawMmr, meta.mmr);
-        playlists[id] = rankOverrideFromState(st.tier, mmrVal, st.division ?? 0);
+        const divVal = divSelect ? (Number(divSelect.value) || 0) : (st.division ?? 0);
+        st.division = divVal;
+        playlists[id] = rankOverrideFromState(st.tier, mmrVal, divVal);
     });
     const fake_ranks = { enabled, playlists };
     const seasonRaw = seasonEl?.value?.trim() ?? '';
@@ -3269,6 +3566,10 @@ function initRanksTab() {
         e.stopPropagation();
         openFakeRanksPicker('__add__', e.currentTarget);
     });
+    const addDivEl = document.getElementById('fake-ranks-add-division');
+    addDivEl?.addEventListener('change', (e) => {
+        fakeRanksAddFormState.division = Number(e.target.value) || 0;
+    });
     const addMmrEl = document.getElementById('fake-ranks-add-mmr');
     addMmrEl?.addEventListener('input', (e) => {
         const val = e.target.value;
@@ -3297,7 +3598,8 @@ function initRanksTab() {
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.rank-picker-popover')
             && !e.target.closest('.rank-playlist-pick')
-            && !e.target.closest('.rank-queue-edit-btn')) {
+            && !e.target.closest('.rank-queue-edit-btn')
+            && !e.target.closest('.rank-queue-rank-wrap')) {
             closeFakeRanksPicker();
         }
     });
@@ -3523,9 +3825,9 @@ function syncPaletteUi(applied, status) {
         toggle.disabled = false;
         syncNameSpoofSwitchAria(toggle);
     }
-    row?.classList.toggle('is-applied', on);
+    const canRestore = (on || status?.message?.toLowerCase().includes('restore') || status?.message?.toLowerCase().includes('remap')) && hasBackup && !paletteBusy;
     if (applyBtn) applyBtn.disabled = on || paletteBusy;
-    if (restoreBtn) restoreBtn.disabled = !on || !hasBackup || paletteBusy;
+    if (restoreBtn) restoreBtn.disabled = !canRestore;
 }
 
 async function refreshPaletteStatus() {
@@ -3889,9 +4191,9 @@ function loadTitleSpoofForm() {
         userEditedCustomText = !!(customText && customText !== catalogText);
     } else {
         userEditedCustomText = !!customText;
-        const set = (eid, v) => { const el = document.getElementById(eid); if (el) el.value = v; };
-        set('title-display-id', displayId === 'custom' ? 'custom' : '');
-        set('title-custom-text', customText);
+        const setInputValue = (eid, v) => { const el = document.getElementById(eid); if (el) el.value = v; };
+        setInputValue('title-display-id', displayId === 'custom' ? 'custom' : '');
+        setInputValue('title-custom-text', customText);
 
         displayPick = (customText || category) ? {
             id: displayId || 'custom',
@@ -4077,12 +4379,12 @@ function selectDisplay(title, toast) {
     displayPick = title;
     const id = title?.id || title?.Id || '';
     const text = title?.text || title?.Text || '';
-    const set = (eid, v) => { const el = document.getElementById(eid); if (el) el.value = v; };
+    const setInputValue = (eid, v) => { const el = document.getElementById(eid); if (el) el.value = v; };
     const customEl = document.getElementById('title-custom-text');
     const hasCustom = !!(customEl?.value?.trim());
-    set('title-display-id', id);
+    setInputValue('title-display-id', id);
 
-    if (!hasCustom) set('title-custom-text', text);
+    if (!hasCustom) setInputValue('title-custom-text', text);
     setSelectedSlot('display-selected', title, 'Search below - or type custom text');
     renderDisplayList(document.getElementById('display-search')?.value || '');
     updateTitlePreview();
@@ -4119,9 +4421,9 @@ function categoriesMapFromPayload(data) {
 
 async function loadTitlesDatabase() {
     const lists = [document.getElementById('donor-list'), document.getElementById('display-list')];
-    const fail = (msg) => lists.forEach(list => { if (list) list.innerHTML = `<div class="backup-empty">${escHtml(msg)}</div>`; });
+    const onTitlesLoadFailed = (msg) => lists.forEach(list => { if (list) list.innerHTML = `<div class="backup-empty">${escHtml(msg)}</div>`; });
     const bundledCats = await loadBundledCategories();
-    const apply = (raw) => {
+    const applyLoadedTitles = (raw) => {
         titlesDb = normalizeTitlesPayload(raw);
 
         titlesDb.categories = { ...titlesDb.categories, ...bundledCats };
@@ -4129,18 +4431,18 @@ async function loadTitlesDatabase() {
     try {
         const res = await fetch(`${API_BASE}/v2/rl/titles`, { cache: 'no-store' });
         if (res.ok) {
-            apply(await res.json());
+            applyLoadedTitles(await res.json());
             return;
         }
     } catch {  }
     try {
         const res = await fetch('https://raw.githubusercontent.com/bitsfdb/VelocityRL/main/tools/psynet_proxy/titles.json', { cache: 'no-store' });
         if (res.ok) {
-            apply(await res.json());
+            applyLoadedTitles(await res.json());
             return;
         }
     } catch {  }
-    fail('Could not load titles DB from api.velocityrl.tech.');
+    onTitlesLoadFailed('Could not load titles DB from api.velocityrl.tech.');
 }
 
 function categoriesFromTitles(titles) {
@@ -4188,7 +4490,11 @@ function updateTitlePreview() {
         }
     }
     if (!chip) return;
-    const text = document.getElementById('title-custom-text')?.value?.trim() || '-';
+    const custom = document.getElementById('title-custom-text')?.value?.trim() || '';
+    const displayId = document.getElementById('title-display-id')?.value?.trim() || '';
+    const text = effectiveLookText(custom, displayId)
+        || (displayPick?.text || displayPick?.Text || '')
+        || '-';
     chip.innerHTML = formatTitleHtml(text);
 
     let color = '#c8c8c8';
@@ -4269,11 +4575,18 @@ async function saveTitleSpoof() {
         showToast('Pick a donor title first.', 'error');
         return;
     }
+    // Empty custom text → use the look title's normal catalog text (proxy also
+    // copies Text from display_title_id in BattleCars config when custom is blank).
     if (!entry.custom_text) {
-        showToast('Enter custom text (or pick a catalog look to fill it).', 'error');
-        return;
+        const lookText = effectiveLookText('', entry.display_title_id);
+        if (lookText) {
+            entry.custom_text = lookText;
+        } else if (!entry.display_title_id || entry.display_title_id === 'custom') {
+            showToast('Pick a catalog look, or enter custom text.', 'error');
+            return;
+        }
     }
-    if (/[\x00-\x1f]/.test(entry.custom_text)) {
+    if (entry.custom_text && /[\x00-\x1f]/.test(entry.custom_text)) {
         showToast('Custom text cannot include control characters.', 'error');
         return;
     }
@@ -4396,7 +4709,10 @@ async function openChangelog(forceRefresh = false) {
     try {
         let releases = null;
         try {
-            const res = await fetch('https://api.velocityrl.tech/v2/changelog');
+            const ctrl = new AbortController();
+            const tid = setTimeout(() => ctrl.abort(), 2500);
+            const res = await fetch('https://api.velocityrl.tech/v2/changelog', { signal: ctrl.signal });
+            clearTimeout(tid);
             if (res.ok) {
                 const data = await res.json();
                 if (Array.isArray(data)) releases = data;
@@ -4405,8 +4721,13 @@ async function openChangelog(forceRefresh = false) {
         } catch (_) {}
 
         if (!releases) {
-            const ghRes = await fetch('https://api.github.com/repos/bitsfdb/VelocityRL/releases?per_page=50');
-            if (ghRes.ok) releases = await ghRes.json();
+            try {
+                const ctrl = new AbortController();
+                const tid = setTimeout(() => ctrl.abort(), 2500);
+                const ghRes = await fetch('https://api.github.com/repos/bitsfdb/VelocityRL/releases?per_page=50', { signal: ctrl.signal });
+                clearTimeout(tid);
+                if (ghRes.ok) releases = await ghRes.json();
+            } catch (_) {}
         }
 
         if (releases && Array.isArray(releases) && releases.length) {
@@ -5264,17 +5585,12 @@ async function initTrackerTab() {
         const opacityInput = document.getElementById('tracker-opacity-input');
         const lockBtn = document.getElementById('tracker-toggle-lock-btn');
 
-        const winDeltaInput = document.getElementById('tracker-win-delta-input');
-        const lossDeltaInput = document.getElementById('tracker-loss-delta-input');
-
         if (masterSw) masterSw.checked = session.master_enabled !== false;
         if (posSel) posSel.value = session.position.startsWith('custom:') ? 'custom' : (session.position || 'top-right');
         if (scaleSlider) scaleSlider.value = session.scale || 100;
         if (scaleInput) scaleInput.value = session.scale || 100;
         if (opacitySlider) opacitySlider.value = session.opacity || 85;
         if (opacityInput) opacityInput.value = session.opacity || 85;
-        if (winDeltaInput) winDeltaInput.value = session.win_delta || 9;
-        if (lossDeltaInput) lossDeltaInput.value = session.loss_delta || 9;
         if (lockBtn) {
             lockBtn.textContent = isOverlayLocked ? 'Unlock Position to Move' : 'Lock Overlay Position';
             lockBtn.className = isOverlayLocked ? 'action-btn action-btn-secondary' : 'action-btn';
@@ -5460,17 +5776,6 @@ function bindTrackerEvents() {
         btn.onclick = () => updateOpacity(btn.dataset.opacity);
     });
 
-    const winDeltaInput = document.getElementById('tracker-win-delta-input');
-    const lossDeltaInput = document.getElementById('tracker-loss-delta-input');
-    const updateDeltas = async () => {
-        if (!trackerSessionCache) trackerSessionCache = await invoke('tracker_load_session');
-        if (winDeltaInput) trackerSessionCache.win_delta = Math.max(1, parseInt(winDeltaInput.value, 10) || 9);
-        if (lossDeltaInput) trackerSessionCache.loss_delta = Math.max(1, parseInt(lossDeltaInput.value, 10) || 9);
-        await saveTrackerSession(trackerSessionCache);
-    };
-    if (winDeltaInput) winDeltaInput.onchange = updateDeltas;
-    if (lossDeltaInput) lossDeltaInput.onchange = updateDeltas;
-
     const styleOpts = document.querySelectorAll('.theme-style-btn, .tracker-style-opt');
     styleOpts.forEach(opt => {
         opt.onclick = async (e) => {
@@ -5506,8 +5811,7 @@ async function saveTrackerSession(session) {
 }
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 
-window.addEventListener('DOMContentLoaded', async () => {
-
+async function startApp() {
     setTimeout(() => {
         if (appLoading) {
             console.warn('App loading safety watchdog triggered — releasing overlay');
@@ -5540,7 +5844,13 @@ window.addEventListener('DOMContentLoaded', async () => {
     } catch (err) {
         console.warn('initTrackerModule non-fatal error:', err);
     }
-});
+}
+
+if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', startApp);
+} else {
+    startApp();
+}
 
 async function initFeatures() {
     try {
@@ -5648,9 +5958,9 @@ function showOutdatedBuildModal(feat) {
     modal.classList.add('active');
 
     const sidebar = document.querySelector('.sidebar');
-    const mainWrap = document.querySelector('.main-wrap');
+    const mainEl = document.querySelector('main');
     if (sidebar) sidebar.setAttribute('inert', '');
-    if (mainWrap) mainWrap.setAttribute('inert', '');
+    if (mainEl) mainEl.setAttribute('inert', '');
 
     if (updateBtn) {
         updateBtn.onclick = async () => {
@@ -5691,4 +6001,31 @@ function showOutdatedBuildModal(feat) {
         };
     }
 }
+// Dedicated capture handlers for version-btn so click and shift-click always work
+document.addEventListener('click', (e) => {
+    const btn = e.target?.closest?.('#version-btn');
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.shiftKey) {
+        document.getElementById('dev-modal')?.classList.add('active');
+        refreshDevPanel().catch(() => {});
+        return;
+    }
+    openChangelog().catch(() => {});
+}, true);
+
+document.addEventListener('keydown', (e) => {
+    if (e.target?.id === 'version-btn' && (e.key === 'Enter' || e.key === ' ')) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.shiftKey) {
+            document.getElementById('dev-modal')?.classList.add('active');
+            refreshDevPanel().catch(() => {});
+            return;
+        }
+        openChangelog().catch(() => {});
+    }
+}, true);
+
 

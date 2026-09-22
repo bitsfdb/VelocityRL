@@ -124,14 +124,13 @@ pub fn append_history(app: &tauri::AppHandle, kind: &str, swaps: &[SwapEntry], n
     save_history_file(app, &f);
 }
 
-fn sign(payload: &[u8]) -> Vec<u8> {
+fn sign_preset_payload(payload: &[u8]) -> Vec<u8> {
     let mut mac = HmacSha256::new_from_slice(SHARE_KEY).expect("hmac key");
     mac.update(payload);
     mac.finalize().into_bytes().to_vec()
 }
 
-fn make_id() -> String {
-
+fn generate_preset_uuid() -> String {
     use rand::Rng;
     let mut rng = rand::thread_rng();
     (0..8).map(|_| format!("{:x}", rng.gen_range(0..16))).collect()
@@ -157,7 +156,7 @@ pub async fn save_preset(
     let mut active_map_id = None;
 
     if preset_maps.is_empty() {
-        if let Some(inst) = crate::workshop::read_installed_pub(&app) {
+        if let Some(inst) = crate::workshop::read_installed(&app) {
             preset_maps.push(PresetMapEntry {
                 id: inst.map_id.clone(),
                 name: inst.map_name.clone(),
@@ -199,7 +198,7 @@ pub async fn save_preset(
         return Ok(updated);
     }
     let preset = Preset {
-        id: make_id(),
+        id: generate_preset_uuid(),
         name: name.clone(),
         created_at: crate::now_iso8601_utc(),
         swaps: swaps.clone(),
@@ -334,7 +333,7 @@ fn code_for_preset(p: &Preset) -> Result<String, String> {
         "active_map_id": p.active_map_id,
     })
     .to_string();
-    let sig = sign(payload.as_bytes());
+    let sig = sign_preset_payload(payload.as_bytes());
     Ok(format!(
         "1.{}.{}",
         B64.encode(payload.as_bytes()),
@@ -369,7 +368,7 @@ fn parse_code(code: &str) -> Result<(String, Vec<SwapEntry>, Vec<PresetMapEntry>
     let sig = B64
         .decode(sig_b64)
         .map_err(|_| "Malformed preset code: bad signature.")?;
-    if sig != sign(&payload) {
+    if sig != sign_preset_payload(&payload) {
         return Err("Preset code failed verification — it was modified or corrupted.".into());
     }
     let val: serde_json::Value =
@@ -435,7 +434,7 @@ pub async fn import_preset_code(
         return Ok(updated);
     }
     let preset = Preset {
-        id: make_id(),
+        id: generate_preset_uuid(),
         name,
         created_at: crate::now_iso8601_utc(),
         swaps: swaps.clone(),

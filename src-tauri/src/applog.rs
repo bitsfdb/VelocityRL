@@ -284,7 +284,7 @@ fn write_panic_crash(info: &std::panic::PanicHookInfo<'_>) {
     event(&format!("PANIC written to {}", path.display()));
 }
 
-pub fn event(message: &str) {
+pub fn log_app_event(message: &str) {
     let line = format!("[{}] {}", now_stamp(), message);
     log::info!("{message}");
     if let Ok(guard) = LOG_DIR.lock() {
@@ -292,6 +292,11 @@ pub fn event(message: &str) {
             append_raw(&dir.join("launch.log"), &line);
         }
     }
+}
+
+#[inline]
+pub fn event(message: &str) {
+    log_app_event(message);
 }
 
 pub fn mark_clean_exit() {
@@ -317,6 +322,30 @@ pub fn on_run_event(_app: &AppHandle, ev: &RunEvent) {
         }
         _ => {}
     }
+}
+
+static ACTIVE_LOCALE_LOGS: Mutex<Option<std::collections::HashMap<String, String>>> = Mutex::new(None);
+
+#[tauri::command]
+pub fn set_app_locale_logs(logs: std::collections::HashMap<String, String>) -> Result<(), String> {
+    if let Ok(mut lock) = ACTIVE_LOCALE_LOGS.lock() {
+        *lock = Some(logs);
+    }
+    Ok(())
+}
+
+pub fn log_i18n(key: &str, default_fmt: &str, vars: &[(&str, &str)]) {
+    let mut text = {
+        let lock = ACTIVE_LOCALE_LOGS.lock().ok();
+        lock.as_ref()
+            .and_then(|opt| opt.as_ref())
+            .and_then(|map| map.get(key).cloned())
+            .unwrap_or_else(|| default_fmt.to_string())
+    };
+    for (k, v) in vars {
+        text = text.replace(&format!("{{{k}}}"), v);
+    }
+    event(&text);
 }
 
 #[tauri::command]

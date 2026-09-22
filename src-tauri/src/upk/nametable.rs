@@ -428,11 +428,10 @@ pub fn apply_name_pairs_inplace(
             }
 
             let needed = new_str.len() + 1;
-            if needed > slot.fstring_capacity {
+            if needed != slot.fstring_capacity {
                 return Err(format!(
-                    "Cannot rename '{}' → '{}': needs {} bytes but only {} available. \
-                     Choose a visual item with a shorter name.",
-                    old_str, new_str, needed, slot.fstring_capacity
+                    "In-place rename '{}' → '{}' changes length from {} to {}; rebuild required.",
+                    old_str, new_str, slot.fstring_capacity, needed
                 ));
             }
 
@@ -441,13 +440,55 @@ pub fn apply_name_pairs_inplace(
                 *b = if i < new_str.len() { new_str.as_bytes()[i] } else { 0 };
             }
 
-            if needed < slot.fstring_capacity {
-                let new_len = (new_str.len() + 1) as i32;
-                data[fstr_start..fstr_start + 4].copy_from_slice(&new_len.to_le_bytes());
-            }
-
             slots[idx].name = new_str.clone();
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_shortening_rename_does_not_corrupt_nametable() {
+        // Build a mock header with 3 entries:
+        // 0: "Wheel_SoccerBall" (17 bytes with \0)
+        // 1: "Wheel_SoccerBall_SF" (20 bytes with \0)
+        // 2: "SomeOtherName" (14 bytes with \0)
+        let mut header = Vec::new();
+        header.extend_from_slice(&serialize_name_entry("Wheel_SoccerBall", 0x11223344));
+        header.extend_from_slice(&serialize_name_entry("Wheel_SoccerBall_SF", 0x55667788));
+        header.extend_from_slice(&serialize_name_entry("SomeOtherName", 0x99AABBCC));
+
+        let import_off = header.len();
+        let export_off = header.len();
+        let depends_off = header.len();
+
+        let pairs = vec![
+            ("Wheel_SoccerBall".to_string(), "WHEEL_Triad".to_string()),
+            ("Wheel_SoccerBall_SF".to_string(), "WHEEL_Triad_SF".to_string()),
+        ];
+
+        let (new_header, delta) = apply_header_renames(
+            header,
+            import_off,
+            export_off,
+            depends_off,
+            3,
+            &pairs,
+        ).expect("rebuild succeeds");
+
+        // Verify parsing new_header succeeds without FString length errors
+        let parsed = crate::upk::parser::parse_name_table(&new_header, 0, 3)
+            .expect("parse name table succeeds");
+        assert_eq!(parsed.len(), 3);
+        assert_eq!(parsed[0].name, "WHEEL_Triad");
+        assert_eq!(parsed[0].flags, 0x11223344);
+        assert_eq!(parsed[1].name, "WHEEL_Triad_SF");
+        assert_eq!(parsed[1].flags, 0x55667788);
+        assert_eq!(parsed[2].name, "SomeOtherName");
+        assert_eq!(parsed[2].flags, 0x99AABBCC);
+        assert!(delta < 0, "shortening names reduces table size");
+    }
 }

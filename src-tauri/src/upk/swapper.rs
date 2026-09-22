@@ -177,13 +177,73 @@ pub fn painted_package_candidates(asset_package: &str, paint_id: i32) -> Vec<Str
     out
 }
 
+/// Resolves a raw package string (e.g. "Wheel_SoccerBall", "Wheel_SoccerBall.upk", "Wheel_SoccerBall_SF.upk")
+/// to the actual file path and canonical file name inside CookedPCConsole.
+/// Handles missing .upk extensions, missing _SF companions, and case differences on disk.
+pub fn resolve_package_path(game_dir: &Path, raw_pkg: &str) -> Option<(PathBuf, String)> {
+    let trimmed = raw_pkg.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let mut cands = Vec::new();
+    cands.push(trimmed.to_string());
+
+    let has_upk = trimmed.to_ascii_lowercase().ends_with(".upk");
+    let stem = if has_upk {
+        file_stem(trimmed)
+    } else {
+        trimmed.to_string()
+    };
+
+    if !has_upk {
+        cands.push(format!("{stem}.upk"));
+    }
+
+    let stem_lower = stem.to_ascii_lowercase();
+    if !stem_lower.ends_with("_sf") {
+        cands.push(format!("{stem}_SF.upk"));
+        cands.push(format!("{stem}_sf.upk"));
+    } else {
+        let base = package_base(&stem);
+        if !base.is_empty() {
+            cands.push(format!("{base}.upk"));
+        }
+    }
+
+    // 1. Direct filesystem check
+    for cand in &cands {
+        let p = game_dir.join(cand);
+        if p.is_file() {
+            return Some((p, cand.clone()));
+        }
+    }
+
+    // 2. Case-insensitive filesystem check in game_dir
+    if let Ok(entries) = std::fs::read_dir(game_dir) {
+        let cand_lowers: Vec<String> = cands.iter().map(|c| c.to_ascii_lowercase()).collect();
+        for entry in entries.flatten() {
+            let actual_name = entry.file_name().to_string_lossy().into_owned();
+            let actual_lower = actual_name.to_ascii_lowercase();
+            if cand_lowers.iter().any(|c| c == &actual_lower) {
+                let p = entry.path();
+                if p.is_file() {
+                    return Some((p, actual_name));
+                }
+            }
+        }
+    }
+
+    None
+}
+
 fn find_painted_package(game_dir: &Path, asset_package: &str, paint_id: i32) -> Option<String> {
     for cand in painted_package_candidates(asset_package, paint_id) {
         if is_thumbnail_companion_upk(&cand) {
             continue;
         }
-        if game_dir.join(&cand).is_file() {
-            return Some(cand);
+        if let Some((_, resolved)) = resolve_package_path(game_dir, &cand) {
+            return Some(resolved);
         }
     }
     None
@@ -250,14 +310,23 @@ fn to_pascal_case(s: &str) -> String {
 fn infer_name_pairs(target: &Item, donor: &Item) -> Vec<(String, String)> {
     let donor_stem = file_stem(&donor.asset_package);
     let target_stem = file_stem(&target.asset_package);
+    let donor_base = package_base(&donor_stem);
+    let target_base = package_base(&target_stem);
 
-    let donor_parts: Vec<&str> = donor
-        .asset_path
+    let mut donor_path_synthesized = donor.asset_path.clone();
+    if donor_path_synthesized.is_empty() && !donor_base.is_empty() {
+        donor_path_synthesized = format!("{donor_base}.{donor_base}");
+    }
+    let mut target_path_synthesized = target.asset_path.clone();
+    if target_path_synthesized.is_empty() && !target_base.is_empty() {
+        target_path_synthesized = format!("{target_base}.{target_base}");
+    }
+
+    let donor_parts: Vec<&str> = donor_path_synthesized
         .split('.')
         .filter(|s| !s.is_empty())
         .collect();
-    let target_parts: Vec<&str> = target
-        .asset_path
+    let target_parts: Vec<&str> = target_path_synthesized
         .split('.')
         .filter(|s| !s.is_empty())
         .collect();
@@ -282,25 +351,36 @@ fn infer_name_pairs(target: &Item, donor: &Item) -> Vec<(String, String)> {
             target_parts[i].to_string(),
         );
     }
-    if !donor_stem.is_empty() && !target_stem.is_empty() {
-        add_pair(&mut pairs, donor_stem.clone(), target_stem.clone());
 
-        let donor_base = package_base(&donor_stem);
-        let target_base = package_base(&target_stem);
-        if !donor_base.is_empty() && !target_base.is_empty() {
-            let donor_pascal = to_pascal_case(donor_base);
-            let target_pascal = to_pascal_case(target_base);
+    if !donor_base.is_empty() && !target_base.is_empty() {
+        let donor_pascal = to_pascal_case(donor_base);
+        let target_pascal = to_pascal_case(target_base);
 
-            add_pair(&mut pairs, donor_base.to_string(), target_base.to_string());
-            add_pair(&mut pairs, donor_base.to_string(), target_pascal.clone());
-            add_pair(&mut pairs, donor_pascal.clone(), target_base.to_string());
-            add_pair(&mut pairs, donor_pascal.clone(), target_pascal.clone());
+        // 1. Base package names (unadorned)
+        add_pair(&mut pairs, donor_base.to_string(), target_base.to_string());
+        add_pair(&mut pairs, donor_base.to_string(), target_pascal.clone());
+        add_pair(&mut pairs, donor_pascal.clone(), target_base.to_string());
+        add_pair(&mut pairs, donor_pascal.clone(), target_pascal.clone());
 
-            add_pair(&mut pairs, format!("{donor_base}_TA"), format!("{target_pascal}_TA"));
-            add_pair(&mut pairs, format!("{donor_pascal}_TA"), format!("{target_pascal}_TA"));
-            add_pair(&mut pairs, format!("{donor_base}_archetype"), format!("{target_pascal}_archetype"));
-            add_pair(&mut pairs, format!("{donor_pascal}_archetype"), format!("{target_pascal}_archetype"));
-        }
+        // 2. Package file companions (_SF and _sf)
+        add_pair(&mut pairs, format!("{donor_base}_SF"), format!("{target_base}_SF"));
+        add_pair(&mut pairs, format!("{donor_base}_sf"), format!("{target_base}_sf"));
+        add_pair(&mut pairs, format!("{donor_pascal}_SF"), format!("{target_pascal}_SF"));
+        add_pair(&mut pairs, format!("{donor_pascal}_sf"), format!("{target_pascal}_sf"));
+
+        // 3. Thumbnails (_Thumbnail)
+        add_pair(&mut pairs, format!("{donor_base}_Thumbnail"), format!("{target_base}_Thumbnail"));
+        add_pair(&mut pairs, format!("{donor_pascal}_Thumbnail"), format!("{target_pascal}_Thumbnail"));
+
+        // 4. Material instances and archetypes
+        add_pair(&mut pairs, format!("{donor_base}_TA"), format!("{target_pascal}_TA"));
+        add_pair(&mut pairs, format!("{donor_pascal}_TA"), format!("{target_pascal}_TA"));
+        add_pair(&mut pairs, format!("{donor_base}_archetype"), format!("{target_pascal}_archetype"));
+        add_pair(&mut pairs, format!("{donor_pascal}_archetype"), format!("{target_pascal}_archetype"));
+        add_pair(&mut pairs, format!("MIC_{donor_base}"), format!("MIC_{target_base}"));
+        add_pair(&mut pairs, format!("MIC_{donor_pascal}"), format!("MIC_{target_pascal}"));
+        add_pair(&mut pairs, format!("MIC_WHEEL_{donor_base}"), format!("MIC_WHEEL_{target_base}"));
+        add_pair(&mut pairs, format!("MIC_WHEEL_{donor_pascal}"), format!("MIC_WHEEL_{target_pascal}"));
     }
     pairs
 }
@@ -316,7 +396,7 @@ fn extend_paint_name_pairs(pairs: &mut Vec<(String, String)>, paint_id: i32) {
     }
 }
 
-fn rel_off(abs: i32, base: i32, label: &str) -> Result<usize, SwapError> {
+fn calc_relative_offset(abs: i32, base: i32, label: &str) -> Result<usize, SwapError> {
     let d = abs
         .checked_sub(base)
         .ok_or_else(|| SwapError::Msg(format!("{label} offset overflow")))?;
@@ -678,36 +758,7 @@ pub fn patch_engine_import_guid(
 }
 
 fn replace_file_atomic(from: &Path, to: &Path) -> Result<(), std::io::Error> {
-    #[cfg(windows)]
-    {
-        use std::os::windows::ffi::OsStrExt;
-        fn wide(p: &Path) -> Vec<u16> {
-            p.as_os_str().encode_wide().chain(std::iter::once(0)).collect()
-        }
-        const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
-        const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
-        #[link(name = "kernel32")]
-        extern "system" {
-            fn MoveFileExW(existing: *const u16, new: *const u16, flags: u32) -> i32;
-        }
-        let src = wide(from);
-        let dst = wide(to);
-        let ok = unsafe {
-            MoveFileExW(
-                src.as_ptr(),
-                dst.as_ptr(),
-                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-            )
-        };
-        if ok == 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-        Ok(())
-    }
-    #[cfg(not(windows))]
-    {
-        std::fs::rename(from, to)
-    }
+    crate::winprobe::replace_file_atomic(from, to)
 }
 
 fn write_swap_atomically(target: &Path, backup: &Path, data: &[u8]) -> Result<(), SwapError> {
@@ -772,7 +823,7 @@ pub fn swap_asset(
             "owned item and target asset are the same — nothing to swap".into(),
         ));
     }
-    let target = find_item_by_id(&items, tid)
+    let mut target = find_item_by_id(&items, tid)
         .ok_or_else(|| SwapError::Msg(format!("target item {tid} not found")))?
         .clone();
     let mut donor = find_item_by_id(&items, did)
@@ -786,6 +837,29 @@ pub fn swap_asset(
         )));
     }
 
+    let (donor_path, resolved_donor_pkg) = resolve_package_path(&opts.game_dir, &donor.asset_package)
+        .ok_or_else(|| {
+            SwapError::Msg(format!(
+                "Wanted item file not found: '{}' ({}). Path: {}",
+                donor.asset_package,
+                if donor.product.is_empty() { "item" } else { &donor.product },
+                opts.game_dir.join(&donor.asset_package).display()
+            ))
+        })?;
+    donor.asset_package = resolved_donor_pkg;
+
+    let (target_path, resolved_target_pkg) = resolve_package_path(&opts.game_dir, &target.asset_package)
+        .ok_or_else(|| {
+            SwapError::Msg(format!(
+                "Owned item file not found: '{}' ({}). Path: {}",
+                target.asset_package,
+                if target.product.is_empty() { "item" } else { &target.product },
+                opts.game_dir.join(&target.asset_package).display()
+            ))
+        })?;
+    target.asset_package = resolved_target_pkg;
+
+    let mut donor_path = donor_path;
     let paint_name = paint_label(paint_id);
     let mut used_painted_file = false;
     if paint_id > 0 {
@@ -795,13 +869,12 @@ pub fn swap_asset(
                 .next()
                 .unwrap_or_else(|| paint_name.replace(' ', ""));
             donor.asset_path = suffix_asset_path(&donor.asset_path, &slug);
-            donor.asset_package = pkg;
+            donor.asset_package = pkg.clone();
+            donor_path = opts.game_dir.join(pkg);
             used_painted_file = true;
         }
     }
 
-    let donor_path = opts.game_dir.join(&donor.asset_package);
-    let target_path = opts.game_dir.join(&target.asset_package);
     let backup_name = {
         let name = target_path
             .file_name()
@@ -826,22 +899,6 @@ pub fn swap_asset(
             } else {
                 target.product.as_str()
             }
-        )));
-    }
-    if !donor_path.exists() {
-        return Err(SwapError::Msg(format!(
-            "Wanted item file not found: '{}' ({}). Path: {}",
-            donor.asset_package,
-            if donor.product.is_empty() { "item" } else { &donor.product },
-            donor_path.display()
-        )));
-    }
-    if !target_path.exists() {
-        return Err(SwapError::Msg(format!(
-            "Owned item file not found: '{}' ({}). Path: {}",
-            target.asset_package,
-            if target.product.is_empty() { "item" } else { &target.product },
-            target_path.display()
         )));
     }
 
@@ -930,17 +987,17 @@ pub fn swap_asset(
         ));
     }
 
-    let import_off = rel_off(
+    let import_off = calc_relative_offset(
         donor_summary.import_offset,
         donor_summary.name_offset,
         "import_offset",
     )?;
-    let export_off = rel_off(
+    let export_off = calc_relative_offset(
         donor_summary.export_offset,
         donor_summary.name_offset,
         "export_offset",
     )?;
-    let depends_off = rel_off(
+    let depends_off = calc_relative_offset(
         donor_summary.depends_offset,
         donor_summary.name_offset,
         "depends_offset",
@@ -971,10 +1028,20 @@ pub fn swap_asset(
     })?;
 
     let target_stem = file_stem(&target.asset_package);
+    let target_base = package_base(&target_stem);
+    let target_pascal = to_pascal_case(target_base);
     let orig_donor_stem = file_stem(&orig_donor.asset_package);
+    let orig_donor_base = package_base(&orig_donor_stem);
+    let has_target = name_table_has(&new_header_plain, donor_summary.name_count, &target_stem)
+        || (!target_base.is_empty() && (
+            name_table_has(&new_header_plain, donor_summary.name_count, target_base)
+            || name_table_has(&new_header_plain, donor_summary.name_count, &target_pascal)
+        ));
+
     if !target_stem.is_empty()
         && !orig_donor_stem.eq_ignore_ascii_case(&target_stem)
-        && !name_table_has(&new_header_plain, donor_summary.name_count, &target_stem)
+        && !orig_donor_base.eq_ignore_ascii_case(target_base)
+        && !has_target
     {
         return Err(SwapError::Msg(format!(
             "Could not remap package names ('{orig_donor_stem}' → '{target_stem}'). Swap aborted so the game will not crash."
@@ -1217,7 +1284,7 @@ pub fn restore_all(game_dir: &str) -> Result<usize, SwapError> {
 mod tests {
     use super::*;
 
-    fn item(id: i64, pkg: &str, path: &str) -> Item {
+    fn mock_item(id: i64, pkg: &str, path: &str) -> Item {
         Item {
             id,
             product: format!("item{id}"),
@@ -1249,8 +1316,8 @@ mod tests {
 
     #[test]
     fn infer_pairs_from_asset_path() {
-        let target = item(1, "Body_Octane_SF.upk", "Body_Octane.Body_Octane");
-        let donor = item(2, "Body_S5Fennec_SF.upk", "Body_S5Fennec.Body_S5Fennec");
+        let target = mock_item(1, "Body_Octane_SF.upk", "Body_Octane.Body_Octane");
+        let donor = mock_item(2, "Body_S5Fennec_SF.upk", "Body_S5Fennec.Body_S5Fennec");
         let pairs = infer_name_pairs(&target, &donor);
         assert!(pairs
             .iter()
@@ -1276,5 +1343,48 @@ mod tests {
     fn load_items_rejects_garbage() {
         assert!(load_items("not json").is_err());
         assert!(load_items("[]").is_err());
+    }
+
+    #[test]
+    fn infer_pairs_with_bare_api_package() {
+        let target = mock_item(380, "WHEEL_Triad_SF.upk", "");
+        let donor = mock_item(386, "Wheel_SoccerBall", "");
+        let pairs = infer_name_pairs(&target, &donor);
+        assert!(pairs.iter().any(|(o, n)| o == "Wheel_SoccerBall" && n == "WHEEL_Triad"));
+        assert!(pairs.iter().any(|(o, n)| o == "Wheel_SoccerBall_SF" && n == "WHEEL_Triad_SF"));
+        assert!(pairs.iter().any(|(o, n)| o == "Wheel_SoccerBall_TA" && n == "WHEEL_Triad_TA"));
+    }
+
+    #[test]
+    fn test_resolve_package_path_variants() {
+        let temp_dir = std::env::temp_dir().join(format!("vrl_test_swapper_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let sample_sf = temp_dir.join("Wheel_SoccerBall_SF.upk");
+        std::fs::write(&sample_sf, b"dummy").unwrap();
+
+        // 1. Exact match
+        let res = resolve_package_path(&temp_dir, "Wheel_SoccerBall_SF.upk");
+        assert!(res.is_some());
+        assert_eq!(res.unwrap().1, "Wheel_SoccerBall_SF.upk");
+
+        // 2. Bare stem without _SF and without .upk
+        let res = resolve_package_path(&temp_dir, "Wheel_SoccerBall");
+        assert!(res.is_some());
+        assert_eq!(res.unwrap().1, "Wheel_SoccerBall_SF.upk");
+
+        // 3. Stem with .upk but without _SF
+        let res = resolve_package_path(&temp_dir, "Wheel_SoccerBall.upk");
+        assert!(res.is_some());
+        assert_eq!(res.unwrap().1, "Wheel_SoccerBall_SF.upk");
+
+        // 4. Case-insensitive
+        let res = resolve_package_path(&temp_dir, "wheel_soccerball");
+        assert!(res.is_some());
+
+        // 5. Non-existent
+        let res = resolve_package_path(&temp_dir, "NonExistentPackage_12345");
+        assert!(res.is_none());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

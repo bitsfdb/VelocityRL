@@ -3,28 +3,59 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use crate::tracker::models::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct PersistedSession {
-    pub session_rating: i32,
     pub wins: i32,
     pub losses: i32,
     pub streak_type: String,
     pub streak_count: i32,
     pub longest_win_streak: i32,
     pub finalized_matches: Vec<String>,
+    #[serde(default)]
+    pub hash: String,
+}
+
+impl PersistedSession {
+    pub fn compute_hash(&self) -> String {
+        use sha2::{Digest, Sha256};
+        let matches = self.finalized_matches.join(",");
+        let input = format!(
+            "vrl-session-v2:{}:{}:{}:{}:{}:{}",
+            self.wins,
+            self.losses,
+            self.streak_type,
+            self.streak_count,
+            self.longest_win_streak,
+            matches
+        );
+        let mut hasher = Sha256::new();
+        hasher.update(input.as_bytes());
+        format!("{:x}", hasher.finalize())
+    }
+
+    pub fn is_valid(&self) -> bool {
+        !self.hash.is_empty() && self.hash == self.compute_hash()
+    }
+
+    pub fn seal(&mut self) {
+        self.hash = self.compute_hash();
+    }
 }
 
 impl Default for PersistedSession {
     fn default() -> Self {
-        Self {
-            session_rating: 1000,
+        let mut s = Self {
             wins: 0,
             losses: 0,
             streak_type: "none".into(),
             streak_count: 0,
             longest_win_streak: 0,
             finalized_matches: Vec::new(),
-        }
+            hash: String::new(),
+        };
+        s.seal();
+        s
     }
 }
 
@@ -44,10 +75,33 @@ pub struct SessionTracker {
 impl SessionTracker {
     pub fn new(config_dir: PathBuf) -> Self {
         let save_path = config_dir.join("tracker_session.json");
-        let session = PersistedSession::default();
+        let session = if save_path.exists() {
+            match fs::read_to_string(&save_path)
+                .ok()
+                .and_then(|s| serde_json::from_str::<PersistedSession>(&s).ok())
+            {
+                Some(parsed) if parsed.is_valid() => parsed,
+                _ => {
+                    crate::applog::event(
+                        "tracker: tracker_session.json was edited or invalid — regenerating fresh session",
+                    );
+                    let fresh = PersistedSession::default();
+                    if let Ok(json) = serde_json::to_string_pretty(&fresh) {
+                        let _ = fs::write(&save_path, json);
+                    }
+                    fresh
+                }
+            }
+        } else {
+            let fresh = PersistedSession::default();
+            if let Ok(json) = serde_json::to_string_pretty(&fresh) {
+                let _ = fs::write(&save_path, json);
+            }
+            fresh
+        };
         let config = OverlayConfig::default();
 
-        let tracker = Self {
+        Self {
             config,
             session,
             active_match_guid: None,
@@ -58,22 +112,18 @@ impl SessionTracker {
             connection_status: "disconnected".into(),
             status_detail: String::new(),
             save_path,
-        };
-        tracker.save();
-        tracker
+        }
     }
 
-    pub fn save(&self) {
+    pub fn save(&mut self) {
+        self.session.seal();
         if let Ok(json) = serde_json::to_string_pretty(&self.session) {
             let _ = fs::write(&self.save_path, json);
         }
     }
 
     pub fn reset_session(&mut self) {
-        self.session = PersistedSession {
-            session_rating: self.config.initial_rating,
-            ..Default::default()
-        };
+        self.session = PersistedSession::default();
         self.last_result = "none".into();
         self.save();
     }
@@ -331,15 +381,10 @@ impl SessionTracker {
     }
 
     pub fn to_overlay_payload(&self) -> OverlayStatePayload {
-        let net_mmr = self.session.session_rating - self.config.initial_rating;
         OverlayStatePayload {
             connection: self.connection_status.clone(),
             status_detail: self.status_detail.clone(),
             match_active: self.is_match_active,
-            session_rating: self.session.session_rating,
-            net_mmr,
-            rating_min: 0,
-            rating_max: 3000,
             wins: self.session.wins,
             losses: self.session.losses,
             streak: StreakInfo {
@@ -351,5 +396,38 @@ impl SessionTracker {
             playlist: 11,
             playlist_name: "2v2 Doubles".into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_persisted_session_validity() {
+        let mut session = PersistedSession::default();
+        assert!(session.is_valid());
+
+        session.wins = 10;
+        assert!(!session.is_valid(), "modifying field without seal must invalidate session");
+
+        session.seal();
+        assert!(session.is_valid());
+    }
+
+    #[test]
+    fn test_persisted_session_rejects_legacy_rating_fields() {
+        let legacy_json = r#"{
+            "session_rating": 1000,
+            "wins": 0,
+            "losses": 0,
+            "streak_type": "none",
+            "streak_count": 0,
+            "longest_win_streak": 0,
+            "finalized_matches": []
+        }"#;
+
+        let result = serde_json::from_str::<PersistedSession>(legacy_json);
+        assert!(result.is_err(), "legacy rating fields must be rejected by deny_unknown_fields");
     }
 }

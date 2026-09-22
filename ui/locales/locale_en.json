@@ -1,0 +1,84 @@
+{
+  "nav": {
+    "swapper": "Swapper",
+    "titles": "Titles",
+    "names": "Names",
+    "ranks": "Fake Ranks",
+    "camera": "Camera",
+    "maps": "Maps",
+    "tracker": "Tracker Overlay",
+    "misc": "Miscellaneous",
+    "website": "Website",
+    "settings": "Settings"
+  },
+  "banner": {
+    "keep_open_title": "Keep VelocityRL Open",
+    "keep_open_desc": "VelocityRL must remain running in the background for titles, spoofing, and names to appear in Rocket League."
+  },
+  "subtabs": {
+    "swaps": "Swaps",
+    "restore": "Restore",
+    "presets": "Presets"
+  },
+  "categories": {
+    "all": "All Items",
+    "bodies": "Bodies",
+    "decals": "Decals",
+    "wheels": "Wheels",
+    "boosts": "Boosts",
+    "antennas": "Antennas",
+    "toppers": "Toppers",
+    "explosions": "Goal Explosions"
+  },
+  "swapper": {
+    "owned_item": "Owned Item",
+    "target_asset": "Target Asset",
+    "search_owned": "Search your items...",
+    "search_target": "Search target assets...",
+    "no_item_selected": "No item selected",
+    "paint": "Paint",
+    "swap_btn": "Swap Items",
+    "rl_running_hint": "Rocket League is running — close it now before swapping or restoring."
+  },
+  "palette": {
+    "title": "Color palette",
+    "desc": "Unlocks custom team car colors and extended palette options in Rocket League.",
+    "apply": "Apply",
+    "restore": "Restore"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "game_path": "Rocket League CookedPCConsole Path",
+    "path_placeholder": "CookedPCConsole folder path",
+    "autodetect": "Auto-detect",
+    "browse": "Browse",
+    "startup_title": "Start VelocityRL on startup",
+    "startup_desc": "Automatically starts VelocityRL in background on login",
+    "privacy_policy": "Privacy Policy",
+    "save": "Save"
+  },
+  "dialogs": {
+    "cancel": "Cancel",
+    "ok": "OK",
+    "close": "Close"
+  },
+  "logs": {
+    "proxy_listen": "proxy: listening on 127.0.0.1:443",
+    "proxy_listen_v6": "proxy: listening on [::1]:443",
+    "broker_listen": "broker: listening on {url}",
+    "health_ok": "proxy: loopback TLS health check on 127.0.0.1:443 verified OK on attempt {attempt}",
+    "health_fail": "proxy: loopback health probe attempt {attempt}/6 failed: {err}",
+    "config_intercepted": "proxy: >>> GET {path} (battlecars={battlecars})",
+    "config_patched": "proxy: patched config ({bytes} bytes)",
+    "config_unpatched": "proxy: unpatched config ({bytes} bytes)",
+    "ws_connected": "proxy: WebSocket upstream connected to {host}",
+    "ws_tunnel_ready": "proxy: WebSocket client tunnel established",
+    "ranks_saved": "proxy: saved {count} playlists to real_skill.json",
+    "ranks_patched": "proxy: patched fake ranks ws frame ({old_bytes} -> {new_bytes} bytes)",
+    "auth_cached": "broker: cached AuthPlayer PsyToken & session ({session}...) for WS",
+    "auth_rewritten": "broker: AuthPlayer WS URL rewritten to local broker ({url})",
+    "palette_synced": "psynet: palette_spoof synced -> {status}",
+    "build_detected": "proxy: detected game build ID: {build_id}"
+  }
+}

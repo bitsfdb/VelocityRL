@@ -87,6 +87,10 @@ def load_or_create_ca() -> tuple[x509.Certificate, rsa.RSAPrivateKey]:
             ),
             critical=True,
         )
+        .add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(key.public_key()),
+            critical=False,
+        )
         .sign(key, hashes.SHA256())
     )
     CA_CERT.write_bytes(_pem_cert(cert))
@@ -96,10 +100,17 @@ def load_or_create_ca() -> tuple[x509.Certificate, rsa.RSAPrivateKey]:
 
 
 def issue_leaf(ca_cert: x509.Certificate, ca_key: rsa.RSAPrivateKey, host: str) -> None:
+    import ipaddress
     now = datetime.datetime.now(datetime.timezone.utc)
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, host)])
-    cert = (
+    san_list = [
+        x509.DNSName(host),
+        x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
+        x509.IPAddress(ipaddress.IPv6Address("::1")),
+        x509.DNSName("localhost"),
+    ]
+    cert_builder = (
         x509.CertificateBuilder()
         .subject_name(name)
         .issuer_name(ca_cert.subject)
@@ -109,7 +120,7 @@ def issue_leaf(ca_cert: x509.Certificate, ca_key: rsa.RSAPrivateKey, host: str) 
         .not_valid_after(now + datetime.timedelta(days=825))
         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
         .add_extension(
-            x509.SubjectAlternativeName([x509.DNSName(host)]),
+            x509.SubjectAlternativeName(san_list),
             critical=False,
         )
         .add_extension(
@@ -130,8 +141,20 @@ def issue_leaf(ca_cert: x509.Certificate, ca_key: rsa.RSAPrivateKey, host: str) 
             ),
             critical=True,
         )
-        .sign(ca_key, hashes.SHA256())
+        .add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(key.public_key()),
+            critical=False,
+        )
     )
+    try:
+        ca_ski = ca_cert.extensions.get_extension_for_class(x509.SubjectKeyIdentifier).value
+        cert_builder = cert_builder.add_extension(
+            x509.AuthorityKeyIdentifier.from_issuer_subject_key_identifier(ca_ski),
+            critical=False,
+        )
+    except Exception:
+        pass
+    cert = cert_builder.sign(ca_key, hashes.SHA256())
     stem = f"leaf_{host}"
     (HERE / f"{stem}.crt").write_bytes(_pem_cert(cert))
     (HERE / f"{stem}.key").write_bytes(_pem_key(key))

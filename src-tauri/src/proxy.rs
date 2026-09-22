@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::Arc;
 use tokio::sync::{oneshot, RwLock};
 
@@ -45,7 +45,7 @@ struct AuthWSCreds {
 static LAST_AUTH_WS: std::sync::Mutex<Option<AuthWSCreds>> = std::sync::Mutex::new(None);
 static LAST_GAME_BUILD_ID: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
-fn extract_build_id_from_path(path: &str) -> Option<String> {
+fn parse_build_id(path: &str) -> Option<String> {
     let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
     for window in segments.windows(2) {
         if window[0].eq_ignore_ascii_case("battlecars") {
@@ -55,12 +55,17 @@ fn extract_build_id_from_path(path: &str) -> Option<String> {
     None
 }
 
-fn remember_auth_player_ws(body: &[u8]) {
-    let token = extract_json_string_field_value(body, "PsyToken");
-    let session = extract_json_string_field_value(body, "SessionID");
+fn cache_auth_ws(body: &[u8]) {
+    let token = find_json_value(body, "PsyToken");
+    let session = find_json_value(body, "SessionID");
     if let (Some(t), Some(s)) = (token, session) {
         if !t.is_empty() && !s.is_empty() {
-            crate::applog::event(&format!("broker: cached AuthPlayer PsyToken & session ({:.8}...) for WS", s));
+            let session_prefix = if s.len() > 8 { &s[..8] } else { &s };
+            crate::applog::log_i18n(
+                "auth_cached",
+                "broker: cached AuthPlayer PsyToken & session ({session}...) for WS",
+                &[("session", session_prefix)],
+            );
             let mut lock = LAST_AUTH_WS.lock().unwrap();
             *lock = Some(AuthWSCreds {
                 token: t,
@@ -71,18 +76,32 @@ fn remember_auth_player_ws(body: &[u8]) {
     }
 }
 
-fn extract_json_string_field_value(body: &[u8], key: &str) -> Option<String> {
+fn find_json_value(body: &[u8], key: &str) -> Option<String> {
     let prefix = format!("\"{key}\":\"");
     let prefix_bytes = prefix.as_bytes();
-    let i = twoway_search(body, prefix_bytes)?;
+    let i = find_bytes(body, prefix_bytes)?;
     let val_start = i + prefix_bytes.len();
     let j = json_string_end(body, val_start)?;
     String::from_utf8(body[val_start..j].to_vec()).ok()
 }
 
-/// Port where the plain-HTTP WS broker listens. Rocket League connects here
-/// after we rewrite `PsyNetUrl.PerConURLv2` in the config response.
-const WS_BROKER_PORT: u16 = 27505;
+/// OS-assigned port for the plain-HTTP WS/RPC broker (`0` = not listening).
+/// Config MITM + AuthPlayer rewrites point Rocket League here so we never need
+/// a fixed port like 27505 (avoids conflicts / "broker already in use").
+static BROKER_PORT: AtomicU16 = AtomicU16::new(0);
+
+pub fn broker_port() -> Option<u16> {
+    let p = BROKER_PORT.load(Ordering::SeqCst);
+    if p == 0 {
+        None
+    } else {
+        Some(p)
+    }
+}
+
+fn broker_http_base() -> Option<String> {
+    broker_port().map(|p| format!("http://127.0.0.1:{p}"))
+}
 
 pub fn ca_cert_bytes() -> &'static [u8] {
     CA_CERT_PEM
@@ -109,9 +128,15 @@ struct SniCertResolver {
 
 impl ResolvesServerCert for SniCertResolver {
     fn resolve(&self, client_hello: ClientHello) -> Option<Arc<CertifiedKey>> {
-        if let Some(sni) = client_hello.server_name() {
-            if sni.contains("ws.rlpp.psynet.gg") {
+        let sni = client_hello.server_name();
+        crate::applog::event(&format!("proxy: ClientHello SNI={sni:?}"));
+        if let Some(s) = sni {
+            let lower = s.to_ascii_lowercase();
+            if lower.contains("ws.rlpp.psynet.gg") {
                 return Some(self.ws_key.clone());
+            }
+            if lower.contains("config.psynet.gg") {
+                return Some(self.config_key.clone());
             }
         }
         Some(self.config_key.clone())
@@ -120,14 +145,9 @@ impl ResolvesServerCert for SniCertResolver {
 
 fn load_certified_key(cert_pem: &[u8], key_pem: &[u8]) -> Result<Arc<CertifiedKey>, String> {
     let mut cert_reader = std::io::Cursor::new(cert_pem);
-    let mut certs: Vec<CertificateDer<'static>> = rustls_pemfile::certs(&mut cert_reader)
+    let certs: Vec<CertificateDer<'static>> = rustls_pemfile::certs(&mut cert_reader)
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("invalid cert pem: {e}"))?;
-
-    let mut ca_reader = std::io::Cursor::new(CA_CERT_PEM);
-    if let Ok(ca_certs) = rustls_pemfile::certs(&mut ca_reader).collect::<Result<Vec<_>, _>>() {
-        certs.extend(ca_certs);
-    }
 
     let mut key_reader = std::io::Cursor::new(key_pem);
     let key: PrivateKeyDer<'static> = rustls_pemfile::private_key(&mut key_reader)
@@ -148,8 +168,10 @@ fn create_tls_acceptor() -> Result<TlsAcceptor, String> {
     let mut server_config = ServerConfig::builder_with_provider(Arc::new(
         tokio_rustls::rustls::crypto::ring::default_provider(),
     ))
-    .with_safe_default_protocol_versions()
-    .map_err(|e| format!("failed to set safe protocol versions: {e}"))?
+    .with_protocol_versions(&[
+        &tokio_rustls::rustls::version::TLS12,
+    ])
+    .map_err(|e| format!("failed to set TLS protocol versions: {e}"))?
     .with_no_client_auth()
     .with_cert_resolver(Arc::new(SniCertResolver { config_key, ws_key }));
 
@@ -231,6 +253,12 @@ pub async fn start_native_proxy() -> Result<(), String> {
         return Ok(());
     }
 
+    if broker_port().is_none() {
+        if let Err(e) = start_ws_broker().await {
+            crate::applog::event(&format!("proxy: warning: failed to pre-start broker: {e}"));
+        }
+    }
+
     let acceptor = create_tls_acceptor()?;
 
     let listener_v4 = match tokio::net::TcpListener::bind("127.0.0.1:443").await {
@@ -239,19 +267,6 @@ pub async fn start_native_proxy() -> Result<(), String> {
             let msg = format!("Failed to bind 127.0.0.1:443: {e}");
             crate::applog::event(&format!("proxy: {msg}"));
             return Err(msg);
-        }
-    };
-
-    let listener_v6 = match tokio::net::TcpListener::bind("[::1]:443").await {
-        Ok(l) => {
-            crate::applog::event("proxy: listening on [::1]:443 (IPv6 HTTPS)");
-            Some(l)
-        }
-        Err(e) => {
-            crate::applog::event(&format!(
-                "proxy: could not bind [::1]:443: {e} (continuing IPv4 only)"
-            ));
-            None
         }
     };
 
@@ -284,40 +299,25 @@ pub async fn start_native_proxy() -> Result<(), String> {
                         continue;
                     }
                 },
-                res = async {
-                    match &listener_v6 {
-                        Some(l) => l.accept().await,
-                        None => std::future::pending().await,
-                    }
-                } => match res {
-                    Ok(c) => Some(c),
-                    Err(e) => {
-                        log::debug!("proxy v6 accept error: {e}");
-                        continue;
-                    }
-                },
             };
 
             let Some((stream, peer_addr)) = conn else {
                 break;
             };
 
+            crate::applog::event(&format!("proxy: accepted connection from {peer_addr}"));
+
             let acceptor = acceptor.clone();
             let client = client.clone();
 
             tokio::spawn(async move {
                 let tls_stream = match acceptor.accept(stream).await {
-                    Ok(s) => s,
+                    Ok(s) => {
+                        crate::applog::event(&format!("proxy: TLS handshake OK from {peer_addr}"));
+                        s
+                    }
                     Err(e) => {
-                        let err_str = e.to_string();
-                        // Benign disconnections: TCP health checks, probes, or clients closing immediately.
-                        let is_benign = err_str.contains("tls handshake eof")
-                            || err_str.contains("unexpected EOF")
-                            || err_str.contains("connection reset")
-                            || err_str.contains("broken pipe");
-                        if !is_benign {
-                            crate::applog::event(&format!("proxy TLS handshake error from {peer_addr}: {e}"));
-                        }
+                        crate::applog::event(&format!("proxy: TLS handshake FAILED from {peer_addr}: {e}"));
                         return;
                     }
                 };
@@ -336,9 +336,7 @@ pub async fn start_native_proxy() -> Result<(), String> {
                     .await
                 {
                     let err_str = e.to_string();
-                    let is_benign = err_str.contains("connection reset")
-                        || err_str.contains("broken pipe")
-                        || err_str.contains("unexpected EOF")
+                    let is_benign = err_str.contains("unexpected EOF")
                         || err_str.contains("error shutting down connection");
                     if !is_benign {
                         crate::applog::event(&format!("proxy connection error from {peer_addr}: {e}"));
@@ -352,6 +350,57 @@ pub async fn start_native_proxy() -> Result<(), String> {
     Ok(())
 }
 
+/// Active loopback health probe: initiates a TLS handshake and HTTP/1.1 request to
+/// https://127.0.0.1:443/health (with SNI config.psynet.gg).
+/// Verifies that port 443 is bound, accepting TLS connections, using the VelocityRL certificate,
+/// and successfully processing requests before hosts redirection occurs.
+pub async fn check_loopback_health() -> Result<(), String> {
+    if !is_proxy_running() {
+        return Err("Proxy is not marked running".into());
+    }
+
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .resolve("config.psynet.gg", "127.0.0.1:443".parse().unwrap())
+        .timeout(std::time::Duration::from_millis(1500))
+        .build()
+        .map_err(|e| format!("failed to build loopback probe client: {e}"))?;
+
+    for attempt in 1..=6 {
+        match client.get("https://config.psynet.gg/health").send().await {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    crate::applog::log_i18n(
+                        "health_ok",
+                        "proxy: loopback TLS health check on 127.0.0.1:443 verified OK on attempt {attempt}",
+                        &[("attempt", &attempt.to_string())],
+                    );
+                    return Ok(());
+                } else {
+                    crate::applog::event(&format!(
+                        "proxy: loopback health check returned HTTP {}",
+                        resp.status()
+                    ));
+                }
+            }
+            Err(e) => {
+                crate::applog::log_i18n(
+                    "health_fail",
+                    "proxy: loopback health probe attempt {attempt}/6 failed: {err}",
+                    &[("attempt", &attempt.to_string()), ("err", &e.to_string())],
+                );
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+
+    Err("Proxy loopback TLS health check on 127.0.0.1:443 failed after multiple attempts. Port 443 is blocked or not responding to TLS handshakes.".into())
+}
+
+pub async fn verify_proxy_loopback_health() -> Result<(), String> {
+    check_loopback_health().await
+}
+
 pub fn stop_native_proxy(_revert_hosts_file: bool) {
     if let Some(tx) = PROXY_STOP_TX.lock().unwrap().take() {
         let _ = tx.send(());
@@ -359,26 +408,42 @@ pub fn stop_native_proxy(_revert_hosts_file: bool) {
     if let Some(tx) = BROKER_STOP_TX.lock().unwrap().take() {
         let _ = tx.send(());
     }
+    BROKER_PORT.store(0, Ordering::SeqCst);
     PROXY_RUNNING.store(false, Ordering::SeqCst);
     crate::applog::event("proxy: stopped");
 }
 
-/// Start a plain-HTTP server on `127.0.0.1:WS_BROKER_PORT`.
-/// Rocket League connects here after `PsyNetUrl.PerConURLv2` is rewritten in
-/// the config response to `ws://127.0.0.1:<port>/ws/gc2`.
-/// The broker accepts WS upgrades and forwards them to the real
-/// `wss://ws.rlpp.psynet.gg:443`, applying fake-rank patching on the way back.
-pub async fn start_ws_broker() -> Result<(), String> {
-    let addr = format!("127.0.0.1:{WS_BROKER_PORT}");
-    let listener = match tokio::net::TcpListener::bind(&addr).await {
+/// Start a plain-HTTP broker on `127.0.0.1:<ephemeral>`.
+/// Rocket League connects here after `PsyNetUrl` / `PerConURL*` are rewritten to
+/// that host:port. Returns the bound port.
+pub async fn start_ws_broker() -> Result<u16, String> {
+    if let Some(existing) = broker_port() {
+        crate::applog::event(&format!(
+            "broker: already listening on 127.0.0.1:{existing} — reuse"
+        ));
+        return Ok(existing);
+    }
+
+    // Try standard port 27505 first (matches Go proxy architecture), fallback to ephemeral if occupied.
+    let listener = match tokio::net::TcpListener::bind("127.0.0.1:27505").await {
         Ok(l) => l,
-        Err(e) => {
-            let msg = format!("broker: Failed to bind {addr}: {e}");
-            crate::applog::event(&msg);
-            return Err(msg);
-        }
+        Err(_) => match tokio::net::TcpListener::bind("127.0.0.1:0").await {
+            Ok(l) => l,
+            Err(e) => {
+                let msg = format!("broker: Failed to bind 127.0.0.1: {e}");
+                crate::applog::event(&msg);
+                return Err(msg);
+            }
+        },
     };
-    crate::applog::event(&format!("broker: listening on {addr} (plain HTTP/WS broker)"));
+    let port = listener
+        .local_addr()
+        .map_err(|e| format!("broker: local_addr failed: {e}"))?
+        .port();
+    BROKER_PORT.store(port, Ordering::SeqCst);
+    crate::applog::event(&format!(
+        "broker: listening on http://127.0.0.1:{port} (PsyNetUrl RPC + local WS forward)"
+    ));
 
     let client = reqwest::Client::builder()
         .http1_only()
@@ -429,12 +494,13 @@ pub async fn start_ws_broker() -> Result<(), String> {
                 }
             });
         }
+        BROKER_PORT.store(0, Ordering::SeqCst);
     });
 
-    Ok(())
+    Ok(port)
 }
 
-/// Handle incoming requests on the plain-HTTP broker port (27505).
+/// Handle incoming requests on the plain-HTTP broker (ephemeral local port).
 /// Upgrades WebSocket connections to the game server, and proxies HTTP RPC/Services calls to api.rlpp.psynet.gg.
 async fn handle_broker_request(
     req: Request<Incoming>,
@@ -519,19 +585,27 @@ async fn handle_broker_request(
 
     let path_lower = path_and_query.to_ascii_lowercase();
     if path_lower.contains("authplayer") {
-        remember_auth_player_ws(&out_body);
-        let local_ws_v2 = format!("ws://127.0.0.1:{WS_BROKER_PORT}/ws/gc2");
-        let local_ws_v1 = format!("ws://127.0.0.1:{WS_BROKER_PORT}/ws/gc?PsyConnectionType=Player");
-        if let Some(next) = replace_json_string_field(&out_body, "PerConURLv2", &local_ws_v2) {
-            out_body = next;
-            patched = true;
-        }
-        if let Some(next) = replace_json_string_field(&out_body, "PerConURL", &local_ws_v1) {
-            out_body = next;
-            patched = true;
-        }
-        if patched {
-            crate::applog::event("broker: AuthPlayer WS URL rewritten to local broker (/ws/gc2)");
+        cache_auth_ws(&out_body);
+        if let Some(http_base) = broker_http_base() {
+            let local_ws_v2 = format!("{http_base}/ws/gc2");
+            let local_ws_v1 = format!("{http_base}/ws/gc?PsyConnectionType=Player");
+            if let Some(next) = replace_json_string_field(&out_body, "PerConURLv2", &local_ws_v2) {
+                out_body = next;
+                patched = true;
+            }
+            if let Some(next) = replace_json_string_field(&out_body, "PerConURL", &local_ws_v1) {
+                out_body = next;
+                patched = true;
+            }
+            if patched {
+                crate::applog::event(&format!(
+                    "broker: AuthPlayer WS URL rewritten to local broker ({local_ws_v2})"
+                ));
+            }
+        } else {
+            crate::applog::event(
+                "broker: AuthPlayer WS rewrite skipped — broker port not set",
+            );
         }
     }
 
@@ -555,7 +629,8 @@ async fn handle_broker_request(
 
     if patched {
         let sig = resign_rpc_response(&psy_time, &out_body);
-        resp_builder = resp_builder.header("PsySig", sig);
+        resp_builder = resp_builder.header("PsySig", &sig);
+        resp_builder = resp_builder.header("Psysignature", &sig);
     }
 
     resp_builder = resp_builder.header("Content-Length", out_body.len().to_string());
@@ -566,6 +641,16 @@ async fn handle_request(
     req: Request<Incoming>,
     client: reqwest::Client,
 ) -> Result<Response<ResponseBoxBody>, hyper::Error> {
+    let path = req.uri().path();
+    if path == "/health" || path == "/vrl-health" {
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "text/plain")
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body("OK"))
+            .unwrap());
+    }
+
     let host_hdr = req
         .headers()
         .get(hyper::header::HOST)
@@ -856,7 +941,7 @@ async fn patch_ws_frame_text(text: &str) -> (String, bool) {
 }
 
 async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
-    let Some(hdr_end) = twoway_search(frame, b"\r\n\r\n") else {
+    let Some(hdr_end) = find_bytes(frame, b"\r\n\r\n") else {
         return (frame.to_vec(), false);
     };
 
@@ -866,15 +951,15 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
     let svc = get_ws_header_value(headers_part, "PsyService");
     let is_skill = svc.contains("skills/getplayerskill")
         || svc.contains("skills/getplayersskills")
-        || (twoway_search(body_part, b"\"Skills\"").is_some()
-            && (twoway_search(body_part, b"\"Mu\"").is_some()
-                || twoway_search(body_part, b"\"Tier\"").is_some()
-                || twoway_search(body_part, b"\"Playlist\"").is_some()));
+        || (find_bytes(body_part, b"\"Skills\"").is_some()
+            && (find_bytes(body_part, b"\"Mu\"").is_some()
+                || find_bytes(body_part, b"\"Tier\"").is_some()
+                || find_bytes(body_part, b"\"Playlist\"").is_some()));
     let is_leaderboard = svc.contains("skills/getskillleaderboardvalueforuser")
-        || (twoway_search(body_part, b"\"LeaderboardID\"").is_some()
-            && (twoway_search(body_part, b"\"bHasSkill\"").is_some()
-                || twoway_search(body_part, b"\"MMR\"").is_some()
-                || twoway_search(body_part, b"\"Value\"").is_some()));
+        || (find_bytes(body_part, b"\"LeaderboardID\"").is_some()
+            && (find_bytes(body_part, b"\"bHasSkill\"").is_some()
+                || find_bytes(body_part, b"\"MMR\"").is_some()
+                || find_bytes(body_part, b"\"Value\"").is_some()));
 
     if !is_skill && !is_leaderboard {
         return (frame.to_vec(), false);
@@ -968,8 +1053,8 @@ fn replace_ws_header_value(headers: &[u8], key: &str, new_val: &str) -> Vec<u8> 
 
 fn resign_ws_headers(headers: &[u8], body: &[u8]) -> Vec<u8> {
     let psy_time = get_ws_header_value(headers, "PsyTime");
-    let has_psysig = twoway_search(headers, b"PsySig:").is_some() || twoway_search(headers, b"psysig:").is_some();
-    let has_psysignature = twoway_search(headers, b"Psysignature:").is_some() || twoway_search(headers, b"psysignature:").is_some();
+    let has_psysig = find_bytes(headers, b"PsySig:").is_some() || find_bytes(headers, b"psysig:").is_some();
+    let has_psysignature = find_bytes(headers, b"Psysignature:").is_some() || find_bytes(headers, b"psysignature:").is_some();
 
     if !has_psysig && !has_psysignature {
         return headers.to_vec();
@@ -1218,6 +1303,14 @@ fn extract_and_save_real_skills(body: &[u8]) {
     ));
 }
 
+#[derive(Clone)]
+struct StaleConfigEntry {
+    status: StatusCode,
+    headers: hyper::HeaderMap,
+    body: Vec<u8>,
+}
+static LAST_GOOD_CONFIG: std::sync::Mutex<Option<StaleConfigEntry>> = std::sync::Mutex::new(None);
+
 async fn handle_http_config(
     req: Request<Incoming>,
     client: reqwest::Client,
@@ -1227,7 +1320,7 @@ async fn handle_http_config(
     let query = uri.query().map(|q| format!("?{q}")).unwrap_or_default();
     let upstream_url = format!("https://config.psynet.gg{path}{query}");
 
-    if let Some(bid) = extract_build_id_from_path(path) {
+    if let Some(bid) = parse_build_id(path) {
         let mut lock = LAST_GAME_BUILD_ID.lock().unwrap();
         if lock.as_deref() != Some(&bid) {
             crate::applog::event(&format!("proxy: detected game build ID: {bid}"));
@@ -1243,10 +1336,24 @@ async fn handle_http_config(
         is_battlecars
     ));
 
-    let mut up_builder = client.request(req.method().clone(), &upstream_url);
-    for (k, v) in req.headers() {
+    let method = req.method().clone();
+    let headers = req.headers().clone();
+
+    let req_body_bytes = match req.into_body().collect().await {
+        Ok(c) => c.to_bytes().to_vec(),
+        Err(e) => {
+            return Ok(Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(full_body(format!("read req body error: {e}")))
+                .unwrap());
+        }
+    };
+
+    let mut up_builder = client.request(method, &upstream_url);
+    for (k, v) in headers.iter() {
         let k_lower = k.as_str().to_ascii_lowercase();
         if k_lower != "host"
+            && k_lower != "content-length"
             && k_lower != "accept-encoding"
             && k_lower != "if-none-match"
             && k_lower != "if-modified-since"
@@ -1257,29 +1364,53 @@ async fn handle_http_config(
             up_builder = up_builder.header(k.as_str(), v.as_bytes());
         }
     }
+    if !req_body_bytes.is_empty() {
+        up_builder = up_builder.body(req_body_bytes);
+    }
 
-    let up_resp = match up_builder.send().await {
-        Ok(r) => r,
+    let (status, headers, body_bytes) = match up_builder.send().await {
+        Ok(r) => {
+            let s = r.status();
+            let h = r.headers().clone();
+            match r.bytes().await {
+                Ok(bytes) => {
+                    let b = bytes.to_vec();
+                    if s.is_success() && !b.is_empty() {
+                        *LAST_GOOD_CONFIG.lock().unwrap() = Some(StaleConfigEntry {
+                            status: s,
+                            headers: h.clone(),
+                            body: b.clone(),
+                        });
+                    }
+                    (s, h, b)
+                }
+                Err(e) => {
+                    crate::applog::event(&format!("proxy: error reading upstream body: {e}"));
+                    if let Some(cached) = LAST_GOOD_CONFIG.lock().unwrap().clone() {
+                        crate::applog::event("proxy: serving cached last-good config fallback");
+                        (cached.status, cached.headers, cached.body)
+                    } else {
+                        let resp = Response::builder()
+                            .status(StatusCode::BAD_GATEWAY)
+                            .body(full_body(format!("read body error: {e}")))
+                            .unwrap();
+                        return Ok(resp);
+                    }
+                }
+            }
+        }
         Err(e) => {
             crate::applog::event(&format!("proxy: upstream error: {e}"));
-            let resp = Response::builder()
-                .status(StatusCode::BAD_GATEWAY)
-                .body(full_body(format!("upstream error: {e}")))
-                .unwrap();
-            return Ok(resp);
-        }
-    };
-
-    let status = up_resp.status();
-    let headers = up_resp.headers().clone();
-    let body_bytes = match up_resp.bytes().await {
-        Ok(b) => b.to_vec(),
-        Err(e) => {
-            let resp = Response::builder()
-                .status(StatusCode::BAD_GATEWAY)
-                .body(full_body(format!("read body error: {e}")))
-                .unwrap();
-            return Ok(resp);
+            if let Some(cached) = LAST_GOOD_CONFIG.lock().unwrap().clone() {
+                crate::applog::event("proxy: serving cached last-good config fallback");
+                (cached.status, cached.headers, cached.body)
+            } else {
+                let resp = Response::builder()
+                    .status(StatusCode::BAD_GATEWAY)
+                    .body(full_body(format!("upstream error: {e}")))
+                    .unwrap();
+                return Ok(resp);
+            }
         }
     };
 
@@ -1290,9 +1421,9 @@ async fn handle_http_config(
         Some(c) => Some(c),
         None => get_spoof_config().await,
     };
-    if let Some(cfg) = cfg_opt {
+    if let Some(cfg) = &cfg_opt {
         if crate::features::is_build_supported() {
-            let (next_body, changed) = patch_config(&out_body, &cfg);
+            let (next_body, changed) = patch_config(&out_body, cfg);
             if changed {
                 out_body = next_body;
                 patched = true;
@@ -1301,6 +1432,16 @@ async fn handle_http_config(
                     out_body.len()
                 ));
             }
+        } else if let Some(next) = patch_psynet_url(&out_body) {
+            out_body = next;
+            patched = true;
+            crate::applog::event("proxy: patched PsyNetUrl to broker (unsupported build fallback)");
+        }
+    } else {
+        if let Some(next) = patch_psynet_url(&out_body) {
+            out_body = next;
+            patched = true;
+            crate::applog::event("proxy: patched PsyNetUrl to broker (default config)");
         }
     }
 
@@ -1331,9 +1472,10 @@ async fn handle_http_config(
     resp_builder = resp_builder.header("Pragma", "no-cache");
     resp_builder = resp_builder.header("Expires", "0");
 
-    // Always provide a valid Psysignature (signed with PSY_CDN_KEY) so Rocket League always accepts the config
+    // Always provide both Psysignature and PsySig (signed with PSY_CDN_KEY) so Rocket League always accepts the config
     let sig = resign_config_cdn(&out_body);
-    resp_builder = resp_builder.header("Psysignature", sig);
+    resp_builder = resp_builder.header("Psysignature", &sig);
+    resp_builder = resp_builder.header("PsySig", &sig);
 
     resp_builder = resp_builder.header("Content-Length", out_body.len().to_string());
     let resp = resp_builder.body(full_body(out_body)).unwrap();
@@ -1356,11 +1498,12 @@ fn resign_rpc_response(psy_time: &str, body: &[u8]) -> String {
 /// Rewrite `PsyNetUrl.URL` and `PsyNetUrl.URLv2` in the battlecars config body
 /// to route WebSocket connections and RPC requests through our local broker.
 fn patch_psynet_url(body: &[u8]) -> Option<Vec<u8>> {
+    let http_base = broker_http_base()?;
     let (obj_start, obj_end) = find_named_object(body, "PsyNetUrl")?;
     let obj = body[obj_start..obj_end].to_vec();
 
-    let local_services = format!("http://127.0.0.1:{WS_BROKER_PORT}/Services");
-    let local_rpc = format!("http://127.0.0.1:{WS_BROKER_PORT}/rpc");
+    let local_services = format!("{http_base}/Services");
+    let local_rpc = format!("{http_base}/rpc");
 
     let mut patched_obj = obj;
     let mut changed = false;
@@ -1398,7 +1541,7 @@ fn replace_json_string_field(body: &[u8], key: &str, new_value: &str) -> Option<
 
     let prefix = format!("\"{key}\":\"");
     let prefix_bytes = prefix.as_bytes();
-    let i = twoway_search(body, prefix_bytes)?;
+    let i = find_bytes(body, prefix_bytes)?;
     let val_start = i + prefix_bytes.len();
     let j = json_string_end(body, val_start)?;
 
@@ -1468,7 +1611,7 @@ fn json_string_end(body: &[u8], val_start: usize) -> Option<usize> {
 fn find_named_object(body: &[u8], name: &str) -> Option<(usize, usize)> {
     let key = format!("\"{name}\"");
     let key_bytes = key.as_bytes();
-    let at = twoway_search(body, key_bytes)?;
+    let at = find_bytes(body, key_bytes)?;
     let mut i = at + key_bytes.len();
     while i < body.len() && body[i].is_ascii_whitespace() {
         i += 1;
@@ -1487,7 +1630,7 @@ fn find_named_object(body: &[u8], name: &str) -> Option<(usize, usize)> {
     Some((i, close + 1))
 }
 
-fn twoway_search(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     if needle.is_empty() || haystack.len() < needle.len() {
         return None;
     }
@@ -1502,11 +1645,11 @@ fn replace_equip_text(body: &[u8], equip_id: &str, new_text: &str) -> Option<Vec
     let encoded = &encoded_json.as_bytes()[1..encoded_json.len() - 1];
 
     let prefix = format!("\"ID\":\"{equip_id}\",\"Text\":\"");
-    let val_start = if let Some(i) = twoway_search(body, prefix.as_bytes()) {
+    let val_start = if let Some(i) = find_bytes(body, prefix.as_bytes()) {
         i + prefix.len()
     } else {
         let id_pat = format!("\"ID\":\"{equip_id}\"");
-        let id_at = twoway_search(body, id_pat.as_bytes())?;
+        let id_at = find_bytes(body, id_pat.as_bytes())?;
         let mut start = id_at;
         while start > 0 && body[start] != b'{' {
             start -= 1;
@@ -1514,7 +1657,7 @@ fn replace_equip_text(body: &[u8], equip_id: &str, new_text: &str) -> Option<Vec
         let end = scan_object_end(body, start)? + 1;
         let obj = &body[start..end];
         let tkey = b"\"Text\":\"";
-        let k = twoway_search(obj, tkey)?;
+        let k = find_bytes(obj, tkey)?;
         start + k + tkey.len()
     };
 
@@ -1532,7 +1675,7 @@ fn replace_equip_text(body: &[u8], equip_id: &str, new_text: &str) -> Option<Vec
 
 fn replace_equip_category(body: &[u8], equip_id: &str, new_cat: &str) -> Option<Vec<u8>> {
     let id_pat = format!("\"ID\":\"{equip_id}\"");
-    let id_at = twoway_search(body, id_pat.as_bytes())?;
+    let id_at = find_bytes(body, id_pat.as_bytes())?;
     let mut start = id_at;
     while start > 0 && body[start] != b'{' {
         start -= 1;
@@ -1541,7 +1684,7 @@ fn replace_equip_category(body: &[u8], equip_id: &str, new_cat: &str) -> Option<
     let obj = &body[start..end];
     let ckey = b"\"Category\":\"";
 
-    if let Some(k) = twoway_search(obj, ckey) {
+    if let Some(k) = find_bytes(obj, ckey) {
         let val_start = start + k + ckey.len();
         let j = json_string_end(body, val_start)?;
         if &body[val_start..j] == new_cat.as_bytes() {
@@ -1578,7 +1721,7 @@ fn upsert_title_category(body: &[u8], cat_id: &str, color: &str, glow_color: &st
 
     let ptc_obj = &body[ptc_start..ptc_end];
     let key = b"\"Categories\"";
-    let Some(k) = twoway_search(ptc_obj, key) else {
+    let Some(k) = find_bytes(ptc_obj, key) else {
         return (body.to_vec(), false);
     };
 
@@ -1605,7 +1748,7 @@ fn upsert_title_category(body: &[u8], cat_id: &str, color: &str, glow_color: &st
     // Check if category already exists in Categories array
     let id_needle = format!("\"ID\":\"{cat_id}\"");
     let arr_slice = &body[arr_start..=arr_end];
-    if let Some(id_at) = twoway_search(arr_slice, id_needle.as_bytes()) {
+    if let Some(id_at) = find_bytes(arr_slice, id_needle.as_bytes()) {
         let abs_id = arr_start + id_at;
         let mut obj_s = abs_id;
         while obj_s > arr_start && body[obj_s] != b'{' {
@@ -1756,7 +1899,7 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
                 {
                     let disp = sw.display_title_id.trim();
                     let src_pat = format!("\"ID\":\"{disp}\"");
-                    if let Some(src_at) = twoway_search(&out, src_pat.as_bytes()) {
+                    if let Some(src_at) = find_bytes(&out, src_pat.as_bytes()) {
                         let mut start = src_at;
                         while start > 0 && out[start] != b'{' {
                             start -= 1;
@@ -1764,7 +1907,7 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
                         if let Some(end) = scan_object_end(&out, start) {
                             let src_obj = &out[start..end + 1];
                             let tkey = b"\"Text\":\"";
-                            if let Some(k) = twoway_search(src_obj, tkey) {
+                            if let Some(k) = find_bytes(src_obj, tkey) {
                                 let val_start = start + k + tkey.len();
                                 if let Some(j) = json_string_end(&out, val_start) {
                                     let text_val = String::from_utf8_lossy(&out[val_start..j]).to_string();
@@ -1835,7 +1978,7 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
 
         if custom_text.is_empty() && !display_id.is_empty() && display_id != equip_id && display_id != "custom" {
             let src_pat = format!("\"ID\":\"{display_id}\"");
-            if let Some(src_at) = twoway_search(&out, src_pat.as_bytes()) {
+            if let Some(src_at) = find_bytes(&out, src_pat.as_bytes()) {
                 let mut start = src_at;
                 while start > 0 && out[start] != b'{' {
                     start -= 1;
@@ -1843,7 +1986,7 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
                 if let Some(end) = scan_object_end(&out, start) {
                     let src_obj = &out[start..end + 1];
                     let tkey = b"\"Text\":\"";
-                    if let Some(k) = twoway_search(src_obj, tkey) {
+                    if let Some(k) = find_bytes(src_obj, tkey) {
                         let val_start = start + k + tkey.len();
                         if let Some(j) = json_string_end(&out, val_start) {
                             let text_val = String::from_utf8_lossy(&out[val_start..j]).to_string();
@@ -1865,7 +2008,7 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
     if features.flags.camera_spoof {
         if let Some(cam) = &cfg.camera_spoof {
             if cam.enabled {
-                let (next, changed) = patch_camera_class_properties(&out, cam);
+                let (next, changed) = patch_camera(&out, cam);
                 if changed {
                     out = next;
                     any_change = true;
@@ -1877,7 +2020,7 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
     if features.flags.rich_palette {
         if let Some(palette) = &cfg.palette_spoof {
             if palette.enabled {
-                let (next, changed) = patch_palette_class_properties(&out);
+                let (next, changed) = patch_palette(&out);
                 if changed {
                     out = next;
                     any_change = true;
@@ -1889,7 +2032,7 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
     if features.flags.dynamic_logos {
         if let Some(logo) = &cfg.logo_spoof {
             if logo.enabled && !logo.logo_url.trim().is_empty() {
-                let (next, changed) = patch_dynamic_logos_config(&out, logo.logo_url.trim());
+                let (next, changed) = patch_logo(&out, logo.logo_url.trim());
                 if changed {
                     out = next;
                     any_change = true;
@@ -1901,7 +2044,7 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
     if features.flags.blog_motd {
         if let Some(blog) = &cfg.blog_spoof {
             if blog.enabled && !blog.motd.trim().is_empty() {
-                let (next, changed) = patch_blog_config(&out, blog.motd.trim());
+                let (next, changed) = patch_blog_motd(&out, blog.motd.trim());
                 if changed {
                     out = next;
                     any_change = true;
@@ -1910,23 +2053,19 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
         }
     }
 
-    if features.flags.fake_ranks {
-        if let Some(fr) = &cfg.fake_ranks {
-            if fr.enabled {
-                if let Some(next) = patch_psynet_url(&out) {
-                    out = next;
-                    any_change = true;
-                }
-            }
-        }
+    // Always rewrite PsyNetUrl to local broker (matches Go proxy architecture:
+    // AuthPlayer and game RPC flow through 127.0.0.1 broker, eliminating external TLS/pinning issues)
+    if let Some(next) = patch_psynet_url(&out) {
+        out = next;
+        any_change = true;
     }
 
     (out, any_change)
 }
 
-fn patch_dynamic_logos_config(body: &[u8], url: &str) -> (Vec<u8>, bool) {
+fn patch_logo(body: &[u8], url: &str) -> (Vec<u8>, bool) {
     let mut out = body.to_vec();
-    let has_escaped_slash = twoway_search(body, b"\\/").is_some();
+    let has_escaped_slash = find_bytes(body, b"\\/").is_some();
     let encoded_url = if has_escaped_slash {
         url.replace('/', "\\/")
     } else {
@@ -1952,7 +2091,7 @@ fn patch_dynamic_logos_config(body: &[u8], url: &str) -> (Vec<u8>, bool) {
 
     // Force bUseDynamicLogos: true
     let obj = out[start..end].to_vec();
-    if let Some(b_at) = twoway_search(&obj, b"\"bUseDynamicLogos\":") {
+    if let Some(b_at) = find_bytes(&obj, b"\"bUseDynamicLogos\":") {
         let val_start = start + b_at + b"\"bUseDynamicLogos\":".len();
         let mut val_end = val_start;
         while val_end < out.len() && out[val_end].is_ascii_alphanumeric() {
@@ -1977,7 +2116,7 @@ fn patch_dynamic_logos_config(body: &[u8], url: &str) -> (Vec<u8>, bool) {
     let mut found_url = false;
     for key in &["LogoURL", "LogoUrl", "SeasonLogo", "SeasonLogoURL", "LogoImageURL", "DynamicLogoURL"] {
         let pat = format!("\"{key}\":\"");
-        if let Some(k_at) = twoway_search(&cur_obj, pat.as_bytes()) {
+        if let Some(k_at) = find_bytes(&cur_obj, pat.as_bytes()) {
             found_url = true;
             let val_start = cur_start + k_at + pat.len();
             if let Some(val_end) = json_string_end(&out, val_start) {
@@ -2019,7 +2158,7 @@ fn json_string_contents(s: &str) -> Option<Vec<u8>> {
     }
 }
 
-fn patch_blog_config(body: &[u8], motd: &str) -> (Vec<u8>, bool) {
+fn patch_blog_motd(body: &[u8], motd: &str) -> (Vec<u8>, bool) {
     let mut out = body.to_vec();
     let Some(encoded_motd) = json_string_contents(motd) else {
         return (out, false);
@@ -2045,7 +2184,7 @@ fn patch_blog_config(body: &[u8], motd: &str) -> (Vec<u8>, bool) {
 
     for key in &["MotD", "Motd", "MOTD", "NewsText"] {
         let pat = format!("\"{key}\":\"");
-        if let Some(k_at) = twoway_search(&obj, pat.as_bytes()) {
+        if let Some(k_at) = find_bytes(&obj, pat.as_bytes()) {
             let val_start = start + k_at + pat.len();
             if let Some(val_end) = json_string_end(&out, val_start) {
                 if &out[val_start..val_end] != encoded_motd.as_slice() {
@@ -2081,7 +2220,7 @@ fn format_camera_limit(min: f64, max: f64, interval: f64, def_min: f64, def_max:
     format!("(Min={:.6},Max={:.6},interval={:.6})", actual_min, actual_max, actual_interval)
 }
 
-fn patch_camera_class_properties(body: &[u8], cam: &crate::psynet::CameraSpoofPayload) -> (Vec<u8>, bool) {
+fn patch_camera(body: &[u8], cam: &crate::psynet::CameraSpoofPayload) -> (Vec<u8>, bool) {
     let fov_str = format_camera_limit(cam.fov.min, cam.fov.max, cam.fov.interval, 60.0, 1000.0, 1.0);
     let height_str = format_camera_limit(cam.height.min, cam.height.max, cam.height.interval, 40.0, 1000.0, 1.0);
     let dist_str = format_camera_limit(cam.distance.min, cam.distance.max, cam.distance.interval, 100.0, 1000.0, 1.0);
@@ -2106,82 +2245,92 @@ fn patch_camera_class_properties(body: &[u8], cam: &crate::psynet::CameraSpoofPa
     (out, changed)
 }
 
-fn patch_palette_class_properties(body: &[u8]) -> (Vec<u8>, bool) {
-    let val_str = "CarColorSet_TA'CarColors.OrangeTeamV2'";
-    upsert_class_property_override(body, "Team_Soccar_TA", "CarColorSet", val_str)
+fn patch_palette(body: &[u8]) -> (Vec<u8>, bool) {
+    // Rocket League's GFx color picker evaluates ClassPropertyConfig overrides at boot.
+    // Pointing CarColorSet on Team_Soccar_TA to OrangeTeamV2 activates our custom 10x21
+    // swatch matrix in the garage without touching default BlueTeam/OrangeTeam exports.
+    upsert_class_property_override(
+        body,
+        "Team_Soccar_TA",
+        "CarColorSet",
+        "CarColorSet_TA'CarColors.OrangeTeamV2'",
+    )
 }
 
+/// Locate the byte span for the root `"ClassPropertyConfig"` JSON object.
+/// Note: We avoid serde_json deserialization across the full 500KB+ CDN config payload
+/// to guarantee zero key-reordering (which trips EAC/Psynet packet checksum validation).
 fn find_class_property_config(body: &[u8]) -> Option<(usize, usize)> {
     let key = b"\"ClassPropertyConfig\"";
-    let at = twoway_search(body, key)?;
-    let mut i = at + key.len();
-    while i < body.len() && body[i].is_ascii_whitespace() {
-        i += 1;
+    let pos = find_bytes(body, key)?;
+    let mut cursor = pos + key.len();
+    while cursor < body.len() && body[cursor].is_ascii_whitespace() {
+        cursor += 1;
     }
-    if i >= body.len() || body[i] != b':' {
+    if cursor >= body.len() || body[cursor] != b':' {
         return None;
     }
-    i += 1;
-    while i < body.len() && body[i].is_ascii_whitespace() {
-        i += 1;
+    cursor += 1;
+    while cursor < body.len() && body[cursor].is_ascii_whitespace() {
+        cursor += 1;
     }
-    if i >= body.len() || body[i] != b'{' {
+    if cursor >= body.len() || body[cursor] != b'{' {
         return None;
     }
-    let close = scan_object_end(body, i)?;
-    Some((i, close + 1))
+    let end_idx = scan_object_end(body, cursor)?;
+    Some((cursor, end_idx + 1))
 }
 
 fn find_overrides_array(body: &[u8], obj_start: usize, obj_end: usize) -> Option<(usize, usize)> {
-    let obj = &body[obj_start..obj_end];
+    let block = &body[obj_start..obj_end];
     let key = b"\"Overrides\"";
-    let at = twoway_search(obj, key)?;
-    let mut i = at + key.len();
-    while i < obj.len() && obj[i].is_ascii_whitespace() {
-        i += 1;
+    let rel_pos = find_bytes(block, key)?;
+    let mut cursor = rel_pos + key.len();
+    while cursor < block.len() && block[cursor].is_ascii_whitespace() {
+        cursor += 1;
     }
-    if i >= obj.len() || obj[i] != b':' {
+    if cursor >= block.len() || block[cursor] != b':' {
         return None;
     }
-    i += 1;
-    while i < obj.len() && obj[i].is_ascii_whitespace() {
-        i += 1;
+    cursor += 1;
+    while cursor < block.len() && block[cursor].is_ascii_whitespace() {
+        cursor += 1;
     }
-    if i >= obj.len() || obj[i] != b'[' {
+    if cursor >= block.len() || block[cursor] != b'[' {
         return None;
     }
-    let arr_start = obj_start + i;
-    let close = scan_array_end(body, arr_start)?;
-    Some((arr_start, close + 1))
+    let arr_open = obj_start + cursor;
+    let arr_close = scan_array_end(body, arr_open)?;
+    Some((arr_open, arr_close + 1))
 }
 
 fn scan_array_end(body: &[u8], start: usize) -> Option<usize> {
-    let mut in_str = false;
-    let mut esc = false;
-    let mut depth = 0;
-    for (i, &c) in body[start..].iter().enumerate() {
-        if in_str {
-            if esc {
-                esc = false;
+    let mut in_quote = false;
+    let mut escaped = false;
+    let mut nest_depth = 0;
+    for (idx, &byte) in body[start..].iter().enumerate() {
+        if in_quote {
+            if escaped {
+                escaped = false;
                 continue;
             }
-            if c == b'\\' {
-                esc = true;
+            if byte == b'\\' {
+                escaped = true;
                 continue;
             }
-            if c == b'"' {
-                in_str = false;
+            if byte == b'"' {
+                in_quote = false;
             }
             continue;
         }
-        match c {
-            b'"' => in_str = true,
-            b'[' | b'{' => depth += 1,
+        match byte {
+            b'"' => in_quote = true,
+            b'[' | b'{' => nest_depth += 1,
             b']' | b'}' => {
-                depth -= 1;
-                if depth == 0 {
-                    if c == b']' {
-                        return Some(start + i);
+                nest_depth -= 1;
+                if nest_depth == 0 {
+                    if byte == b']' {
+                        return Some(start + idx);
                     }
                     return None;
                 }
@@ -2192,102 +2341,113 @@ fn scan_array_end(body: &[u8], start: usize) -> Option<usize> {
     None
 }
 
-fn upsert_class_property_override(body: &[u8], class_name: &str, prop_name: &str, new_value: &str) -> (Vec<u8>, bool) {
-    let (obj_start, obj_end) = match find_class_property_config(body) {
+/// Modifies or inserts a single class-property override in the CDN payload.
+/// Psynet config CDN responses (`/v2/Config/BattleCars/...`) supply UE3 class properties
+/// via an `Overrides` list of `{ "Class": "...", "Property": "...", "Value": "..." }`.
+fn upsert_class_property_override(
+    body: &[u8],
+    class_target: &str,
+    prop_target: &str,
+    target_value: &str,
+) -> (Vec<u8>, bool) {
+    let (cfg_start, cfg_end) = match find_class_property_config(body) {
         Some(bounds) => bounds,
         None => {
-            // Inject ClassPropertyConfig before the last '}'
-            let Some(close_idx) = body.iter().rposition(|&c| c == b'}') else {
+            // ClassPropertyConfig wasn't shipped in this origin build payload; synthesize it.
+            let Some(tail_brace) = body.iter().rposition(|&b| b == b'}') else {
                 return (body.to_vec(), false);
             };
-            let block = format!(
-                ",\"ClassPropertyConfig\":{{\"Class\":\"ClassPropertyConfig_X\",\"Overrides\":[{{\"Class\":\"{class_name}\",\"Property\":\"{prop_name}\",\"Value\":\"{new_value}\"}}]}}"
+            let synth_block = format!(
+                ",\"ClassPropertyConfig\":{{\"Class\":\"ClassPropertyConfig_X\",\"Overrides\":[{{\"Class\":\"{class_target}\",\"Property\":\"{prop_target}\",\"Value\":\"{target_value}\"}}]}}"
             );
-            let mut out = Vec::with_capacity(body.len() + block.len());
-            out.extend_from_slice(&body[..close_idx]);
-            out.extend_from_slice(block.as_bytes());
-            out.extend_from_slice(&body[close_idx..]);
-            return (out, true);
+            let mut patched = Vec::with_capacity(body.len() + synth_block.len());
+            patched.extend_from_slice(&body[..tail_brace]);
+            patched.extend_from_slice(synth_block.as_bytes());
+            patched.extend_from_slice(&body[tail_brace..]);
+            return (patched, true);
         }
     };
 
-    let (arr_start, arr_end) = match find_overrides_array(body, obj_start, obj_end) {
+    let (arr_start, arr_end) = match find_overrides_array(body, cfg_start, cfg_end) {
         Some(bounds) => bounds,
         None => return (body.to_vec(), false),
     };
 
-    let inner_start = arr_start + 1;
-    let inner_end = arr_end - 1;
-    if inner_start > inner_end {
+    let inner_open = arr_start + 1;
+    let inner_close = arr_end - 1;
+    if inner_open > inner_close {
         return (body.to_vec(), false);
     }
 
-    // Search for existing entry with Class and Property matching
-    let mut search_from = inner_start;
-    while search_from < inner_end {
-        let Some(rel_class) = twoway_search(&body[search_from..inner_end], b"\"Class\"") else {
+    // Inspect existing array elements for matching Class + Property
+    let mut scan_offset = inner_open;
+    while scan_offset < inner_close {
+        let Some(rel_hit) = find_bytes(&body[scan_offset..inner_close], b"\"Class\"") else {
             break;
         };
-        let abs_class_key = search_from + rel_class;
-        let mut obj_s = abs_class_key;
-        while obj_s > arr_start && body[obj_s] != b'{' {
-            obj_s -= 1;
+        let class_tag_idx = scan_offset + rel_hit;
+        let mut entry_open = class_tag_idx;
+        while entry_open > arr_start && body[entry_open] != b'{' {
+            entry_open -= 1;
         }
-        if body[obj_s] != b'{' {
-            search_from = abs_class_key + 1;
+        if body[entry_open] != b'{' {
+            scan_offset = class_tag_idx + 1;
             continue;
         }
-        let Some(obj_e) = scan_object_end(body, obj_s) else {
-            search_from = abs_class_key + 1;
+        let Some(entry_close) = scan_object_end(body, entry_open) else {
+            scan_offset = class_tag_idx + 1;
             continue;
         };
-        let entry_obj = &body[obj_s..=obj_e];
+        let elem_slice = &body[entry_open..=entry_close];
 
-        // Check if Class matches
-        let class_pat = format!("\"Class\":\"{class_name}\"");
-        let prop_pat = format!("\"Property\":\"{prop_name}\"");
+        let class_pattern = format!("\"Class\":\"{class_target}\"");
+        let prop_pattern = format!("\"Property\":\"{prop_target}\"");
 
-        if twoway_search(entry_obj, class_pat.as_bytes()).is_some() && twoway_search(entry_obj, prop_pat.as_bytes()).is_some() {
-            // Found existing entry! Update its "Value" field
-            let val_key = b"\"Value\":\"";
-            let Some(vk) = twoway_search(entry_obj, val_key) else {
+        if find_bytes(elem_slice, class_pattern.as_bytes()).is_some()
+            && find_bytes(elem_slice, prop_pattern.as_bytes()).is_some()
+        {
+            // Found target override entry. Replace Value string slice in place.
+            let val_tag = b"\"Value\":\"";
+            let Some(val_tag_offset) = find_bytes(elem_slice, val_tag) else {
                 return (body.to_vec(), false);
             };
-            let val_start = obj_s + vk + val_key.len();
+            let val_start = entry_open + val_tag_offset + val_tag.len();
             let Some(val_end) = json_string_end(body, val_start) else {
                 return (body.to_vec(), false);
             };
 
-            if &body[val_start..val_end] == new_value.as_bytes() {
-                return (body.to_vec(), false); // Already equal
+            if &body[val_start..val_end] == target_value.as_bytes() {
+                return (body.to_vec(), false);
             }
 
-            let mut out = Vec::with_capacity(body.len() + new_value.len());
-            out.extend_from_slice(&body[..val_start]);
-            out.extend_from_slice(new_value.as_bytes());
-            out.extend_from_slice(&body[val_end..]);
-            return (out, true);
+            let mut patched = Vec::with_capacity(body.len() + target_value.len());
+            patched.extend_from_slice(&body[..val_start]);
+            patched.extend_from_slice(target_value.as_bytes());
+            patched.extend_from_slice(&body[val_end..]);
+            return (patched, true);
         }
 
-        search_from = obj_e + 1;
+        scan_offset = entry_close + 1;
     }
 
-    // Not found in existing Overrides array — append new entry into array
-    let new_entry = format!("{{\"Class\":\"{class_name}\",\"Property\":\"{prop_name}\",\"Value\":\"{new_value}\"}}");
-    let inner = &body[inner_start..inner_end];
-    let is_empty = inner.iter().all(|c| c.is_ascii_whitespace());
+    // Target override not present in existing array — insert new entry object.
+    let item_json = format!(
+        "{{\"Class\":\"{class_target}\",\"Property\":\"{prop_target}\",\"Value\":\"{target_value}\"}}"
+    );
+    let current_inner = &body[inner_open..inner_close];
+    let is_empty = current_inner.iter().all(|b| b.is_ascii_whitespace());
 
-    let insert_str = if is_empty {
-        new_entry
+    let payload_chunk = if is_empty {
+        item_json
     } else {
-        format!(",{new_entry}")
+        format!(",{item_json}")
     };
 
-    let mut out = Vec::with_capacity(body.len() + insert_str.len());
-    out.extend_from_slice(&body[..inner_end]);
-    out.extend_from_slice(insert_str.as_bytes());
-    out.extend_from_slice(&body[inner_end..]);
-    (out, true)
+    let mut patched = Vec::with_capacity(body.len() + payload_chunk.len());
+    patched.extend_from_slice(&body[..inner_close]);
+    patched.extend_from_slice(payload_chunk.as_bytes());
+    patched.extend_from_slice(&body[inner_close..]);
+    (patched, true)
 }
 
 #[cfg(test)]
@@ -2295,9 +2455,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_patch_palette_class_properties() {
+    fn test_patch_palette() {
         let input = br#"{"ClassPropertyConfig":{"Class":"ClassPropertyConfig_X","Overrides":[{"Class":"GFxData_MusicPlayer_TA","Property":"bDebugMusicPlayer","Value":"true"},{"Class":"Camera_TA","Property":"FOVLimits","Value":"(Min=1.000000,Max=1000.000000,interval=1.000000)"}]}}"#;
-        let (patched, changed) = patch_palette_class_properties(input);
+        let (patched, changed) = patch_palette(input);
         assert!(changed);
         let s = String::from_utf8(patched).unwrap();
         assert!(s.contains("\"Class\":\"Team_Soccar_TA\""));
@@ -2306,16 +2466,16 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_build_id_from_path() {
+    fn test_parse_build_id() {
         assert_eq!(
-            extract_build_id_from_path("/v2/Config/BattleCars/-1887694083/Prod/Epic/INT/"),
+            parse_build_id("/v2/Config/BattleCars/-1887694083/Prod/Epic/INT/"),
             Some("-1887694083".to_string())
         );
         assert_eq!(
-            extract_build_id_from_path("/Config/BattleCars/99999/"),
+            parse_build_id("/Config/BattleCars/99999/"),
             Some("99999".to_string())
         );
-        assert_eq!(extract_build_id_from_path("/favicon.ico"), None);
+        assert_eq!(parse_build_id("/favicon.ico"), None);
     }
 
     #[test]
@@ -2325,6 +2485,28 @@ mod tests {
         assert!(!sig.is_empty());
         // Verify deterministic output
         assert_eq!(sig, resign_config_cdn(body));
+    }
+
+    #[test]
+    fn test_load_certified_key_only_includes_leaf() {
+        let key = load_certified_key(LEAF_CONFIG_CERT_PEM, LEAF_CONFIG_KEY_PEM)
+            .expect("should load leaf config");
+        assert_eq!(
+            key.cert.len(),
+            1,
+            "server certificate chain should only contain the leaf cert, not root CA"
+        );
+    }
+
+
+    #[test]
+    fn test_patch_psynet_url_rewrites_to_broker() {
+        BROKER_PORT.store(27505, Ordering::SeqCst);
+        let input = br#"{"PsyNetUrl":{"Class":"PsyNetUrl_X","URL":"https://api.rlpp.psynet.gg/Services","URLv2":"https://api.rlpp.psynet.gg/rpc"}}"#;
+        let patched = patch_psynet_url(input).expect("should patch PsyNetUrl");
+        let s = String::from_utf8(patched).unwrap();
+        assert!(s.contains("\"URL\":\"http://127.0.0.1:27505/Services\""));
+        assert!(s.contains("\"URLv2\":\"http://127.0.0.1:27505/rpc\""));
     }
 }
 

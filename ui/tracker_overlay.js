@@ -16,8 +16,6 @@ let currentState = {
     losses: 0,
     streak: 0,
     streak_type: 'none',
-    session_rating: 1000,
-    net_mmr: 0,
     connection_status: 'disconnected'
 };
 
@@ -62,7 +60,7 @@ function applyOpacity(opacityVal) {
     document.documentElement.style.setProperty('--overlay-opacity', factor);
 }
 
-function setText(el, newText) {
+function updateElementText(el, newText) {
     if (!el) return;
     if (el.textContent !== newText) {
         el.textContent = newText;
@@ -101,15 +99,15 @@ function updateHUD(data) {
     });
 
     ['val-streak', 'min-val-streak', 'red-val-streak'].forEach(id => {
-        setText(document.getElementById(id), streakStr);
+        updateElementText(document.getElementById(id), streakStr);
     });
 
     ['val-wins', 'min-val-wins', 'red-val-wins'].forEach(id => {
-        setText(document.getElementById(id), winsStr);
+        updateElementText(document.getElementById(id), winsStr);
     });
 
     ['val-losses', 'min-val-losses', 'red-val-losses'].forEach(id => {
-        setText(document.getElementById(id), lossStr);
+        updateElementText(document.getElementById(id), lossStr);
     });
 }
 
