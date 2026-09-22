@@ -32,7 +32,8 @@ const PSY_RESP_KEY: &[u8] = b"3b932153785842ac927744b292e40e52";
 const PSY_REQ_KEY: &[u8] = b"c338bd36fb8c42b1a431d30add939fc7";
 
 static PROXY_RUNNING: AtomicBool = AtomicBool::new(false);
-static PROXY_STOP_TX: std::sync::Mutex<Option<oneshot::Sender<()>>> = std::sync::Mutex::new(None);
+static PROXY_STOP_TX: std::sync::Mutex<Option<tokio::sync::watch::Sender<bool>>> =
+    std::sync::Mutex::new(None);
 static BROKER_STOP_TX: std::sync::Mutex<Option<oneshot::Sender<()>>> = std::sync::Mutex::new(None);
 static SPOOF_CONFIG: std::sync::LazyLock<Arc<RwLock<Option<crate::psynet::SpoofPayload>>>> =
     std::sync::LazyLock::new(|| Arc::new(RwLock::new(None)));
@@ -260,6 +261,34 @@ fn empty_body() -> ResponseBoxBody {
         .boxed()
 }
 
+async fn handle_crl_or_http(
+    req: Request<Incoming>,
+) -> Result<Response<ResponseBoxBody>, hyper::Error> {
+    let path = req.uri().path();
+    crate::applog::event(&format!("proxy: HTTP port 80 request: {} {}", req.method(), path));
+    if path == "/crl/velocityrl.crl" || path == "/velocityrl.crl" {
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/pkix-crl")
+            .header("Content-Length", CA_CRL_DER.len().to_string())
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body(CA_CRL_DER.to_vec()))
+            .unwrap());
+    }
+    if path == "/health" || path == "/vrl-health" {
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "text/plain")
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body("OK"))
+            .unwrap());
+    }
+    Ok(Response::builder()
+        .status(StatusCode::NOT_FOUND)
+        .body(full_body("Not Found"))
+        .unwrap())
+}
+
 pub async fn start_native_proxy() -> Result<(), String> {
     if is_proxy_running() {
         crate::applog::event("proxy: already running");
@@ -285,9 +314,53 @@ pub async fn start_native_proxy() -> Result<(), String> {
 
     crate::applog::event("proxy: listening on 127.0.0.1:443 (IPv4 HTTPS)");
 
-    let (stop_tx, mut stop_rx) = oneshot::channel::<()>();
+    let (stop_tx, mut stop_rx_443) = tokio::sync::watch::channel(false);
+    let mut stop_rx_80 = stop_tx.subscribe();
     *PROXY_STOP_TX.lock().unwrap() = Some(stop_tx);
     PROXY_RUNNING.store(true, Ordering::SeqCst);
+
+    if let Ok(listener_http) = tokio::net::TcpListener::bind("127.0.0.1:80").await {
+        crate::applog::event("proxy: listening on 127.0.0.1:80 (IPv4 HTTP CRL responder)");
+        tokio::spawn(async move {
+            loop {
+                let conn = tokio::select! {
+                    _ = stop_rx_80.changed() => {
+                        crate::applog::event("proxy: HTTP 80 CRL responder shutting down");
+                        break;
+                    }
+                    res = listener_http.accept() => match res {
+                        Ok(c) => c,
+                        Err(e) => {
+                            log::debug!("proxy http 80 accept error: {e}");
+                            continue;
+                        }
+                    },
+                };
+
+                let (stream, peer_addr) = conn;
+                let io = TokioIo::new(stream);
+                let service = service_fn(move |req: Request<Incoming>| async move {
+                    handle_crl_or_http(req).await
+                });
+
+                tokio::spawn(async move {
+                    if let Err(e) = hyper::server::conn::http1::Builder::new()
+                        .serve_connection(io, service)
+                        .await
+                    {
+                        let err_str = e.to_string();
+                        let is_benign = err_str.contains("unexpected EOF")
+                            || err_str.contains("error shutting down connection");
+                        if !is_benign {
+                            log::debug!("proxy http 80 error from {peer_addr}: {e}");
+                        }
+                    }
+                });
+            }
+        });
+    } else {
+        crate::applog::event("proxy: port 80 unavailable for HTTP CRL responder (non-critical; store & port 443 active)");
+    }
 
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
@@ -301,7 +374,7 @@ pub async fn start_native_proxy() -> Result<(), String> {
     tokio::spawn(async move {
         loop {
             let conn = tokio::select! {
-                _ = &mut stop_rx => {
+                _ = stop_rx_443.changed() => {
                     crate::applog::event("proxy: stop signal received, shutting down listener");
                     None
                 }
@@ -416,7 +489,7 @@ pub async fn verify_proxy_loopback_health() -> Result<(), String> {
 
 pub fn stop_native_proxy(_revert_hosts_file: bool) {
     if let Some(tx) = PROXY_STOP_TX.lock().unwrap().take() {
-        let _ = tx.send(());
+        let _ = tx.send(true);
     }
     if let Some(tx) = BROKER_STOP_TX.lock().unwrap().take() {
         let _ = tx.send(());
@@ -527,6 +600,15 @@ async fn handle_broker_request(
         .unwrap_or(false);
 
     let path_str = req.uri().path().to_ascii_lowercase();
+    if path_str == "/crl/velocityrl.crl" || path_str == "/velocityrl.crl" {
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/pkix-crl")
+            .header("Content-Length", CA_CRL_DER.len().to_string())
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body(CA_CRL_DER.to_vec()))
+            .unwrap());
+    }
     if is_upgrade || path_str.starts_with("/ws") {
         return handle_websocket(req).await;
     }
@@ -661,6 +743,16 @@ async fn handle_request(
             .header("Content-Type", "text/plain")
             .header("Cache-Control", "no-cache, no-store")
             .body(full_body("OK"))
+            .unwrap());
+    }
+
+    if path == "/crl/velocityrl.crl" || path == "/velocityrl.crl" {
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/pkix-crl")
+            .header("Content-Length", CA_CRL_DER.len().to_string())
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body(CA_CRL_DER.to_vec()))
             .unwrap());
     }
 

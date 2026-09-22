@@ -102,7 +102,13 @@ def load_or_create_ca() -> tuple[x509.Certificate, rsa.RSAPrivateKey]:
 def issue_leaf(ca_cert: x509.Certificate, ca_key: rsa.RSAPrivateKey, host: str) -> None:
     import ipaddress
     now = datetime.datetime.now(datetime.timezone.utc)
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    key_file = HERE / f"leaf_{host}.key"
+    if key_file.exists():
+        key = serialization.load_pem_private_key(key_file.read_bytes(), password=None)
+    else:
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        key_file.write_bytes(_pem_key(key))
+
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, host)])
     san_list = [
         x509.DNSName(host),
@@ -110,6 +116,17 @@ def issue_leaf(ca_cert: x509.Certificate, ca_key: rsa.RSAPrivateKey, host: str) 
         x509.IPAddress(ipaddress.IPv6Address("::1")),
         x509.DNSName("localhost"),
     ]
+    cdp = x509.CRLDistributionPoints([
+        x509.DistributionPoint(
+            full_name=[
+                x509.UniformResourceIdentifier(f"http://{host}/crl/velocityrl.crl"),
+                x509.UniformResourceIdentifier("http://127.0.0.1/crl/velocityrl.crl"),
+            ],
+            relative_name=None,
+            reasons=None,
+            crl_issuer=None,
+        )
+    ])
     cert_builder = (
         x509.CertificateBuilder()
         .subject_name(name)
@@ -145,6 +162,7 @@ def issue_leaf(ca_cert: x509.Certificate, ca_key: rsa.RSAPrivateKey, host: str) 
             x509.SubjectKeyIdentifier.from_public_key(key.public_key()),
             critical=False,
         )
+        .add_extension(cdp, critical=False)
     )
     try:
         ca_ski = ca_cert.extensions.get_extension_for_class(x509.SubjectKeyIdentifier).value
@@ -157,8 +175,7 @@ def issue_leaf(ca_cert: x509.Certificate, ca_key: rsa.RSAPrivateKey, host: str) 
     cert = cert_builder.sign(ca_key, hashes.SHA256())
     stem = f"leaf_{host}"
     (HERE / f"{stem}.crt").write_bytes(_pem_cert(cert))
-    (HERE / f"{stem}.key").write_bytes(_pem_key(key))
-    print(f"[ok] wrote {stem}.crt/.key")
+    print(f"[ok] wrote {stem}.crt with CDP")
 
 
 def generate_crl(ca_cert: x509.Certificate, ca_key: rsa.RSAPrivateKey) -> None:
