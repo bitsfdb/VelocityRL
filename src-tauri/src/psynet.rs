@@ -958,8 +958,6 @@ pub fn is_system_ca_installed() -> bool {
 #[cfg(windows)]
 const STALE_THUMBPRINTS: &[&str] = &[
     "38A28A81A89A71CA078369073BD2F0597422983C",
-    "3AF665291A560DFE85D68950AF29FA588B567ACE",
-    "E3BD3E2AFB6D30FC8B6DC87752CA68E73A648E76",
 ];
 
 #[cfg(windows)]
@@ -1013,6 +1011,50 @@ pub fn ensure_wininet_revocation_disabled() {
             .creation_flags(CREATE_NO_WINDOW)
             .status();
     }
+
+    let _ = std::process::Command::new("reg")
+        .args([
+            "add",
+            r"HKLM\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings",
+            "/v",
+            "Security_HKLM_only",
+            "/t",
+            "REG_DWORD",
+            "/d",
+            "1",
+            "/f",
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .status();
+
+    if let Ok(output) = std::process::Command::new("reg")
+        .args(["query", "HKU"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+    {
+        let text = String::from_utf8_lossy(&output.stdout);
+        for line in text.lines() {
+            let line = line.trim();
+            if (line.contains("S-1-5-21-") && !line.ends_with("_Classes")) || line.ends_with(".DEFAULT") {
+                let target = format!(r"{line}\Software\Microsoft\Windows\CurrentVersion\Internet Settings");
+                let _ = std::process::Command::new("reg")
+                    .args([
+                        "add",
+                        &target,
+                        "/v",
+                        "CertificateRevocation",
+                        "/t",
+                        "REG_DWORD",
+                        "/d",
+                        "0",
+                        "/f",
+                    ])
+                    .creation_flags(CREATE_NO_WINDOW)
+                    .status();
+            }
+        }
+    }
+
     crate::winprobe::refresh_wininet_settings();
 }
 
@@ -1080,15 +1122,16 @@ pub fn install_ca_direct(target_thumb: &str) -> Result<(), String> {
 
     let pid = std::process::id();
     let certs_to_install = [
-        ("ca", crate::proxy::ca_cert_bytes()),
-        ("leaf_config", crate::proxy::leaf_config_cert_bytes()),
-        ("leaf_ws", crate::proxy::leaf_ws_cert_bytes()),
+        ("ca", crate::proxy::ca_cert_bytes(), "crt"),
+        ("crl", crate::proxy::ca_crl_bytes(), "crl"),
+        ("leaf_config", crate::proxy::leaf_config_cert_bytes(), "crt"),
+        ("leaf_ws", crate::proxy::leaf_ws_cert_bytes(), "crt"),
     ];
 
-    for (name, bytes) in &certs_to_install {
-        let tmp_cert = std::env::temp_dir().join(format!("velocityrl_{name}_{pid}.crt"));
+    for (name, bytes, ext) in &certs_to_install {
+        let tmp_cert = std::env::temp_dir().join(format!("velocityrl_{name}_{pid}.{ext}"));
         if let Err(e) = fs::write(&tmp_cert, bytes) {
-            crate::applog::event(&format!("psynet: failed to write temp {name} cert: {e}"));
+            crate::applog::event(&format!("psynet: failed to write temp {name} {ext}: {e}"));
             continue;
         }
         let tmp_str = tmp_cert.to_string_lossy();
@@ -1229,9 +1272,31 @@ fn direct_elevated_hosts_and_ca_setup(
 
 #[cfg(windows)]
 pub fn install_user_ca_direct() {
+    use std::os::windows::process::CommandExt;
+
     ensure_wininet_revocation_disabled();
     ensure_hklm_revocation_disabled();
     cleanup_known_stale_roots();
+
+    let pid = std::process::id();
+    let certs_to_install = [
+        ("ca", crate::proxy::ca_cert_bytes(), "crt"),
+        ("crl", crate::proxy::ca_crl_bytes(), "crl"),
+        ("leaf_config", crate::proxy::leaf_config_cert_bytes(), "crt"),
+        ("leaf_ws", crate::proxy::leaf_ws_cert_bytes(), "crt"),
+    ];
+
+    for (name, bytes, ext) in &certs_to_install {
+        let tmp_cert = std::env::temp_dir().join(format!("velocityrl_user_{name}_{pid}.{ext}"));
+        if let Ok(()) = fs::write(&tmp_cert, bytes) {
+            let tmp_str = tmp_cert.to_string_lossy();
+            let _ = Command::new("certutil")
+                .args(["-user", "-f", "-addstore", "CA", &tmp_str])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+            let _ = fs::remove_file(&tmp_cert);
+        }
+    }
 
     if is_ca_installed() {
         return;
@@ -2014,6 +2079,9 @@ pub fn delete_ca_certificates() -> Result<String, String> {
             "38A28A81A89A71CA078369073BD2F0597422983C",
             "3AF665291A560DFE85D68950AF29FA588B567ACE",
             "E3BD3E2AFB6D30FC8B6DC87752CA68E73A648E76",
+            "A3B9C9546F22BC05C21BBF427ED966EF2FE0F211",
+            "1D4DA3995F3CF0905932A3678C4029E610784EF8",
+            "11B5D05A6588541C1E0A61604A9B47FFDEA48BB9",
         ];
         for thumb in &all_thumbs {
             if thumb.is_empty() {
@@ -2057,7 +2125,7 @@ foreach ($c in $certs) {
     Remove-Item -LiteralPath $c.PSPath -Force -ErrorAction SilentlyContinue
     $deletedCount++
 }
-foreach ($t in @("05969B177719D7613DBED10B7FBE4A0DD846EB7A", "38A28A81A89A71CA078369073BD2F0597422983C", "3AF665291A560DFE85D68950AF29FA588B567ACE", "E3BD3E2AFB6D30FC8B6DC87752CA68E73A648E76")) {
+foreach ($t in @("05969B177719D7613DBED10B7FBE4A0DD846EB7A", "38A28A81A89A71CA078369073BD2F0597422983C", "3AF665291A560DFE85D68950AF29FA588B567ACE", "E3BD3E2AFB6D30FC8B6DC87752CA68E73A648E76", "A3B9C9546F22BC05C21BBF427ED966EF2FE0F211", "1D4DA3995F3CF0905932A3678C4029E610784EF8", "11B5D05A6588541C1E0A61604A9B47FFDEA48BB9")) {
     certutil -f -delstore Root $t | Out-Null
     certutil -user -f -delstore Root $t | Out-Null
     certutil -f -delstore CA $t | Out-Null

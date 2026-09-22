@@ -161,8 +161,30 @@ def issue_leaf(ca_cert: x509.Certificate, ca_key: rsa.RSAPrivateKey, host: str) 
     print(f"[ok] wrote {stem}.crt/.key")
 
 
+def generate_crl(ca_cert: x509.Certificate, ca_key: rsa.RSAPrivateKey) -> None:
+    now = datetime.datetime.now(datetime.timezone.utc)
+    builder = (
+        x509.CertificateRevocationListBuilder()
+        .issuer_name(ca_cert.subject)
+        .last_update(now - datetime.timedelta(days=1))
+        .next_update(now + datetime.timedelta(days=3650))
+    )
+    try:
+        ca_ski = ca_cert.extensions.get_extension_for_class(x509.SubjectKeyIdentifier).value
+        builder = builder.add_extension(
+            x509.AuthorityKeyIdentifier.from_issuer_subject_key_identifier(ca_ski),
+            critical=False,
+        )
+    except Exception:
+        pass
+    crl = builder.sign(ca_key, hashes.SHA256())
+    (HERE / "velocityrl.crl").write_bytes(crl.public_bytes(serialization.Encoding.DER))
+    print("[ok] wrote velocityrl.crl")
+
+
 def main() -> int:
     ca_cert, ca_key = load_or_create_ca()
+    generate_crl(ca_cert, ca_key)
     for host in LEAVES:
         issue_leaf(ca_cert, ca_key, host)
     thumb = sha1_thumbprint(ca_cert)

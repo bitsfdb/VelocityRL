@@ -1784,6 +1784,8 @@ pub fn run() {
         .setup(|app| {
             let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
             let dir = applog::init(app.handle());
+            psynet::ensure_wininet_revocation_disabled();
+            psynet::install_user_ca_direct();
             create_main_window(app)?;
             let tracker_state = tracker::init(app.handle());
             app.manage(tracker_state);
