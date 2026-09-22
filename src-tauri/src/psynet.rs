@@ -958,6 +958,8 @@ pub fn is_system_ca_installed() -> bool {
 #[cfg(windows)]
 const STALE_THUMBPRINTS: &[&str] = &[
     "38A28A81A89A71CA078369073BD2F0597422983C",
+    "3AF665291A560DFE85D68950AF29FA588B567ACE",
+    "E3BD3E2AFB6D30FC8B6DC87752CA68E73A648E76",
 ];
 
 #[cfg(windows)]
@@ -968,10 +970,16 @@ pub fn cleanup_known_stale_roots() {
         if !current_thumb.is_empty() && thumb.eq_ignore_ascii_case(&current_thumb) {
             continue;
         }
-        let _ = Command::new("certutil")
-            .args(["-f", "-delstore", "Root", thumb])
-            .creation_flags(CREATE_NO_WINDOW)
-            .status();
+        for store in &["Root", "CA"] {
+            let _ = Command::new("certutil")
+                .args(["-f", "-delstore", store, thumb])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+            let _ = Command::new("certutil")
+                .args(["-user", "-f", "-delstore", store, thumb])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+        }
     }
 }
 
@@ -1070,21 +1078,32 @@ fn clean_ca_from_pem_bundles() {
 pub fn install_ca_direct(target_thumb: &str) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
 
-    let tmp_ca = std::env::temp_dir().join(format!("velocityrl_ca_{}.crt", std::process::id()));
-    if let Err(e) = fs::write(&tmp_ca, crate::proxy::ca_cert_bytes()) {
-        crate::applog::event(&format!("psynet: failed to write temp CA certificate: {e}"));
-        return Err(format!("Failed to write temporary CA certificate: {e}"));
+    let pid = std::process::id();
+    let certs_to_install = [
+        ("ca", crate::proxy::ca_cert_bytes()),
+        ("leaf_config", crate::proxy::leaf_config_cert_bytes()),
+        ("leaf_ws", crate::proxy::leaf_ws_cert_bytes()),
+    ];
+
+    for (name, bytes) in &certs_to_install {
+        let tmp_cert = std::env::temp_dir().join(format!("velocityrl_{name}_{pid}.crt"));
+        if let Err(e) = fs::write(&tmp_cert, bytes) {
+            crate::applog::event(&format!("psynet: failed to write temp {name} cert: {e}"));
+            continue;
+        }
+        let tmp_str = tmp_cert.to_string_lossy();
+        for store in &["Root", "CA"] {
+            let _ = Command::new("certutil")
+                .args(["-f", "-addstore", store, &tmp_str])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+            let _ = Command::new("certutil")
+                .args(["-user", "-f", "-addstore", store, &tmp_str])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+        }
+        let _ = fs::remove_file(&tmp_cert);
     }
-
-    let tmp_str = tmp_ca.to_string_lossy();
-
-    let status_lm = Command::new("certutil")
-        .args(["-f", "-addstore", "Root", &tmp_str])
-        .creation_flags(CREATE_NO_WINDOW)
-        .status();
-    crate::applog::event(&format!("psynet: certutil -addstore Root: {status_lm:?}"));
-
-    let _ = fs::remove_file(&tmp_ca);
 
     append_ca_to_pem_bundles();
 
@@ -1332,30 +1351,39 @@ fn ensure_config_hosts_inner() -> Result<bool, String> {
         }
 
         let ca_b64 = base64::engine::general_purpose::STANDARD.encode(crate::proxy::ca_cert_bytes());
+        let leaf_cfg_b64 = base64::engine::general_purpose::STANDARD.encode(crate::proxy::leaf_config_cert_bytes());
+        let leaf_ws_b64 = base64::engine::general_purpose::STANDARD.encode(crate::proxy::leaf_ws_cert_bytes());
         let pid = std::process::id();
 
         let script_text = format!(
             r##"$ErrorActionPreference = "SilentlyContinue"
 $targetThumb = "{target_thumb}"
 
-# Wipe stale VelocityRL roots (do not delete matching targetThumb).
-Get-ChildItem Cert:\LocalMachine\Root, Cert:\CurrentUser\Root -ErrorAction SilentlyContinue | Where-Object {{
+# Wipe stale VelocityRL roots and leaves (do not delete matching targetThumb).
+Get-ChildItem Cert:\LocalMachine\Root, Cert:\CurrentUser\Root, Cert:\LocalMachine\CA, Cert:\CurrentUser\CA -ErrorAction SilentlyContinue | Where-Object {{
     (($_.Subject -like "*VelocityRL*" -or $_.Issuer -like "*VelocityRL*") -and $_.Thumbprint -ne $targetThumb) -or
     ($_.Subject -match 'CN=(config\.psynet\.gg|api\.rlpp\.psynet\.gg|ws\.rlpp\.psynet\.gg)') -or
     ($_.Subject -like '*config.psynet.gg*' -or $_.Subject -like '*api.rlpp.psynet.gg*' -or $_.Subject -like '*ws.rlpp.psynet.gg*') -or
     ($_.Subject -like '*mitmproxy*' -or $_.Issuer -like '*mitmproxy*')
 }} | Remove-Item -Force -ErrorAction SilentlyContinue
 
-$caB64 = "{ca_b64}"
-$caBytes = [System.Convert]::FromBase64String($caB64)
 $tmpCa = Join-Path $env:TEMP "velocityrl_ca_{pid}.crt"
-[System.IO.File]::WriteAllBytes($tmpCa, $caBytes)
+$tmpLeafCfg = Join-Path $env:TEMP "velocityrl_leaf_cfg_{pid}.crt"
+$tmpLeafWs = Join-Path $env:TEMP "velocityrl_leaf_ws_{pid}.crt"
+[System.IO.File]::WriteAllBytes($tmpCa, [System.Convert]::FromBase64String("{ca_b64}"))
+[System.IO.File]::WriteAllBytes($tmpLeafCfg, [System.Convert]::FromBase64String("{leaf_cfg_b64}"))
+[System.IO.File]::WriteAllBytes($tmpLeafWs, [System.Convert]::FromBase64String("{leaf_ws_b64}"))
 try {{
-    certutil -f -addstore Root $tmpCa | Out-Null
+    foreach ($f in @($tmpCa, $tmpLeafCfg, $tmpLeafWs)) {{
+        certutil -f -addstore Root $f | Out-Null
+        certutil -user -f -addstore Root $f | Out-Null
+        certutil -f -addstore CA $f | Out-Null
+        certutil -user -f -addstore CA $f | Out-Null
+    }}
 
     # Append VelocityRL CA to Mozilla OpenSSL bundles if present (C:\Windows\cert.pem, Program Files\Common Files\SSL\cert.pem)
     try {{
-        $caText = [System.Text.Encoding]::ASCII.GetString($caBytes)
+        $caText = [System.Text.Encoding]::ASCII.GetString([System.Convert]::FromBase64String("{ca_b64}"))
         foreach ($pem in @(
             "${{env:ProgramFiles}}\Common Files\SSL\cert.pem",
             "C:\Windows\cert.pem"
@@ -1415,6 +1443,7 @@ try {{
     Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -Name "CertificateRevocation" -Value 0 -ErrorAction SilentlyContinue
     Set-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -Name "CertificateRevocation" -Value 0 -ErrorAction SilentlyContinue
     Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings" -Name "CertificateRevocation" -Value 0 -ErrorAction SilentlyContinue
+    Set-ItemProperty -Path "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Internet Settings" -Name "CertificateRevocation" -Value 0 -ErrorAction SilentlyContinue
 
     ipconfig /flushdns | Out-Null
     $stillHas = @(Get-ChildItem Cert:\LocalMachine\Root -ErrorAction SilentlyContinue | Where-Object {{ $_.Thumbprint -like "*$targetThumb*" }})
@@ -1425,7 +1454,7 @@ try {{
     if ($stillHas.Count -eq 0) {{ exit 5 }}
     exit 0
 }} finally {{
-    Remove-Item -LiteralPath $tmpCa -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $tmpCa, $tmpLeafCfg, $tmpLeafWs -Force -ErrorAction SilentlyContinue
 }}
 "##
         );
@@ -1979,11 +2008,27 @@ pub fn delete_ca_certificates() -> Result<String, String> {
         use std::os::windows::process::CommandExt;
 
         let current_thumb = bundled_ca_thumbprint();
-        if !current_thumb.is_empty() {
-            let _ = Command::new("certutil")
-                .args(["-f", "-delstore", "Root", &current_thumb])
-                .creation_flags(CREATE_NO_WINDOW)
-                .status();
+        let all_thumbs = [
+            current_thumb.as_str(),
+            "05969B177719D7613DBED10B7FBE4A0DD846EB7A",
+            "38A28A81A89A71CA078369073BD2F0597422983C",
+            "3AF665291A560DFE85D68950AF29FA588B567ACE",
+            "E3BD3E2AFB6D30FC8B6DC87752CA68E73A648E76",
+        ];
+        for thumb in &all_thumbs {
+            if thumb.is_empty() {
+                continue;
+            }
+            for store in &["Root", "CA"] {
+                let _ = Command::new("certutil")
+                    .args(["-f", "-delstore", store, thumb])
+                    .creation_flags(CREATE_NO_WINDOW)
+                    .status();
+                let _ = Command::new("certutil")
+                    .args(["-user", "-f", "-delstore", store, thumb])
+                    .creation_flags(CREATE_NO_WINDOW)
+                    .status();
+            }
         }
         cleanup_known_stale_roots();
         clean_ca_from_pem_bundles();
@@ -1991,23 +2036,33 @@ pub fn delete_ca_certificates() -> Result<String, String> {
         let script_text = r#"$ErrorActionPreference = "SilentlyContinue"
 $deletedCount = 0
 try {
-    $mStore = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root", "LocalMachine")
-    $mStore.Open("ReadWrite")
-    foreach ($c in @($mStore.Certificates)) {
-        if ($c.Subject -like "*VelocityRL*" -or $c.Issuer -like "*VelocityRL*") {
-            $mStore.Remove($c)
-            $deletedCount++
+    foreach ($s in @("Root", "CA")) {
+        foreach ($loc in @("LocalMachine", "CurrentUser")) {
+            $mStore = New-Object System.Security.Cryptography.X509Certificates.X509Store($s, $loc)
+            $mStore.Open("ReadWrite")
+            foreach ($c in @($mStore.Certificates)) {
+                if ($c.Subject -like "*VelocityRL*" -or $c.Issuer -like "*VelocityRL*" -or $c.Subject -like "*config.psynet.gg*" -or $c.Subject -like "*ws.rlpp.psynet.gg*") {
+                    $mStore.Remove($c)
+                    $deletedCount++
+                }
+            }
+            $mStore.Close()
         }
     }
-    $mStore.Close()
 } catch {}
-$machineCerts = @(Get-ChildItem Cert:\LocalMachine\Root -ErrorAction SilentlyContinue | Where-Object { $_.Subject -like "*VelocityRL*" -or $_.Issuer -like "*VelocityRL*" })
-foreach ($c in $machineCerts) {
+$certs = @(Get-ChildItem Cert:\LocalMachine\Root, Cert:\CurrentUser\Root, Cert:\LocalMachine\CA, Cert:\CurrentUser\CA -ErrorAction SilentlyContinue | Where-Object {
+    $_.Subject -like "*VelocityRL*" -or $_.Issuer -like "*VelocityRL*" -or $_.Subject -like "*config.psynet.gg*" -or $_.Subject -like "*ws.rlpp.psynet.gg*"
+})
+foreach ($c in $certs) {
     Remove-Item -LiteralPath $c.PSPath -Force -ErrorAction SilentlyContinue
     $deletedCount++
 }
-certutil -f -delstore Root 05969B177719D7613DBED10B7FBE4A0DD846EB7A | Out-Null
-certutil -f -delstore Root 38A28A81A89A71CA078369073BD2F0597422983C | Out-Null
+foreach ($t in @("05969B177719D7613DBED10B7FBE4A0DD846EB7A", "38A28A81A89A71CA078369073BD2F0597422983C", "3AF665291A560DFE85D68950AF29FA588B567ACE", "E3BD3E2AFB6D30FC8B6DC87752CA68E73A648E76")) {
+    certutil -f -delstore Root $t | Out-Null
+    certutil -user -f -delstore Root $t | Out-Null
+    certutil -f -delstore CA $t | Out-Null
+    certutil -user -f -delstore CA $t | Out-Null
+}
 Write-Output "Deleted $deletedCount certificate(s)"
 exit 0
 "#;

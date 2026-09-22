@@ -49,7 +49,11 @@
     ],
     "resources": {
       "../resources/items.json": "items.json",
-      "resources/certs/velocityrl_ca.crt": "psynet_proxy/velocityrl_ca.crt"
+      "resources/certs/velocityrl_ca.crt": "psynet_proxy/velocityrl_ca.crt",
+      "resources/certs/leaf_config.psynet.gg.crt": "psynet_proxy/leaf_config.psynet.gg.crt",
+      "resources/certs/leaf_config.psynet.gg.key": "psynet_proxy/leaf_config.psynet.gg.key",
+      "resources/certs/leaf_ws.rlpp.psynet.gg.crt": "psynet_proxy/leaf_ws.rlpp.psynet.gg.crt",
+      "resources/certs/leaf_ws.rlpp.psynet.gg.key": "psynet_proxy/leaf_ws.rlpp.psynet.gg.key"
     },
     "android": {
       "debugApplicationIdSuffix": ".debug"
