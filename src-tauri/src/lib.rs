@@ -1860,6 +1860,7 @@ pub fn run() {
                     if let Some(cfg) = psynet::load_active_spoof_from_disk() {
                         crate::proxy::set_spoof_config(cfg).await;
                     }
+                    psynet::ensure_wininet_revocation_disabled();
                     match crate::proxy::start_native_proxy().await {
                         Ok(()) => applog::event("psynet: native proxy auto-started on port 443"),
                         Err(e) => {

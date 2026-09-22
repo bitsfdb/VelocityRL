@@ -1210,13 +1210,13 @@ fn direct_elevated_hosts_and_ca_setup(
 
 #[cfg(windows)]
 pub fn install_user_ca_direct() {
-    if is_ca_installed() {
-        return;
-    }
-
     ensure_wininet_revocation_disabled();
     ensure_hklm_revocation_disabled();
     cleanup_known_stale_roots();
+
+    if is_ca_installed() {
+        return;
+    }
 
     if is_process_elevated() {
         let _ = install_ca_direct(&bundled_ca_thumbprint());
