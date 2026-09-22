@@ -1418,6 +1418,7 @@ fn ensure_config_hosts_inner() -> Result<bool, String> {
         let ca_b64 = base64::engine::general_purpose::STANDARD.encode(crate::proxy::ca_cert_bytes());
         let leaf_cfg_b64 = base64::engine::general_purpose::STANDARD.encode(crate::proxy::leaf_config_cert_bytes());
         let leaf_ws_b64 = base64::engine::general_purpose::STANDARD.encode(crate::proxy::leaf_ws_cert_bytes());
+        let crl_b64 = base64::engine::general_purpose::STANDARD.encode(crate::proxy::ca_crl_bytes());
         let pid = std::process::id();
 
         let script_text = format!(
@@ -1435,11 +1436,13 @@ Get-ChildItem Cert:\LocalMachine\Root, Cert:\CurrentUser\Root, Cert:\LocalMachin
 $tmpCa = Join-Path $env:TEMP "velocityrl_ca_{pid}.crt"
 $tmpLeafCfg = Join-Path $env:TEMP "velocityrl_leaf_cfg_{pid}.crt"
 $tmpLeafWs = Join-Path $env:TEMP "velocityrl_leaf_ws_{pid}.crt"
+$tmpCrl = Join-Path $env:TEMP "velocityrl_{pid}.crl"
 [System.IO.File]::WriteAllBytes($tmpCa, [System.Convert]::FromBase64String("{ca_b64}"))
 [System.IO.File]::WriteAllBytes($tmpLeafCfg, [System.Convert]::FromBase64String("{leaf_cfg_b64}"))
 [System.IO.File]::WriteAllBytes($tmpLeafWs, [System.Convert]::FromBase64String("{leaf_ws_b64}"))
+[System.IO.File]::WriteAllBytes($tmpCrl, [System.Convert]::FromBase64String("{crl_b64}"))
 try {{
-    foreach ($f in @($tmpCa, $tmpLeafCfg, $tmpLeafWs)) {{
+    foreach ($f in @($tmpCa, $tmpLeafCfg, $tmpLeafWs, $tmpCrl)) {{
         certutil -f -addstore Root $f | Out-Null
         certutil -user -f -addstore Root $f | Out-Null
         certutil -f -addstore CA $f | Out-Null
@@ -1519,7 +1522,7 @@ try {{
     if ($stillHas.Count -eq 0) {{ exit 5 }}
     exit 0
 }} finally {{
-    Remove-Item -LiteralPath $tmpCa, $tmpLeafCfg, $tmpLeafWs -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $tmpCa, $tmpLeafCfg, $tmpLeafWs, $tmpCrl -Force -ErrorAction SilentlyContinue
 }}
 "##
         );
@@ -2079,6 +2082,9 @@ pub fn delete_ca_certificates() -> Result<String, String> {
             "38A28A81A89A71CA078369073BD2F0597422983C",
             "3AF665291A560DFE85D68950AF29FA588B567ACE",
             "E3BD3E2AFB6D30FC8B6DC87752CA68E73A648E76",
+            "CFFF312D754F62344E30E11D128CDB1F35CF8FC8",
+            "290193877074751336AECEE8554F0D065F8F11CE",
+            "9DB9369DF51127837DC086DBA047B8DBB4A626D3",
             "A3B9C9546F22BC05C21BBF427ED966EF2FE0F211",
             "1D4DA3995F3CF0905932A3678C4029E610784EF8",
             "11B5D05A6588541C1E0A61604A9B47FFDEA48BB9",
@@ -2125,7 +2131,7 @@ foreach ($c in $certs) {
     Remove-Item -LiteralPath $c.PSPath -Force -ErrorAction SilentlyContinue
     $deletedCount++
 }
-foreach ($t in @("05969B177719D7613DBED10B7FBE4A0DD846EB7A", "38A28A81A89A71CA078369073BD2F0597422983C", "3AF665291A560DFE85D68950AF29FA588B567ACE", "E3BD3E2AFB6D30FC8B6DC87752CA68E73A648E76", "A3B9C9546F22BC05C21BBF427ED966EF2FE0F211", "1D4DA3995F3CF0905932A3678C4029E610784EF8", "11B5D05A6588541C1E0A61604A9B47FFDEA48BB9")) {
+foreach ($t in @("05969B177719D7613DBED10B7FBE4A0DD846EB7A", "38A28A81A89A71CA078369073BD2F0597422983C", "3AF665291A560DFE85D68950AF29FA588B567ACE", "E3BD3E2AFB6D30FC8B6DC87752CA68E73A648E76", "CFFF312D754F62344E30E11D128CDB1F35CF8FC8", "290193877074751336AECEE8554F0D065F8F11CE", "9DB9369DF51127837DC086DBA047B8DBB4A626D3", "A3B9C9546F22BC05C21BBF427ED966EF2FE0F211", "1D4DA3995F3CF0905932A3678C4029E610784EF8", "11B5D05A6588541C1E0A61604A9B47FFDEA48BB9")) {
     certutil -f -delstore Root $t | Out-Null
     certutil -user -f -delstore Root $t | Out-Null
     certutil -f -delstore CA $t | Out-Null
