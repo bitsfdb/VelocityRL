@@ -116,17 +116,9 @@ def issue_leaf(ca_cert: x509.Certificate, ca_key: rsa.RSAPrivateKey, host: str) 
         x509.IPAddress(ipaddress.IPv6Address("::1")),
         x509.DNSName("localhost"),
     ]
-    cdp = x509.CRLDistributionPoints([
-        x509.DistributionPoint(
-            full_name=[
-                x509.UniformResourceIdentifier(f"http://{host}/crl/velocityrl.crl"),
-                x509.UniformResourceIdentifier("http://127.0.0.1/crl/velocityrl.crl"),
-            ],
-            relative_name=None,
-            reasons=None,
-            crl_issuer=None,
-        )
-    ])
+    # CDP is only needed on config.psynet.gg — it is the only leaf that is MITM-intercepted
+    # via hosts redirect. ws.rlpp.psynet.gg is cert-pinned and never redirected, so Schannel
+    # never checks our fake ws leaf cert for revocation.
     cert_builder = (
         x509.CertificateBuilder()
         .subject_name(name)
@@ -162,8 +154,20 @@ def issue_leaf(ca_cert: x509.Certificate, ca_key: rsa.RSAPrivateKey, host: str) 
             x509.SubjectKeyIdentifier.from_public_key(key.public_key()),
             critical=False,
         )
-        .add_extension(cdp, critical=False)
     )
+    if host == "config.psynet.gg":
+        cdp = x509.CRLDistributionPoints([
+            x509.DistributionPoint(
+                full_name=[
+                    x509.UniformResourceIdentifier(f"http://{host}/crl/velocityrl.crl"),
+                    x509.UniformResourceIdentifier("http://127.0.0.1/crl/velocityrl.crl"),
+                ],
+                relative_name=None,
+                reasons=None,
+                crl_issuer=None,
+            )
+        ])
+        cert_builder = cert_builder.add_extension(cdp, critical=False)
     try:
         ca_ski = ca_cert.extensions.get_extension_for_class(x509.SubjectKeyIdentifier).value
         cert_builder = cert_builder.add_extension(
@@ -175,7 +179,8 @@ def issue_leaf(ca_cert: x509.Certificate, ca_key: rsa.RSAPrivateKey, host: str) 
     cert = cert_builder.sign(ca_key, hashes.SHA256())
     stem = f"leaf_{host}"
     (HERE / f"{stem}.crt").write_bytes(_pem_cert(cert))
-    print(f"[ok] wrote {stem}.crt with CDP")
+    cdp_note = " with CDP" if host == "config.psynet.gg" else " (no CDP - cert-pinned)"
+    print(f"[ok] wrote {stem}.crt{cdp_note}")
 
 
 def generate_crl(ca_cert: x509.Certificate, ca_key: rsa.RSAPrivateKey) -> None:

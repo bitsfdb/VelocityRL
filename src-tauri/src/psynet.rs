@@ -1125,7 +1125,7 @@ pub fn install_ca_direct(target_thumb: &str) -> Result<(), String> {
         ("ca", crate::proxy::ca_cert_bytes(), "crt"),
         ("crl", crate::proxy::ca_crl_bytes(), "crl"),
         ("leaf_config", crate::proxy::leaf_config_cert_bytes(), "crt"),
-        ("leaf_ws", crate::proxy::leaf_ws_cert_bytes(), "crt"),
+        // ws.rlpp.psynet.gg is cert-pinned and never hosts-redirected - do not install its leaf.
     ];
 
     for (name, bytes, ext) in &certs_to_install {
@@ -1283,7 +1283,7 @@ pub fn install_user_ca_direct() {
         ("ca", crate::proxy::ca_cert_bytes(), "crt"),
         ("crl", crate::proxy::ca_crl_bytes(), "crl"),
         ("leaf_config", crate::proxy::leaf_config_cert_bytes(), "crt"),
-        ("leaf_ws", crate::proxy::leaf_ws_cert_bytes(), "crt"),
+        // ws.rlpp.psynet.gg is cert-pinned and never hosts-redirected - do not install its leaf.
     ];
 
     for (name, bytes, ext) in &certs_to_install {
@@ -1417,7 +1417,6 @@ fn ensure_config_hosts_inner() -> Result<bool, String> {
 
         let ca_b64 = base64::engine::general_purpose::STANDARD.encode(crate::proxy::ca_cert_bytes());
         let leaf_cfg_b64 = base64::engine::general_purpose::STANDARD.encode(crate::proxy::leaf_config_cert_bytes());
-        let leaf_ws_b64 = base64::engine::general_purpose::STANDARD.encode(crate::proxy::leaf_ws_cert_bytes());
         let crl_b64 = base64::engine::general_purpose::STANDARD.encode(crate::proxy::ca_crl_bytes());
         let pid = std::process::id();
 
@@ -1435,14 +1434,15 @@ Get-ChildItem Cert:\LocalMachine\Root, Cert:\CurrentUser\Root, Cert:\LocalMachin
 
 $tmpCa = Join-Path $env:TEMP "velocityrl_ca_{pid}.crt"
 $tmpLeafCfg = Join-Path $env:TEMP "velocityrl_leaf_cfg_{pid}.crt"
-$tmpLeafWs = Join-Path $env:TEMP "velocityrl_leaf_ws_{pid}.crt"
 $tmpCrl = Join-Path $env:TEMP "velocityrl_{pid}.crl"
 [System.IO.File]::WriteAllBytes($tmpCa, [System.Convert]::FromBase64String("{ca_b64}"))
 [System.IO.File]::WriteAllBytes($tmpLeafCfg, [System.Convert]::FromBase64String("{leaf_cfg_b64}"))
-[System.IO.File]::WriteAllBytes($tmpLeafWs, [System.Convert]::FromBase64String("{leaf_ws_b64}"))
 [System.IO.File]::WriteAllBytes($tmpCrl, [System.Convert]::FromBase64String("{crl_b64}"))
 try {{
-    foreach ($f in @($tmpCa, $tmpLeafCfg, $tmpLeafWs, $tmpCrl)) {{
+    # Install CA and CRL to both Root and CA stores (system + user).
+    # Install config.psynet.gg leaf cert so Schannel can check its CDP revocation.
+    # ws.rlpp.psynet.gg is cert-pinned and never hosts-redirected - do NOT install its leaf.
+    foreach ($f in @($tmpCa, $tmpLeafCfg, $tmpCrl)) {{
         certutil -f -addstore Root $f | Out-Null
         certutil -user -f -addstore Root $f | Out-Null
         certutil -f -addstore CA $f | Out-Null
@@ -1522,7 +1522,7 @@ try {{
     if ($stillHas.Count -eq 0) {{ exit 5 }}
     exit 0
 }} finally {{
-    Remove-Item -LiteralPath $tmpCa, $tmpLeafCfg, $tmpLeafWs, $tmpCrl -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $tmpCa, $tmpLeafCfg, $tmpCrl -Force -ErrorAction SilentlyContinue
 }}
 "##
         );
