@@ -251,20 +251,33 @@ pub fn tracker_set_overlay_locked(app: AppHandle, locked: bool) -> Result<(), St
 pub fn tracker_load_session(app: AppHandle) -> Result<TrackerUiSession, String> {
     let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
     let path = dir.join("tracker_ui_session.json");
-    if let Ok(data) = std::fs::read_to_string(&path) {
-        if let Ok(parsed) = serde_json::from_str::<TrackerUiSession>(&data) {
-            return Ok(parsed);
+    if path.exists() {
+        if let Ok(data) = std::fs::read_to_string(&path) {
+            if let Ok(parsed) = serde_json::from_str::<TrackerUiSession>(&data) {
+                if parsed.is_valid() {
+                    return Ok(parsed);
+                }
+            }
         }
+        crate::applog::event(
+            "tracker: tracker_ui_session.json was edited or invalid — regenerating fresh session",
+        );
     }
-    Ok(TrackerUiSession::default())
+    let fresh = TrackerUiSession::default();
+    let _ = std::fs::create_dir_all(&dir);
+    if let Ok(json) = serde_json::to_string_pretty(&fresh) {
+        let _ = std::fs::write(&path, json);
+    }
+    Ok(fresh)
 }
 
 #[tauri::command]
 pub fn tracker_save_session(
-    session: TrackerUiSession,
+    mut session: TrackerUiSession,
     app: AppHandle,
     tracker: State<'_, Arc<Mutex<SessionTracker>>>,
 ) -> Result<(), String> {
+    session.seal();
     let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
     let _ = std::fs::create_dir_all(&dir);
     let path = dir.join("tracker_ui_session.json");
@@ -274,12 +287,7 @@ pub fn tracker_save_session(
     if let Ok(mut t) = tracker.lock() {
         t.config.is_locked = session.is_locked;
         t.config.position = session.position.clone();
-        if session.win_delta > 0 {
-            t.config.win_delta = session.win_delta;
-        }
-        if session.loss_delta > 0 {
-            t.config.loss_delta = session.loss_delta;
-        }
+        t.config.playlist = session.playlist;
         if !session.display_name.is_empty() {
             t.config.player_name_fallback = session.display_name.clone();
         }

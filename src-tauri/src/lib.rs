@@ -61,6 +61,12 @@ struct Config {
 
     #[serde(default)]
     launch_on_startup: bool,
+    #[serde(default = "default_lang")]
+    language: String,
+}
+
+fn default_lang() -> String {
+    "en".to_string()
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
@@ -583,7 +589,7 @@ async fn get_config(app: tauri::AppHandle) -> Result<Config, String> {
         let config: Config = serde_json::from_str(&content).map_err(|e| e.to_string())?;
         Ok(config)
     } else {
-        Ok(Config { game_dir: "".to_string(), privacy_agreed: false, privacy_version: "".to_string(), changelog_on_startup: true, launch_on_startup: false })
+        Ok(Config { game_dir: "".to_string(), privacy_agreed: false, privacy_version: "".to_string(), changelog_on_startup: true, launch_on_startup: false, language: "en".to_string() })
     }
 }
 
@@ -801,7 +807,7 @@ async fn get_palette_status(app: tauri::AppHandle) -> Result<upk::PaletteStatus,
     } else {
         None
     };
-    Ok(upk::palette::status(Path::new(&config.game_dir), fp))
+    Ok(upk::palette::read_palette_status(Path::new(&config.game_dir), fp))
 }
 
 fn palette_blocked_by_game(action: &str) -> Option<String> {
@@ -836,7 +842,7 @@ async fn apply_rich_palette(app: tauri::AppHandle) -> Result<upk::PaletteStatus,
     if config.game_dir.is_empty() {
         return Err("Game directory not set".into());
     }
-    let st = upk::palette::apply(
+    let st = upk::palette::apply_rich_palette_to_file(
         Path::new(&config.game_dir),
         include_str!("../resources/keys.txt"),
         include_str!("../resources/keys_map.json"),
@@ -858,7 +864,7 @@ async fn restore_rich_palette(app: tauri::AppHandle) -> Result<upk::PaletteStatu
     if config.game_dir.is_empty() {
         return Err("Game directory not set".into());
     }
-    let st = upk::palette::restore(Path::new(&config.game_dir))
+    let st = upk::palette::restore_palette_backup(Path::new(&config.game_dir))
         .map_err(|e| explain_palette_error(e.to_string()))?;
     let mut state = load_integrity(&app);
     integrity::mark_palette_off(&mut state);
@@ -1315,13 +1321,22 @@ async fn reset_tagame_for_verify(app: tauri::AppHandle) -> Result<String, String
 
 #[tauri::command]
 async fn sync_palette_psynet_config(app: tauri::AppHandle) -> Result<(), String> {
-
     let config = get_config(app.clone()).await?;
     if config.game_dir.is_empty() {
         return Ok(());
     }
-    let state = load_integrity(&app);
-    let applied = state.palette_active;
+    let actual_st = upk::palette::read_palette_status(Path::new(&config.game_dir), None);
+    let applied = actual_st.applied;
+    let mut state = load_integrity(&app);
+    if state.palette_active != applied {
+        state.palette_active = applied;
+        if applied {
+            state.palette_fingerprint = actual_st.fingerprint;
+        } else {
+            state.palette_fingerprint.clear();
+        }
+        let _ = save_integrity(&app, &state);
+    }
     let enabled = psynet::merge_palette_spoof(applied).is_ok();
     if enabled {
         applog::event(&format!("psynet: palette_spoof synced -> {applied}"));
@@ -1394,7 +1409,7 @@ async fn export_diagnostics(app: tauri::AppHandle) -> Result<String, String> {
         }
     };
 
-    for f in ["config.json", "swaps.json", "items.json", "items.ver", "integrity.json"] {
+    for f in ["config.json", "swaps.json", "items.ver", "integrity.json"] {
         add_file(&mut zip, f, &config_dir.join(f));
     }
     if let Ok(entries) = fs::read_dir(&logs_dir) {
@@ -1462,10 +1477,30 @@ async fn export_diagnostics(app: tauri::AppHandle) -> Result<String, String> {
             let _ = zip.write_all(sys.as_bytes());
         }
     }
+
+    let health = psynet::verify_config_psynet_live().await;
+    if let Ok(h_json) = serde_json::to_string_pretty(&health) {
+        if zip.start_file("config_psynet_health.json", opts).is_ok() {
+            let _ = zip.write_all(h_json.as_bytes());
+        }
+    }
+
     let _ = zip.finish();
 
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let escaped = zip_path.to_string_lossy().replace('\'', "''");
+        let ps_cmd = format!("Set-Clipboard -Path '{escaped}'");
+        let _ = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_cmd])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
+
     let path_str = zip_path.to_string_lossy().into_owned();
-    applog::event(&format!("diagnostics: exported {path_str}"));
+    applog::event(&format!("diagnostics: exported {path_str} and copied to clipboard"));
     Ok(path_str)
 }
 
@@ -1758,9 +1793,29 @@ pub fn run() {
             // Load proxy dir override from config if present
             psynet::load_proxy_dir_override(app.handle());
 
-            // Sync color palette status to psynet proxy so OrangeTeamV2 override is active
-            let integrity = load_integrity(app.handle());
-            let _ = psynet::merge_palette_spoof(integrity.palette_active);
+            // Sync color palette status to psynet proxy so OrangeTeamV2 override is active only when applied
+            let mut integrity = load_integrity(app.handle());
+            let app_handle = app.handle().clone();
+            let applied = if let Ok(config) = tauri::async_runtime::block_on(get_config(app_handle.clone())) {
+                if !config.game_dir.is_empty() {
+                    let st = upk::palette::read_palette_status(Path::new(&config.game_dir), None);
+                    if integrity.palette_active != st.applied {
+                        integrity.palette_active = st.applied;
+                        if st.applied {
+                            integrity.palette_fingerprint = st.fingerprint;
+                        } else {
+                            integrity.palette_fingerprint.clear();
+                        }
+                        let _ = save_integrity(&app_handle, &integrity);
+                    }
+                    st.applied
+                } else {
+                    false
+                }
+            } else {
+                integrity.palette_active
+            };
+            let _ = psynet::merge_palette_spoof(applied);
 
             applog::event(&format!(
                 "app setup complete; build {} (v{}, hash {}) logs at {}",
@@ -1785,6 +1840,23 @@ pub fn run() {
                         applog::event("psynet: proxy already running at boot");
                         return;
                     }
+                    #[cfg(windows)]
+                    if let Some(pid) = crate::winprobe::loopback_443_owner() {
+                        if pid != std::process::id() {
+                            let name = crate::winprobe::process_name(pid).unwrap_or_else(|| "unknown".to_string());
+                            if name.eq_ignore_ascii_case("velocity-rl.exe")
+                                || name.eq_ignore_ascii_case("velocityrl.exe")
+                                || name.eq_ignore_ascii_case("psynet_proxy.exe")
+                                || name.eq_ignore_ascii_case("mitmproxy.exe")
+                            {
+                                applog::event(&format!(
+                                    "psynet: boot terminating stale process ({name}, PID {pid}) on :443"
+                                ));
+                                crate::winprobe::terminate_process(pid);
+                                tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+                            }
+                        }
+                    }
                     if let Some(cfg) = psynet::load_active_spoof_from_disk() {
                         crate::proxy::set_spoof_config(cfg).await;
                     }
@@ -1797,8 +1869,27 @@ pub fn run() {
                         }
                     }
                     match crate::proxy::start_ws_broker().await {
-                        Ok(()) => applog::event("psynet: WS broker auto-started on port 27505"),
-                        Err(e) => applog::event(&format!("psynet: WS broker auto-start failed (non-fatal): {e}")),
+                        Ok(port) => applog::event(&format!(
+                            "psynet: WS broker auto-started on 127.0.0.1:{port}"
+                        )),
+                        Err(e) => {
+                            // PsyNetUrl rewrite targets the ephemeral broker — without it,
+                            // in-game Auth/WS fail while config MITM still looks fine in a browser.
+                            applog::event(&format!(
+                                "psynet: WS broker auto-start failed — stopping proxy: {e}"
+                            ));
+                            crate::proxy::stop_native_proxy(true);
+                            let _ = psynet::revert_config_hosts();
+                            return;
+                        }
+                    }
+                    if let Err(e) = crate::proxy::verify_proxy_loopback_health().await {
+                        applog::event(&format!(
+                            "psynet: boot loopback health probe failed — stopping proxy: {e}"
+                        ));
+                        crate::proxy::stop_native_proxy(true);
+                        let _ = psynet::revert_config_hosts();
+                        return;
                     }
                     match psynet::ensure_config_hosts() {
                         Ok(true) => {
@@ -1811,7 +1902,15 @@ pub fn run() {
                             ));
                             crate::proxy::stop_native_proxy(true);
                             let _ = psynet::revert_config_hosts();
+                            return;
                         }
+                    }
+                    let health = psynet::verify_config_psynet_live().await;
+                    if !health.ok {
+                        applog::event(&format!(
+                            "psynet: boot config.psynet.gg verification warning: {}",
+                            health.details
+                        ));
                     }
                 });
             });
@@ -1875,12 +1974,14 @@ pub fn run() {
             detect_game_dir,
             validate_game_dir,
             applog::append_launch_log,
+            applog::set_app_locale_logs,
             applog::get_logs_dir,
             applog::get_log_tail,
             applog::open_log_folder,
             psynet::save_psynet_spoof,
             psynet::get_psynet_spoof,
             psynet::get_psynet_status,
+            psynet::check_config_psynet,
             psynet::ensure_psynet_hosts,
             psynet::start_psynet_proxy,
             psynet::stop_psynet_proxy,

@@ -4,11 +4,7 @@ use std::io::{self, Cursor, Read, Write};
 const PACKAGE_FILE_TAG: u32 = 0x9E2A83C1;
 const DEFAULT_BLOCK_SIZE: usize = 0x20000;
 
-fn read_i32(c: &mut Cursor<&[u8]>) -> io::Result<i32> {
-    let mut b = [0u8; 4];
-    c.read_exact(&mut b)?;
-    Ok(i32::from_le_bytes(b))
-}
+use super::parser::read_i32;
 
 pub fn decompress_chunk(payload: &[u8]) -> io::Result<Vec<u8>> {
     let mut c = Cursor::new(payload);

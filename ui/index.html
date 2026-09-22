@@ -7,35 +7,35 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body class="is-loading">
-    <aside class="sidebar" inert>
+    <aside class="sidebar">
         <div class="logo-section">
             <img src="logo.svg" width="28" height="28" alt="">
             <span class="logo-name">VelocityRL</span>
         </div>
 
         <nav class="nav-links">
-            <div class="nav-item active" data-tab="swapper-tab">Swapper</div>
-            <div class="nav-item" data-tab="titles-tab">Titles</div>
-            <div class="nav-item" data-tab="names-tab">Names<span class="nav-wip">WIP</span></div>
-            <div class="nav-item" data-tab="ranks-tab">Fake Ranks</div>
-            <div class="nav-item" data-tab="camera-tab">Camera</div>
-            <div class="nav-item" data-tab="maps-tab">Maps</div>
-            <div class="nav-item" data-tab="tracker-tab">Tracker Overlay</div>
-            <div class="nav-item" data-tab="misc-tab">Miscellaneous</div>
+            <div class="nav-item active" data-tab="swapper-tab" data-i18n="nav.swapper">Swapper</div>
+            <div class="nav-item" data-tab="titles-tab" data-i18n="nav.titles">Titles</div>
+            <div class="nav-item" data-tab="names-tab"><span data-i18n="nav.names">Names</span><span class="nav-wip">WIP</span></div>
+            <div class="nav-item" data-tab="ranks-tab" data-i18n="nav.ranks">Fake Ranks</div>
+            <div class="nav-item" data-tab="camera-tab" data-i18n="nav.camera">Camera</div>
+            <div class="nav-item" data-tab="maps-tab" data-i18n="nav.maps">Maps</div>
+            <div class="nav-item" data-tab="tracker-tab" data-i18n="nav.tracker">Tracker Overlay</div>
+            <div class="nav-item" data-tab="misc-tab" data-i18n="nav.misc">Miscellaneous</div>
         </nav>
 
         <div class="sidebar-footer">
-            <div class="nav-item" id="website-btn">Website</div>
-            <div class="nav-item" id="settings-btn">Settings</div>
+            <div class="nav-item" id="website-btn" data-i18n="nav.website">Website</div>
+            <div class="nav-item" id="settings-btn" data-i18n="nav.settings">Settings</div>
         </div>
     </aside>
 
-    <div class="main-wrap" inert>
+    <div class="main-wrap">
         <main>
             <div class="repair-banner" style="border-left-color: #2196f3; margin-bottom: 12px; background: rgba(33, 150, 243, 0.05);">
                 <div class="repair-banner-text">
-                    <strong>Keep VelocityRL Open</strong>
-                    <span>VelocityRL must remain running in the background for titles, spoofing, and names to appear in Rocket League.</span>
+                    <strong data-i18n="banner.keep_open_title">Keep VelocityRL Open</strong>
+                    <span data-i18n="banner.keep_open_desc">VelocityRL must remain running in the background for titles, spoofing, and names to appear in Rocket League.</span>
                 </div>
             </div>
 
@@ -492,14 +492,14 @@
                                     </span>
                                 </span>
                                 <span class="switch-copy">
-                                    <span class="switch-title">Color palette</span>
-                                    <span class="switch-desc">Unlocks custom team car colors and extended palette options in Rocket League.</span>
+                                    <span class="switch-title" data-i18n="palette.title">Color palette</span>
+                                    <span class="switch-desc" data-i18n="palette.desc">Unlocks custom team car colors and extended palette options in Rocket League.</span>
                                 </span>
                             </label>
                         </div>
                     <div class="swapper-controls palette-actions">
-                        <button id="palette-apply-btn" class="action-btn" type="button">Apply</button>
-                        <button id="palette-restore-btn" class="action-btn action-btn-secondary" type="button" disabled>Restore</button>
+                        <button id="palette-apply-btn" class="action-btn" type="button" data-i18n="palette.apply">Apply</button>
+                        <button id="palette-restore-btn" class="action-btn action-btn-secondary" type="button" data-i18n="palette.restore" disabled>Restore</button>
                     </div>
                     </div>
                 </div>
@@ -652,23 +652,34 @@
                     <div id="progress-fill" class="progress-fill"></div>
                 </div>
             </div>
-            <div id="version-btn">What's New · v2.0.0</div>
+            <div id="version-btn" role="button" tabindex="0">What's New · v2.0.0</div>
         </footer>
     </div>
 
     <div id="settings-modal" class="modal-overlay">
         <div class="modal">
             <div class="modal-header">
-                <h2>Settings</h2>
+                <h2 data-i18n="settings.title">Settings</h2>
                 <div id="cancel-settings" class="close-modal-btn">×</div>
             </div>
-            <div class="settings-group">
-                <label>Rocket League CookedPCConsole Path</label>
+            <div class="settings-group" style="margin-bottom:14px;">
+                <label data-i18n="settings.language">Language</label>
                 <div class="path-input-wrap">
-                    <input type="text" id="game-dir" placeholder="CookedPCConsole folder path">
+                    <select id="app-language" style="width:100%; background:var(--input-bg); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:8px 10px; font-size:13px; font-family:inherit; outline:none; cursor:pointer;">
+                        <option value="en">English</option>
+                        <option value="es">Español</option>
+                        <option value="fr">Français</option>
+                        <option value="de">Deutsch</option>
+                    </select>
+                </div>
+            </div>
+            <div class="settings-group">
+                <label data-i18n="settings.game_path">Rocket League CookedPCConsole Path</label>
+                <div class="path-input-wrap">
+                    <input type="text" id="game-dir" data-i18n-placeholder="settings.path_placeholder" placeholder="CookedPCConsole folder path">
                     <div class="path-btns">
-                        <div id="autodetect-dir" class="path-btn"><span>Auto-detect</span></div>
-                        <div id="browse-dir" class="path-btn"><span>Browse</span></div>
+                        <div id="autodetect-dir" class="path-btn"><span data-i18n="settings.autodetect">Auto-detect</span></div>
+                        <div id="browse-dir" class="path-btn"><span data-i18n="settings.browse">Browse</span></div>
                     </div>
                 </div>
             </div>
@@ -683,14 +694,24 @@
                         </span>
                     </span>
                     <span class="switch-copy">
-                        <span class="switch-title">Start VelocityRL on startup</span>
-                        <span class="switch-hint">Automatically starts VelocityRL in background on login</span>
+                        <span class="switch-title" data-i18n="settings.startup_title">Start VelocityRL on startup</span>
+                        <span class="switch-hint" data-i18n="settings.startup_desc">Automatically starts VelocityRL in background on login</span>
                     </span>
                 </label>
             </div>
+            <div class="settings-group" style="margin-top:14px; display:flex; justify-content:space-between; align-items:center; background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:10px 14px;">
+                <div>
+                    <div style="font-weight:600; font-size:12px;" data-i18n="settings.diagnostics_title">Troubleshooting</div>
+                </div>
+                <div style="display:flex; gap:8px;">
+                    <button type="button" id="settings-dev-panel-btn" class="path-btn"><span>Debug Panel</span></button>
+                    <button type="button" id="settings-export-diag-btn" class="path-btn"><span data-i18n="settings.export_diagnostics">Export Diagnostics</span></button>
+                </div>
+            </div>
+            <p id="settings-action-msg" style="font-size:11px; color:var(--text-secondary); margin:6px 0 0; min-height:14px; word-break:break-all;"></p>
             <div id="install-chooser" style="display:none;"></div>
-            <p class="settings-footer-note"><a id="privacy-link" href="https://velocityrl.tech/privacy.html" target="_blank" rel="noopener noreferrer">Privacy Policy</a></p>
-            <button id="close-settings" class="action-btn">Save</button>
+            <p class="settings-footer-note"><a id="privacy-link" data-i18n="settings.privacy_policy" href="https://velocityrl.tech/privacy.html" target="_blank" rel="noopener noreferrer">Privacy Policy</a></p>
+            <button id="close-settings" class="action-btn" data-i18n="settings.save">Save</button>
         </div>
     </div>
 
@@ -769,6 +790,7 @@
             <textarea id="dev-proxy-config" style="width:100%;height:200px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;font-family:monospace;font-size:11px;resize:vertical;" spellcheck="false" placeholder="Loading..."></textarea>
             <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
                 <button id="dev-refresh-btn" class="path-btn"><span>Refresh</span></button>
+                <button id="dev-check-psynet-btn" class="path-btn"><span>Test config.psynet.gg</span></button>
                 <button id="dev-save-config-btn" class="path-btn"><span>Save Config</span></button>
                 <button id="dev-save-gamedir-btn" class="path-btn"><span>Save Game Dir</span></button>
                 <button id="dev-restart-proxy-btn" class="path-btn"><span>Restart Proxy</span></button>
@@ -777,7 +799,7 @@
                 <button id="dev-open-log-btn" class="path-btn"><span>Open Log Folder</span></button>
                 <button id="dev-export-diag-btn" class="path-btn"><span>Export Diagnostics</span></button>
             </div>
-            <p id="dev-action-msg" style="font-size:11px;color:var(--text-secondary);margin:6px 0 0;min-height:14px;user-select:text;-webkit-user-select:text;word-break:break-all;cursor:text;"></p>
+            <p id="dev-action-msg" style="font-size:11px;color:var(--text-secondary);margin:6px 0 0;min-height:14px;user-select:text;-webkit-user-select:text;word-break:break-all;white-space:pre-wrap;cursor:text;"></p>
             <p style="font-size:11px;color:var(--text-secondary);margin:8px 0 4px;font-weight:600;">Log Output</p>
             <div class="dev-log-output" id="dev-log-output">Loading logs...</div>
         </div>

@@ -222,7 +222,7 @@ fn name_at(names: &[String], idx: i32) -> String {
     names.get(idx.max(0) as usize).cloned().unwrap_or_default()
 }
 
-fn color_sets(
+fn extract_palette_color_sets(
     plain: &[u8],
     summary: &parser::FileSummary,
 ) -> Result<HashMap<String, (usize, i32, i64)>, PaletteError> {
@@ -259,6 +259,14 @@ fn color_sets(
     Ok(out)
 }
 
+#[inline]
+fn color_sets(
+    plain: &[u8],
+    summary: &parser::FileSummary,
+) -> Result<HashMap<String, (usize, i32, i64)>, PaletteError> {
+    extract_palette_color_sets(plain, summary)
+}
+
 #[doc(hidden)]
 pub fn debug_decrypt(
     data: &[u8],
@@ -266,6 +274,57 @@ pub fn debug_decrypt(
     keys_map_json: &str,
 ) -> Result<(parser::FileSummary, parser::CompressionMeta, Vec<u8>, [u8; 32], usize), PaletteError> {
     decrypt_tagame(data, keys_txt, keys_map_json)
+}
+
+#[doc(hidden)]
+pub fn debug_color_sets(
+    plain: &[u8],
+    summary: &parser::FileSummary,
+) -> Result<HashMap<String, (usize, i32, i64)>, PaletteError> {
+    extract_palette_color_sets(plain, summary)
+}
+
+#[doc(hidden)]
+pub fn debug_classify(
+    file: &[u8],
+    plain: &[u8],
+    summary: &parser::FileSummary,
+    meta: &parser::CompressionMeta,
+    sets: &HashMap<String, (usize, i32, i64)>,
+) -> Result<LiveKind, PaletteError> {
+    classify_via_swatches(file, plain, summary, meta, sets)
+}
+
+#[doc(hidden)]
+pub fn debug_swatches(
+    file: &[u8],
+    plain: &[u8],
+    summary: &parser::FileSummary,
+    meta: &parser::CompressionMeta,
+    sets: &HashMap<String, (usize, i32, i64)>,
+) -> Result<Vec<(String, i32, i32, usize, usize, Vec<u8>)>, PaletteError> {
+    let names = parse_names_in_block(plain, summary.name_count)?;
+    let chunks = parser::parse_chunks(plain, meta.compressed_chunks_offset)
+        .map_err(|e| PaletteError::Msg(format!("chunk table: {e}")))?;
+    let mut out = Vec::new();
+    for (name, &(_, size, off)) in sets {
+        if size <= 0 {
+            continue;
+        }
+        if let Ok(bytes) = read_serial_bytes(file, &chunks, off, size as usize) {
+            if let Ok(sw) = extract_swatches(&bytes, &names, name) {
+                out.push((
+                    name.clone(),
+                    sw.hue_count,
+                    sw.value_count,
+                    sw.color_count,
+                    sw.colors_payload.len(),
+                    sw.colors_payload,
+                ));
+            }
+        }
+    }
+    Ok(out)
 }
 
 fn decrypt_tagame(
@@ -642,39 +701,7 @@ fn validate_applied(
 }
 
 fn replace_file(from: &Path, to: &Path) -> Result<(), PaletteError> {
-    #[cfg(windows)]
-    {
-        use std::os::windows::ffi::OsStrExt;
-        fn wide(p: &Path) -> Vec<u16> {
-            p.as_os_str().encode_wide().chain(std::iter::once(0)).collect()
-        }
-        const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
-        const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
-        #[link(name = "kernel32")]
-        extern "system" {
-            fn MoveFileExW(existing: *const u16, new: *const u16, flags: u32) -> i32;
-        }
-        let src = wide(from);
-        let dst = wide(to);
-        let ok = unsafe {
-            MoveFileExW(
-                src.as_ptr(),
-                dst.as_ptr(),
-                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-            )
-        };
-        if ok == 0 {
-            return Err(PaletteError::Msg(format!(
-                "atomic replace failed: {}",
-                std::io::Error::last_os_error()
-            )));
-        }
-        Ok(())
-    }
-    #[cfg(not(windows))]
-    {
-        std::fs::rename(from, to).map_err(|e| PaletteError::Msg(format!("atomic replace failed: {e}")))
-    }
+    crate::winprobe::replace_file_atomic(from, to).map_err(|e| PaletteError::Msg(e.to_string()))
 }
 
 fn atomic_write(path: &Path, data: &[u8]) -> Result<(), PaletteError> {
@@ -2006,7 +2033,7 @@ fn is_vanilla_stock_file(path: &Path, keys: &str, keymap: &str) -> bool {
         && !teams_share_serial(&sets)
 }
 
-pub fn status(game_dir: &Path, expected_patched_fp: Option<&str>) -> PaletteStatus {
+pub fn read_palette_status(game_dir: &Path, expected_patched_fp: Option<&str>) -> PaletteStatus {
     let cooked = match resolve_cooked_dir(game_dir) {
         Ok(p) => p,
         Err(e) => {
@@ -2028,7 +2055,7 @@ pub fn status(game_dir: &Path, expected_patched_fp: Option<&str>) -> PaletteStat
         Ok(v) => v,
         Err(e) => return make_status(&cooked, false, fp, e.to_string()),
     };
-    let sets = match color_sets(&plain, &summary) {
+    let sets = match extract_palette_color_sets(&plain, &summary) {
         Ok(s) => s,
         Err(e) => return make_status(&cooked, false, fp, e.to_string()),
     };
@@ -2072,6 +2099,11 @@ pub fn status(game_dir: &Path, expected_patched_fp: Option<&str>) -> PaletteStat
         ),
         LiveKind::Vanilla => make_status(&cooked, false, fp, "Color palette off".into()),
     }
+}
+
+#[inline]
+pub fn status(game_dir: &Path, expected_patched_fp: Option<&str>) -> PaletteStatus {
+    read_palette_status(game_dir, expected_patched_fp)
 }
 
 fn restore_from(src: &Path, tagame: &Path, keys: &str, keymap: &str) -> Result<(), PaletteError> {
@@ -2279,7 +2311,7 @@ pub fn repair_tagame_engine_refs(game_dir: &Path) -> Result<String, PaletteError
     Ok("Repaired TAGame.upk Engine references. Restart Rocket League.".into())
 }
 
-pub fn apply(
+pub fn apply_rich_palette_to_file(
     game_dir: &Path,
     keys_txt: &str,
     keys_map_json: &str,
@@ -2401,6 +2433,15 @@ pub fn apply(
     ))
 }
 
+#[inline]
+pub fn apply(
+    game_dir: &Path,
+    keys_txt: &str,
+    keys_map_json: &str,
+) -> Result<PaletteStatus, PaletteError> {
+    apply_rich_palette_to_file(game_dir, keys_txt, keys_map_json)
+}
+
 pub fn reset_tagame_for_verify(game_dir: &Path) -> Result<String, PaletteError> {
     refuse_if_game_running("Reset TAGame")?;
     let cooked = resolve_cooked_dir_loose(game_dir)?;
@@ -2435,7 +2476,7 @@ pub fn reset_tagame_for_verify(game_dir: &Path) -> Result<String, PaletteError> 
     Ok(parts.join("\n"))
 }
 
-pub fn restore(game_dir: &Path) -> Result<PaletteStatus, PaletteError> {
+pub fn restore_palette_backup(game_dir: &Path) -> Result<PaletteStatus, PaletteError> {
     refuse_if_game_running("Restore")?;
     let cooked = resolve_cooked_dir(game_dir)?;
     let tagame = tagame_path(&cooked);
@@ -2457,11 +2498,16 @@ pub fn restore(game_dir: &Path) -> Result<PaletteStatus, PaletteError> {
         ));
     }
 
-    let mut st = status(&cooked, None);
+    let mut st = read_palette_status(&cooked, None);
     if st.applied {
         st.message = "Restore wrote the backup, but TAGame.upk still looks patched. Verify game files.".into();
     }
     Ok(st)
+}
+
+#[inline]
+pub fn restore(game_dir: &Path) -> Result<PaletteStatus, PaletteError> {
+    restore_palette_backup(game_dir)
 }
 
 pub fn repair_wiped_palette(game_dir: &Path, expected_patched_fp: Option<&str>) -> bool {
@@ -2544,7 +2590,7 @@ mod tests {
         assert!(is_remapped(&s));
     }
 
-    fn mk(n: usize, vc: i32) -> SwatchSource {
+    fn make_test_swatch(n: usize, vc: i32) -> SwatchSource {
         SwatchSource {
             color_count: n,
             colors_payload: vec![0u8; n * 16],
@@ -2555,7 +2601,7 @@ mod tests {
         }
     }
 
-    fn mk_ident(hues: i32, values: i32, tag: u8) -> SwatchSource {
+    fn make_ident_swatch(hues: i32, values: i32, tag: u8) -> SwatchSource {
         let n = (hues * values) as usize;
         let mut colors = Vec::with_capacity(n * 16);
         let mut debug = Vec::with_capacity(n * 81);
@@ -2590,9 +2636,9 @@ mod tests {
 
     #[test]
     fn combine_counts_three_band() {
-        let blue_v3 = mk(70, 7);
-        let orange_v3 = mk(70, 7);
-        let accent = mk(105, 7);
+        let blue_v3 = make_test_swatch(70, 7);
+        let orange_v3 = make_test_swatch(70, 7);
+        let accent = make_test_swatch(105, 7);
         let c = combine_swatches(&[&blue_v3, &orange_v3, &accent]).unwrap();
         assert_eq!(c.color_count, 210);
         assert_eq!(c.hue_count, 10);
@@ -2604,9 +2650,9 @@ mod tests {
 
     #[test]
     fn stacked_layout_is_three_packed_bands() {
-        let blue = mk_ident(10, 7, 1);
-        let orange = mk_ident(10, 7, 2);
-        let accent = mk_ident(15, 7, 3);
+        let blue = make_ident_swatch(10, 7, 1);
+        let orange = make_ident_swatch(10, 7, 2);
+        let accent = make_ident_swatch(15, 7, 3);
         let c = combine_swatches(&[&blue, &orange, &accent]).unwrap();
         assert_eq!(c.hue_count, 10);
         assert_eq!(c.value_count, 21);
@@ -2637,21 +2683,21 @@ mod tests {
 
     #[test]
     fn fifteen_by_thirty_five_path_is_deleted() {
-        let b1 = mk_ident(6, 3, 1);
-        let b2 = mk_ident(7, 4, 2);
-        let b3 = mk_ident(10, 7, 3);
-        let o1 = mk_ident(6, 3, 4);
-        let o2 = mk_ident(7, 4, 5);
-        let o3 = mk_ident(10, 7, 6);
-        let accent = mk_ident(15, 7, 7);
+        let b1 = make_ident_swatch(6, 3, 1);
+        let b2 = make_ident_swatch(7, 4, 2);
+        let b3 = make_ident_swatch(10, 7, 3);
+        let o1 = make_ident_swatch(6, 3, 4);
+        let o2 = make_ident_swatch(7, 4, 5);
+        let o3 = make_ident_swatch(10, 7, 6);
+        let accent = make_ident_swatch(15, 7, 7);
         assert!(combine_swatches(&[&b1, &b2, &b3, &o1, &o2, &o3, &accent]).is_err());
     }
 
     #[test]
     fn two_block_path_is_deleted() {
-        let blue = mk_ident(10, 7, 1);
-        let orange = mk_ident(10, 7, 2);
-        let accent = mk_ident(15, 7, 3);
+        let blue = make_ident_swatch(10, 7, 1);
+        let orange = make_ident_swatch(10, 7, 2);
+        let accent = make_ident_swatch(15, 7, 3);
         assert!(combine_swatches(&[&blue, &orange]).is_err());
         let c = combine_swatches(&[&blue, &orange, &accent]).unwrap();
         assert_eq!(c.hue_count, 10);

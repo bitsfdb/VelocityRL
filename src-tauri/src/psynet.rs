@@ -220,6 +220,16 @@ fn default_method() -> String {
     "raw".into()
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ConfigPsynetHealth {
+    pub ok: bool,
+    pub dns_resolved_to_loopback: bool,
+    pub tls_cert_trusted: bool,
+    pub proxy_responding: bool,
+    pub upstream_psynet_reachable: bool,
+    pub details: String,
+}
+
 #[derive(Serialize)]
 pub struct PsyNetStatus {
     pub running: bool,
@@ -233,9 +243,12 @@ pub struct PsyNetStatus {
     pub viewer_ok: bool,
     pub player_id: Option<String>,
     pub ca_installed: bool,
+    pub config_health: Option<ConfigPsynetHealth>,
 }
 
 pub const CLOSE_WARNING: &str = "Keep VelocityRL open while playing — closing the app stops the proxy and Rocket League loses config.psynet.gg.";
+
+pub const ANTI_VIRUS_EXCLUSION_MSG: &str = "Anti-virus is blocking VelocityRL. Add exclusions in Windows Defender to these paths:\nC:\\Windows\\System32\\drivers\\etc\\hosts\n%APPDATA%\\VelocityRL\n%LOCALAPPDATA%\\com.velocityrl.app\n%LOCALAPPDATA%\\Programs\\velocityrl\nTutorial: https://www.youtube.com/watch?v=nRaGvYL2lwk";
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -486,6 +499,7 @@ fn status_for(dir: Option<PathBuf>, process_alive: bool) -> PsyNetStatus {
         viewer_ok,
         player_id: dir.as_ref().and_then(|d| read_config_player_id(d)),
         ca_installed,
+        config_health: None,
     }
 }
 
@@ -715,7 +729,6 @@ fn windows_hosts_path() -> PathBuf {
 
 const CONFIG_HOST_PAIRS: &[(&str, &str)] = &[
     ("127.0.0.1", "config.psynet.gg"),
-    ("::1", "config.psynet.gg"),
 ];
 
 fn hosts_has_pair(text: &str, ip: &str, host: &str) -> bool {
@@ -822,7 +835,7 @@ fn run_elevated_script(script_text: &str) -> Result<(), String> {
 
     let encoded = encode_powershell_cmd(script_text);
 
-    let status = if is_process_elevated() {
+    let output = if is_process_elevated() {
         Command::new("powershell")
             .args([
                 "-NoProfile",
@@ -835,11 +848,11 @@ fn run_elevated_script(script_text: &str) -> Result<(), String> {
                 &encoded,
             ])
             .creation_flags(CREATE_NO_WINDOW)
-            .status()
+            .output()
             .map_err(|e| format!("setup failed: {e}"))?
     } else {
         let runner_cmd = format!(
-            "$p = Start-Process -FilePath powershell.exe -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-WindowStyle','Hidden','-ExecutionPolicy','Bypass','-EncodedCommand','{encoded}'); if ($null -eq $p) {{ exit 1223 }}; exit $p.ExitCode"
+            "try {{ $p = Start-Process -FilePath powershell.exe -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList @('-NoProfile','-NonInteractive','-WindowStyle','Hidden','-ExecutionPolicy','Bypass','-EncodedCommand','{encoded}'); if ($null -eq $p) {{ exit 1223 }}; exit $p.ExitCode }} catch {{ exit 1223 }}"
         );
         let outer_encoded = encode_powershell_cmd(&runner_cmd);
         Command::new("powershell")
@@ -854,25 +867,25 @@ fn run_elevated_script(script_text: &str) -> Result<(), String> {
                 &outer_encoded,
             ])
             .creation_flags(CREATE_NO_WINDOW)
-            .status()
-            .map_err(|e| format!("elevate failed: {e}"))?
+            .output()
+            .map_err(|e| format!("setup failed: {e}"))?
     };
 
-    if status.success() {
+    if output.status.success() {
         return Ok(());
     }
 
-    let code = status.code();
+    let code = output.status.code();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    crate::applog::event(&format!(
+        "psynet: setup script exited with code {code:?}; stderr='{stderr}'; stdout='{stdout}'"
+    ));
     if code == Some(1223) {
-        return Err(
-            "UAC was cancelled. Approve the Administrator prompt to install the CA, edit hosts, and bind :443."
-                .into(),
-        );
+        return Err("Proxy setup was cancelled.".into());
     }
 
-    Err(format!(
-        "Proxy setup failed (exit {code:?}). Approve UAC when prompted, then retry."
-    ))
+    Err(ANTI_VIRUS_EXCLUSION_MSG.into())
 }
 
 #[cfg(not(windows))]
@@ -881,14 +894,33 @@ fn run_elevated_script(_script_text: &str) -> Result<(), String> {
 }
 
 #[cfg(windows)]
-const BUNDLED_CA_THUMBPRINT: &str = "38A28A81A89A71CA078369073BD2F0597422983C";
+fn bundled_ca_thumbprint() -> String {
+    use sha1::{Digest, Sha1};
+    let mut reader = std::io::Cursor::new(crate::proxy::ca_cert_bytes());
+    let certs = match rustls_pemfile::certs(&mut reader).collect::<Result<Vec<_>, _>>() {
+        Ok(c) => c,
+        Err(_) => return String::new(),
+    };
+    let Some(der) = certs.first() else {
+        return String::new();
+    };
+    Sha1::digest(der.as_ref())
+        .iter()
+        .map(|b| format!("{b:02X}"))
+        .collect()
+}
 
 #[cfg(windows)]
+#[allow(dead_code)]
 pub fn is_user_ca_installed() -> bool {
     use std::os::windows::process::CommandExt;
-    let thumb_lower = BUNDLED_CA_THUMBPRINT.to_ascii_lowercase();
+    let thumb = bundled_ca_thumbprint();
+    if thumb.is_empty() {
+        return false;
+    }
+    let thumb_lower = thumb.to_ascii_lowercase();
     Command::new("certutil")
-        .args(["-user", "-store", "Root", BUNDLED_CA_THUMBPRINT])
+        .args(["-user", "-store", "Root", &thumb])
         .creation_flags(CREATE_NO_WINDOW)
         .output()
         .map(|o| {
@@ -896,17 +928,21 @@ pub fn is_user_ca_installed() -> bool {
                 return false;
             }
             let text = String::from_utf8_lossy(&o.stdout).to_ascii_lowercase();
-            text.contains(&thumb_lower) || text.contains(BUNDLED_CA_THUMBPRINT)
+            text.contains(&thumb_lower) || text.contains(&thumb)
         })
         .unwrap_or(false)
 }
 
 #[cfg(windows)]
-fn is_ca_installed() -> bool {
+pub fn is_system_ca_installed() -> bool {
     use std::os::windows::process::CommandExt;
-    let thumb_lower = BUNDLED_CA_THUMBPRINT.to_ascii_lowercase();
-    let in_system = Command::new("certutil")
-        .args(["-store", "Root", BUNDLED_CA_THUMBPRINT])
+    let thumb = bundled_ca_thumbprint();
+    if thumb.is_empty() {
+        return false;
+    }
+    let thumb_lower = thumb.to_ascii_lowercase();
+    Command::new("certutil")
+        .args(["-store", "Root", &thumb])
         .creation_flags(CREATE_NO_WINDOW)
         .output()
         .map(|o| {
@@ -914,51 +950,277 @@ fn is_ca_installed() -> bool {
                 return false;
             }
             let text = String::from_utf8_lossy(&o.stdout).to_ascii_lowercase();
-            text.contains(&thumb_lower) || text.contains(BUNDLED_CA_THUMBPRINT)
+            text.contains(&thumb_lower) || text.contains(&thumb)
         })
-        .unwrap_or(false);
-    let in_user = is_user_ca_installed();
-    in_system || in_user
+        .unwrap_or(false)
+}
+
+#[cfg(windows)]
+const STALE_THUMBPRINTS: &[&str] = &[
+    "38A28A81A89A71CA078369073BD2F0597422983C",
+];
+
+#[cfg(windows)]
+pub fn cleanup_known_stale_roots() {
+    use std::os::windows::process::CommandExt;
+    let current_thumb = bundled_ca_thumbprint();
+    for thumb in STALE_THUMBPRINTS {
+        if !current_thumb.is_empty() && thumb.eq_ignore_ascii_case(&current_thumb) {
+            continue;
+        }
+        let _ = Command::new("certutil")
+            .args(["-f", "-delstore", "Root", thumb])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
+}
+
+#[cfg(windows)]
+pub fn is_ca_installed() -> bool {
+    is_system_ca_installed()
+}
+
+#[cfg(windows)]
+pub fn ensure_wininet_revocation_disabled() {
+    use std::os::windows::process::CommandExt;
+    for hive in &[
+        r"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+        r"HKCU\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings",
+        r"HKLM\Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+        r"HKLM\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings",
+        r"HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Internet Settings",
+    ] {
+        let _ = std::process::Command::new("reg")
+            .args([
+                "add",
+                hive,
+                "/v",
+                "CertificateRevocation",
+                "/t",
+                "REG_DWORD",
+                "/d",
+                "0",
+                "/f",
+            ])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
+    crate::winprobe::refresh_wininet_settings();
+}
+
+#[cfg(windows)]
+pub fn ensure_hklm_revocation_disabled() {
+    ensure_wininet_revocation_disabled();
+}
+
+#[cfg(not(windows))]
+pub fn ensure_wininet_revocation_disabled() {}
+
+#[cfg(not(windows))]
+pub fn ensure_hklm_revocation_disabled() {}
+
+
+#[cfg(windows)]
+fn append_ca_to_pem_bundles() {
+    let ca_bytes = crate::proxy::ca_cert_bytes();
+    let Ok(ca_str) = std::str::from_utf8(ca_bytes) else {
+        return;
+    };
+    let appendix = format!("\r\n# VelocityRL CA\r\n{}\r\n", ca_str.trim());
+
+    let mut paths = vec![PathBuf::from(r"C:\Windows\cert.pem")];
+    if let Ok(prog_files) = std::env::var("ProgramFiles") {
+        paths.push(PathBuf::from(prog_files).join("Common Files").join("SSL").join("cert.pem"));
+    }
+
+    for pem in paths {
+        if pem.is_file() {
+            if let Ok(content) = fs::read_to_string(&pem) {
+                if content.len() >= 50000 && !content.contains("# VelocityRL CA") {
+                    let mut updated = content.trim_end().to_string();
+                    updated.push_str(&appendix);
+                    let _ = fs::write(&pem, updated);
+                    crate::applog::event(&format!("psynet: appended VelocityRL CA to {}", pem.display()));
+                }
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+fn clean_ca_from_pem_bundles() {
+    let mut paths = vec![PathBuf::from(r"C:\Windows\cert.pem")];
+    if let Ok(prog_files) = std::env::var("ProgramFiles") {
+        paths.push(PathBuf::from(prog_files).join("Common Files").join("SSL").join("cert.pem"));
+    }
+    for pem in paths {
+        if pem.is_file() {
+            if let Ok(raw) = fs::read_to_string(&pem) {
+                if let Some(idx) = raw.find("# VelocityRL CA") {
+                    let cleaned = raw[..idx].trim_end().to_string();
+                    let _ = fs::write(&pem, format!("{cleaned}\r\n"));
+                    crate::applog::event(&format!("psynet: reverted VelocityRL CA from {}", pem.display()));
+                }
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+pub fn install_ca_direct(target_thumb: &str) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+
+    let tmp_ca = std::env::temp_dir().join(format!("velocityrl_ca_{}.crt", std::process::id()));
+    if let Err(e) = fs::write(&tmp_ca, crate::proxy::ca_cert_bytes()) {
+        crate::applog::event(&format!("psynet: failed to write temp CA certificate: {e}"));
+        return Err(format!("Failed to write temporary CA certificate: {e}"));
+    }
+
+    let tmp_str = tmp_ca.to_string_lossy();
+
+    let status_lm = Command::new("certutil")
+        .args(["-f", "-addstore", "Root", &tmp_str])
+        .creation_flags(CREATE_NO_WINDOW)
+        .status();
+    crate::applog::event(&format!("psynet: certutil -addstore Root: {status_lm:?}"));
+
+    let _ = fs::remove_file(&tmp_ca);
+
+    append_ca_to_pem_bundles();
+
+    if is_ca_installed() {
+        Ok(())
+    } else {
+        Err(format!(
+            "VelocityRL root CA was not installed (need thumb {target_thumb}). Rocket League cannot trust the PsyNet proxy."
+        ))
+    }
+}
+
+#[cfg(windows)]
+pub fn write_config_hosts_direct() -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+
+    let p = windows_hosts_path();
+    if let Some(parent) = p.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+
+    if let Ok(mut perms) = fs::metadata(&p).map(|m| m.permissions()) {
+        if perms.readonly() {
+            perms.set_readonly(false);
+            let _ = fs::set_permissions(&p, perms);
+        }
+    }
+    let _ = Command::new("attrib")
+        .args(["-r", "-h", "-s", &p.to_string_lossy()])
+        .creation_flags(CREATE_NO_WINDOW)
+        .status();
+
+    let content = match fs::read_to_string(&p) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => {
+            crate::applog::event(&format!("psynet: failed to read hosts file {}: {e}", p.display()));
+            return Err(ANTI_VIRUS_EXCLUSION_MSG.into());
+        }
+    };
+
+    let lines: Vec<&str> = content
+        .lines()
+        .filter(|line| {
+            !line.contains("api.rlpp.psynet.gg")
+                && !line.contains("ws.rlpp.psynet.gg")
+                && !line.contains("::1")
+        })
+        .collect();
+
+    let mut new_text = lines.join("\r\n");
+    if !new_text.is_empty() && !new_text.ends_with("\r\n") {
+        new_text.push_str("\r\n");
+    }
+
+    let has_ipv4 = hosts_has_pair(&new_text, "127.0.0.1", "config.psynet.gg");
+    if !has_ipv4 {
+        new_text.push_str("127.0.0.1 config.psynet.gg\r\n");
+    }
+
+    let mut last_err = None;
+    for attempt in 1..=4 {
+        match fs::write(&p, new_text.as_bytes()) {
+            Ok(_) => {
+                crate::applog::event("psynet: hosts file written successfully via native I/O");
+                let _ = crate::winprobe::flush_dns_cache();
+                return Ok(());
+            }
+            Err(e) => {
+                crate::applog::event(&format!(
+                    "psynet: hosts write attempt {attempt} failed: {e}"
+                ));
+                last_err = Some(e);
+                std::thread::sleep(std::time::Duration::from_millis(150));
+            }
+        }
+    }
+    if let Some(e) = last_err {
+        crate::applog::event(&format!("psynet: all hosts write attempts failed: {e}"));
+    }
+    Err(ANTI_VIRUS_EXCLUSION_MSG.into())
+}
+
+#[cfg(windows)]
+fn direct_elevated_hosts_and_ca_setup(
+    target_thumb: &str,
+    hosts_ok: bool,
+    ca_ok: bool,
+) -> Result<bool, String> {
+    crate::applog::event("psynet: direct elevated setup started (no PowerShell)");
+
+    ensure_wininet_revocation_disabled();
+    ensure_hklm_revocation_disabled();
+
+    if !ca_ok {
+        cleanup_known_stale_roots();
+        install_ca_direct(target_thumb)?;
+    }
+
+    if !hosts_ok {
+        write_config_hosts_direct()?;
+    }
+
+    let final_hosts_ok = config_hosts_complete();
+    let final_ca_ok = is_ca_installed();
+
+    if final_hosts_ok && final_ca_ok {
+        crate::applog::event(&format!(
+            "psynet: config.psynet.gg hosts & CA setup complete (thumb={target_thumb})"
+        ));
+        return Ok(false);
+    }
+
+    let _ = revert_config_hosts();
+    if !final_ca_ok {
+        return Err(format!(
+            "VelocityRL root CA was not installed (need thumb {target_thumb}). Rocket League cannot trust the PsyNet proxy."
+        ));
+    }
+
+    Err(ANTI_VIRUS_EXCLUSION_MSG.into())
 }
 
 #[cfg(windows)]
 pub fn install_user_ca_direct() {
-    use std::os::windows::process::CommandExt;
-    cleanup_stale_user_ca();
-
-    if is_user_ca_installed() {
+    if is_ca_installed() {
         return;
     }
-    let tmp = std::env::temp_dir().join(format!("vrl_ca_{}.crt", std::process::id()));
-    let tmp_str = tmp.to_string_lossy().replace('\'', "''");
-    if fs::write(&tmp, crate::proxy::ca_cert_bytes()).is_ok() {
-        let ps_cmd = format!(
-            r#"$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2('{tmp_str}'); $store = New-Object System.Security.Cryptography.X509Certificates.X509Store('Root', 'CurrentUser'); $store.Open('ReadWrite'); $store.Add($cert); $store.Close()"#
-        );
-        let _ = Command::new("powershell")
-            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_cmd])
-            .creation_flags(CREATE_NO_WINDOW)
-            .status();
 
-        let _ = Command::new("certutil")
-            .args(["-user", "-f", "-addstore", "Root", &tmp.to_string_lossy()])
-            .creation_flags(CREATE_NO_WINDOW)
-            .status();
-        let _ = fs::remove_file(&tmp);
+    ensure_wininet_revocation_disabled();
+    ensure_hklm_revocation_disabled();
+    cleanup_known_stale_roots();
+
+    if is_process_elevated() {
+        let _ = install_ca_direct(&bundled_ca_thumbprint());
     }
-}
-
-#[cfg(windows)]
-fn cleanup_stale_user_ca() {
-    use std::os::windows::process::CommandExt;
-    // Remove non-matching VelocityRL certs and erroneously installed leaf certs from CurrentUser\Root
-    let cmd = format!(
-        r#"$target = "{BUNDLED_CA_THUMBPRINT}"; Get-ChildItem Cert:\CurrentUser\Root -ErrorAction SilentlyContinue | Where-Object {{ (($_.Subject -like "*VelocityRL*" -or $_.Issuer -like "*VelocityRL*") -and $_.Thumbprint -notlike "*$target*") -or ($_.Subject -match 'CN=(config\.psynet\.gg|api\.rlpp\.psynet\.gg|ws\.rlpp\.psynet\.gg)') }} | Remove-Item -Force -ErrorAction SilentlyContinue"#
-    );
-    let _ = Command::new("powershell")
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &cmd])
-        .creation_flags(CREATE_NO_WINDOW)
-        .status();
 }
 
 #[cfg(not(windows))]
@@ -976,34 +1238,58 @@ pub fn revert_config_hosts() -> Result<(), String> {
     }
     #[cfg(windows)]
     {
-        if !psynet_hosts_redirected() {
-            return Ok(());
-        }
         if is_process_elevated() {
-            let p = windows_hosts_path();
-            if let Ok(content) = fs::read_to_string(&p) {
-                let cleaned: Vec<&str> = content
-                    .lines()
-                    .filter(|line| !line.contains("config.psynet.gg") && !line.contains("ws.rlpp.psynet.gg") && !line.contains("api.rlpp.psynet.gg"))
-                    .collect();
-                let mut new_text = cleaned.join("\r\n");
-                new_text.push_str("\r\n");
-                let _ = fs::write(&p, new_text);
-                let _ = crate::winprobe::flush_dns_cache();
+            clean_ca_from_pem_bundles();
+            if psynet_hosts_redirected() {
+                let p = windows_hosts_path();
+                if let Ok(mut perms) = fs::metadata(&p).map(|m| m.permissions()) {
+                    if perms.readonly() {
+                        perms.set_readonly(false);
+                        let _ = fs::set_permissions(&p, perms);
+                    }
+                }
+                if let Ok(content) = fs::read_to_string(&p) {
+                    let cleaned: Vec<&str> = content
+                        .lines()
+                        .filter(|line| !line.contains("config.psynet.gg") && !line.contains("ws.rlpp.psynet.gg") && !line.contains("api.rlpp.psynet.gg"))
+                        .collect();
+                    let mut new_text = cleaned.join("\r\n");
+                    new_text.push_str("\r\n");
+                    let _ = fs::write(&p, new_text);
+                    let _ = crate::winprobe::flush_dns_cache();
+                }
             }
             return Ok(());
         }
 
-        let script_text = r#"$ErrorActionPreference = "SilentlyContinue"
+        if !psynet_hosts_redirected() {
+            return Ok(());
+        }
+
+        let script_text = r##"$ErrorActionPreference = "SilentlyContinue"
 $hostsPath = Join-Path $env:SystemRoot "System32\drivers\etc\hosts"
 if (Test-Path -LiteralPath $hostsPath) {
+    try { (Get-Item -LiteralPath $hostsPath).IsReadOnly = $false } catch {}
     $lines = Get-Content -LiteralPath $hostsPath
     $clean = $lines | Where-Object { $_ -notmatch 'config\.psynet\.gg' -and $_ -notmatch 'ws\.rlpp\.psynet\.gg' -and $_ -notmatch 'api\.rlpp\.psynet\.gg' }
     [System.IO.File]::WriteAllLines($hostsPath, $clean)
     ipconfig /flushdns | Out-Null
 }
+foreach ($pem in @(
+    "${env:ProgramFiles}\Common Files\SSL\cert.pem",
+    "C:\Windows\cert.pem"
+)) {
+    if (Test-Path -LiteralPath $pem) {
+        $raw = Get-Content -LiteralPath $pem -Raw -ErrorAction SilentlyContinue
+        if ($raw -and $raw -match "# VelocityRL CA") {
+            $cleaned = [regex]::Replace($raw, '(?s)\r?\n?# VelocityRL CA[\s\S]*\z', "")
+            $utf8 = New-Object System.Text.UTF8Encoding $false
+            [System.IO.File]::WriteAllText($pem, $cleaned.TrimEnd() + "`n", $utf8)
+        }
+    }
+}
 exit 0
-"#;
+"##;
         let _ = run_elevated_script(script_text);
         let _ = crate::winprobe::flush_dns_cache();
         Ok(())
@@ -1033,133 +1319,154 @@ fn ensure_config_hosts_inner() -> Result<bool, String> {
         }
 
         crate::applog::event(&format!(
-            "psynet: hosts_ok={hosts_ok} ca_ok={ca_ok} — elevating to setup"
+            "psynet: hosts_ok={hosts_ok} ca_ok={ca_ok} — setting up hosts and CA"
         ));
 
+        let target_thumb = bundled_ca_thumbprint();
+        if target_thumb.is_empty() {
+            return Err("Bundled VelocityRL CA is invalid — rebuild with resources/certs.".into());
+        }
+
+        if is_process_elevated() {
+            return direct_elevated_hosts_and_ca_setup(&target_thumb, hosts_ok, ca_ok);
+        }
+
         let ca_b64 = base64::engine::general_purpose::STANDARD.encode(crate::proxy::ca_cert_bytes());
+        let pid = std::process::id();
 
         let script_text = format!(
-            r#"$ErrorActionPreference = "SilentlyContinue"
-$targetThumb = "{BUNDLED_CA_THUMBPRINT}"
+            r##"$ErrorActionPreference = "SilentlyContinue"
+$targetThumb = "{target_thumb}"
 
-# Aggressively delete any old, mismatched, or stale VelocityRL certificates in LocalMachine and CurrentUser
-Get-ChildItem Cert:\LocalMachine\Root -ErrorAction SilentlyContinue | Where-Object {{ ($_.Subject -like "*VelocityRL*" -or $_.Issuer -like "*VelocityRL*") -and $_.Thumbprint -notlike "*$targetThumb*" }} | Remove-Item -Force -ErrorAction SilentlyContinue
-Get-ChildItem Cert:\CurrentUser\Root -ErrorAction SilentlyContinue | Where-Object {{ ($_.Subject -like "*VelocityRL*" -or $_.Issuer -like "*VelocityRL*") -and $_.Thumbprint -notlike "*$targetThumb*" }} | Remove-Item -Force -ErrorAction SilentlyContinue
-
-# Clean any leaf certificates that may have been erroneously installed directly into Root stores
+# Wipe stale VelocityRL roots (do not delete matching targetThumb).
 Get-ChildItem Cert:\LocalMachine\Root, Cert:\CurrentUser\Root -ErrorAction SilentlyContinue | Where-Object {{
+    (($_.Subject -like "*VelocityRL*" -or $_.Issuer -like "*VelocityRL*") -and $_.Thumbprint -ne $targetThumb) -or
     ($_.Subject -match 'CN=(config\.psynet\.gg|api\.rlpp\.psynet\.gg|ws\.rlpp\.psynet\.gg)') -or
     ($_.Subject -like '*config.psynet.gg*' -or $_.Subject -like '*api.rlpp.psynet.gg*' -or $_.Subject -like '*ws.rlpp.psynet.gg*') -or
     ($_.Subject -like '*mitmproxy*' -or $_.Issuer -like '*mitmproxy*')
 }} | Remove-Item -Force -ErrorAction SilentlyContinue
-
-$hasLocal = @(Get-ChildItem Cert:\LocalMachine\Root -ErrorAction SilentlyContinue | Where-Object {{ $_.Thumbprint -like "*$targetThumb*" }})
-$hasUser = @(Get-ChildItem Cert:\CurrentUser\Root -ErrorAction SilentlyContinue | Where-Object {{ $_.Thumbprint -like "*$targetThumb*" }})
 
 $caB64 = "{ca_b64}"
 $caBytes = [System.Convert]::FromBase64String($caB64)
 $tmpCa = Join-Path $env:TEMP "velocityrl_ca_{pid}.crt"
 [System.IO.File]::WriteAllBytes($tmpCa, $caBytes)
 try {{
-    if ($hasLocal.Count -eq 0) {{
-        try {{
-            $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($tmpCa)
-            $store = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root", "LocalMachine")
-            $store.Open("ReadWrite")
-            $store.Add($cert)
-            $store.Close()
-        }} catch {{}}
-        Import-Certificate -FilePath $tmpCa -CertStoreLocation Cert:\LocalMachine\Root -ErrorAction SilentlyContinue | Out-Null
+    certutil -f -addstore Root $tmpCa | Out-Null
+
+    # Append VelocityRL CA to Mozilla OpenSSL bundles if present (C:\Windows\cert.pem, Program Files\Common Files\SSL\cert.pem)
+    try {{
+        $caText = [System.Text.Encoding]::ASCII.GetString($caBytes)
+        foreach ($pem in @(
+            "${{env:ProgramFiles}}\Common Files\SSL\cert.pem",
+            "C:\Windows\cert.pem"
+        )) {{
+            if (Test-Path -LiteralPath $pem) {{
+                $raw = Get-Content -LiteralPath $pem -Raw -ErrorAction SilentlyContinue
+                if ($raw -and $raw.Length -ge 50000 -and $raw -notmatch "# VelocityRL CA") {{
+                    $appendix = "`r`n# VelocityRL CA`r`n" + $caText.Trim() + "`r`n"
+                    $utf8 = New-Object System.Text.UTF8Encoding $false
+                    [System.IO.File]::WriteAllText($pem, $raw.TrimEnd() + $appendix, $utf8)
+                }}
+            }}
+        }}
+    }} catch {{}}
+
+    try {{
+        $hostsPath = Join-Path $env:SystemRoot "System32\drivers\etc\hosts"
+        if (-not (Test-Path -LiteralPath $hostsPath)) {{ exit 5 }}
+        try {{ (Get-Item -LiteralPath $hostsPath).IsReadOnly = $false }} catch {{}}
+        try {{ attrib -r "$hostsPath" }} catch {{}}
+
+        # Never hosts-redirect api/ws (cert pinning) — config only.
+        $existingLines = @(Get-Content -LiteralPath $hostsPath -ErrorAction SilentlyContinue)
+        $filteredLines = @($existingLines | Where-Object {{ $_ -notmatch 'api\.rlpp\.psynet\.gg' -and $_ -notmatch 'ws\.rlpp\.psynet\.gg' }})
+        if ($filteredLines.Count -ne $existingLines.Count) {{
+            [System.IO.File]::WriteAllLines($hostsPath, $filteredLines)
+        }}
+
+        function Add-HostsLine([string]$Path, [string]$Line) {{
+            for ($attempt = 1; $attempt -le 5; $attempt++) {{
+                try {{
+                    [System.IO.File]::AppendAllText($Path, "`r`n$Line")
+                    return
+                }} catch {{
+                    if ($attempt -eq 5) {{ exit 5 }}
+                    Start-Sleep -Milliseconds 500
+                }}
+            }}
+        }}
+        $raw = [System.IO.File]::ReadAllText($hostsPath)
+        $raw = ($raw -split "`r?`n" | Where-Object {{ $_ -notmatch '::1\s+config\.psynet\.gg' }}) -join "`r`n"
+        [System.IO.File]::WriteAllText($hostsPath, $raw)
+        foreach ($pair in @(
+            @{{ Ip = "127.0.0.1"; Host = "config.psynet.gg" }}
+        )) {{
+            $pat = [regex]::Escape($pair.Ip) + "\s+" + [regex]::Escape($pair.Host)
+            if ($raw -notmatch $pat) {{
+                Add-HostsLine -Path $hostsPath -Line "$($pair.Ip) $($pair.Host)"
+                $raw += "`r`n$($pair.Ip) $($pair.Host)"
+            }}
+        }}
+    }} catch {{
+        exit 5
+    }}
+    # Disable server certificate revocation check in WinINet so Rocket League's WebRequest_X does not fail
+    # on local MITM certificates lacking public CRL/OCSP responders.
+    Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -Name "CertificateRevocation" -Value 0 -ErrorAction SilentlyContinue
+    Set-ItemProperty -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -Name "CertificateRevocation" -Value 0 -ErrorAction SilentlyContinue
+    Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings" -Name "CertificateRevocation" -Value 0 -ErrorAction SilentlyContinue
+
+    ipconfig /flushdns | Out-Null
+    $stillHas = @(Get-ChildItem Cert:\LocalMachine\Root -ErrorAction SilentlyContinue | Where-Object {{ $_.Thumbprint -like "*$targetThumb*" }})
+    if ($stillHas.Count -eq 0) {{
         certutil -f -addstore Root $tmpCa | Out-Null
+        $stillHas = @(Get-ChildItem Cert:\LocalMachine\Root -ErrorAction SilentlyContinue | Where-Object {{ $_.Thumbprint -like "*$targetThumb*" }})
     }}
-    if ($hasUser.Count -eq 0) {{
-        try {{
-            $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($tmpCa)
-            $store = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root", "CurrentUser")
-            $store.Open("ReadWrite")
-            $store.Add($cert)
-            $store.Close()
-        }} catch {{}}
-        Import-Certificate -FilePath $tmpCa -CertStoreLocation Cert:\CurrentUser\Root -ErrorAction SilentlyContinue | Out-Null
-        certutil -user -f -addstore Root $tmpCa | Out-Null
-    }}
+    if ($stillHas.Count -eq 0) {{ exit 5 }}
+    exit 0
 }} finally {{
     Remove-Item -LiteralPath $tmpCa -Force -ErrorAction SilentlyContinue
 }}
-$hostsPath = Join-Path $env:SystemRoot "System32\drivers\etc\hosts"
-if (-not (Test-Path -LiteralPath $hostsPath)) {{ throw "hosts file not found" }}
-
-# Clean any obsolete or stale redirects for api.rlpp.psynet.gg or ws.rlpp.psynet.gg
-$existingLines = @(Get-Content -LiteralPath $hostsPath -ErrorAction SilentlyContinue)
-$filteredLines = @($existingLines | Where-Object {{ $_ -notmatch 'api\.rlpp\.psynet\.gg' -and $_ -notmatch 'ws\.rlpp\.psynet\.gg' }})
-if ($filteredLines.Count -ne $existingLines.Count) {{
-    [System.IO.File]::WriteAllLines($hostsPath, $filteredLines)
-}}
-
-function Add-HostsLine([string]$Path, [string]$Line) {{
-    for ($attempt = 1; $attempt -le 5; $attempt++) {{
-        try {{
-            $fs = [System.IO.FileStream]::new(
-                $Path,
-                [System.IO.FileMode]::Append,
-                [System.IO.FileAccess]::Write,
-                ([System.IO.FileShare]"ReadWrite, Delete")
-            )
-            try {{
-                $bytes = [System.Text.Encoding]::ASCII.GetBytes("`r`n$Line")
-                $fs.Write($bytes, 0, $bytes.Length)
-                return
-            }} finally {{ $fs.Dispose() }}
-        }} catch [System.IO.IOException] {{
-            if ($attempt -eq 5) {{ throw }}
-            Start-Sleep -Milliseconds 500
-        }}
-    }}
-}}
-$raw = [System.IO.File]::ReadAllText($hostsPath)
-foreach ($pair in @(
-    @{{ Ip = "127.0.0.1"; Host = "config.psynet.gg" }},
-    @{{ Ip = "::1"; Host = "config.psynet.gg" }}
-)) {{
-    $pat = [regex]::Escape($pair.Ip) + "\s+" + [regex]::Escape($pair.Host)
-    if ($raw -notmatch $pat) {{
-        Add-HostsLine -Path $hostsPath -Line "$($pair.Ip) $($pair.Host)"
-        $raw += "`r`n$($pair.Ip) $($pair.Host)"
-    }}
-}}
-ipconfig /flushdns | Out-Null
-exit 0
-"#,
-            pid = std::process::id()
+"##
         );
 
-        let result = run_elevated_script(&script_text);
-        result?;
+        if let Err(e) = run_elevated_script(&script_text) {
+            let _ = revert_config_hosts();
+            return Err(e);
+        }
 
         let _ = crate::winprobe::flush_dns_cache();
 
         let hosts_ok = config_hosts_complete();
         let ca_ok = is_ca_installed();
         if hosts_ok && ca_ok {
-            crate::applog::event("psynet: config.psynet.gg hosts & CA setup complete");
-            Ok(false)
-        } else if !hosts_ok {
-            Err(
-                "UAC finished but config.psynet.gg was not added to hosts. Approve the prompt and retry."
-                    .into(),
-            )
-        } else {
-            Err(
-                "UAC finished but VelocityRL CA was not installed into Trusted Root Certification Authorities. Approve the prompt and retry."
-                    .into(),
-            )
+            crate::applog::event(&format!(
+                "psynet: config.psynet.gg hosts & CA setup complete (thumb={target_thumb})"
+            ));
+            return Ok(false);
         }
+        // Hosts without the matching CA → RL TLS fails → "Epic Online Services" dialog.
+        let _ = revert_config_hosts();
+        if !ca_ok {
+            return Err(format!(
+                "VelocityRL root CA was not installed (need thumb {target_thumb}). Rocket League cannot trust the PsyNet proxy."
+            ));
+        }
+        Err(ANTI_VIRUS_EXCLUSION_MSG.into())
     }
 }
 
 #[tauri::command]
 pub async fn ensure_psynet_hosts() -> Result<bool, String> {
     crate::applog::event("psynet: boot hosts ensure requested");
+    if !crate::proxy::is_proxy_running() {
+        crate::applog::event("psynet: starting native proxy before ensuring hosts");
+        if let Err(e) = crate::proxy::start_native_proxy().await {
+            crate::applog::event(&format!("psynet: failed to start proxy for hosts setup: {e}"));
+            return Err(e);
+        }
+        let _ = crate::proxy::start_ws_broker().await;
+    }
     ensure_config_hosts()
 }
 
@@ -1190,10 +1497,120 @@ pub async fn save_psynet_spoof(
     let _ = state;
 
     crate::applog::event(&format!(
-        "psynet: wrote spoof config {} (hot-reload)",
+        "psynet: wrote spoof config {}",
         path.display()
     ));
     Ok(path.to_string_lossy().into_owned())
+}
+
+pub async fn verify_config_psynet_live() -> ConfigPsynetHealth {
+    #[cfg(not(windows))]
+    {
+        ConfigPsynetHealth {
+            ok: true,
+            dns_resolved_to_loopback: true,
+            tls_cert_trusted: true,
+            proxy_responding: true,
+            upstream_psynet_reachable: true,
+            details: "Non-windows platform".to_string(),
+        }
+    }
+    #[cfg(windows)]
+    {
+        use std::net::ToSocketAddrs;
+
+        // 1. Check DNS resolution of config.psynet.gg
+        let dns_resolved_to_loopback = match ("config.psynet.gg", 443).to_socket_addrs() {
+            Ok(addrs) => addrs.into_iter().any(|a| a.ip().is_loopback()),
+            Err(_) => false,
+        };
+
+        // 2. Check if proxy is listening on loopback 443 with TLS
+        let insecure_client = reqwest::Client::builder()
+            .danger_accept_invalid_certs(true)
+            .resolve("config.psynet.gg", "127.0.0.1:443".parse().unwrap())
+            .timeout(std::time::Duration::from_millis(1500))
+            .build()
+            .ok();
+
+        let mut proxy_responding = false;
+        if let Some(client) = insecure_client {
+            if let Ok(resp) = client.get("https://config.psynet.gg/health").send().await {
+                if resp.status().is_success() {
+                    proxy_responding = true;
+                }
+            }
+        }
+
+        // 3. Check Windows OS native TLS trust (without danger_accept_invalid_certs)
+        let mut tls_cert_trusted = false;
+        if proxy_responding {
+            let native_client = reqwest::Client::builder()
+                .resolve("config.psynet.gg", "127.0.0.1:443".parse().unwrap())
+                .timeout(std::time::Duration::from_millis(2000))
+                .build()
+                .ok();
+
+            if let Some(client) = native_client {
+                if let Ok(resp) = client.get("https://config.psynet.gg/health").send().await {
+                    if resp.status().is_success() {
+                        tls_cert_trusted = true;
+                    }
+                }
+            }
+        }
+
+        // 4. Check upstream PsyNet connectivity
+        let upstream_client = reqwest::Client::builder()
+            .danger_accept_invalid_certs(true)
+            .resolve("config.psynet.gg", "34.160.180.65:443".parse().unwrap())
+            .timeout(std::time::Duration::from_millis(2500))
+            .build()
+            .ok();
+
+        let mut upstream_psynet_reachable = false;
+        if let Some(client) = upstream_client {
+            if let Ok(resp) = client.get("https://config.psynet.gg/").send().await {
+                upstream_psynet_reachable = resp.status().as_u16() < 500;
+            }
+        }
+
+        // 5. Build summary
+        let ok = dns_resolved_to_loopback && proxy_responding && tls_cert_trusted;
+        let details = if ok {
+            if upstream_psynet_reachable {
+                "config.psynet.gg OK".to_string()
+            } else {
+                "config.psynet.gg working locally, but upstream PsyNet is unreachable (check internet connection)".to_string()
+            }
+        } else if !proxy_responding {
+            "Proxy is not responding on 127.0.0.1:443".to_string()
+        } else if !dns_resolved_to_loopback {
+            ANTI_VIRUS_EXCLUSION_MSG.to_string()
+        } else if !tls_cert_trusted {
+            "VelocityRL root CA is not trusted by Windows. Rocket League will reject connection.".to_string()
+        } else {
+            "config.psynet.gg check failed".to_string()
+        };
+
+        crate::applog::event(&format!(
+            "psynet: config.psynet.gg check: ok={ok} dns={dns_resolved_to_loopback} tls={tls_cert_trusted} proxy={proxy_responding} upstream={upstream_psynet_reachable} details='{details}'"
+        ));
+
+        ConfigPsynetHealth {
+            ok,
+            dns_resolved_to_loopback,
+            tls_cert_trusted,
+            proxy_responding,
+            upstream_psynet_reachable,
+            details,
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn check_config_psynet() -> Result<ConfigPsynetHealth, String> {
+    Ok(verify_config_psynet_live().await)
 }
 
 #[tauri::command]
@@ -1204,7 +1621,8 @@ pub async fn get_psynet_status(state: State<'_, PsyNetState>) -> Result<PsyNetSt
         *g = alive;
     }
     let dir = config_dir();
-    Ok(status_for(Some(dir), alive))
+    let status = status_for(Some(dir), alive);
+    Ok(status)
 }
 
 #[tauri::command]
@@ -1232,7 +1650,7 @@ pub async fn start_psynet_proxy(
     crate::proxy::set_spoof_config(cfg).await;
 
     if crate::proxy::is_proxy_running() {
-        crate::applog::event("psynet: native proxy already running — config hot-reloaded");
+        crate::applog::event("psynet: native proxy already running — config reloaded");
         *state.running.lock().map_err(|e| e.to_string())? = true;
         return Ok(status_for(Some(dir), true));
     }
@@ -1243,12 +1661,25 @@ pub async fn start_psynet_proxy(
     if let Some(pid) = crate::winprobe::loopback_443_owner() {
         if pid != std::process::id() {
             let name = crate::winprobe::process_name(pid).unwrap_or_else(|| "unknown".to_string());
-            let msg = format!(
-                "Another process owns loopback :443 ({name}, PID {pid}). Quit that process, then start the proxy again."
-            );
-            crate::applog::event(&format!("psynet: {msg}"));
-            let _ = revert_config_hosts();
-            return Err(msg);
+            let is_stale_self = name.eq_ignore_ascii_case("velocity-rl.exe")
+                || name.eq_ignore_ascii_case("velocityrl.exe")
+                || name.eq_ignore_ascii_case("psynet_proxy.exe")
+                || name.eq_ignore_ascii_case("mitmproxy.exe");
+
+            if is_stale_self {
+                crate::applog::event(&format!(
+                    "psynet: terminating stale VelocityRL/proxy process ({name}, PID {pid}) on :443"
+                ));
+                crate::winprobe::terminate_process(pid);
+                tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+            } else {
+                let msg = format!(
+                    "Another process owns loopback :443 ({name}, PID {pid}). Quit that process, then start the proxy again."
+                );
+                crate::applog::event(&format!("psynet: {msg}"));
+                let _ = revert_config_hosts();
+                return Err(msg);
+            }
         }
     }
 
@@ -1258,9 +1689,27 @@ pub async fn start_psynet_proxy(
         return Err(e);
     }
 
-    // Start the plain-HTTP WS broker that RL connects to via PsyNetUrl rewrite.
-    if let Err(e) = crate::proxy::start_ws_broker().await {
-        crate::applog::event(&format!("psynet: start_ws_broker failed (non-fatal): {e}"));
+    // Broker is required: config MITM rewrites PsyNetUrl → 127.0.0.1:<ephemeral>.
+    // If broker is down, browser/config still "works" but in-game Auth/WS die
+    // (looks like EOS/online failure). Never leave hosts pointing at loopback.
+    match crate::proxy::start_ws_broker().await {
+        Ok(port) => {
+            crate::applog::event(&format!("psynet: WS broker on 127.0.0.1:{port}"));
+        }
+        Err(e) => {
+            crate::applog::event(&format!("psynet: start_ws_broker failed: {e}"));
+            crate::proxy::stop_native_proxy(true);
+            let _ = revert_config_hosts();
+            return Err(e);
+        }
+    }
+
+    // Health probe: verify that port 443 communicates via TLS and processes requests before modifying hosts
+    if let Err(e) = crate::proxy::verify_proxy_loopback_health().await {
+        crate::applog::event(&format!("psynet: loopback health check failed: {e}"));
+        crate::proxy::stop_native_proxy(true);
+        let _ = revert_config_hosts();
+        return Err(e);
     }
 
     if let Err(e) = ensure_config_hosts() {
@@ -1280,7 +1729,10 @@ pub async fn start_psynet_proxy(
         psynet_hosts_redirected()
     ));
 
-    Ok(status_for(Some(dir), true))
+    let health = verify_config_psynet_live().await;
+    let mut status = status_for(Some(dir), true);
+    status.config_health = Some(health);
+    Ok(status)
 }
 
 #[tauri::command]
@@ -1378,6 +1830,13 @@ pub async fn restart_psynet_proxy(
         return Err(e);
     }
 
+    if let Err(e) = crate::proxy::start_ws_broker().await {
+        crate::applog::event(&format!("psynet: restart broker failed: {e}"));
+        crate::proxy::stop_native_proxy(true);
+        let _ = revert_config_hosts();
+        return Err(e);
+    }
+
     if let Err(e) = ensure_config_hosts() {
         crate::applog::event(&format!("psynet: restart hosts failed: {e}"));
         crate::proxy::stop_native_proxy(true);
@@ -1424,7 +1883,7 @@ pub fn merge_palette_spoof(enabled: bool) -> Result<(), String> {
     fs::write(&path, serde_json::to_string_pretty(&v).unwrap_or_default())
         .map_err(|e| format!("write {}: {e}", path.display()))?;
     crate::applog::event(&format!(
-        "psynet: palette_spoof.enabled -> {enabled} (hot-reload)"
+        "psynet: palette_spoof.enabled -> {enabled}"
     ));
     Ok(())
 }
@@ -1456,7 +1915,7 @@ pub async fn save_psynet_config_json(raw: String) -> Result<String, String> {
     fs::write(&path, serde_json::to_string_pretty(&v).unwrap_or_default())
         .map_err(|e| format!("write {}: {e}", path.display()))?;
     crate::applog::event(&format!(
-        "psynet: wrote raw config {} (hot-reload)",
+        "psynet: wrote raw config {}",
         path.display()
     ));
     Ok(path.to_string_lossy().into_owned())
@@ -1519,6 +1978,16 @@ pub fn delete_ca_certificates() -> Result<String, String> {
     {
         use std::os::windows::process::CommandExt;
 
+        let current_thumb = bundled_ca_thumbprint();
+        if !current_thumb.is_empty() {
+            let _ = Command::new("certutil")
+                .args(["-f", "-delstore", "Root", &current_thumb])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+        }
+        cleanup_known_stale_roots();
+        clean_ca_from_pem_bundles();
+
         let script_text = r#"$ErrorActionPreference = "SilentlyContinue"
 $deletedCount = 0
 try {
@@ -1532,40 +2001,18 @@ try {
     }
     $mStore.Close()
 } catch {}
-try {
-    $uStore = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root", "CurrentUser")
-    $uStore.Open("ReadWrite")
-    foreach ($c in @($uStore.Certificates)) {
-        if ($c.Subject -like "*VelocityRL*" -or $c.Issuer -like "*VelocityRL*") {
-            $uStore.Remove($c)
-            $deletedCount++
-        }
-    }
-    $uStore.Close()
-} catch {}
-$userCerts = @(Get-ChildItem Cert:\CurrentUser\Root -ErrorAction SilentlyContinue | Where-Object { $_.Subject -like "*VelocityRL*" -or $_.Issuer -like "*VelocityRL*" })
-foreach ($c in $userCerts) {
-    Remove-Item -LiteralPath $c.PSPath -Force -ErrorAction SilentlyContinue
-    $deletedCount++
-}
 $machineCerts = @(Get-ChildItem Cert:\LocalMachine\Root -ErrorAction SilentlyContinue | Where-Object { $_.Subject -like "*VelocityRL*" -or $_.Issuer -like "*VelocityRL*" })
 foreach ($c in $machineCerts) {
     Remove-Item -LiteralPath $c.PSPath -Force -ErrorAction SilentlyContinue
     $deletedCount++
 }
 certutil -f -delstore Root 05969B177719D7613DBED10B7FBE4A0DD846EB7A | Out-Null
-certutil -user -f -delstore Root 05969B177719D7613DBED10B7FBE4A0DD846EB7A | Out-Null
+certutil -f -delstore Root 38A28A81A89A71CA078369073BD2F0597422983C | Out-Null
 Write-Output "Deleted $deletedCount certificate(s)"
 exit 0
 "#;
         let status = run_elevated_script(script_text);
 
-        // Also run direct user cleanup without elevation
-        let cmd = r#"Get-ChildItem Cert:\CurrentUser\Root -ErrorAction SilentlyContinue | Where-Object { $_.Subject -like "*VelocityRL*" -or $_.Issuer -like "*VelocityRL*" } | Remove-Item -Force -ErrorAction SilentlyContinue"#;
-        let _ = Command::new("powershell")
-            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", cmd])
-            .creation_flags(CREATE_NO_WINDOW)
-            .status();
 
         crate::applog::event("psynet: deleted VelocityRL CA certificates from Windows store");
         status.map(|_| "VelocityRL certificates deleted successfully.".into())

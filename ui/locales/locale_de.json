@@ -1,0 +1,84 @@
+{
+  "nav": {
+    "swapper": "Tauscher",
+    "titles": "Titel",
+    "names": "Namen",
+    "ranks": "Fake-Ränge",
+    "camera": "Kamera",
+    "maps": "Karten",
+    "tracker": "Tracker-Overlay",
+    "misc": "Verschiedenes",
+    "website": "Webseite",
+    "settings": "Einstellungen"
+  },
+  "banner": {
+    "keep_open_title": "VelocityRL Geöffnet Halten",
+    "keep_open_desc": "VelocityRL muss im Hintergrund geöffnet bleiben, damit Titel, Farben und Namen in Rocket League angezeigt werden."
+  },
+  "subtabs": {
+    "swaps": "Täusche",
+    "restore": "Wiederherstellen",
+    "presets": "Vorlagen"
+  },
+  "categories": {
+    "all": "Alle Gegenstände",
+    "bodies": "Karosserien",
+    "decals": "Aufkleber",
+    "wheels": "Räder",
+    "boosts": "Raketenspuren",
+    "antennas": "Antennen",
+    "toppers": "Dachaufsätze",
+    "explosions": "Torexplosionen"
+  },
+  "swapper": {
+    "owned_item": "Eigener Gegenstand",
+    "target_asset": "Ziel-Gegenstand",
+    "search_owned": "Eigene Gegenstände suchen...",
+    "search_target": "Zielgegenstände suchen...",
+    "no_item_selected": "Kein Gegenstand ausgewählt",
+    "paint": "Farbe",
+    "swap_btn": "Gegenstände Tauschen",
+    "rl_running_hint": "Rocket League läuft — bitte vor dem Tauschen oder Wiederherstellen schließen."
+  },
+  "palette": {
+    "title": "Farbpalette",
+    "desc": "Schaltet benutzerdefinierte Teamfarben und erweiterte Paletten in Rocket League frei.",
+    "apply": "Anwenden",
+    "restore": "Wiederherstellen"
+  },
+  "settings": {
+    "title": "Einstellungen",
+    "language": "Sprache",
+    "game_path": "Rocket League CookedPCConsole Pfad",
+    "path_placeholder": "CookedPCConsole Ordnerpfad",
+    "autodetect": "Automatisch erkennen",
+    "browse": "Durchsuchen",
+    "startup_title": "Mit Windows starten",
+    "startup_desc": "Startet VelocityRL beim Anmelden automatisch im Hintergrund",
+    "privacy_policy": "Datenschutzerklärung",
+    "save": "Speichern"
+  },
+  "dialogs": {
+    "cancel": "Abbrechen",
+    "ok": "OK",
+    "close": "Schließen"
+  },
+  "logs": {
+    "proxy_listen": "proxy: hört auf 127.0.0.1:443",
+    "proxy_listen_v6": "proxy: hört auf [::1]:443",
+    "broker_listen": "broker: hört auf {url}",
+    "health_ok": "proxy: Loopback-TLS-Statusprüfung auf 127.0.0.1:443 bestätigt bei Versuch {attempt}",
+    "health_fail": "proxy: Loopback-Statusprüfung Versuch {attempt}/6 fehlgeschlagen: {err}",
+    "config_intercepted": "proxy: >>> GET {path} (battlecars={battlecars})",
+    "config_patched": "proxy: Konfiguration gepatcht ({bytes} Bytes)",
+    "config_unpatched": "proxy: ungepatchte Konfiguration ({bytes} Bytes)",
+    "ws_connected": "proxy: WebSocket Upstream verbunden mit {host}",
+    "ws_tunnel_ready": "proxy: WebSocket-Client-Tunnel aufgebaut",
+    "ranks_saved": "proxy: {count} Wiedergabelisten in real_skill.json gespeichert",
+    "ranks_patched": "proxy: Fake-Ränge WS-Frame gepatcht ({old_bytes} -> {new_bytes} Bytes)",
+    "auth_cached": "broker: AuthPlayer PsyToken und Sitzung ({session}...) für WS zwischengespeichert",
+    "auth_rewritten": "broker: AuthPlayer WS-URL auf lokalen Broker umgeschrieben ({url})",
+    "palette_synced": "psynet: palette_spoof synchronisiert -> {status}",
+    "build_detected": "proxy: Spiel-Build-ID erkannt: {build_id}"
+  }
+}

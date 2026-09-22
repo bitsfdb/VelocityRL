@@ -104,10 +104,6 @@ pub struct OverlayStatePayload {
     #[serde(default)]
     pub status_detail: String,
     pub match_active: bool,
-    pub session_rating: i32,
-    pub net_mmr: i32,
-    pub rating_min: i32,
-    pub rating_max: i32,
     pub wins: i32,
     pub losses: i32,
     pub streak: StreakInfo,
@@ -141,11 +137,6 @@ pub struct OverlayConfig {
     pub ws_url: String,
     pub player_primary_id: String,
     pub player_name_fallback: String,
-    pub initial_rating: i32,
-    pub win_delta: i32,
-    pub loss_delta: i32,
-    pub rating_min: i32,
-    pub rating_max: i32,
     pub is_locked: bool,
     pub position: String,
     pub playlist: i32,
@@ -157,11 +148,6 @@ impl Default for OverlayConfig {
             ws_url: "ws://127.0.0.1:49124".into(),
             player_primary_id: "".into(),
             player_name_fallback: "".into(),
-            initial_rating: 0,
-            win_delta: 9,
-            loss_delta: 9,
-            rating_min: 0,
-            rating_max: 3000,
             is_locked: false,
             position: "bottom-right".into(),
             playlist: 11,
@@ -169,7 +155,8 @@ impl Default for OverlayConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct TrackerUiSession {
     #[serde(default = "default_true")]
     pub master_enabled: bool,
@@ -187,15 +174,11 @@ pub struct TrackerUiSession {
     pub overlay_style: String,
     #[serde(default = "default_true")]
     pub is_locked: bool,
-    #[serde(default = "default_delta")]
-    pub win_delta: i32,
-    #[serde(default = "default_delta")]
-    pub loss_delta: i32,
     #[serde(default = "default_playlist")]
     pub playlist: i32,
+    #[serde(default)]
+    pub hash: String,
 }
-
-fn default_delta() -> i32 { 9 }
 
 fn default_true() -> bool { true }
 fn default_position() -> String { "bottom-right".into() }
@@ -203,9 +186,38 @@ fn default_scale() -> i32 { 100 }
 fn default_opacity() -> i32 { 85 }
 fn default_style() -> String { "circle".into() }
 
+impl TrackerUiSession {
+    pub fn compute_hash(&self) -> String {
+        use sha2::{Digest, Sha256};
+        let input = format!(
+            "vrl-ui-v2:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+            self.master_enabled,
+            self.auto_launch_game,
+            self.position,
+            self.display_name,
+            self.scale,
+            self.opacity,
+            self.overlay_style,
+            self.is_locked,
+            self.playlist
+        );
+        let mut hasher = Sha256::new();
+        hasher.update(input.as_bytes());
+        format!("{:x}", hasher.finalize())
+    }
+
+    pub fn is_valid(&self) -> bool {
+        !self.hash.is_empty() && self.hash == self.compute_hash()
+    }
+
+    pub fn seal(&mut self) {
+        self.hash = self.compute_hash();
+    }
+}
+
 impl Default for TrackerUiSession {
     fn default() -> Self {
-        Self {
+        let mut s = Self {
             master_enabled: true,
             auto_launch_game: true,
             position: "bottom-right".into(),
@@ -214,9 +226,47 @@ impl Default for TrackerUiSession {
             opacity: 85,
             overlay_style: "circle".into(),
             is_locked: true,
-            win_delta: 9,
-            loss_delta: 9,
             playlist: 11,
-        }
+            hash: String::new(),
+        };
+        s.seal();
+        s
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tracker_ui_session_validity() {
+        let mut session = TrackerUiSession::default();
+        assert!(session.is_valid());
+
+        session.scale = 150;
+        assert!(!session.is_valid(), "modifying field without seal must invalidate session");
+
+        session.seal();
+        assert!(session.is_valid());
+    }
+
+    #[test]
+    fn test_tracker_ui_session_rejects_legacy_delta_fields() {
+        let legacy_json = r#"{
+            "master_enabled": false,
+            "auto_launch_game": true,
+            "position": "custom:1479,840",
+            "display_name": "",
+            "scale": 100,
+            "opacity": 100,
+            "overlay_style": "circle",
+            "is_locked": true,
+            "win_delta": 9,
+            "loss_delta": 9,
+            "playlist": 11
+        }"#;
+
+        let result = serde_json::from_str::<TrackerUiSession>(legacy_json);
+        assert!(result.is_err(), "legacy delta fields must be rejected by deny_unknown_fields");
     }
 }

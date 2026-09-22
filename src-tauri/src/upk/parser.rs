@@ -54,7 +54,7 @@ pub struct NameEntry {
     pub flags: u64,
 }
 
-fn read_i32(c: &mut Cursor<&[u8]>) -> io::Result<i32> {
+pub(crate) fn read_i32(c: &mut Cursor<&[u8]>) -> io::Result<i32> {
     let mut b = [0u8; 4];
     c.read_exact(&mut b)?;
     Ok(i32::from_le_bytes(b))

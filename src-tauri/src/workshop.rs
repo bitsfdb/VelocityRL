@@ -104,7 +104,7 @@ pub async fn workshop_search_maps(_app: AppHandle, query: String) -> Result<Vec<
         .map_err(|e| e.to_string())?;
     let mut url = format!("{API_BASE}/v2/rl/workshop/maps");
     if !query.trim().is_empty() {
-        url.push_str(&format!("?q={}", urlenc(&query)));
+        url.push_str(&format!("?q={}", url_encode(&query)));
     }
     let resp = client
         .get(url)
@@ -141,7 +141,7 @@ pub async fn workshop_fetch_bakkes_maps(
     if let Some(ref q) = query {
         let trimmed = q.trim();
         if !trimmed.is_empty() {
-            url.push_str(&format!("&search={}", urlenc(trimmed)));
+            url.push_str(&format!("&search={}", url_encode(trimmed)));
         }
     }
 
@@ -224,7 +224,7 @@ pub async fn workshop_fetch_bakkes_versions(
     Ok(json)
 }
 
-fn urlenc(s: &str) -> String {
+fn url_encode(s: &str) -> String {
     let mut out = String::new();
     for b in s.bytes() {
         match b {
@@ -246,7 +246,7 @@ fn workshop_state_path(app: &AppHandle) -> Option<PathBuf> {
     Some(app.path().app_config_dir().ok()?.join("workshop_state.json"))
 }
 
-fn read_installed(app: &AppHandle) -> Option<WorkshopInstalled> {
+pub(crate) fn read_installed(app: &AppHandle) -> Option<WorkshopInstalled> {
     let p = workshop_state_path(app)?;
     let v: serde_json::Value = serde_json::from_str(&fs::read_to_string(p).ok()?).ok()?;
     Some(WorkshopInstalled {
@@ -261,10 +261,6 @@ fn read_installed(app: &AppHandle) -> Option<WorkshopInstalled> {
 #[tauri::command]
 pub fn workshop_get_installed(app: AppHandle) -> Result<Option<WorkshopInstalled>, String> {
     Ok(read_installed(&app))
-}
-
-pub fn read_installed_pub(app: &AppHandle) -> Option<WorkshopInstalled> {
-    read_installed(app)
 }
 
 #[tauri::command]

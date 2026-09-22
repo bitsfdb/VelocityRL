@@ -149,6 +149,37 @@ pub fn process_path(_pid: u32) -> Option<std::path::PathBuf> {
 }
 
 #[cfg(windows)]
+pub fn terminate_process(pid: u32) -> bool {
+    use windows_sys::Win32::System::Threading::{OpenProcess, TerminateProcess, PROCESS_TERMINATE};
+    if pid == 0 || pid == std::process::id() {
+        return false;
+    }
+    unsafe {
+        let handle = OpenProcess(PROCESS_TERMINATE, 0, pid);
+        if !handle.is_null() && handle as isize != -1 {
+            let _guard = AutoHandle(handle);
+            if TerminateProcess(handle, 1) != 0 {
+                return true;
+            }
+        }
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/PID", &pid.to_string()])
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
+            .output();
+    }
+    true
+}
+
+#[cfg(not(windows))]
+pub fn terminate_process(_pid: u32) -> bool {
+    false
+}
+
+#[cfg(windows)]
 pub fn is_elevated() -> bool {
     use windows_sys::Win32::Foundation::HANDLE;
     use windows_sys::Win32::Security::{
@@ -339,3 +370,59 @@ pub fn loopback_443_owner() -> Option<u32> {
 pub fn flush_dns_cache() -> bool {
     true
 }
+
+#[cfg(windows)]
+pub fn to_wide_null(p: &std::path::Path) -> Vec<u16> {
+    use std::os::windows::ffi::OsStrExt;
+    p.as_os_str().encode_wide().chain(std::iter::once(0)).collect()
+}
+
+#[cfg(windows)]
+pub fn replace_file_atomic(from: &std::path::Path, to: &std::path::Path) -> Result<(), std::io::Error> {
+    const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
+    const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn MoveFileExW(existing: *const u16, new: *const u16, flags: u32) -> i32;
+    }
+    let src = to_wide_null(from);
+    let dst = to_wide_null(to);
+    let ok = unsafe {
+        MoveFileExW(
+            src.as_ptr(),
+            dst.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if ok == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+pub fn replace_file_atomic(from: &std::path::Path, to: &std::path::Path) -> Result<(), std::io::Error> {
+    std::fs::rename(from, to)
+}
+
+#[cfg(windows)]
+pub fn refresh_wininet_settings() {
+    #[link(name = "wininet")]
+    extern "system" {
+        fn InternetSetOptionW(
+            h_internet: *mut std::ffi::c_void,
+            dw_option: u32,
+            lp_buffer: *mut std::ffi::c_void,
+            dw_buffer_length: u32,
+        ) -> i32;
+    }
+    const INTERNET_OPTION_SETTINGS_CHANGED: u32 = 39;
+    const INTERNET_OPTION_REFRESH: u32 = 37;
+    unsafe {
+        InternetSetOptionW(std::ptr::null_mut(), INTERNET_OPTION_SETTINGS_CHANGED, std::ptr::null_mut(), 0);
+        InternetSetOptionW(std::ptr::null_mut(), INTERNET_OPTION_REFRESH, std::ptr::null_mut(), 0);
+    }
+}
+
+#[cfg(not(windows))]
+pub fn refresh_wininet_settings() {}
