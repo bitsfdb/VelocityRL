@@ -11,6 +11,12 @@
     nsExec::Exec 'certutil -f -addstore Root "$INSTDIR\psynet_proxy\velocityrl_ca.crt"'
     nsExec::Exec 'certutil -user -f -addstore Root "$INSTDIR\psynet_proxy\velocityrl_ca.crt"'
   ${EndIf}
+
+  DetailPrint "Configuring WinINet certificate revocation policy..."
+  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Internet Settings" "CertificateRevocation" 0
+  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Internet Settings" "CertificateRevocation" 0
+  WriteRegDWORD HKLM "SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings" "CertificateRevocation" 0
+  WriteRegDWORD HKLM "SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Internet Settings" "CertificateRevocation" 0
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
