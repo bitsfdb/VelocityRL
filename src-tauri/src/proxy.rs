@@ -25,6 +25,7 @@ const LEAF_WS_CERT_PEM: &[u8] =
 const LEAF_WS_KEY_PEM: &[u8] =
     include_bytes!("../resources/certs/leaf_ws.rlpp.psynet.gg.key");
 const CA_CERT_PEM: &[u8] = include_bytes!("../resources/certs/velocityrl_ca.crt");
+const CA_CRL_DER: &[u8] = include_bytes!("../resources/certs/velocityrl.crl");
 
 const PSY_CDN_KEY: &[u8] = b"cqhyz50f3c3j2pxhwo6b1kypxikah0wh";
 const PSY_RESP_KEY: &[u8] = b"3b932153785842ac927744b292e40e52";
@@ -113,6 +114,10 @@ pub fn leaf_config_cert_bytes() -> &'static [u8] {
 
 pub fn leaf_ws_cert_bytes() -> &'static [u8] {
     LEAF_WS_CERT_PEM
+}
+
+pub fn ca_crl_bytes() -> &'static [u8] {
+    CA_CRL_DER
 }
 
 pub fn is_proxy_running() -> bool {
