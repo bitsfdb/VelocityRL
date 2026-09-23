@@ -171,6 +171,16 @@ pub struct CameraSpoofPayload {
     pub distance: CameraLimitPayload,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct NameSpoofPayload {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub display_name: String,
+    #[serde(default)]
+    pub real_name: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SpoofPayload {
     #[serde(default = "default_true")]
@@ -185,6 +195,9 @@ pub struct SpoofPayload {
     pub category: String,
     #[serde(default)]
     pub custom_name: String,
+
+    #[serde(default)]
+    pub name_spoof: Option<NameSpoofPayload>,
 
     #[serde(default)]
     pub logo_spoof: Option<LogoSpoofPayload>,
@@ -308,6 +321,7 @@ pub fn default_spoof_payload() -> SpoofPayload {
         custom_text: "RLCS X Champion".into(),
         category: "RLCS_Champion".into(),
         custom_name: String::new(),
+        name_spoof: None,
         logo_spoof: None,
         blog_spoof: None,
         camera_spoof: None,
@@ -600,6 +614,16 @@ fn write_spoof(dir: &Path, payload: &SpoofPayload) -> Result<PathBuf, String> {
         if !payload.custom_name.is_empty() {
             obj.insert("custom_name".into(), serde_json::json!(payload.custom_name));
         }
+        if let Some(ns) = &payload.name_spoof {
+            obj.insert(
+                "name_spoof".into(),
+                serde_json::json!({
+                    "enabled": ns.enabled,
+                    "display_name": ns.display_name.trim(),
+                    "real_name": ns.real_name.as_deref().unwrap_or("").trim(),
+                }),
+            );
+        }
         if let Some(ls) = &payload.logo_spoof {
 
             obj.insert(
@@ -804,8 +828,68 @@ fn loopback443_status() -> (bool, Option<String>) {
     (crate::proxy::is_proxy_running(), Some("VelocityRL".to_string()))
 }
 
+#[cfg(windows)]
+extern "system" {
+    fn LoadLibraryA(lpLibFileName: *const u8) -> *mut std::ffi::c_void;
+    fn GetProcAddress(hModule: *mut std::ffi::c_void, lpProcName: *const u8) -> *mut std::ffi::c_void;
+    fn FreeLibrary(hModule: *mut std::ffi::c_void) -> i32;
+}
+
+#[cfg(windows)]
+pub fn notify_system_proxy_changed() {
+    const INTERNET_OPTION_SETTINGS_CHANGED: u32 = 39;
+    const INTERNET_OPTION_REFRESH: u32 = 37;
+
+    unsafe {
+        let lib = LoadLibraryA(b"wininet.dll\0".as_ptr());
+        if !lib.is_null() {
+            let proc = GetProcAddress(lib, b"InternetSetOptionW\0".as_ptr());
+            if !proc.is_null() {
+                let internet_set_option: unsafe extern "system" fn(
+                    *mut std::ffi::c_void,
+                    u32,
+                    *mut std::ffi::c_void,
+                    u32,
+                ) -> i32 = std::mem::transmute(proc);
+
+                internet_set_option(std::ptr::null_mut(), INTERNET_OPTION_SETTINGS_CHANGED, std::ptr::null_mut(), 0);
+                internet_set_option(std::ptr::null_mut(), INTERNET_OPTION_REFRESH, std::ptr::null_mut(), 0);
+            }
+            FreeLibrary(lib);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn notify_system_proxy_changed() {}
+
+#[cfg(windows)]
+pub fn set_system_proxy_enabled(enabled: bool) {
+    use winreg::enums::*;
+    use winreg::RegKey;
+
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    if let Ok((key, _)) = hkcu.create_subkey(r"Software\Microsoft\Windows\CurrentVersion\Internet Settings") {
+        if enabled {
+            let _ = key.set_value("ProxyEnable", &1u32);
+            let proxy_addr = format!("127.0.0.1:{}", crate::proxy::SYSTEM_PROXY_PORT);
+            let _ = key.set_value("ProxyServer", &proxy_addr);
+            let _ = key.set_value("ProxyOverride", &"<local>");
+            crate::applog::event(&format!("psynet: system proxy enabled -> {proxy_addr}"));
+        } else {
+            let _ = key.set_value("ProxyEnable", &0u32);
+            crate::applog::event("psynet: system proxy disabled");
+        }
+    }
+    notify_system_proxy_changed();
+}
+
+#[cfg(not(windows))]
+pub fn set_system_proxy_enabled(_enabled: bool) {}
+
 pub fn kill_proxy_on_exit() {
     crate::applog::event("psynet: exit cleanup — stopping proxy and reverting hosts");
+    set_system_proxy_enabled(false);
     crate::proxy::stop_native_proxy(true);
     let _ = revert_config_hosts();
 }
@@ -1012,26 +1096,30 @@ pub fn install_ca_and_crl_elevated() {
     let ca_b64 = base64::engine::general_purpose::STANDARD.encode(crate::proxy::ca_cert_bytes());
     let leaf_cfg_b64 = base64::engine::general_purpose::STANDARD
         .encode(crate::proxy::leaf_config_cert_bytes());
+    let leaf_epic_b64 = base64::engine::general_purpose::STANDARD
+        .encode(crate::proxy::leaf_epic_cert_bytes());
     let crl_b64 =
         base64::engine::general_purpose::STANDARD.encode(crate::proxy::ca_crl_bytes());
     let pid = std::process::id();
     let script = format!(
         r##"$ErrorActionPreference = "SilentlyContinue"
-$tmpCa  = Join-Path $env:TEMP "velocityrl_ca_{pid}.crt"
-$tmpCfg = Join-Path $env:TEMP "velocityrl_cfg_{pid}.crt"
-$tmpCrl = Join-Path $env:TEMP "velocityrl_{pid}.crl"
-[System.IO.File]::WriteAllBytes($tmpCa,  [System.Convert]::FromBase64String("{ca_b64}"))
-[System.IO.File]::WriteAllBytes($tmpCfg, [System.Convert]::FromBase64String("{leaf_cfg_b64}"))
-[System.IO.File]::WriteAllBytes($tmpCrl, [System.Convert]::FromBase64String("{crl_b64}"))
+$tmpCa   = Join-Path $env:TEMP "velocityrl_ca_{pid}.crt"
+$tmpCfg  = Join-Path $env:TEMP "velocityrl_cfg_{pid}.crt"
+$tmpEpic = Join-Path $env:TEMP "velocityrl_epic_{pid}.crt"
+$tmpCrl  = Join-Path $env:TEMP "velocityrl_{pid}.crl"
+[System.IO.File]::WriteAllBytes($tmpCa,   [System.Convert]::FromBase64String("{ca_b64}"))
+[System.IO.File]::WriteAllBytes($tmpCfg,  [System.Convert]::FromBase64String("{leaf_cfg_b64}"))
+[System.IO.File]::WriteAllBytes($tmpEpic, [System.Convert]::FromBase64String("{leaf_epic_b64}"))
+[System.IO.File]::WriteAllBytes($tmpCrl,  [System.Convert]::FromBase64String("{crl_b64}"))
 try {{
-    foreach ($f in @($tmpCa, $tmpCfg, $tmpCrl)) {{
+    foreach ($f in @($tmpCa, $tmpCfg, $tmpEpic, $tmpCrl)) {{
         certutil -f -addstore Root $f | Out-Null
         certutil -user -f -addstore Root $f | Out-Null
         certutil -f -addstore CA $f | Out-Null
         certutil -user -f -addstore CA $f | Out-Null
     }}
 }} finally {{
-    Remove-Item -LiteralPath $tmpCa, $tmpCfg, $tmpCrl -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $tmpCa, $tmpCfg, $tmpEpic, $tmpCrl -Force -ErrorAction SilentlyContinue
 }}
 "##
     );
@@ -1648,6 +1736,9 @@ pub async fn save_psynet_spoof(
     let _guard = PROXY_LIFECYCLE.lock().await;
     let dir = config_dir();
     let path = write_spoof(&dir, &payload)?;
+    if let Some(ns) = &payload.name_spoof {
+        set_system_proxy_enabled(ns.enabled);
+    }
     crate::proxy::set_spoof_config(payload).await;
     let _ = state;
 
@@ -1879,6 +1970,14 @@ pub async fn start_psynet_proxy(
     *state.running.lock().map_err(|e| e.to_string())? = true;
     let flushed = crate::winprobe::flush_dns_cache();
     let _ = clear_rocket_league_cache();
+    let name_spoof_active = read_or_default_spoof(&dir)
+        .ok()
+        .and_then(|p| p.name_spoof)
+        .map(|n| n.enabled)
+        .unwrap_or(false);
+    if name_spoof_active {
+        set_system_proxy_enabled(true);
+    }
     crate::applog::event(&format!(
         "psynet: native proxy running; hosts_redirected={} port443_ok=true dns_flushed={flushed}",
         psynet_hosts_redirected()
@@ -1949,6 +2048,7 @@ pub async fn stop_psynet_proxy(
     let _guard = PROXY_LIFECYCLE.lock().await;
     let do_revert = revert_hosts.unwrap_or(false);
 
+    set_system_proxy_enabled(false);
     crate::proxy::stop_native_proxy(do_revert);
 
     if do_revert {
@@ -1972,12 +2072,13 @@ pub async fn restart_psynet_proxy(
     crate::applog::event("psynet: restart requested (native Rust proxy)");
     let _guard = PROXY_LIFECYCLE.lock().await;
 
+    set_system_proxy_enabled(false);
     crate::proxy::stop_native_proxy(false);
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
     let dir = config_dir();
     let cfg = read_or_default_spoof(&dir)?;
-    crate::proxy::set_spoof_config(cfg).await;
+    crate::proxy::set_spoof_config(cfg.clone()).await;
 
     if let Err(e) = crate::proxy::start_native_proxy().await {
         crate::applog::event(&format!("psynet: restart listen failed: {e}"));
@@ -2001,6 +2102,8 @@ pub async fn restart_psynet_proxy(
 
     *state.running.lock().map_err(|e| e.to_string())? = true;
     let flushed = crate::winprobe::flush_dns_cache();
+    let name_spoof_active = cfg.name_spoof.as_ref().map(|n| n.enabled).unwrap_or(false);
+    set_system_proxy_enabled(name_spoof_active);
     crate::applog::event(&format!("psynet: proxy restart complete; running=true dns_flushed={flushed}"));
 
     Ok(status_for(Some(dir), true))
@@ -2136,6 +2239,7 @@ pub fn delete_ca_certificates() -> Result<String, String> {
         let current_thumb = bundled_ca_thumbprint();
         let all_thumbs = [
             current_thumb.as_str(),
+            "0DBB5FBF9A1E635A2414AE14BAEF375D25755BFB",
             "05969B177719D7613DBED10B7FBE4A0DD846EB7A",
             "38A28A81A89A71CA078369073BD2F0597422983C",
             "3AF665291A560DFE85D68950AF29FA588B567ACE",
@@ -2164,6 +2268,7 @@ pub fn delete_ca_certificates() -> Result<String, String> {
         }
         cleanup_known_stale_roots();
         clean_ca_from_pem_bundles();
+        set_system_proxy_enabled(false);
 
         let script_text = r#"$ErrorActionPreference = "SilentlyContinue"
 $deletedCount = 0
@@ -2189,7 +2294,7 @@ foreach ($c in $certs) {
     Remove-Item -LiteralPath $c.PSPath -Force -ErrorAction SilentlyContinue
     $deletedCount++
 }
-foreach ($t in @("05969B177719D7613DBED10B7FBE4A0DD846EB7A", "38A28A81A89A71CA078369073BD2F0597422983C", "3AF665291A560DFE85D68950AF29FA588B567ACE", "E3BD3E2AFB6D30FC8B6DC87752CA68E73A648E76", "CFFF312D754F62344E30E11D128CDB1F35CF8FC8", "290193877074751336AECEE8554F0D065F8F11CE", "9DB9369DF51127837DC086DBA047B8DBB4A626D3", "A3B9C9546F22BC05C21BBF427ED966EF2FE0F211", "1D4DA3995F3CF0905932A3678C4029E610784EF8", "11B5D05A6588541C1E0A61604A9B47FFDEA48BB9")) {
+foreach ($t in @("0DBB5FBF9A1E635A2414AE14BAEF375D25755BFB", "05969B177719D7613DBED10B7FBE4A0DD846EB7A", "38A28A81A89A71CA078369073BD2F0597422983C", "3AF665291A560DFE85D68950AF29FA588B567ACE", "E3BD3E2AFB6D30FC8B6DC87752CA68E73A648E76", "CFFF312D754F62344E30E11D128CDB1F35CF8FC8", "290193877074751336AECEE8554F0D065F8F11CE", "9DB9369DF51127837DC086DBA047B8DBB4A626D3", "A3B9C9546F22BC05C21BBF427ED966EF2FE0F211", "1D4DA3995F3CF0905932A3678C4029E610784EF8", "11B5D05A6588541C1E0A61604A9B47FFDEA48BB9")) {
     certutil -f -delstore Root $t | Out-Null
     certutil -user -f -delstore Root $t | Out-Null
     certutil -f -delstore CA $t | Out-Null

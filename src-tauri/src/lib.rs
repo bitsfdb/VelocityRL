@@ -104,9 +104,9 @@ where
 struct Item {
     #[serde(alias = "id-rl-garage", alias = "id", alias = "ID")]
     id: i32,
-    #[serde(alias = "name", alias = "Product")]
+    #[serde(alias = "name", alias = "Product", alias = "label", alias = "long_label")]
     product: String,
-    #[serde(default, alias = "src")]
+    #[serde(default, alias = "src", alias = "thumbnail", alias = "image_url")]
     image_url: String,
     #[serde(default, alias = "AssetPackage", alias = "asset_package")]
     asset_package: String,
@@ -114,14 +114,14 @@ struct Item {
     slot: String,
     #[serde(default, alias = "Quality", alias = "quality")]
     quality: String,
-    #[serde(default, alias = "Paintable", deserialize_with = "opt_paintable")]
+    #[serde(default, alias = "Paintable", alias = "paintable", deserialize_with = "opt_paintable")]
     #[serde(skip_serializing_if = "Option::is_none")]
     paintable: Option<bool>,
-    #[serde(default, alias = "Attributes")]
+    #[serde(default, alias = "Attributes", alias = "attributes")]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     attributes: Vec<ItemAttribute>,
 
-    #[serde(default, alias = "DLC")]
+    #[serde(default, alias = "DLC", alias = "dlc")]
     #[serde(skip_serializing_if = "String::is_empty")]
     dlc: String,
 }
@@ -187,7 +187,11 @@ fn item_is_paintable(item: &Item) -> bool {
 enum ItemsResponse {
     Database {
         #[serde(alias = "Items", alias = "items")]
-        items: Vec<Item>
+        items: Vec<Item>,
+        #[serde(default)]
+        meta: Option<serde_json::Value>,
+        #[serde(default)]
+        categories: Option<serde_json::Value>,
     },
     List(Vec<Item>),
 }
@@ -353,7 +357,7 @@ async fn parse_items_slice(bytes: Vec<u8>) -> Result<Vec<Item>, String> {
         let resp = serde_json::from_slice::<ItemsResponse>(&bytes)
             .map_err(|e| format!("JSON parse error: {e}"))?;
         let mut items = match resp {
-            ItemsResponse::Database { items } => items,
+            ItemsResponse::Database { items, .. } => items,
             ItemsResponse::List(items) => items,
         };
         populate_thumbnails(&mut items);
@@ -1910,14 +1914,24 @@ pub fn run() {
                             }
                         }
                     }
-                    if let Some(cfg) = psynet::load_active_spoof_from_disk() {
-                        crate::proxy::set_spoof_config(cfg).await;
+                    psynet::set_system_proxy_enabled(false);
+                    let active_cfg = psynet::load_active_spoof_from_disk();
+                    if let Some(ref cfg) = active_cfg {
+                        crate::proxy::set_spoof_config(cfg.clone()).await;
                     }
                     psynet::ensure_wininet_revocation_disabled();
                     match crate::proxy::start_native_proxy().await {
-                        Ok(()) => applog::event("psynet: native proxy auto-started on port 443"),
+                        Ok(()) => {
+                            applog::event("psynet: native proxy auto-started on port 443");
+                            if let Some(cfg) = &active_cfg {
+                                if cfg.name_spoof.as_ref().map(|n| n.enabled).unwrap_or(false) {
+                                    psynet::set_system_proxy_enabled(true);
+                                }
+                            }
+                        }
                         Err(e) => {
                             applog::event(&format!("psynet: proxy auto-start failed: {e}"));
+                            psynet::set_system_proxy_enabled(false);
                             let _ = psynet::revert_config_hosts();
                             return;
                         }

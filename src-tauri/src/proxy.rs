@@ -24,8 +24,66 @@ const LEAF_WS_CERT_PEM: &[u8] =
     include_bytes!("../resources/certs/leaf_ws.rlpp.psynet.gg.crt");
 const LEAF_WS_KEY_PEM: &[u8] =
     include_bytes!("../resources/certs/leaf_ws.rlpp.psynet.gg.key");
+const LEAF_EPIC_CERT_PEM: &[u8] =
+    include_bytes!("../resources/certs/leaf_epic.crt");
+const LEAF_EPIC_KEY_PEM: &[u8] =
+    include_bytes!("../resources/certs/leaf_epic.key");
 const CA_CERT_PEM: &[u8] = include_bytes!("../resources/certs/velocityrl_ca.crt");
 const CA_CRL_DER: &[u8] = include_bytes!("../resources/certs/velocityrl.crl");
+
+pub fn leaf_epic_cert_bytes() -> &'static [u8] {
+    LEAF_EPIC_CERT_PEM
+}
+
+pub const SYSTEM_PROXY_PORT: u16 = 27580;
+
+pub fn is_intercept_target(host: &str) -> bool {
+    let h = host.trim().to_ascii_lowercase();
+    let domain = h.split(':').next().unwrap_or(&h);
+    domain.ends_with(".epicgames.com")
+        || domain == "epicgames.com"
+        || domain.ends_with(".epicgames.dev")
+        || domain == "epicgames.dev"
+        || domain.ends_with(".psyonix.com")
+        || domain == "psyonix.com"
+        || domain.ends_with(".live.psynet.gg")
+        || domain == "live.psynet.gg"
+}
+
+fn replace_display_names(val: &mut serde_json::Value, new_name: &str, filter_real_name: Option<&str>) -> bool {
+    let mut modified = false;
+    match val {
+        serde_json::Value::Object(map) => {
+            for (k, v) in map.iter_mut() {
+                if k.eq_ignore_ascii_case("displayName") {
+                    if let Some(s) = v.as_str() {
+                        let should_replace = match filter_real_name {
+                            Some(real) if !real.is_empty() => s.eq_ignore_ascii_case(real),
+                            _ => true,
+                        };
+                        if should_replace && s != new_name {
+                            *v = serde_json::json!(new_name);
+                            modified = true;
+                        }
+                    }
+                } else {
+                    if replace_display_names(v, new_name, filter_real_name) {
+                        modified = true;
+                    }
+                }
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr.iter_mut() {
+                if replace_display_names(v, new_name, filter_real_name) {
+                    modified = true;
+                }
+            }
+        }
+        _ => {}
+    }
+    modified
+}
 
 const PSY_CDN_KEY: &[u8] = b"cqhyz50f3c3j2pxhwo6b1kypxikah0wh";
 const PSY_RESP_KEY: &[u8] = b"3b932153785842ac927744b292e40e52";
@@ -138,6 +196,7 @@ pub async fn get_spoof_config() -> Option<crate::psynet::SpoofPayload> {
 struct SniCertResolver {
     config_key: Arc<CertifiedKey>,
     ws_key: Arc<CertifiedKey>,
+    epic_key: Arc<CertifiedKey>,
 }
 
 impl ResolvesServerCert for SniCertResolver {
@@ -151,6 +210,9 @@ impl ResolvesServerCert for SniCertResolver {
             }
             if lower.contains("config.psynet.gg") {
                 return Some(self.config_key.clone());
+            }
+            if is_intercept_target(&lower) {
+                return Some(self.epic_key.clone());
             }
         }
         Some(self.config_key.clone())
@@ -178,16 +240,18 @@ fn create_tls_acceptor() -> Result<TlsAcceptor, String> {
     let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
     let config_key = load_certified_key(LEAF_CONFIG_CERT_PEM, LEAF_CONFIG_KEY_PEM)?;
     let ws_key = load_certified_key(LEAF_WS_CERT_PEM, LEAF_WS_KEY_PEM)?;
+    let epic_key = load_certified_key(LEAF_EPIC_CERT_PEM, LEAF_EPIC_KEY_PEM)?;
 
     let mut server_config = ServerConfig::builder_with_provider(Arc::new(
         tokio_rustls::rustls::crypto::ring::default_provider(),
     ))
     .with_protocol_versions(&[
         &tokio_rustls::rustls::version::TLS12,
+        &tokio_rustls::rustls::version::TLS13,
     ])
     .map_err(|e| format!("failed to set TLS protocol versions: {e}"))?
     .with_no_client_auth()
-    .with_cert_resolver(Arc::new(SniCertResolver { config_key, ws_key }));
+    .with_cert_resolver(Arc::new(SniCertResolver { config_key, ws_key, epic_key }));
 
     server_config.alpn_protocols = vec![b"http/1.1".to_vec()];
 
@@ -316,8 +380,48 @@ pub async fn start_native_proxy() -> Result<(), String> {
 
     let (stop_tx, mut stop_rx_443) = tokio::sync::watch::channel(false);
     let mut stop_rx_80 = stop_tx.subscribe();
+    let mut stop_rx_forward = stop_tx.subscribe();
     *PROXY_STOP_TX.lock().unwrap() = Some(stop_tx);
     PROXY_RUNNING.store(true, Ordering::SeqCst);
+
+    if let Ok(listener_forward) = tokio::net::TcpListener::bind(format!("127.0.0.1:{SYSTEM_PROXY_PORT}")).await {
+        crate::applog::event(&format!("proxy: listening on 127.0.0.1:{SYSTEM_PROXY_PORT} (System Forward Proxy)"));
+        let acceptor_forward = acceptor.clone();
+        let forward_client = reqwest::Client::builder()
+            .no_gzip()
+            .no_brotli()
+            .no_deflate()
+            .build()
+            .unwrap_or_default();
+
+        tokio::spawn(async move {
+            loop {
+                let conn = tokio::select! {
+                    _ = stop_rx_forward.changed() => {
+                        crate::applog::event("proxy: forward proxy shutting down");
+                        break;
+                    }
+                    res = listener_forward.accept() => match res {
+                        Ok(c) => c,
+                        Err(e) => {
+                            log::debug!("forward proxy accept error: {e}");
+                            continue;
+                        }
+                    },
+                };
+
+                let (stream, peer_addr) = conn;
+                let acc = acceptor_forward.clone();
+                let client = forward_client.clone();
+
+                tokio::spawn(async move {
+                    handle_forward_proxy_connection(stream, peer_addr, acc, client).await;
+                });
+            }
+        });
+    } else {
+        crate::applog::event(&format!("proxy: failed to bind forward proxy on 127.0.0.1:{SYSTEM_PROXY_PORT}"));
+    }
 
     if let Ok(listener_http) = tokio::net::TcpListener::bind("127.0.0.1:80").await {
         crate::applog::event("proxy: listening on 127.0.0.1:80 (IPv4 HTTP CRL responder)");
@@ -434,6 +538,220 @@ pub async fn start_native_proxy() -> Result<(), String> {
     });
 
     Ok(())
+}
+
+async fn handle_forward_proxy_connection(
+    mut client_stream: tokio::net::TcpStream,
+    peer_addr: std::net::SocketAddr,
+    tls_acceptor: TlsAcceptor,
+    client: reqwest::Client,
+) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let mut buf = [0u8; 4096];
+    let n = match client_stream.peek(&mut buf).await {
+        Ok(n) if n > 0 => n,
+        _ => return,
+    };
+
+    let head = match std::str::from_utf8(&buf[..n]) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+
+    let first_line = match head.lines().next() {
+        Some(l) => l,
+        None => return,
+    };
+
+    let parts: Vec<&str> = first_line.split_whitespace().collect();
+    if parts.is_empty() {
+        return;
+    }
+
+    if parts[0].eq_ignore_ascii_case("CONNECT") {
+        if parts.len() < 2 {
+            return;
+        }
+        let target = parts[1];
+        let header_end = if let Some(pos) = head.find("\r\n\r\n") {
+            pos + 4
+        } else if let Some(pos) = head.find("\n\n") {
+            pos + 2
+        } else {
+            return;
+        };
+
+        let mut discard = vec![0u8; header_end];
+        if client_stream.read_exact(&mut discard).await.is_err() {
+            return;
+        }
+
+        let (host, port) = match target.split_once(':') {
+            Some((h, p)) => (h.trim(), p.trim().parse::<u16>().unwrap_or(443)),
+            None => (target.trim(), 443),
+        };
+
+        if is_intercept_target(host) {
+            crate::applog::event(&format!("forward proxy: intercepting CONNECT {host}:{port} from {peer_addr}"));
+            if client_stream.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n").await.is_err() {
+                return;
+            }
+
+            let tls_stream = match tls_acceptor.accept(client_stream).await {
+                Ok(s) => s,
+                Err(e) => {
+                    crate::applog::event(&format!("forward proxy: TLS handshake failed for {host}: {e}"));
+                    return;
+                }
+            };
+
+            let io = TokioIo::new(tls_stream);
+            let up_host = host.to_string();
+            let service = service_fn(move |req: Request<Incoming>| {
+                let client = client.clone();
+                let up_h = up_host.clone();
+                async move {
+                    handle_forward_intercepted_request(req, up_h, port, client).await
+                }
+            });
+
+            if let Err(e) = hyper::server::conn::http1::Builder::new()
+                .serve_connection(io, service)
+                .await
+            {
+                let err_str = e.to_string();
+                if !err_str.contains("unexpected EOF") && !err_str.contains("error shutting down connection") {
+                    log::debug!("forward proxy http error: {e}");
+                }
+            }
+        } else {
+            // Tunnel raw TCP bytes bidirectionally to destination
+            let mut upstream_conn = match tokio::net::TcpStream::connect((host, port)).await {
+                Ok(c) => c,
+                Err(e) => {
+                    log::debug!("forward proxy tunnel connect failed for {host}:{port}: {e}");
+                    let _ = client_stream.write_all(b"HTTP/1.1 502 Bad Gateway\r\n\r\n").await;
+                    return;
+                }
+            };
+
+            if client_stream.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n").await.is_err() {
+                return;
+            }
+
+            let _ = tokio::io::copy_bidirectional(&mut client_stream, &mut upstream_conn).await;
+        }
+    }
+}
+
+async fn handle_forward_intercepted_request(
+    req: Request<Incoming>,
+    upstream_host: String,
+    upstream_port: u16,
+    client: reqwest::Client,
+) -> Result<Response<ResponseBoxBody>, hyper::Error> {
+    let method = req.method().clone();
+    let uri = req.uri();
+    let path = uri.path();
+    let query = uri.query().map(|q| format!("?{q}")).unwrap_or_default();
+    let url = format!("https://{upstream_host}:{upstream_port}{path}{query}");
+
+    let headers = req.headers().clone();
+    let req_body_bytes = match req.into_body().collect().await {
+        Ok(c) => c.to_bytes().to_vec(),
+        Err(_) => {
+            return Ok(Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body(empty_body())
+                .unwrap());
+        }
+    };
+
+    let mut up_req = client.request(method, &url);
+    for (k, v) in headers.iter() {
+        let k_lower = k.as_str().to_ascii_lowercase();
+        if k_lower != "content-length"
+            && k_lower != "accept-encoding"
+            && k_lower != "if-none-match"
+            && k_lower != "if-modified-since"
+            && k_lower != "if-match"
+            && k_lower != "if-unmodified-since"
+            && k_lower != "if-range"
+        {
+            up_req = up_req.header(k.as_str(), v.as_bytes());
+        }
+    }
+    if !req_body_bytes.is_empty() {
+        up_req = up_req.body(req_body_bytes);
+    }
+
+    let resp = match up_req.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            crate::applog::event(&format!("forward proxy upstream error to {url}: {e}"));
+            return Ok(Response::builder()
+                .status(StatusCode::BAD_GATEWAY)
+                .body(full_body(format!("upstream error: {e}")))
+                .unwrap());
+        }
+    };
+
+    let status = resp.status();
+    let resp_headers = resp.headers().clone();
+    let resp_bytes = match resp.bytes().await {
+        Ok(b) => b.to_vec(),
+        Err(_) => {
+            return Ok(Response::builder()
+                .status(StatusCode::BAD_GATEWAY)
+                .body(empty_body())
+                .unwrap());
+        }
+    };
+
+    let spoof_cfg = get_spoof_config().await;
+    let name_spoof = spoof_cfg
+        .as_ref()
+        .and_then(|c| c.name_spoof.as_ref())
+        .filter(|n| n.enabled && !n.display_name.trim().is_empty());
+
+    let mut final_body = resp_bytes;
+    if let Some(ns) = name_spoof {
+        let is_json = resp_headers
+            .get(hyper::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .map(|ct| ct.contains("application/json") || ct.contains("+json"))
+            .unwrap_or(false);
+
+        if is_json || final_body.starts_with(b"{") || final_body.starts_with(b"[") {
+            if let Ok(mut json_val) = serde_json::from_slice::<serde_json::Value>(&final_body) {
+                let real_filter = ns.real_name.as_deref().map(|s| s.trim()).filter(|s| !s.is_empty());
+                if replace_display_names(&mut json_val, ns.display_name.trim(), real_filter) {
+                    if let Ok(serialized) = serde_json::to_vec(&json_val) {
+                        crate::applog::event(&format!(
+                            "forward proxy: spoofed displayName -> '{}' in response from {}",
+                            ns.display_name.trim(),
+                            upstream_host
+                        ));
+                        final_body = serialized;
+                    }
+                }
+            }
+        }
+    }
+
+    let mut resp_builder = Response::builder().status(status);
+    for (k, v) in resp_headers.iter() {
+        let k_lower = k.as_str().to_ascii_lowercase();
+        if k_lower != "content-length"
+            && k_lower != "content-encoding"
+            && k_lower != "transfer-encoding"
+        {
+            resp_builder = resp_builder.header(k.as_str(), v.as_bytes());
+        }
+    }
+    resp_builder = resp_builder.header("Content-Length", final_body.len().to_string());
+    Ok(resp_builder.body(full_body(final_body)).unwrap())
 }
 
 /// Active loopback health probe: initiates a TLS handshake and HTTP/1.1 request to
@@ -1742,8 +2060,28 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack.windows(needle.len()).position(|w| w == needle)
 }
 
+fn expand_rank_placeholders(text: &str) -> String {
+    text.replace("{Legend}", "Supersonic Legend")
+        .replace("{legend}", "Supersonic Legend")
+        .replace("{GrandChampion}", "Grand Champion")
+        .replace("{grandchampion}", "Grand Champion")
+        .replace("{Champion}", "Champion")
+        .replace("{champion}", "Champion")
+        .replace("{Diamond}", "Diamond")
+        .replace("{diamond}", "Diamond")
+        .replace("{Platinum}", "Platinum")
+        .replace("{platinum}", "Platinum")
+        .replace("{Gold}", "Gold")
+        .replace("{gold}", "Gold")
+        .replace("{Silver}", "Silver")
+        .replace("{silver}", "Silver")
+        .replace("{Bronze}", "Bronze")
+        .replace("{bronze}", "Bronze")
+}
+
 fn replace_equip_text(body: &[u8], equip_id: &str, new_text: &str) -> Option<Vec<u8>> {
-    let encoded_json = serde_json::to_string(new_text).ok()?;
+    let expanded = expand_rank_placeholders(new_text);
+    let encoded_json = serde_json::to_string(&expanded).ok()?;
     if encoded_json.len() < 2 {
         return None;
     }
