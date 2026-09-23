@@ -4394,6 +4394,13 @@ async function loadTitlesDatabase() {
         titlesDb.categories = { ...titlesDb.categories, ...bundledCats };
     };
     try {
+        const res = await fetch('titles.json', { cache: 'no-store' });
+        if (res.ok) {
+            applyLoadedTitles(await res.json());
+            return;
+        }
+    } catch {  }
+    try {
         const res = await fetch(`${API_BASE}/v2/rl/titles`, { cache: 'no-store' });
         if (res.ok) {
             applyLoadedTitles(await res.json());
@@ -4407,7 +4414,7 @@ async function loadTitlesDatabase() {
             return;
         }
     } catch {  }
-    onTitlesLoadFailed('Could not load titles DB from api.velocityrl.tech.');
+    onTitlesLoadFailed('Could not load titles database.');
 }
 
 function categoriesFromTitles(titles) {
