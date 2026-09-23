@@ -1722,24 +1722,6 @@ async function refreshSwapRlHint() {
     }
 }
 
-(function wireKillRl() {
-    document.getElementById('kill-rl-btn')?.addEventListener('click', async (e) => {
-        e.preventDefault();
-        const btn = e.currentTarget;
-        btn.textContent = 'Stopping...';
-        btn.style.pointerEvents = 'none';
-        try {
-            const result = await invoke('kill_rocket_league');
-            showToast(result || 'Rocket League closed', 'success');
-            setTimeout(() => refreshSwapRlHint(), 1500);
-        } catch (err) {
-            showToast(String(err), 'error');
-            btn.textContent = 'close it now';
-            btn.style.pointerEvents = '';
-        }
-    });
-})();
-
 let rlToastShown = false;
 let rlRunningPoll = null;
 function startRlRunningPoll() {
@@ -1766,27 +1748,10 @@ function showRlRunningToast() {
     toast.innerHTML = `
         <div class="toast-content">
             <div style="margin-bottom:6px;font-weight:600;">Rocket League is running</div>
-            <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">Close it before swapping or restoring items.</div>
-            <a href="#" id="toast-kill-rl-btn" style="font-weight:700;color:#fff;text-decoration:underline;cursor:pointer;">Close Rocket League</a>
+            <div style="font-size:12px;color:var(--text-secondary);">Close it before swapping or restoring items.</div>
         </div>
     `;
     container.appendChild(toast);
-    toast.querySelector('#toast-kill-rl-btn')?.addEventListener('click', async (e) => {
-        e.preventDefault();
-        const link = e.currentTarget;
-        link.textContent = 'Stopping...';
-        link.style.pointerEvents = 'none';
-        try {
-            const result = await invoke('kill_rocket_league');
-            showToast(result || 'Rocket League closed', 'success');
-            toast.remove();
-            rlToastShown = false;
-        } catch (err) {
-            showToast(String(err), 'error');
-            link.textContent = 'Close Rocket League';
-            link.style.pointerEvents = '';
-        }
-    });
     setTimeout(() => {
         if (toast.parentNode) {
             toast.style.animation = 'toastSlideOut 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards';
