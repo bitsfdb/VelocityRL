@@ -849,7 +849,12 @@ async fn apply_rich_palette(app: tauri::AppHandle) -> Result<upk::PaletteStatus,
     )
     .map_err(|e| explain_palette_error(e.to_string()))?;
     let mut state = load_integrity(&app);
-    integrity::mark_palette_on(&mut state, &st.fingerprint);
+    // Compute Engine.upk fingerprint now so we can detect future RL updates.
+    let cooked = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let rl_fp = integrity::rl_update_fingerprint_for(Path::new(&cooked));
+    integrity::mark_palette_on_with_rl(&mut state, &st.fingerprint, &rl_fp);
     save_integrity(&app, &state)?;
     let _ = psynet::merge_palette_spoof(true);
     Ok(st)
@@ -1785,7 +1790,26 @@ pub fn run() {
             let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
             let dir = applog::init(app.handle());
             psynet::ensure_wininet_revocation_disabled();
+            // Clear any stale hosts entries left over from a crash or unclean shutdown.
+            // The proxy is not running yet — safe to revert unconditionally.
+            let _ = psynet::revert_config_hosts();
+            // Install CA and CRL to the user certificate store immediately (non-blocking, no UAC).
             psynet::install_user_ca_direct();
+            // If the system (LocalMachine Root) store is missing the CA, trigger an elevated
+            // install now — before the proxy auto-start — so the cert is in place before RL connects.
+            // This catches fresh installs where the NSIS hooks ran but the machine cert store
+            // was wiped (e.g. by antivirus) before the first launch.
+            let ca_ok_at_startup = psynet::is_ca_installed();
+            applog::event(&format!(
+                "startup: system CA installed={ca_ok_at_startup} hosts={}",
+                psynet::config_hosts_complete_pub()
+            ));
+            if !ca_ok_at_startup {
+                applog::event("startup: system CA missing — triggering background install");
+                std::thread::spawn(|| {
+                    psynet::install_ca_and_crl_elevated();
+                });
+            }
             create_main_window(app)?;
             let tracker_state = tracker::init(app.handle());
             app.manage(tracker_state);
@@ -1800,6 +1824,31 @@ pub fn run() {
             let app_handle = app.handle().clone();
             let applied = if let Ok(config) = tauri::async_runtime::block_on(get_config(app_handle.clone())) {
                 if !config.game_dir.is_empty() {
+                    // Detect RL game updates: Engine.upk changes on every RL update.
+                    // If it changed since we applied the palette, the new game binary
+                    // will crash against the old patched TAGame.upk — auto-restore first.
+                    if integrity.palette_active && !integrity.rl_update_fingerprint.is_empty() {
+                        if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                            let current_rl_fp = integrity::rl_update_fingerprint_for(&cooked);
+                            if !current_rl_fp.is_empty() && current_rl_fp != integrity.rl_update_fingerprint {
+                                applog::event(&format!(
+                                    "startup: RL update detected (Engine.upk changed {} -> {}), auto-restoring palette",
+                                    integrity.rl_update_fingerprint, current_rl_fp
+                                ));
+                                match upk::palette::restore_palette_backup(Path::new(&config.game_dir)) {
+                                    Ok(_) => {
+                                        integrity::mark_palette_off(&mut integrity);
+                                        let _ = save_integrity(&app_handle, &integrity);
+                                        applog::event("startup: palette auto-restored after RL update");
+                                    }
+                                    Err(e) => {
+                                        applog::event(&format!("startup: palette auto-restore failed: {e}"));
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     let st = upk::palette::read_palette_status(Path::new(&config.game_dir), None);
                     if integrity.palette_active != st.applied {
                         integrity.palette_active = st.applied;
@@ -1807,6 +1856,7 @@ pub fn run() {
                             integrity.palette_fingerprint = st.fingerprint;
                         } else {
                             integrity.palette_fingerprint.clear();
+                            integrity.rl_update_fingerprint.clear();
                         }
                         let _ = save_integrity(&app_handle, &integrity);
                     }
@@ -1818,6 +1868,7 @@ pub fn run() {
                 integrity.palette_active
             };
             let _ = psynet::merge_palette_spoof(applied);
+
 
             applog::event(&format!(
                 "app setup complete; build {} (v{}, hash {}) logs at {}",

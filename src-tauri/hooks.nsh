@@ -143,4 +143,12 @@
 
   DetailPrint "Restoring hosts file if redirected..."
   nsExec::Exec 'powershell -NoProfile -ExecutionPolicy Bypass -Command "$h = [System.IO.Path]::Combine($env:SystemRoot, \"System32\drivers\etc\hosts\"); if (Test-Path $h) { (Get-Content $h) | Where-Object { $_ -notmatch \"config\.psynet\.gg\" -and $_ -notmatch \"ws\.rlpp\.psynet\.gg\" -and $_ -notmatch \"api\.rlpp\.psynet\.gg\" } | Set-Content $h }"'
+
+  DetailPrint "Removing VelocityRL data directories..."
+  RMDir /r "$APPDATA\VelocityRL"
+  RMDir /r "$LOCALAPPDATA\com.velocityrl.app"
+  RMDir /r "$LOCALAPPDATA\Programs\VelocityRL"
+
+  DetailPrint "Removing installation directory..."
+  RMDir /r "$INSTDIR"
 !macroend

@@ -11,9 +11,13 @@ pub struct IntegrityState {
     pub palette_fingerprint: String,
     #[serde(default)]
     pub swap_packages: Vec<String>,
-
     #[serde(default)]
     pub swap_fingerprints: HashMap<String, String>,
+    /// Fingerprint of Engine.upk (size:mtime_secs) at the time the palette was applied.
+    /// If this changes, RL was updated and the patched TAGame.upk must be restored before
+    /// launching — otherwise the new game binary will crash against the old patched data.
+    #[serde(default)]
+    pub rl_update_fingerprint: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,14 +52,38 @@ pub fn integrity_path(config_dir: &Path) -> PathBuf {
     config_dir.join("integrity.json")
 }
 
+/// Compute a fast fingerprint (size:mtime_secs) of Engine.upk in the cooked dir.
+/// Engine.upk changes on every RL game update — cheap to compute (no file read needed).
+pub fn rl_update_fingerprint_for(cooked_dir: &Path) -> String {
+    let engine_upk = cooked_dir.join("Engine.upk");
+    let Ok(meta) = std::fs::metadata(&engine_upk) else {
+        return String::new();
+    };
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("{}:{}", meta.len(), mtime)
+}
+
+#[allow(dead_code)]
 pub fn mark_palette_on(state: &mut IntegrityState, fingerprint: &str) {
     state.palette_active = true;
     state.palette_fingerprint = fingerprint.to_string();
 }
 
+pub fn mark_palette_on_with_rl(state: &mut IntegrityState, fingerprint: &str, rl_fp: &str) {
+    state.palette_active = true;
+    state.palette_fingerprint = fingerprint.to_string();
+    state.rl_update_fingerprint = rl_fp.to_string();
+}
+
 pub fn mark_palette_off(state: &mut IntegrityState) {
     state.palette_active = false;
     state.palette_fingerprint.clear();
+    state.rl_update_fingerprint.clear();
 }
 
 pub fn mark_swap_package(state: &mut IntegrityState, package: &str, fingerprint: Option<&str>) {

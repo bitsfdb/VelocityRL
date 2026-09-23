@@ -986,6 +986,64 @@ pub fn is_ca_installed() -> bool {
     is_system_ca_installed()
 }
 
+#[cfg(not(windows))]
+pub fn is_ca_installed() -> bool {
+    true
+}
+
+/// Public wrapper so lib.rs startup check can log hosts state without re-exporting internals.
+pub fn config_hosts_complete_pub() -> bool {
+    #[cfg(windows)]
+    {
+        config_hosts_complete()
+    }
+    #[cfg(not(windows))]
+    {
+        true
+    }
+}
+
+/// Install the CA cert + CRL + config leaf to LocalMachine and CurrentUser stores via an
+/// elevated PowerShell script (UAC prompt). Does NOT touch the hosts file. Called at startup
+/// if the system CA is found to be missing before the proxy auto-start sequence runs.
+#[cfg(windows)]
+pub fn install_ca_and_crl_elevated() {
+    use base64::Engine;
+    let ca_b64 = base64::engine::general_purpose::STANDARD.encode(crate::proxy::ca_cert_bytes());
+    let leaf_cfg_b64 = base64::engine::general_purpose::STANDARD
+        .encode(crate::proxy::leaf_config_cert_bytes());
+    let crl_b64 =
+        base64::engine::general_purpose::STANDARD.encode(crate::proxy::ca_crl_bytes());
+    let pid = std::process::id();
+    let script = format!(
+        r##"$ErrorActionPreference = "SilentlyContinue"
+$tmpCa  = Join-Path $env:TEMP "velocityrl_ca_{pid}.crt"
+$tmpCfg = Join-Path $env:TEMP "velocityrl_cfg_{pid}.crt"
+$tmpCrl = Join-Path $env:TEMP "velocityrl_{pid}.crl"
+[System.IO.File]::WriteAllBytes($tmpCa,  [System.Convert]::FromBase64String("{ca_b64}"))
+[System.IO.File]::WriteAllBytes($tmpCfg, [System.Convert]::FromBase64String("{leaf_cfg_b64}"))
+[System.IO.File]::WriteAllBytes($tmpCrl, [System.Convert]::FromBase64String("{crl_b64}"))
+try {{
+    foreach ($f in @($tmpCa, $tmpCfg, $tmpCrl)) {{
+        certutil -f -addstore Root $f | Out-Null
+        certutil -user -f -addstore Root $f | Out-Null
+        certutil -f -addstore CA $f | Out-Null
+        certutil -user -f -addstore CA $f | Out-Null
+    }}
+}} finally {{
+    Remove-Item -LiteralPath $tmpCa, $tmpCfg, $tmpCrl -Force -ErrorAction SilentlyContinue
+}}
+"##
+    );
+    match run_elevated_script(&script) {
+        Ok(()) => crate::applog::event("startup: CA/CRL elevated install succeeded"),
+        Err(e) => crate::applog::event(&format!("startup: CA/CRL elevated install failed: {e}")),
+    }
+}
+
+#[cfg(not(windows))]
+pub fn install_ca_and_crl_elevated() {}
+
 #[cfg(windows)]
 pub fn ensure_wininet_revocation_disabled() {
     use std::os::windows::process::CommandExt;
