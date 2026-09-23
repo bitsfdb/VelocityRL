@@ -29,6 +29,7 @@ CA_KEY = HERE / "velocityrl_ca.key"
 LEAVES = [
     "config.psynet.gg",
     "ws.rlpp.psynet.gg",
+    "epic",
 ]
 
 CA_NAME = x509.Name(
@@ -109,16 +110,33 @@ def issue_leaf(ca_cert: x509.Certificate, ca_key: rsa.RSAPrivateKey, host: str) 
         key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         key_file.write_bytes(_pem_key(key))
 
-    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, host)])
-    san_list = [
-        x509.DNSName(host),
-        x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
-        x509.IPAddress(ipaddress.IPv6Address("::1")),
-        x509.DNSName("localhost"),
-    ]
-    # CDP is only needed on config.psynet.gg — it is the only leaf that is MITM-intercepted
-    # via hosts redirect. ws.rlpp.psynet.gg is cert-pinned and never redirected, so Schannel
-    # never checks our fake ws leaf cert for revocation.
+    if host == "epic":
+        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "*.epicgames.com")])
+        san_list = [
+            x509.DNSName("*.epicgames.com"),
+            x509.DNSName("epicgames.com"),
+            x509.DNSName("*.ol.epicgames.com"),
+            x509.DNSName("account-public-service-prod.ol.epicgames.com"),
+            x509.DNSName("account-public-service-prod03.ol.epicgames.com"),
+            x509.DNSName("*.services.epicgames.com"),
+            x509.DNSName("*.epicgames.dev"),
+            x509.DNSName("epicgames.dev"),
+            x509.DNSName("*.dev.epicgames.com"),
+            x509.DNSName("*.psyonix.com"),
+            x509.DNSName("psyonix.com"),
+            x509.DNSName("*.live.psynet.gg"),
+            x509.DNSName("live.psynet.gg"),
+            x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
+            x509.DNSName("localhost"),
+        ]
+    else:
+        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, host)])
+        san_list = [
+            x509.DNSName(host),
+            x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
+            x509.IPAddress(ipaddress.IPv6Address("::1")),
+            x509.DNSName("localhost"),
+        ]
     cert_builder = (
         x509.CertificateBuilder()
         .subject_name(name)
@@ -155,11 +173,11 @@ def issue_leaf(ca_cert: x509.Certificate, ca_key: rsa.RSAPrivateKey, host: str) 
             critical=False,
         )
     )
-    if host == "config.psynet.gg":
+    if host in ("config.psynet.gg", "epic"):
         cdp = x509.CRLDistributionPoints([
             x509.DistributionPoint(
                 full_name=[
-                    x509.UniformResourceIdentifier(f"http://{host}/crl/velocityrl.crl"),
+                    x509.UniformResourceIdentifier("http://config.psynet.gg/crl/velocityrl.crl"),
                     x509.UniformResourceIdentifier("http://127.0.0.1/crl/velocityrl.crl"),
                 ],
                 relative_name=None,
@@ -179,7 +197,7 @@ def issue_leaf(ca_cert: x509.Certificate, ca_key: rsa.RSAPrivateKey, host: str) 
     cert = cert_builder.sign(ca_key, hashes.SHA256())
     stem = f"leaf_{host}"
     (HERE / f"{stem}.crt").write_bytes(_pem_cert(cert))
-    cdp_note = " with CDP" if host == "config.psynet.gg" else " (no CDP - cert-pinned)"
+    cdp_note = " with CDP" if host in ("config.psynet.gg", "epic") else " (no CDP - cert-pinned)"
     print(f"[ok] wrote {stem}.crt{cdp_note}")
 
 

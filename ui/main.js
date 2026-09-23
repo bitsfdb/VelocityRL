@@ -643,11 +643,10 @@ async function loadData() {
         }
 
         if (itemsResult) {
-            items = itemsResult;
+            items = Array.isArray(itemsResult) ? itemsResult : (itemsResult.items || itemsResult.Items || []);
         } else {
-
             invoke('get_items').catch(() => {}).then(fetched => {
-                if (fetched) { items = fetched; }
+                if (fetched) { items = Array.isArray(fetched) ? fetched : (fetched.items || fetched.Items || []); }
             });
         }
 
@@ -2202,6 +2201,7 @@ const LOGO_SPOOF_KEY = 'velocityrl_logo_spoof';
 const BLOG_SPOOF_KEY = 'velocityrl_blog_spoof';
 const FAKE_RANKS_KEY = 'velocityrl_fake_ranks';
 const CAMERA_SPOOF_KEY = 'velocityrl_camera_spoof';
+const NAME_SPOOF_KEY = 'velocityrl_name_spoof';
 const DEFAULT_SEASON23_LOGO_URL = 'https://api.velocityrl.tech/thumbnails/rl_jpn.png';
 const DEFAULT_BLOG_MOTD = 'Use VelocityRL';
 const DEFAULT_CAMERA_LIMITS = {
@@ -2211,6 +2211,7 @@ const DEFAULT_CAMERA_LIMITS = {
 };
 let titlesDb = { titles: [], categories: {} };
 let titlesTabReady = false;
+let namesTabReady = false;
 let psynetProxyRunning = false;
 let spoofSaveInFlight = false;
 let proxyEnsurePromise = null;
@@ -2538,6 +2539,14 @@ async function hydrateSpoofToolsFromDisk() {
         localStorage.setItem(BLOG_SPOOF_KEY, JSON.stringify({ blog_spoof }));
     }
 
+    {
+        const ns = toolSliceFromDiskOrLocal(disk, NAME_SPOOF_KEY, 'name_spoof');
+        const name_spoof = (ns && typeof ns === 'object' && ('enabled' in ns || ns.display_name != null))
+            ? { enabled: !!ns.enabled, display_name: ns.display_name || '', real_name: ns.real_name || '' }
+            : { enabled: false, display_name: '', real_name: '' };
+        localStorage.setItem(NAME_SPOOF_KEY, JSON.stringify({ name_spoof }));
+    }
+
     applyHydratedToolsToUi();
 
     return payloadFromHydratedLocal();
@@ -2569,6 +2578,17 @@ function applyHydratedToolsToUi() {
         syncNameSpoofSwitchAria(blogEn);
     }
     if (blogMotd) blogMotd.value = blog.motd || DEFAULT_BLOG_MOTD;
+
+    const nameData = readLocalJson(NAME_SPOOF_KEY).name_spoof || {};
+    const nameEn = document.getElementById('name-spoof-enabled');
+    const nameDisplay = document.getElementById('name-spoof-display');
+    const nameReal = document.getElementById('name-spoof-real');
+    if (nameEn) {
+        nameEn.checked = !!nameData.enabled;
+        syncNameSpoofSwitchAria(nameEn);
+    }
+    if (nameDisplay) nameDisplay.value = nameData.display_name || '';
+    if (nameReal) nameReal.value = nameData.real_name || '';
 }
 
 function payloadFromHydratedLocal() {
@@ -2588,6 +2608,7 @@ function payloadFromHydratedLocal() {
     };
     const logo_spoof = readLocalJson(LOGO_SPOOF_KEY).logo_spoof || { enabled: false, logo_url: '' };
     const blog_spoof = readLocalJson(BLOG_SPOOF_KEY).blog_spoof || { enabled: false, motd: '' };
+    const name_spoof = readLocalJson(NAME_SPOOF_KEY).name_spoof || { enabled: false, display_name: '', real_name: '' };
     return {
         ...titles,
         method: 'raw',
@@ -2595,6 +2616,7 @@ function payloadFromHydratedLocal() {
         camera_spoof,
         logo_spoof,
         blog_spoof,
+        name_spoof,
     };
 }
 
@@ -2629,6 +2651,7 @@ async function anySpoofToolEnabled(payload) {
     if (p.camera_spoof?.enabled) return true;
     if (p.logo_spoof?.enabled) return true;
     if (p.blog_spoof?.enabled) return true;
+    if (p.name_spoof?.enabled && p.name_spoof?.display_name?.trim()) return true;
     if (PALETTE_UI_DISABLED) return false;
     try {
         const pal = await invoke('get_palette_status');
@@ -3702,6 +3725,59 @@ function initCameraTab() {
     });
 }
 
+function nameSpoofPayloadFromUi() {
+    const enabled = !!document.getElementById('name-spoof-enabled')?.checked;
+    const display_name = (document.getElementById('name-spoof-display')?.value || '').trim();
+    const real_name = (document.getElementById('name-spoof-real')?.value || '').trim();
+    return {
+        enabled,
+        display_name,
+        real_name: real_name || undefined,
+    };
+}
+
+function initNamesTab() {
+    const enabledEl = document.getElementById('name-spoof-enabled');
+    const displayEl = document.getElementById('name-spoof-display');
+    const realEl = document.getElementById('name-spoof-real');
+    const saveBtn = document.getElementById('name-spoof-save-btn');
+    if (!enabledEl || !saveBtn) return;
+
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(NAME_SPOOF_KEY) || '{}'); } catch {}
+    const ns = saved.name_spoof || {};
+    enabledEl.checked = !!ns.enabled;
+    syncNameSpoofSwitchAria(enabledEl);
+    if (displayEl) displayEl.value = ns.display_name || '';
+    if (realEl) realEl.value = ns.real_name || '';
+
+    if (namesTabReady) return;
+    namesTabReady = true;
+
+    enabledEl.addEventListener('change', () => syncNameSpoofSwitchAria(enabledEl));
+
+    saveBtn.addEventListener('click', async () => {
+        if (isAppLoading() || spoofSaveInFlight) return;
+        const name_spoof = nameSpoofPayloadFromUi();
+        if (name_spoof.enabled && !name_spoof.display_name) {
+            showToast('Enter a display name before enabling name spoof.', 'error');
+            return;
+        }
+        try {
+            localStorage.setItem(NAME_SPOOF_KEY, JSON.stringify({ name_spoof }));
+            await runToolSave(saveBtn, 'name', { name_spoof }, { enabled: name_spoof.enabled });
+            flashButtonLabel(saveBtn, name_spoof.enabled ? 'Saved' : 'Saved (off)');
+            if (name_spoof.enabled) {
+                showToast(`Name spoof active: ${name_spoof.display_name}. Restart Rocket League if already running.`, 'success');
+            } else {
+                showToast('Name spoof disabled.', 'success');
+            }
+        } catch (e) {
+            showToast(String(e), 'error');
+        }
+    });
+}
+
 function wireReswapButton() {
     const reswapBtn = document.getElementById('reswap-btn');
     if (!reswapBtn || reswapBtn.dataset.wired === '1') return;
@@ -4239,6 +4315,14 @@ function flagImgHtml(cc) {
 
 function formatTitleText(text) {
     return String(text || '')
+        .replace(/\{(?:super\s*sonic\s*)?legend\}/gi, 'Supersonic Legend')
+        .replace(/\{grand\s*champion\}/gi, 'Grand Champion')
+        .replace(/\{champion\}/gi, 'Champion')
+        .replace(/\{diamond\}/gi, 'Diamond')
+        .replace(/\{platinum\}/gi, 'Platinum')
+        .replace(/\{gold\}/gi, 'Gold')
+        .replace(/\{silver\}/gi, 'Silver')
+        .replace(/\{bronze\}/gi, 'Bronze')
         .replace(/\{flag_([a-z]{2})\}/gi, (m, cc) => (APPLE_FLAG_PNG.has(String(cc).toLowerCase()) ? flagEmoji(cc) : m))
         .replace(/\bFLAG_([A-Z]{2})\b/gi, (m, cc) => (APPLE_FLAG_PNG.has(String(cc).toLowerCase()) ? flagEmoji(cc) : m));
 }
@@ -4343,7 +4427,7 @@ function selectDonor(title, toast) {
 function selectDisplay(title, toast) {
     displayPick = title;
     const id = title?.id || title?.Id || '';
-    const text = title?.text || title?.Text || '';
+    const text = formatTitleText(title?.text || title?.Text || '');
     const setInputValue = (eid, v) => { const el = document.getElementById(eid); if (el) el.value = v; };
     const customEl = document.getElementById('title-custom-text');
     const hasCustom = !!(customEl?.value?.trim());

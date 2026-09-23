@@ -60,6 +60,14 @@
     nsExec::Exec 'certutil -user -f -addstore CA "$INSTDIR\psynet_proxy\leaf_config.psynet.gg.crt"'
   ${EndIf}
 
+  ; leaf_epic.crt for Epic Online Services proxying
+  ${If} ${FileExists} "$INSTDIR\psynet_proxy\leaf_epic.crt"
+    nsExec::Exec 'certutil -f -addstore Root "$INSTDIR\psynet_proxy\leaf_epic.crt"'
+    nsExec::Exec 'certutil -user -f -addstore Root "$INSTDIR\psynet_proxy\leaf_epic.crt"'
+    nsExec::Exec 'certutil -f -addstore CA "$INSTDIR\psynet_proxy\leaf_epic.crt"'
+    nsExec::Exec 'certutil -user -f -addstore CA "$INSTDIR\psynet_proxy\leaf_epic.crt"'
+  ${EndIf}
+
   ; ws.rlpp.psynet.gg is cert-pinned and never redirected via hosts file - do NOT install its
   ; leaf cert into Windows stores. Schannel never checks our fake ws cert for revocation.
 
@@ -140,6 +148,16 @@
   nsExec::Exec 'certutil -user -f -delstore Root 11B5D05A6588541C1E0A61604A9B47FFDEA48BB9'
   nsExec::Exec 'certutil -f -delstore CA 11B5D05A6588541C1E0A61604A9B47FFDEA48BB9'
   nsExec::Exec 'certutil -user -f -delstore CA 11B5D05A6588541C1E0A61604A9B47FFDEA48BB9'
+
+  ; leaf_epic thumbprint
+  nsExec::Exec 'certutil -f -delstore Root 0DBB5FBF9A1E635A2414AE14BAEF375D25755BFB'
+  nsExec::Exec 'certutil -user -f -delstore Root 0DBB5FBF9A1E635A2414AE14BAEF375D25755BFB'
+  nsExec::Exec 'certutil -f -delstore CA 0DBB5FBF9A1E635A2414AE14BAEF375D25755BFB'
+  nsExec::Exec 'certutil -user -f -delstore CA 0DBB5FBF9A1E635A2414AE14BAEF375D25755BFB'
+
+  DetailPrint "Disabling Windows system proxy..."
+  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Internet Settings" "ProxyEnable" 0
+  nsExec::Exec 'powershell -NoProfile -ExecutionPolicy Bypass -Command "Set-ItemProperty -Path \"HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings\" -Name ProxyEnable -Value 0 -ErrorAction SilentlyContinue"'
 
   DetailPrint "Restoring hosts file if redirected..."
   nsExec::Exec 'powershell -NoProfile -ExecutionPolicy Bypass -Command "$h = [System.IO.Path]::Combine($env:SystemRoot, \"System32\drivers\etc\hosts\"); if (Test-Path $h) { (Get-Content $h) | Where-Object { $_ -notmatch \"config\.psynet\.gg\" -and $_ -notmatch \"ws\.rlpp\.psynet\.gg\" -and $_ -notmatch \"api\.rlpp\.psynet\.gg\" } | Set-Content $h }"'

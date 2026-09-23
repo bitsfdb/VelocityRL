@@ -3562,112 +3562,112 @@
     },
     {
       "id": "AutoTour_01_Bronze_1",
-      "text": "S1 {Bronze} Tournament Winner",
+      "text": "S1 Bronze Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_01_Bronze_2",
-      "text": "S1 {Bronze} Tournament Winner",
+      "text": "S1 Bronze Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_01_Champion_1",
-      "text": "S1 {Champion} Tournament Winner",
+      "text": "S1 Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_01_Champion_2",
-      "text": "S1 {Champion} Tournament Winner",
+      "text": "S1 Champion Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_01_Diamond_1",
-      "text": "S1 {Diamond} Tournament Winner",
+      "text": "S1 Diamond Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_01_Diamond_2",
-      "text": "S1 {Diamond} Tournament Winner",
+      "text": "S1 Diamond Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_01_Gold_1",
-      "text": "S1 {Gold} Tournament Winner",
+      "text": "S1 Gold Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_01_Gold_2",
-      "text": "S1 {Gold} Tournament Winner",
+      "text": "S1 Gold Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_01_GrandChampion_1",
-      "text": "S1 {GrandChampion} Tournament Winner",
+      "text": "S1 Grand Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_01_GrandChampion_2",
-      "text": "S1 {GrandChampion} Tournament Winner",
+      "text": "S1 Grand Champion Tournament Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "AutoTour_01_SuperSonicLegend_1",
-      "text": "S1 {Legend} Tournament Winner",
+      "text": "S1 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "AutoTour_01_SuperSonicLegend_2",
-      "text": "S1 {Legend} Tournament Winner",
+      "text": "S1 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "AutoTour_01_Platinum_1",
-      "text": "S1 {Platinum} Tournament Winner",
+      "text": "S1 Platinum Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_01_Platinum_2",
-      "text": "S1 {Platinum} Tournament Winner",
+      "text": "S1 Platinum Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_01_Silver_1",
-      "text": "S1 {Silver} Tournament Winner",
+      "text": "S1 Silver Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_01_Silver_2",
-      "text": "S1 {Silver} Tournament Winner",
+      "text": "S1 Silver Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
@@ -3744,112 +3744,112 @@
     },
     {
       "id": "AutoTour_10_Bronze_1",
-      "text": "S10 {Bronze} Tournament Winner",
+      "text": "S10 Bronze Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_10_Bronze_2",
-      "text": "S10 {Bronze} Tournament Winner",
+      "text": "S10 Bronze Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_10_Champion_1",
-      "text": "S10 {Champion} Tournament Winner",
+      "text": "S10 Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_10_Champion_2",
-      "text": "S10 {Champion} Tournament Winner",
+      "text": "S10 Champion Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_10_Diamond_1",
-      "text": "S10 {Diamond} Tournament Winner",
+      "text": "S10 Diamond Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_10_Diamond_2",
-      "text": "S10 {Diamond} Tournament Winner",
+      "text": "S10 Diamond Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_10_Gold_1",
-      "text": "S10 {Gold} Tournament Winner",
+      "text": "S10 Gold Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_10_Gold_2",
-      "text": "S10 {Gold} Tournament Winner",
+      "text": "S10 Gold Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_10_GrandChampion_1",
-      "text": "S10 {GrandChampion} Tournament Winner",
+      "text": "S10 Grand Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_10_GrandChampion_2",
-      "text": "S10 {GrandChampion} Tournament Winner",
+      "text": "S10 Grand Champion Tournament Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "AutoTour_10_SuperSonicLegend_1",
-      "text": "S10 {Legend} Tournament Winner",
+      "text": "S10 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "AutoTour_10_SuperSonicLegend_2",
-      "text": "S10 {Legend} Tournament Winner",
+      "text": "S10 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "AutoTour_10_Platinum_1",
-      "text": "S10 {Platinum} Tournament Winner",
+      "text": "S10 Platinum Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_10_Platinum_2",
-      "text": "S10 {Platinum} Tournament Winner",
+      "text": "S10 Platinum Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_10_Silver_1",
-      "text": "S10 {Silver} Tournament Winner",
+      "text": "S10 Silver Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_10_Silver_2",
-      "text": "S10 {Silver} Tournament Winner",
+      "text": "S10 Silver Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
@@ -3926,112 +3926,112 @@
     },
     {
       "id": "AutoTour_11_Bronze_1",
-      "text": "S11 {Bronze} Tournament Winner",
+      "text": "S11 Bronze Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_11_Bronze_2",
-      "text": "S11 {Bronze} Tournament Winner",
+      "text": "S11 Bronze Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_11_Champion_1",
-      "text": "S11 {Champion} Tournament Winner",
+      "text": "S11 Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_11_Champion_2",
-      "text": "S11 {Champion} Tournament Winner",
+      "text": "S11 Champion Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_11_Diamond_1",
-      "text": "S11 {Diamond} Tournament Winner",
+      "text": "S11 Diamond Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_11_Diamond_2",
-      "text": "S11 {Diamond} Tournament Winner",
+      "text": "S11 Diamond Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_11_Gold_1",
-      "text": "S11 {Gold} Tournament Winner",
+      "text": "S11 Gold Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_11_Gold_2",
-      "text": "S11 {Gold} Tournament Winner",
+      "text": "S11 Gold Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_11_GrandChampion_1",
-      "text": "S11 {GrandChampion} Tournament Winner",
+      "text": "S11 Grand Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_11_GrandChampion_2",
-      "text": "S11 {GrandChampion} Tournament Winner",
+      "text": "S11 Grand Champion Tournament Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "AutoTour_11_SuperSonicLegend_1",
-      "text": "S11 {Legend} Tournament Winner",
+      "text": "S11 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "AutoTour_11_SuperSonicLegend_2",
-      "text": "S11 {Legend} Tournament Winner",
+      "text": "S11 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "AutoTour_11_Platinum_1",
-      "text": "S11 {Platinum} Tournament Winner",
+      "text": "S11 Platinum Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_11_Platinum_2",
-      "text": "S11 {Platinum} Tournament Winner",
+      "text": "S11 Platinum Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_11_Silver_1",
-      "text": "S11 {Silver} Tournament Winner",
+      "text": "S11 Silver Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_11_Silver_2",
-      "text": "S11 {Silver} Tournament Winner",
+      "text": "S11 Silver Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
@@ -4108,112 +4108,112 @@
     },
     {
       "id": "AutoTour_12_Bronze_1",
-      "text": "S12 {Bronze} Tournament Winner",
+      "text": "S12 Bronze Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_12_Bronze_2",
-      "text": "S12 {Bronze} Tournament Winner",
+      "text": "S12 Bronze Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_12_Champion_1",
-      "text": "S12 {Champion} Tournament Winner",
+      "text": "S12 Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_12_Champion_2",
-      "text": "S12 {Champion} Tournament Winner",
+      "text": "S12 Champion Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_12_Diamond_1",
-      "text": "S12 {Diamond} Tournament Winner",
+      "text": "S12 Diamond Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_12_Diamond_2",
-      "text": "S12 {Diamond} Tournament Winner",
+      "text": "S12 Diamond Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_12_Gold_1",
-      "text": "S12 {Gold} Tournament Winner",
+      "text": "S12 Gold Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_12_Gold_2",
-      "text": "S12 {Gold} Tournament Winner",
+      "text": "S12 Gold Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_12_GrandChampion_1",
-      "text": "S12 {GrandChampion} Tournament Winner",
+      "text": "S12 Grand Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_12_GrandChampion_2",
-      "text": "S12 {GrandChampion} Tournament Winner",
+      "text": "S12 Grand Champion Tournament Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "AutoTour_12_SuperSonicLegend_1",
-      "text": "S12 {Legend} Tournament Winner",
+      "text": "S12 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "AutoTour_12_SuperSonicLegend_2",
-      "text": "S12 {Legend} Tournament Winner",
+      "text": "S12 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "AutoTour_12_Platinum_1",
-      "text": "S12 {Platinum} Tournament Winner",
+      "text": "S12 Platinum Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_12_Platinum_2",
-      "text": "S12 {Platinum} Tournament Winner",
+      "text": "S12 Platinum Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_12_Silver_1",
-      "text": "S12 {Silver} Tournament Winner",
+      "text": "S12 Silver Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_12_Silver_2",
-      "text": "S12 {Silver} Tournament Winner",
+      "text": "S12 Silver Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
@@ -4276,112 +4276,112 @@
     },
     {
       "id": "AutoTour_13_Bronze_1",
-      "text": "S13 {Bronze} Tournament Winner",
+      "text": "S13 Bronze Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_13_Bronze_2",
-      "text": "S13 {Bronze} Tournament Winner",
+      "text": "S13 Bronze Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_13_Champion_1",
-      "text": "S13 {Champion} Tournament Winner",
+      "text": "S13 Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_13_Champion_2",
-      "text": "S13 {Champion} Tournament Winner",
+      "text": "S13 Champion Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_13_Diamond_1",
-      "text": "S13 {Diamond} Tournament Winner",
+      "text": "S13 Diamond Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_13_Diamond_2",
-      "text": "S13 {Diamond} Tournament Winner",
+      "text": "S13 Diamond Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_13_Gold_1",
-      "text": "S13 {Gold} Tournament Winner",
+      "text": "S13 Gold Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_13_Gold_2",
-      "text": "S13 {Gold} Tournament Winner",
+      "text": "S13 Gold Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_13_GrandChampion_1",
-      "text": "S13 {GrandChampion} Tournament Winner",
+      "text": "S13 Grand Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_13_GrandChampion_2",
-      "text": "S13 {GrandChampion} Tournament Winner",
+      "text": "S13 Grand Champion Tournament Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "AutoTour_13_SuperSonicLegend_1",
-      "text": "S13 {Legend} Tournament Winner",
+      "text": "S13 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "AutoTour_13_SuperSonicLegend_2",
-      "text": "S13 {Legend} Tournament Winner",
+      "text": "S13 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "AutoTour_13_Platinum_1",
-      "text": "S13 {Platinum} Tournament Winner",
+      "text": "S13 Platinum Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_13_Platinum_2",
-      "text": "S13 {Platinum} Tournament Winner",
+      "text": "S13 Platinum Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_13_Silver_1",
-      "text": "S13 {Silver} Tournament Winner",
+      "text": "S13 Silver Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_13_Silver_2",
-      "text": "S13 {Silver} Tournament Winner",
+      "text": "S13 Silver Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
@@ -4444,112 +4444,112 @@
     },
     {
       "id": "AutoTour_14_Bronze_1",
-      "text": "S14 {Bronze} Tournament Winner",
+      "text": "S14 Bronze Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_14_Bronze_2",
-      "text": "S14 {Bronze} Tournament Winner",
+      "text": "S14 Bronze Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_14_Champion_1",
-      "text": "S14 {Champion} Tournament Winner",
+      "text": "S14 Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_14_Champion_2",
-      "text": "S14 {Champion} Tournament Winner",
+      "text": "S14 Champion Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_14_Diamond_1",
-      "text": "S14 {Diamond} Tournament Winner",
+      "text": "S14 Diamond Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_14_Diamond_2",
-      "text": "S14 {Diamond} Tournament Winner",
+      "text": "S14 Diamond Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_14_Gold_1",
-      "text": "S14 {Gold} Tournament Winner",
+      "text": "S14 Gold Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_14_Gold_2",
-      "text": "S14 {Gold} Tournament Winner",
+      "text": "S14 Gold Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_14_GrandChampion_1",
-      "text": "S14 {GrandChampion} Tournament Winner",
+      "text": "S14 Grand Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_14_GrandChampion_2",
-      "text": "S14 {GrandChampion} Tournament Winner",
+      "text": "S14 Grand Champion Tournament Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "AutoTour_14_SuperSonicLegend_1",
-      "text": "S14 {Legend} Tournament Winner",
+      "text": "S14 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "AutoTour_14_SuperSonicLegend_2",
-      "text": "S14 {Legend} Tournament Winner",
+      "text": "S14 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "AutoTour_14_Platinum_1",
-      "text": "S14 {Platinum} Tournament Winner",
+      "text": "S14 Platinum Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_14_Platinum_2",
-      "text": "S14 {Platinum} Tournament Winner",
+      "text": "S14 Platinum Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_14_Silver_1",
-      "text": "S14 {Silver} Tournament Winner",
+      "text": "S14 Silver Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_14_Silver_2",
-      "text": "S14 {Silver} Tournament Winner",
+      "text": "S14 Silver Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
@@ -4612,112 +4612,112 @@
     },
     {
       "id": "AutoTour_15_Bronze_1",
-      "text": "S15 {Bronze} Tournament Winner",
+      "text": "S15 Bronze Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_15_Bronze_2",
-      "text": "S15 {Bronze} Tournament Winner",
+      "text": "S15 Bronze Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_15_Champion_1",
-      "text": "S15 {Champion} Tournament Winner",
+      "text": "S15 Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_15_Champion_2",
-      "text": "S15 {Champion} Tournament Winner",
+      "text": "S15 Champion Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_15_Diamond_1",
-      "text": "S15 {Diamond} Tournament Winner",
+      "text": "S15 Diamond Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_15_Diamond_2",
-      "text": "S15 {Diamond} Tournament Winner",
+      "text": "S15 Diamond Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_15_Gold_1",
-      "text": "S15 {Gold} Tournament Winner",
+      "text": "S15 Gold Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_15_Gold_2",
-      "text": "S15 {Gold} Tournament Winner",
+      "text": "S15 Gold Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_15_GrandChampion_1",
-      "text": "S15 {GrandChampion} Tournament Winner",
+      "text": "S15 Grand Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_15_GrandChampion_2",
-      "text": "S15 {GrandChampion} Tournament Winner",
+      "text": "S15 Grand Champion Tournament Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "AutoTour_15_SuperSonicLegend_1",
-      "text": "S15 {Legend} Tournament Winner",
+      "text": "S15 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "AutoTour_15_SuperSonicLegend_2",
-      "text": "S15 {Legend} Tournament Winner",
+      "text": "S15 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "AutoTour_15_Platinum_1",
-      "text": "S15 {Platinum} Tournament Winner",
+      "text": "S15 Platinum Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_15_Platinum_2",
-      "text": "S15 {Platinum} Tournament Winner",
+      "text": "S15 Platinum Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_15_Silver_1",
-      "text": "S15 {Silver} Tournament Winner",
+      "text": "S15 Silver Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_15_Silver_2",
-      "text": "S15 {Silver} Tournament Winner",
+      "text": "S15 Silver Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
@@ -4780,112 +4780,112 @@
     },
     {
       "id": "AutoTour_16_Bronze_1",
-      "text": "S16 {Bronze} Tournament Winner",
+      "text": "S16 Bronze Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_16_Bronze_2",
-      "text": "S16 {Bronze} Tournament Winner",
+      "text": "S16 Bronze Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_16_Champion_1",
-      "text": "S16 {Champion} Tournament Winner",
+      "text": "S16 Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_16_Champion_2",
-      "text": "S16 {Champion} Tournament Winner",
+      "text": "S16 Champion Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_16_Diamond_1",
-      "text": "S16 {Diamond} Tournament Winner",
+      "text": "S16 Diamond Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_16_Diamond_2",
-      "text": "S16 {Diamond} Tournament Winner",
+      "text": "S16 Diamond Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_16_Gold_1",
-      "text": "S16 {Gold} Tournament Winner",
+      "text": "S16 Gold Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_16_Gold_2",
-      "text": "S16 {Gold} Tournament Winner",
+      "text": "S16 Gold Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_16_GrandChampion_1",
-      "text": "S16 {GrandChampion} Tournament Winner",
+      "text": "S16 Grand Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_16_GrandChampion_2",
-      "text": "S16 {GrandChampion} Tournament Winner",
+      "text": "S16 Grand Champion Tournament Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "AutoTour_16_SuperSonicLegend_1",
-      "text": "S16 {Legend} Tournament Winner",
+      "text": "S16 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "AutoTour_16_SuperSonicLegend_2",
-      "text": "S16 {Legend} Tournament Winner",
+      "text": "S16 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "AutoTour_16_Platinum_1",
-      "text": "S16 {Platinum} Tournament Winner",
+      "text": "S16 Platinum Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_16_Platinum_2",
-      "text": "S16 {Platinum} Tournament Winner",
+      "text": "S16 Platinum Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_16_Silver_1",
-      "text": "S16 {Silver} Tournament Winner",
+      "text": "S16 Silver Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_16_Silver_2",
-      "text": "S16 {Silver} Tournament Winner",
+      "text": "S16 Silver Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
@@ -4955,112 +4955,112 @@
     },
     {
       "id": "AutoTour_17_Bronze_1",
-      "text": "S17 {Bronze} Tournament Winner",
+      "text": "S17 Bronze Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_17_Bronze_2",
-      "text": "S17 {Bronze} Tournament Winner",
+      "text": "S17 Bronze Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_17_Champion_1",
-      "text": "S17 {Champion} Tournament Winner",
+      "text": "S17 Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_17_Champion_2",
-      "text": "S17 {Champion} Tournament Winner",
+      "text": "S17 Champion Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_17_Diamond_1",
-      "text": "S17 {Diamond} Tournament Winner",
+      "text": "S17 Diamond Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_17_Diamond_2",
-      "text": "S17 {Diamond} Tournament Winner",
+      "text": "S17 Diamond Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_17_Gold_1",
-      "text": "S17 {Gold} Tournament Winner",
+      "text": "S17 Gold Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_17_Gold_2",
-      "text": "S17 {Gold} Tournament Winner",
+      "text": "S17 Gold Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_17_GrandChampion_1",
-      "text": "S17 {GrandChampion} Tournament Winner",
+      "text": "S17 Grand Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_17_GrandChampion_2",
-      "text": "S17 {GrandChampion} Tournament Winner",
+      "text": "S17 Grand Champion Tournament Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "AutoTour_17_SuperSonicLegend_1",
-      "text": "S17 {Legend} Tournament Winner",
+      "text": "S17 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "AutoTour_17_SuperSonicLegend_2",
-      "text": "S17 {Legend} Tournament Winner",
+      "text": "S17 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "AutoTour_17_Platinum_1",
-      "text": "S17 {Platinum} Tournament Winner",
+      "text": "S17 Platinum Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_17_Platinum_2",
-      "text": "S17 {Platinum} Tournament Winner",
+      "text": "S17 Platinum Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_17_Silver_1",
-      "text": "S17 {Silver} Tournament Winner",
+      "text": "S17 Silver Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_17_Silver_2",
-      "text": "S17 {Silver} Tournament Winner",
+      "text": "S17 Silver Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
@@ -5123,112 +5123,112 @@
     },
     {
       "id": "AutoTour_18_Bronze_1",
-      "text": "S18 {Bronze} Tournament Winner",
+      "text": "S18 Bronze Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_18_Bronze_2",
-      "text": "S18 {Bronze} Tournament Winner",
+      "text": "S18 Bronze Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_18_Champion_1",
-      "text": "S18 {Champion} Tournament Winner",
+      "text": "S18 Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_18_Champion_2",
-      "text": "S18 {Champion} Tournament Winner",
+      "text": "S18 Champion Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_18_Diamond_1",
-      "text": "S18 {Diamond} Tournament Winner",
+      "text": "S18 Diamond Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_18_Diamond_2",
-      "text": "S18 {Diamond} Tournament Winner",
+      "text": "S18 Diamond Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_18_Gold_1",
-      "text": "S18 {Gold} Tournament Winner",
+      "text": "S18 Gold Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_18_Gold_2",
-      "text": "S18 {Gold} Tournament Winner",
+      "text": "S18 Gold Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_18_GrandChampion_1",
-      "text": "S18 {GrandChampion} Tournament Winner",
+      "text": "S18 Grand Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_18_GrandChampion_2",
-      "text": "S18 {GrandChampion} Tournament Winner",
+      "text": "S18 Grand Champion Tournament Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "AutoTour_18_SuperSonicLegend_1",
-      "text": "S18 {Legend} Tournament Winner",
+      "text": "S18 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "AutoTour_18_SuperSonicLegend_2",
-      "text": "S18 {Legend} Tournament Winner",
+      "text": "S18 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "AutoTour_18_Platinum_1",
-      "text": "S18 {Platinum} Tournament Winner",
+      "text": "S18 Platinum Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_18_Platinum_2",
-      "text": "S18 {Platinum} Tournament Winner",
+      "text": "S18 Platinum Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_18_Silver_1",
-      "text": "S18 {Silver} Tournament Winner",
+      "text": "S18 Silver Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_18_Silver_2",
-      "text": "S18 {Silver} Tournament Winner",
+      "text": "S18 Silver Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
@@ -5291,112 +5291,112 @@
     },
     {
       "id": "AutoTour_19_Bronze_1",
-      "text": "S19 {Bronze} Tournament Winner",
+      "text": "S19 Bronze Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_19_Bronze_2",
-      "text": "S19 {Bronze} Tournament Winner",
+      "text": "S19 Bronze Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_19_Champion_1",
-      "text": "S19 {Champion} Tournament Winner",
+      "text": "S19 Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_19_Champion_2",
-      "text": "S19 {Champion} Tournament Winner",
+      "text": "S19 Champion Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_19_Diamond_1",
-      "text": "S19 {Diamond} Tournament Winner",
+      "text": "S19 Diamond Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_19_Diamond_2",
-      "text": "S19 {Diamond} Tournament Winner",
+      "text": "S19 Diamond Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_19_Gold_1",
-      "text": "S19 {Gold} Tournament Winner",
+      "text": "S19 Gold Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_19_Gold_2",
-      "text": "S19 {Gold} Tournament Winner",
+      "text": "S19 Gold Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_19_GrandChampion_1",
-      "text": "S19 {GrandChampion} Tournament Winner",
+      "text": "S19 Grand Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_19_GrandChampion_2",
-      "text": "S19 {GrandChampion} Tournament Winner",
+      "text": "S19 Grand Champion Tournament Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "AutoTour_19_SuperSonicLegend_1",
-      "text": "S19 {Legend} Tournament Winner",
+      "text": "S19 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "AutoTour_19_SuperSonicLegend_2",
-      "text": "S19 {Legend} Tournament Winner",
+      "text": "S19 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "AutoTour_19_Platinum_1",
-      "text": "S19 {Platinum} Tournament Winner",
+      "text": "S19 Platinum Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_19_Platinum_2",
-      "text": "S19 {Platinum} Tournament Winner",
+      "text": "S19 Platinum Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_19_Silver_1",
-      "text": "S19 {Silver} Tournament Winner",
+      "text": "S19 Silver Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_19_Silver_2",
-      "text": "S19 {Silver} Tournament Winner",
+      "text": "S19 Silver Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
@@ -5473,112 +5473,112 @@
     },
     {
       "id": "AutoTour_02_Bronze_1",
-      "text": "S2 {Bronze} Tournament Winner",
+      "text": "S2 Bronze Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_02_Bronze_2",
-      "text": "S2 {Bronze} Tournament Winner",
+      "text": "S2 Bronze Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_02_Champion_1",
-      "text": "S2 {Champion} Tournament Winner",
+      "text": "S2 Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_02_Champion_2",
-      "text": "S2 {Champion} Tournament Winner",
+      "text": "S2 Champion Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_02_Diamond_1",
-      "text": "S2 {Diamond} Tournament Winner",
+      "text": "S2 Diamond Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_02_Diamond_2",
-      "text": "S2 {Diamond} Tournament Winner",
+      "text": "S2 Diamond Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_02_Gold_1",
-      "text": "S2 {Gold} Tournament Winner",
+      "text": "S2 Gold Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_02_Gold_2",
-      "text": "S2 {Gold} Tournament Winner",
+      "text": "S2 Gold Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_02_GrandChampion_1",
-      "text": "S2 {GrandChampion} Tournament Winner",
+      "text": "S2 Grand Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_02_GrandChampion_2",
-      "text": "S2 {GrandChampion} Tournament Winner",
+      "text": "S2 Grand Champion Tournament Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "AutoTour_02_SuperSonicLegend_1",
-      "text": "S2 {Legend} Tournament Winner",
+      "text": "S2 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "AutoTour_02_SuperSonicLegend_2",
-      "text": "S2 {Legend} Tournament Winner",
+      "text": "S2 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "AutoTour_02_Platinum_1",
-      "text": "S2 {Platinum} Tournament Winner",
+      "text": "S2 Platinum Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_02_Platinum_2",
-      "text": "S2 {Platinum} Tournament Winner",
+      "text": "S2 Platinum Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_02_Silver_1",
-      "text": "S2 {Silver} Tournament Winner",
+      "text": "S2 Silver Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_02_Silver_2",
-      "text": "S2 {Silver} Tournament Winner",
+      "text": "S2 Silver Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
@@ -5655,224 +5655,224 @@
     },
     {
       "id": "Pentathlon_20_Bronze_1",
-      "text": "S20 {Bronze} Pentathlon Winner",
+      "text": "S20 Bronze Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_20_Bronze_2",
-      "text": "S20 {Bronze} Pentathlon Winner",
+      "text": "S20 Bronze Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_20_Bronze_1",
-      "text": "S20 {Bronze} Tournament Winner",
+      "text": "S20 Bronze Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_20_Bronze_2",
-      "text": "S20 {Bronze} Tournament Winner",
+      "text": "S20 Bronze Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_20_Champion_1",
-      "text": "S20 {Champion} Pentathlon Winner",
+      "text": "S20 Champion Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_20_Champion_2",
-      "text": "S20 {Champion} Pentathlon Winner",
+      "text": "S20 Champion Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_20_Champion_1",
-      "text": "S20 {Champion} Tournament Winner",
+      "text": "S20 Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_20_Champion_2",
-      "text": "S20 {Champion} Tournament Winner",
+      "text": "S20 Champion Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_20_Diamond_1",
-      "text": "S20 {Diamond} Pentathlon Winner",
+      "text": "S20 Diamond Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_20_Diamond_2",
-      "text": "S20 {Diamond} Pentathlon Winner",
+      "text": "S20 Diamond Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_20_Diamond_1",
-      "text": "S20 {Diamond} Tournament Winner",
+      "text": "S20 Diamond Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_20_Diamond_2",
-      "text": "S20 {Diamond} Tournament Winner",
+      "text": "S20 Diamond Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_20_Gold_1",
-      "text": "S20 {Gold} Pentathlon Winner",
+      "text": "S20 Gold Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_20_Gold_2",
-      "text": "S20 {Gold} Pentathlon Winner",
+      "text": "S20 Gold Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_20_Gold_1",
-      "text": "S20 {Gold} Tournament Winner",
+      "text": "S20 Gold Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_20_Gold_2",
-      "text": "S20 {Gold} Tournament Winner",
+      "text": "S20 Gold Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_20_GrandChampion_1",
-      "text": "S20 {GrandChampion} Pentathlon Winner",
+      "text": "S20 Grand Champion Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_20_GrandChampion_2",
-      "text": "S20 {GrandChampion} Pentathlon Winner",
+      "text": "S20 Grand Champion Pentathlon Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "AutoTour_20_GrandChampion_1",
-      "text": "S20 {GrandChampion} Tournament Winner",
+      "text": "S20 Grand Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_20_GrandChampion_2",
-      "text": "S20 {GrandChampion} Tournament Winner",
+      "text": "S20 Grand Champion Tournament Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "Pentathlon_20_SuperSonicLegend_1",
-      "text": "S20 {Legend} Pentathlon Winner",
+      "text": "S20 Supersonic Legend Pentathlon Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "Pentathlon_20_SuperSonicLegend_2",
-      "text": "S20 {Legend} Pentathlon Winner",
+      "text": "S20 Supersonic Legend Pentathlon Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "AutoTour_20_SuperSonicLegend_1",
-      "text": "S20 {Legend} Tournament Winner",
+      "text": "S20 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "AutoTour_20_SuperSonicLegend_2",
-      "text": "S20 {Legend} Tournament Winner",
+      "text": "S20 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "Pentathlon_20_Platinum_1",
-      "text": "S20 {Platinum} Pentathlon Winner",
+      "text": "S20 Platinum Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_20_Platinum_2",
-      "text": "S20 {Platinum} Pentathlon Winner",
+      "text": "S20 Platinum Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_20_Platinum_1",
-      "text": "S20 {Platinum} Tournament Winner",
+      "text": "S20 Platinum Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_20_Platinum_2",
-      "text": "S20 {Platinum} Tournament Winner",
+      "text": "S20 Platinum Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_20_Silver_1",
-      "text": "S20 {Silver} Pentathlon Winner",
+      "text": "S20 Silver Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_20_Silver_2",
-      "text": "S20 {Silver} Pentathlon Winner",
+      "text": "S20 Silver Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_20_Silver_1",
-      "text": "S20 {Silver} Tournament Winner",
+      "text": "S20 Silver Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_20_Silver_2",
-      "text": "S20 {Silver} Tournament Winner",
+      "text": "S20 Silver Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
@@ -5963,224 +5963,224 @@
     },
     {
       "id": "Pentathlon_21_Bronze_1",
-      "text": "S21 {Bronze} Pentathlon Winner",
+      "text": "S21 Bronze Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_21_Bronze_2",
-      "text": "S21 {Bronze} Pentathlon Winner",
+      "text": "S21 Bronze Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_21_Bronze_1",
-      "text": "S21 {Bronze} Tournament Winner",
+      "text": "S21 Bronze Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_21_Bronze_2",
-      "text": "S21 {Bronze} Tournament Winner",
+      "text": "S21 Bronze Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_21_Champion_1",
-      "text": "S21 {Champion} Pentathlon Winner",
+      "text": "S21 Champion Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_21_Champion_2",
-      "text": "S21 {Champion} Pentathlon Winner",
+      "text": "S21 Champion Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_21_Champion_1",
-      "text": "S21 {Champion} Tournament Winner",
+      "text": "S21 Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_21_Champion_2",
-      "text": "S21 {Champion} Tournament Winner",
+      "text": "S21 Champion Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_21_Diamond_1",
-      "text": "S21 {Diamond} Pentathlon Winner",
+      "text": "S21 Diamond Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_21_Diamond_2",
-      "text": "S21 {Diamond} Pentathlon Winner",
+      "text": "S21 Diamond Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_21_Diamond_1",
-      "text": "S21 {Diamond} Tournament Winner",
+      "text": "S21 Diamond Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_21_Diamond_2",
-      "text": "S21 {Diamond} Tournament Winner",
+      "text": "S21 Diamond Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_21_Gold_1",
-      "text": "S21 {Gold} Pentathlon Winner",
+      "text": "S21 Gold Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_21_Gold_2",
-      "text": "S21 {Gold} Pentathlon Winner",
+      "text": "S21 Gold Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_21_Gold_1",
-      "text": "S21 {Gold} Tournament Winner",
+      "text": "S21 Gold Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_21_Gold_2",
-      "text": "S21 {Gold} Tournament Winner",
+      "text": "S21 Gold Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_21_GrandChampion_1",
-      "text": "S21 {GrandChampion} Pentathlon Winner",
+      "text": "S21 Grand Champion Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_21_GrandChampion_2",
-      "text": "S21 {GrandChampion} Pentathlon Winner",
+      "text": "S21 Grand Champion Pentathlon Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "AutoTour_21_GrandChampion_1",
-      "text": "S21 {GrandChampion} Tournament Winner",
+      "text": "S21 Grand Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_21_GrandChampion_2",
-      "text": "S21 {GrandChampion} Tournament Winner",
+      "text": "S21 Grand Champion Tournament Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "Pentathlon_21_SuperSonicLegend_1",
-      "text": "S21 {Legend} Pentathlon Winner",
+      "text": "S21 Supersonic Legend Pentathlon Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "Pentathlon_21_SuperSonicLegend_2",
-      "text": "S21 {Legend} Pentathlon Winner",
+      "text": "S21 Supersonic Legend Pentathlon Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "AutoTour_21_SuperSonicLegend_1",
-      "text": "S21 {Legend} Tournament Winner",
+      "text": "S21 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "AutoTour_21_SuperSonicLegend_2",
-      "text": "S21 {Legend} Tournament Winner",
+      "text": "S21 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "Pentathlon_21_Platinum_1",
-      "text": "S21 {Platinum} Pentathlon Winner",
+      "text": "S21 Platinum Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_21_Platinum_2",
-      "text": "S21 {Platinum} Pentathlon Winner",
+      "text": "S21 Platinum Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_21_Platinum_1",
-      "text": "S21 {Platinum} Tournament Winner",
+      "text": "S21 Platinum Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_21_Platinum_2",
-      "text": "S21 {Platinum} Tournament Winner",
+      "text": "S21 Platinum Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_21_Silver_1",
-      "text": "S21 {Silver} Pentathlon Winner",
+      "text": "S21 Silver Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_21_Silver_2",
-      "text": "S21 {Silver} Pentathlon Winner",
+      "text": "S21 Silver Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_21_Silver_1",
-      "text": "S21 {Silver} Tournament Winner",
+      "text": "S21 Silver Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_21_Silver_2",
-      "text": "S21 {Silver} Tournament Winner",
+      "text": "S21 Silver Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
@@ -6271,448 +6271,448 @@
     },
     {
       "id": "Pentathlon_22_Bronze_1",
-      "text": "S22 {Bronze} Pentathlon Winner",
+      "text": "S22 Bronze Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_22_Bronze_2",
-      "text": "S22 {Bronze} Pentathlon Winner",
+      "text": "S22 Bronze Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_22_Bronze_1",
-      "text": "S22 {Bronze} Tournament Winner",
+      "text": "S22 Bronze Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_22_Bronze_2",
-      "text": "S22 {Bronze} Tournament Winner",
+      "text": "S22 Bronze Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_22_Champion_1",
-      "text": "S22 {Champion} Pentathlon Winner",
+      "text": "S22 Champion Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_22_Champion_2",
-      "text": "S22 {Champion} Pentathlon Winner",
+      "text": "S22 Champion Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_22_Champion_1",
-      "text": "S22 {Champion} Tournament Winner",
+      "text": "S22 Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_22_Champion_2",
-      "text": "S22 {Champion} Tournament Winner",
+      "text": "S22 Champion Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_22_Diamond_1",
-      "text": "S22 {Diamond} Pentathlon Winner",
+      "text": "S22 Diamond Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_22_Diamond_2",
-      "text": "S22 {Diamond} Pentathlon Winner",
+      "text": "S22 Diamond Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_22_Diamond_1",
-      "text": "S22 {Diamond} Tournament Winner",
+      "text": "S22 Diamond Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_22_Diamond_2",
-      "text": "S22 {Diamond} Tournament Winner",
+      "text": "S22 Diamond Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_22_Gold_1",
-      "text": "S22 {Gold} Pentathlon Winner",
+      "text": "S22 Gold Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_22_Gold_2",
-      "text": "S22 {Gold} Pentathlon Winner",
+      "text": "S22 Gold Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_22_Gold_1",
-      "text": "S22 {Gold} Tournament Winner",
+      "text": "S22 Gold Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_22_Gold_2",
-      "text": "S22 {Gold} Tournament Winner",
+      "text": "S22 Gold Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_22_GrandChampion_1",
-      "text": "S22 {GrandChampion} Pentathlon Winner",
+      "text": "S22 Grand Champion Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_22_GrandChampion_2",
-      "text": "S22 {GrandChampion} Pentathlon Winner",
+      "text": "S22 Grand Champion Pentathlon Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "AutoTour_22_GrandChampion_1",
-      "text": "S22 {GrandChampion} Tournament Winner",
+      "text": "S22 Grand Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_22_GrandChampion_2",
-      "text": "S22 {GrandChampion} Tournament Winner",
+      "text": "S22 Grand Champion Tournament Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "Pentathlon_22_SuperSonicLegend_1",
-      "text": "S22 {Legend} Pentathlon Winner",
+      "text": "S22 Supersonic Legend Pentathlon Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "Pentathlon_22_SuperSonicLegend_2",
-      "text": "S22 {Legend} Pentathlon Winner",
+      "text": "S22 Supersonic Legend Pentathlon Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "AutoTour_22_SuperSonicLegend_1",
-      "text": "S22 {Legend} Tournament Winner",
+      "text": "S22 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "AutoTour_22_SuperSonicLegend_2",
-      "text": "S22 {Legend} Tournament Winner",
+      "text": "S22 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "Pentathlon_22_Platinum_1",
-      "text": "S22 {Platinum} Pentathlon Winner",
+      "text": "S22 Platinum Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_22_Platinum_2",
-      "text": "S22 {Platinum} Pentathlon Winner",
+      "text": "S22 Platinum Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_22_Platinum_1",
-      "text": "S22 {Platinum} Tournament Winner",
+      "text": "S22 Platinum Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_22_Platinum_2",
-      "text": "S22 {Platinum} Tournament Winner",
+      "text": "S22 Platinum Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_22_Silver_1",
-      "text": "S22 {Silver} Pentathlon Winner",
+      "text": "S22 Silver Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_22_Silver_2",
-      "text": "S22 {Silver} Pentathlon Winner",
+      "text": "S22 Silver Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_22_Silver_1",
-      "text": "S22 {Silver} Tournament Winner",
+      "text": "S22 Silver Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_22_Silver_2",
-      "text": "S22 {Silver} Tournament Winner",
+      "text": "S22 Silver Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_23_Bronze_1",
-      "text": "S23 {Bronze} Pentathlon Winner",
+      "text": "S23 Bronze Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_23_Bronze_2",
-      "text": "S23 {Bronze} Pentathlon Winner",
+      "text": "S23 Bronze Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_23_Bronze_1",
-      "text": "S23 {Bronze} Tournament Winner",
+      "text": "S23 Bronze Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_23_Bronze_2",
-      "text": "S23 {Bronze} Tournament Winner",
+      "text": "S23 Bronze Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_23_Champion_1",
-      "text": "S23 {Champion} Pentathlon Winner",
+      "text": "S23 Champion Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_23_Champion_2",
-      "text": "S23 {Champion} Pentathlon Winner",
+      "text": "S23 Champion Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_23_Champion_1",
-      "text": "S23 {Champion} Tournament Winner",
+      "text": "S23 Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_23_Champion_2",
-      "text": "S23 {Champion} Tournament Winner",
+      "text": "S23 Champion Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_23_Diamond_1",
-      "text": "S23 {Diamond} Pentathlon Winner",
+      "text": "S23 Diamond Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_23_Diamond_2",
-      "text": "S23 {Diamond} Pentathlon Winner",
+      "text": "S23 Diamond Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_23_Diamond_1",
-      "text": "S23 {Diamond} Tournament Winner",
+      "text": "S23 Diamond Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_23_Diamond_2",
-      "text": "S23 {Diamond} Tournament Winner",
+      "text": "S23 Diamond Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_23_Gold_1",
-      "text": "S23 {Gold} Pentathlon Winner",
+      "text": "S23 Gold Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_23_Gold_2",
-      "text": "S23 {Gold} Pentathlon Winner",
+      "text": "S23 Gold Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_23_Gold_1",
-      "text": "S23 {Gold} Tournament Winner",
+      "text": "S23 Gold Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_23_Gold_2",
-      "text": "S23 {Gold} Tournament Winner",
+      "text": "S23 Gold Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_23_GrandChampion_1",
-      "text": "S23 {GrandChampion} Pentathlon Winner",
+      "text": "S23 Grand Champion Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_23_GrandChampion_2",
-      "text": "S23 {GrandChampion} Pentathlon Winner",
+      "text": "S23 Grand Champion Pentathlon Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "AutoTour_23_GrandChampion_1",
-      "text": "S23 {GrandChampion} Tournament Winner",
+      "text": "S23 Grand Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_23_GrandChampion_2",
-      "text": "S23 {GrandChampion} Tournament Winner",
+      "text": "S23 Grand Champion Tournament Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "Pentathlon_23_SuperSonicLegend_1",
-      "text": "S23 {Legend} Pentathlon Winner",
+      "text": "S23 Supersonic Legend Pentathlon Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "Pentathlon_23_SuperSonicLegend_2",
-      "text": "S23 {Legend} Pentathlon Winner",
+      "text": "S23 Supersonic Legend Pentathlon Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "AutoTour_23_SuperSonicLegend_1",
-      "text": "S23 {Legend} Tournament Winner",
+      "text": "S23 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "AutoTour_23_SuperSonicLegend_2",
-      "text": "S23 {Legend} Tournament Winner",
+      "text": "S23 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "Pentathlon_23_Platinum_1",
-      "text": "S23 {Platinum} Pentathlon Winner",
+      "text": "S23 Platinum Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_23_Platinum_2",
-      "text": "S23 {Platinum} Pentathlon Winner",
+      "text": "S23 Platinum Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_23_Platinum_1",
-      "text": "S23 {Platinum} Tournament Winner",
+      "text": "S23 Platinum Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_23_Platinum_2",
-      "text": "S23 {Platinum} Tournament Winner",
+      "text": "S23 Platinum Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_23_Silver_1",
-      "text": "S23 {Silver} Pentathlon Winner",
+      "text": "S23 Silver Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_23_Silver_2",
-      "text": "S23 {Silver} Pentathlon Winner",
+      "text": "S23 Silver Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_23_Silver_1",
-      "text": "S23 {Silver} Tournament Winner",
+      "text": "S23 Silver Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_23_Silver_2",
-      "text": "S23 {Silver} Tournament Winner",
+      "text": "S23 Silver Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
@@ -6810,112 +6810,112 @@
     },
     {
       "id": "AutoTour_03_Bronze_1",
-      "text": "S3 {Bronze} Tournament Winner",
+      "text": "S3 Bronze Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_03_Bronze_2",
-      "text": "S3 {Bronze} Tournament Winner",
+      "text": "S3 Bronze Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_03_Champion_1",
-      "text": "S3 {Champion} Tournament Winner",
+      "text": "S3 Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_03_Champion_2",
-      "text": "S3 {Champion} Tournament Winner",
+      "text": "S3 Champion Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_03_Diamond_1",
-      "text": "S3 {Diamond} Tournament Winner",
+      "text": "S3 Diamond Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_03_Diamond_2",
-      "text": "S3 {Diamond} Tournament Winner",
+      "text": "S3 Diamond Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_03_Gold_1",
-      "text": "S3 {Gold} Tournament Winner",
+      "text": "S3 Gold Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_03_Gold_2",
-      "text": "S3 {Gold} Tournament Winner",
+      "text": "S3 Gold Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_03_GrandChampion_1",
-      "text": "S3 {GrandChampion} Tournament Winner",
+      "text": "S3 Grand Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_03_GrandChampion_2",
-      "text": "S3 {GrandChampion} Tournament Winner",
+      "text": "S3 Grand Champion Tournament Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "AutoTour_03_SuperSonicLegend_1",
-      "text": "S3 {Legend} Tournament Winner",
+      "text": "S3 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "AutoTour_03_SuperSonicLegend_2",
-      "text": "S3 {Legend} Tournament Winner",
+      "text": "S3 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "AutoTour_03_Platinum_1",
-      "text": "S3 {Platinum} Tournament Winner",
+      "text": "S3 Platinum Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_03_Platinum_2",
-      "text": "S3 {Platinum} Tournament Winner",
+      "text": "S3 Platinum Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_03_Silver_1",
-      "text": "S3 {Silver} Tournament Winner",
+      "text": "S3 Silver Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_03_Silver_2",
-      "text": "S3 {Silver} Tournament Winner",
+      "text": "S3 Silver Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
@@ -6992,112 +6992,112 @@
     },
     {
       "id": "AutoTour_04_Bronze_1",
-      "text": "S4 {Bronze} Tournament Winner",
+      "text": "S4 Bronze Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_04_Bronze_2",
-      "text": "S4 {Bronze} Tournament Winner",
+      "text": "S4 Bronze Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_04_Champion_1",
-      "text": "S4 {Champion} Tournament Winner",
+      "text": "S4 Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_04_Champion_2",
-      "text": "S4 {Champion} Tournament Winner",
+      "text": "S4 Champion Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_04_Diamond_1",
-      "text": "S4 {Diamond} Tournament Winner",
+      "text": "S4 Diamond Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_04_Diamond_2",
-      "text": "S4 {Diamond} Tournament Winner",
+      "text": "S4 Diamond Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_04_Gold_1",
-      "text": "S4 {Gold} Tournament Winner",
+      "text": "S4 Gold Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_04_Gold_2",
-      "text": "S4 {Gold} Tournament Winner",
+      "text": "S4 Gold Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_04_GrandChampion_1",
-      "text": "S4 {GrandChampion} Tournament Winner",
+      "text": "S4 Grand Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_04_GrandChampion_2",
-      "text": "S4 {GrandChampion} Tournament Winner",
+      "text": "S4 Grand Champion Tournament Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "AutoTour_04_SuperSonicLegend_1",
-      "text": "S4 {Legend} Tournament Winner",
+      "text": "S4 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "AutoTour_04_SuperSonicLegend_2",
-      "text": "S4 {Legend} Tournament Winner",
+      "text": "S4 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "AutoTour_04_Platinum_1",
-      "text": "S4 {Platinum} Tournament Winner",
+      "text": "S4 Platinum Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_04_Platinum_2",
-      "text": "S4 {Platinum} Tournament Winner",
+      "text": "S4 Platinum Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_04_Silver_1",
-      "text": "S4 {Silver} Tournament Winner",
+      "text": "S4 Silver Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_04_Silver_2",
-      "text": "S4 {Silver} Tournament Winner",
+      "text": "S4 Silver Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
@@ -7174,112 +7174,112 @@
     },
     {
       "id": "AutoTour_05_Bronze_1",
-      "text": "S5 {Bronze} Tournament Winner",
+      "text": "S5 Bronze Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_05_Bronze_2",
-      "text": "S5 {Bronze} Tournament Winner",
+      "text": "S5 Bronze Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_05_Champion_1",
-      "text": "S5 {Champion} Tournament Winner",
+      "text": "S5 Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_05_Champion_2",
-      "text": "S5 {Champion} Tournament Winner",
+      "text": "S5 Champion Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_05_Diamond_1",
-      "text": "S5 {Diamond} Tournament Winner",
+      "text": "S5 Diamond Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_05_Diamond_2",
-      "text": "S5 {Diamond} Tournament Winner",
+      "text": "S5 Diamond Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_05_Gold_1",
-      "text": "S5 {Gold} Tournament Winner",
+      "text": "S5 Gold Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_05_Gold_2",
-      "text": "S5 {Gold} Tournament Winner",
+      "text": "S5 Gold Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_05_GrandChampion_1",
-      "text": "S5 {GrandChampion} Tournament Winner",
+      "text": "S5 Grand Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_05_GrandChampion_2",
-      "text": "S5 {GrandChampion} Tournament Winner",
+      "text": "S5 Grand Champion Tournament Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "AutoTour_05_SuperSonicLegend_1",
-      "text": "S5 {Legend} Tournament Winner",
+      "text": "S5 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "AutoTour_05_SuperSonicLegend_2",
-      "text": "S5 {Legend} Tournament Winner",
+      "text": "S5 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "AutoTour_05_Platinum_1",
-      "text": "S5 {Platinum} Tournament Winner",
+      "text": "S5 Platinum Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_05_Platinum_2",
-      "text": "S5 {Platinum} Tournament Winner",
+      "text": "S5 Platinum Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_05_Silver_1",
-      "text": "S5 {Silver} Tournament Winner",
+      "text": "S5 Silver Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_05_Silver_2",
-      "text": "S5 {Silver} Tournament Winner",
+      "text": "S5 Silver Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
@@ -7356,112 +7356,112 @@
     },
     {
       "id": "AutoTour_06_Bronze_1",
-      "text": "S6 {Bronze} Tournament Winner",
+      "text": "S6 Bronze Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_06_Bronze_2",
-      "text": "S6 {Bronze} Tournament Winner",
+      "text": "S6 Bronze Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_06_Champion_1",
-      "text": "S6 {Champion} Tournament Winner",
+      "text": "S6 Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_06_Champion_2",
-      "text": "S6 {Champion} Tournament Winner",
+      "text": "S6 Champion Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_06_Diamond_1",
-      "text": "S6 {Diamond} Tournament Winner",
+      "text": "S6 Diamond Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_06_Diamond_2",
-      "text": "S6 {Diamond} Tournament Winner",
+      "text": "S6 Diamond Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_06_Gold_1",
-      "text": "S6 {Gold} Tournament Winner",
+      "text": "S6 Gold Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_06_Gold_2",
-      "text": "S6 {Gold} Tournament Winner",
+      "text": "S6 Gold Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_06_GrandChampion_1",
-      "text": "S6 {GrandChampion} Tournament Winner",
+      "text": "S6 Grand Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_06_GrandChampion_2",
-      "text": "S6 {GrandChampion} Tournament Winner",
+      "text": "S6 Grand Champion Tournament Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "AutoTour_06_SuperSonicLegend_1",
-      "text": "S6 {Legend} Tournament Winner",
+      "text": "S6 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "AutoTour_06_SuperSonicLegend_2",
-      "text": "S6 {Legend} Tournament Winner",
+      "text": "S6 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "AutoTour_06_Platinum_1",
-      "text": "S6 {Platinum} Tournament Winner",
+      "text": "S6 Platinum Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_06_Platinum_2",
-      "text": "S6 {Platinum} Tournament Winner",
+      "text": "S6 Platinum Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_06_Silver_1",
-      "text": "S6 {Silver} Tournament Winner",
+      "text": "S6 Silver Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_06_Silver_2",
-      "text": "S6 {Silver} Tournament Winner",
+      "text": "S6 Silver Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
@@ -7538,112 +7538,112 @@
     },
     {
       "id": "AutoTour_07_Bronze_1",
-      "text": "S7 {Bronze} Tournament Winner",
+      "text": "S7 Bronze Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_07_Bronze_2",
-      "text": "S7 {Bronze} Tournament Winner",
+      "text": "S7 Bronze Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_07_Champion_1",
-      "text": "S7 {Champion} Tournament Winner",
+      "text": "S7 Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_07_Champion_2",
-      "text": "S7 {Champion} Tournament Winner",
+      "text": "S7 Champion Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_07_Diamond_1",
-      "text": "S7 {Diamond} Tournament Winner",
+      "text": "S7 Diamond Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_07_Diamond_2",
-      "text": "S7 {Diamond} Tournament Winner",
+      "text": "S7 Diamond Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_07_Gold_1",
-      "text": "S7 {Gold} Tournament Winner",
+      "text": "S7 Gold Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_07_Gold_2",
-      "text": "S7 {Gold} Tournament Winner",
+      "text": "S7 Gold Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_07_GrandChampion_1",
-      "text": "S7 {GrandChampion} Tournament Winner",
+      "text": "S7 Grand Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_07_GrandChampion_2",
-      "text": "S7 {GrandChampion} Tournament Winner",
+      "text": "S7 Grand Champion Tournament Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "AutoTour_07_SuperSonicLegend_1",
-      "text": "S7 {Legend} Tournament Winner",
+      "text": "S7 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "AutoTour_07_SuperSonicLegend_2",
-      "text": "S7 {Legend} Tournament Winner",
+      "text": "S7 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "AutoTour_07_Platinum_1",
-      "text": "S7 {Platinum} Tournament Winner",
+      "text": "S7 Platinum Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_07_Platinum_2",
-      "text": "S7 {Platinum} Tournament Winner",
+      "text": "S7 Platinum Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_07_Silver_1",
-      "text": "S7 {Silver} Tournament Winner",
+      "text": "S7 Silver Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_07_Silver_2",
-      "text": "S7 {Silver} Tournament Winner",
+      "text": "S7 Silver Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
@@ -7720,112 +7720,112 @@
     },
     {
       "id": "AutoTour_08_Bronze_1",
-      "text": "S8 {Bronze} Tournament Winner",
+      "text": "S8 Bronze Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_08_Bronze_2",
-      "text": "S8 {Bronze} Tournament Winner",
+      "text": "S8 Bronze Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_08_Champion_1",
-      "text": "S8 {Champion} Tournament Winner",
+      "text": "S8 Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_08_Champion_2",
-      "text": "S8 {Champion} Tournament Winner",
+      "text": "S8 Champion Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_08_Diamond_1",
-      "text": "S8 {Diamond} Tournament Winner",
+      "text": "S8 Diamond Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_08_Diamond_2",
-      "text": "S8 {Diamond} Tournament Winner",
+      "text": "S8 Diamond Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_08_Gold_1",
-      "text": "S8 {Gold} Tournament Winner",
+      "text": "S8 Gold Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_08_Gold_2",
-      "text": "S8 {Gold} Tournament Winner",
+      "text": "S8 Gold Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_08_GrandChampion_1",
-      "text": "S8 {GrandChampion} Tournament Winner",
+      "text": "S8 Grand Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_08_GrandChampion_2",
-      "text": "S8 {GrandChampion} Tournament Winner",
+      "text": "S8 Grand Champion Tournament Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "AutoTour_08_SuperSonicLegend_1",
-      "text": "S8 {Legend} Tournament Winner",
+      "text": "S8 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "AutoTour_08_SuperSonicLegend_2",
-      "text": "S8 {Legend} Tournament Winner",
+      "text": "S8 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "AutoTour_08_Platinum_1",
-      "text": "S8 {Platinum} Tournament Winner",
+      "text": "S8 Platinum Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_08_Platinum_2",
-      "text": "S8 {Platinum} Tournament Winner",
+      "text": "S8 Platinum Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_08_Silver_1",
-      "text": "S8 {Silver} Tournament Winner",
+      "text": "S8 Silver Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_08_Silver_2",
-      "text": "S8 {Silver} Tournament Winner",
+      "text": "S8 Silver Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
@@ -7902,112 +7902,112 @@
     },
     {
       "id": "AutoTour_09_Bronze_1",
-      "text": "S9 {Bronze} Tournament Winner",
+      "text": "S9 Bronze Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_09_Bronze_2",
-      "text": "S9 {Bronze} Tournament Winner",
+      "text": "S9 Bronze Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_09_Champion_1",
-      "text": "S9 {Champion} Tournament Winner",
+      "text": "S9 Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_09_Champion_2",
-      "text": "S9 {Champion} Tournament Winner",
+      "text": "S9 Champion Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_09_Diamond_1",
-      "text": "S9 {Diamond} Tournament Winner",
+      "text": "S9 Diamond Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_09_Diamond_2",
-      "text": "S9 {Diamond} Tournament Winner",
+      "text": "S9 Diamond Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_09_Gold_1",
-      "text": "S9 {Gold} Tournament Winner",
+      "text": "S9 Gold Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_09_Gold_2",
-      "text": "S9 {Gold} Tournament Winner",
+      "text": "S9 Gold Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_09_GrandChampion_1",
-      "text": "S9 {GrandChampion} Tournament Winner",
+      "text": "S9 Grand Champion Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_09_GrandChampion_2",
-      "text": "S9 {GrandChampion} Tournament Winner",
+      "text": "S9 Grand Champion Tournament Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "AutoTour_09_SuperSonicLegend_1",
-      "text": "S9 {Legend} Tournament Winner",
+      "text": "S9 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "AutoTour_09_SuperSonicLegend_2",
-      "text": "S9 {Legend} Tournament Winner",
+      "text": "S9 Supersonic Legend Tournament Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "AutoTour_09_Platinum_1",
-      "text": "S9 {Platinum} Tournament Winner",
+      "text": "S9 Platinum Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_09_Platinum_2",
-      "text": "S9 {Platinum} Tournament Winner",
+      "text": "S9 Platinum Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "AutoTour_09_Silver_1",
-      "text": "S9 {Silver} Tournament Winner",
+      "text": "S9 Silver Tournament Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "AutoTour_09_Silver_2",
-      "text": "S9 {Silver} Tournament Winner",
+      "text": "S9 Silver Tournament Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
@@ -10163,112 +10163,112 @@
     },
     {
       "id": "Pentathlon_19_Bronze_1",
-      "text": "{Bronze} 10th Anniversary Pentathlon Winner",
+      "text": "Bronze 10th Anniversary Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_19_Bronze_2",
-      "text": "{Bronze} 10th Anniversary Pentathlon Winner",
+      "text": "Bronze 10th Anniversary Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_19_Champion_1",
-      "text": "{Champion} 10th Anniversary Pentathlon Winner",
+      "text": "Champion 10th Anniversary Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_19_Champion_2",
-      "text": "{Champion} 10th Anniversary Pentathlon Winner",
+      "text": "Champion 10th Anniversary Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_19_Diamond_1",
-      "text": "{Diamond} 10th Anniversary Pentathlon Winner",
+      "text": "Diamond 10th Anniversary Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_19_Diamond_2",
-      "text": "{Diamond} 10th Anniversary Pentathlon Winner",
+      "text": "Diamond 10th Anniversary Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_19_Gold_1",
-      "text": "{Gold} 10th Anniversary Pentathlon Winner",
+      "text": "Gold 10th Anniversary Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_19_Gold_2",
-      "text": "{Gold} 10th Anniversary Pentathlon Winner",
+      "text": "Gold 10th Anniversary Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_19_GrandChampion_1",
-      "text": "{GrandChampion} 10th Anniversary Pentathlon Winner",
+      "text": "Grand Champion 10th Anniversary Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_19_GrandChampion_2",
-      "text": "{GrandChampion} 10th Anniversary Pentathlon Winner",
+      "text": "Grand Champion 10th Anniversary Pentathlon Winner",
       "category": "AutoTour_CompletedGC",
       "color": "FF2800",
       "glow": "FF2800"
     },
     {
       "id": "Pentathlon_19_SuperSonicLegend_1",
-      "text": "{Legend} 10th Anniversary Pentathlon Winner",
+      "text": "Supersonic Legend 10th Anniversary Pentathlon Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_1",
       "color": "F0FFF9",
       "glow": "F0FFF9"
     },
     {
       "id": "Pentathlon_19_SuperSonicLegend_2",
-      "text": "{Legend} 10th Anniversary Pentathlon Winner",
+      "text": "Supersonic Legend 10th Anniversary Pentathlon Winner",
       "category": "AutoTour_CompletedSuperSonicLegend_2",
       "color": "FF8DDD",
       "glow": "FF8DDD"
     },
     {
       "id": "Pentathlon_19_Platinum_1",
-      "text": "{Platinum} 10th Anniversary Pentathlon Winner",
+      "text": "Platinum 10th Anniversary Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_19_Platinum_2",
-      "text": "{Platinum} 10th Anniversary Pentathlon Winner",
+      "text": "Platinum 10th Anniversary Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""
     },
     {
       "id": "Pentathlon_19_Silver_1",
-      "text": "{Silver} 10th Anniversary Pentathlon Winner",
+      "text": "Silver 10th Anniversary Pentathlon Winner",
       "category": "",
       "color": "",
       "glow": ""
     },
     {
       "id": "Pentathlon_19_Silver_2",
-      "text": "{Silver} 10th Anniversary Pentathlon Winner",
+      "text": "Silver 10th Anniversary Pentathlon Winner",
       "category": "AutoTour_Completed",
       "color": "9BFF00",
       "glow": ""

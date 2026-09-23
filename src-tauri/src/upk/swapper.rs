@@ -44,9 +44,9 @@ fn package_base(stem: &str) -> &str {
 pub struct Item {
     #[serde(alias = "ID", alias = "id")]
     pub id: i64,
-    #[serde(alias = "Product", alias = "label", alias = "long_label", default)]
+    #[serde(alias = "Product", alias = "name", alias = "label", alias = "long_label", default)]
     pub product: String,
-    #[serde(alias = "Slot", alias = "slot", default)]
+    #[serde(alias = "Slot", alias = "slot", alias = "Type", default)]
     pub slot: String,
     #[serde(alias = "AssetPackage", alias = "asset_package", default)]
     pub asset_package: String,
@@ -1070,20 +1070,45 @@ pub fn swap_asset(
                 }
                 let te_al = (te as usize + 15) & !15;
                 if tn.checked_add(te_al).map(|end| end <= tfile.len())? {
+                    let enc = &tfile[tn..tn + te_al];
                     crypto::find_valid_key(
-                        &tfile[tn..tn + te_al],
+                        enc,
                         ts.depends_offset,
                         tm.compressed_chunks_offset,
                         &all_keys,
                     )
+                    .or_else(|| {
+                        crypto::find_valid_key_relaxed(
+                            enc,
+                            tm.compressed_chunks_offset,
+                            &all_keys,
+                        )
+                    })
                 } else {
                     None
                 }
             })
         })
-        .unwrap_or(donor_key);
+        .or_else(|| {
+            if pkg_stem == donor_stem || no_sf == donor_stem_no_sf {
+                Some(donor_key)
+            } else {
+                None
+            }
+        })
+        .ok_or_else(|| {
+            SwapError::Msg(format!(
+                "No encryption key found for target package '{}'. Swap aborted to prevent corrupting game files.",
+                target.asset_package
+            ))
+        })?;
 
-    let new_enc_size_aligned = (new_header_plain.len() + 15) & !15;
+    let raw_enc_aligned = (new_header_plain.len() + 15) & !15;
+    let new_enc_size_aligned = if raw_enc_aligned <= enc_size_aligned {
+        enc_size_aligned
+    } else {
+        raw_enc_aligned
+    };
     let size_growth = new_enc_size_aligned as i64 - enc_size_aligned as i64;
 
     if size_growth > donor_meta.garbage_size as i64 {
@@ -1117,6 +1142,10 @@ pub fn swap_asset(
             ));
         }
         output.drain(gap_start..gap_start + trim);
+    } else if size_growth < 0 {
+        let pad_len = (-size_growth) as usize;
+        let gap_start = new_enc_end;
+        output.splice(gap_start..gap_start, std::iter::repeat(0u8).take(pad_len));
     }
 
     if header_delta != 0 || size_growth != 0 {
@@ -1386,5 +1415,21 @@ mod tests {
         assert!(res.is_none());
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_shortening_swap_preserves_aligned_block_size() {
+        let enc_size_aligned = 2048usize;
+        // Mock a remapped header that is shorter than original
+        let shorter_plain = vec![0u8; 1900];
+        let raw_enc_aligned = (shorter_plain.len() + 15) & !15;
+        let new_enc_size_aligned = if raw_enc_aligned <= enc_size_aligned {
+            enc_size_aligned
+        } else {
+            raw_enc_aligned
+        };
+        let size_growth = new_enc_size_aligned as i64 - enc_size_aligned as i64;
+        assert_eq!(new_enc_size_aligned, enc_size_aligned);
+        assert_eq!(size_growth, 0);
     }
 }

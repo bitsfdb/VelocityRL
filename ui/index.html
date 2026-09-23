@@ -16,7 +16,7 @@
         <nav class="nav-links">
             <div class="nav-item active" data-tab="swapper-tab" data-i18n="nav.swapper">Swapper</div>
             <div class="nav-item" data-tab="titles-tab" data-i18n="nav.titles">Titles</div>
-            <div class="nav-item" data-tab="names-tab"><span data-i18n="nav.names">Names</span><span class="nav-wip">WIP</span></div>
+            <div class="nav-item" data-tab="names-tab" data-i18n="nav.names">Names</div>
             <div class="nav-item" data-tab="ranks-tab" data-i18n="nav.ranks">Fake Ranks</div>
             <div class="nav-item" data-tab="camera-tab" data-i18n="nav.camera">Camera</div>
             <div class="nav-item" data-tab="maps-tab" data-i18n="nav.maps">Maps</div>
@@ -283,12 +283,40 @@
             </div>
 
             <div id="names-tab" class="tab-content">
-                <h2 class="section-title">Names <span class="section-wip" title="Work in progress">WIP</span></h2>
-                <p class="section-desc">Display-name spoofing is coming later. Other PsyNet spoofs (ranks, titles) are unaffected.</p>
-                <div class="wip-banner" role="status">
-                    <div class="wip-banner-text">
-                        <strong>Not available</strong>
-                        <span>Name spoof is not working yet and is fully disabled. Check back in a later update.</span>
+                <h2 class="section-title">Names</h2>
+                <p class="section-desc">Change your display name locally in menus, scoreboards, and nametags.</p>
+
+                <div class="card spoof-card">
+                    <div class="settings-group">
+                        <label class="switch-row" for="name-spoof-enabled">
+                            <input type="checkbox" id="name-spoof-enabled" class="switch-input" role="switch">
+                            <span class="switch-ui" aria-hidden="true">
+                                <span class="switch-track"><span class="switch-thumb"></span></span>
+                                <span class="switch-state">
+                                    <span class="switch-state-on">On</span>
+                                    <span class="switch-state-off">Off</span>
+                                </span>
+                            </span>
+                            <span class="switch-copy">
+                                <span class="switch-title">Name spoofing</span>
+                                <span class="switch-hint">Routes profile requests through local forward proxy</span>
+                            </span>
+                        </label>
+                    </div>
+
+                    <div class="settings-group">
+                        <label for="name-spoof-display">Spoofed Display Name</label>
+                        <input type="text" id="name-spoof-display" placeholder="Enter new display name..." autocomplete="off" spellcheck="false">
+                    </div>
+
+                    <div class="settings-group">
+                        <label for="name-spoof-real">Original Name Filter (Optional)</label>
+                        <input type="text" id="name-spoof-real" placeholder="Only replace this specific name (leave blank for any)..." autocomplete="off" spellcheck="false">
+                        <p class="switch-hint" style="margin-top:6px;">If left blank, all matching player display names returned by profile services will be updated.</p>
+                    </div>
+
+                    <div class="swapper-controls">
+                        <button id="name-spoof-save-btn" class="action-btn" type="button">Save name</button>
                     </div>
                 </div>
             </div>
@@ -652,7 +680,7 @@
                     <div id="progress-fill" class="progress-fill"></div>
                 </div>
             </div>
-            <div id="version-btn" role="button" tabindex="0">What's New · v2.0.0</div>
+            <div id="version-btn" role="button" tabindex="0">What's New · v2.1.0</div>
         </footer>
     </div>
 
