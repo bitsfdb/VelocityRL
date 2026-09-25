@@ -45,6 +45,75 @@ pub fn is_intercept_target(host: &str) -> bool {
 static LEARNED_PLAYER_ID: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 static LEARNED_REAL_NAME: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
+pub fn try_detect_identity_from_game_logs() -> (Option<String>, Option<String>) {
+    let Some(logs_dir) = crate::user_rl_logs_dir() else {
+        return (None, None);
+    };
+
+    let log_file = logs_dir.join("Launch.log");
+    let content = match std::fs::read_to_string(&log_file) {
+        Ok(c) => c,
+        Err(_) => return (None, None),
+    };
+
+    let mut found_id: Option<String> = None;
+    let mut found_name: Option<String> = None;
+
+    // Scan lines to find the latest LOCAL player login event
+    for line in content.lines().rev() {
+        if line.contains("HandleLocalPlayerLoginStatusChanged") || (line.contains("PlayerID=") && line.contains("IsPrimary=True")) {
+            if found_id.is_none() {
+                if let Some(pos) = line.find("PlayerID=") {
+                    let after = &line[pos + 9..];
+                    let id_token = after.split_whitespace().next().unwrap_or("");
+                    let clean = normalize_player_id(id_token);
+                    if !clean.is_empty() && !clean.contains("temp") {
+                        found_id = Some(clean);
+                    }
+                }
+            }
+            if found_name.is_none() {
+                if let Some(pos) = line.find("PlayerName=") {
+                    let after = &line[pos + 11..];
+                    let name_token = after.split_whitespace().next().unwrap_or("");
+                    let clean = name_token.trim().trim_matches(|c| c == '\'' || c == '"');
+                    if !clean.is_empty() {
+                        found_name = Some(clean.to_string());
+                    }
+                }
+            }
+            if found_id.is_some() || found_name.is_some() {
+                break;
+            }
+        }
+    }
+
+    if found_id.is_none() {
+        for line in content.lines().rev() {
+            if let Some(pos) = line.find("EpicAccountId=") {
+                let after = &line[pos + 14..];
+                let id_token = after.split_whitespace().next().unwrap_or("");
+                let clean = id_token.trim().trim_matches(|c| c == '\'' || c == '"');
+                if !clean.is_empty() && clean.len() >= 16 {
+                    found_id = Some(clean.to_ascii_lowercase());
+                    break;
+                }
+            }
+        }
+    }
+
+    if let Some(ref id) = found_id {
+        crate::applog::event(&format!("proxy: auto-detected PlayerID from Rocket League logs: '{id}'"));
+        persist_learned_identity_to_disk(Some(id), None);
+    }
+    if let Some(ref name) = found_name {
+        crate::applog::event(&format!("proxy: auto-detected PlayerName from Rocket League logs: '{name}'"));
+        persist_learned_identity_to_disk(None, Some(name));
+    }
+
+    (found_id, found_name)
+}
+
 pub fn get_learned_player_id() -> Option<String> {
     let mut lock = LEARNED_PLAYER_ID.lock().unwrap();
     if lock.is_none() {
@@ -52,7 +121,7 @@ pub fn get_learned_player_id() -> Option<String> {
             if let Some(ns) = cfg.name_spoof {
                 if let Some(pid) = ns.player_id {
                     let clean = pid.trim();
-                    if !clean.is_empty() && !clean.contains("|temp|") {
+                    if !clean.is_empty() && !clean.contains("|temp|") && clean != "temp" && clean != "realaccountid" {
                         *lock = Some(clean.to_string());
                     }
                 }
@@ -63,8 +132,20 @@ pub fn get_learned_player_id() -> Option<String> {
             let last_file = dir.join("last_player_id.txt");
             if let Ok(content) = std::fs::read_to_string(&last_file) {
                 let clean = content.trim();
-                if !clean.is_empty() && !clean.contains("|temp|") {
+                if !clean.is_empty() && !clean.contains("|temp|") && clean != "temp" && clean != "realaccountid" {
                     *lock = Some(clean.to_string());
+                }
+            }
+        }
+        if lock.is_none() {
+            let (id_opt, name_opt) = try_detect_identity_from_game_logs();
+            if let Some(id) = id_opt {
+                *lock = Some(id);
+            }
+            if let Some(name) = name_opt {
+                let mut name_lock = LEARNED_REAL_NAME.lock().unwrap();
+                if name_lock.is_none() {
+                    *name_lock = Some(name);
                 }
             }
         }
@@ -95,13 +176,25 @@ pub fn get_learned_real_name() -> Option<String> {
                 }
             }
         }
+        if lock.is_none() {
+            let (id_opt, name_opt) = try_detect_identity_from_game_logs();
+            if let Some(name) = name_opt {
+                *lock = Some(name);
+            }
+            if let Some(id) = id_opt {
+                let mut id_lock = LEARNED_PLAYER_ID.lock().unwrap();
+                if id_lock.is_none() {
+                    *id_lock = Some(id);
+                }
+            }
+        }
     }
     lock.clone()
 }
 
 pub fn set_learned_player_id(id: &str) {
     let clean = id.trim();
-    if clean.is_empty() || clean.to_ascii_lowercase().contains("|temp|") {
+    if clean.is_empty() || clean.to_ascii_lowercase().contains("|temp|") || clean.to_ascii_lowercase() == "temp" {
         return;
     }
     let mut lock = LEARNED_PLAYER_ID.lock().unwrap();
@@ -133,6 +226,9 @@ pub fn set_learned_real_name(name: &str) {
 }
 
 pub fn persist_learned_identity_to_disk(learned_id: Option<&str>, learned_name: Option<&str>) {
+    if cfg!(test) {
+        return;
+    }
     let dir = crate::psynet::config_dir();
     let _ = std::fs::create_dir_all(&dir);
 
@@ -193,10 +289,13 @@ pub fn persist_learned_identity_to_disk(learned_id: Option<&str>, learned_name: 
 }
 
 pub fn normalize_player_id(id: &str) -> String {
-    let lower = id.trim().to_ascii_lowercase();
+    let lower = id.trim().trim_matches(|c| c == '\'' || c == '"').to_ascii_lowercase();
     let mut s = lower.as_str();
-    if let Some(rest) = s.strip_prefix("epic|") {
-        s = rest;
+    for prefix in &["epic|", "steam|", "xbox|", "ps4|", "psn|", "switch|"] {
+        if let Some(rest) = s.strip_prefix(prefix) {
+            s = rest;
+            break;
+        }
     }
     if let Some((core, _)) = s.split_once('|') {
         s = core;
@@ -233,16 +332,16 @@ pub fn patch_eos_accounts_json(
                 .map(|s| s.to_string());
 
             let mut is_match = false;
-            if let Some(ref target) = clean_target {
+            if single_item {
+                is_match = true;
+                if let Some(ref a) = acc {
+                    learned_pid = Some(a.clone());
+                }
+            } else if let Some(ref target) = clean_target {
                 if let Some(ref a) = acc {
                     if normalize_player_id(a) == *target {
                         is_match = true;
                     }
-                }
-            } else if single_item {
-                is_match = true;
-                if let Some(ref a) = acc {
-                    learned_pid = Some(a.clone());
                 }
             }
 
@@ -416,7 +515,7 @@ fn patch_ws_names_value(
                 let is_name_key = NAME_KEYS.iter().any(|nk| nk.eq_ignore_ascii_case(k));
                 if is_name_key {
                     let mut should_patch = is_own_obj;
-                    if !should_patch && clean_pid.is_none() {
+                    if !should_patch {
                         if let Some(real) = clean_real {
                             if let Some(s) = v.as_str() {
                                 if s.eq_ignore_ascii_case(real) {
@@ -835,7 +934,15 @@ pub async fn start_native_proxy() -> Result<(), String> {
     let listener_v4 = match tokio::net::TcpListener::bind("127.0.0.1:443").await {
         Ok(l) => l,
         Err(e) => {
+            #[cfg(target_os = "linux")]
+            let msg = if e.kind() == std::io::ErrorKind::PermissionDenied {
+                "Failed to bind 127.0.0.1:443 (Permission denied). To allow port 443 on Linux, run: sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80".to_string()
+            } else {
+                format!("Failed to bind 127.0.0.1:443: {e}")
+            };
+            #[cfg(not(target_os = "linux"))]
             let msg = format!("Failed to bind 127.0.0.1:443: {e}");
+
             crate::applog::event(&format!("proxy: {msg}"));
             return Err(msg);
         }
@@ -1402,7 +1509,7 @@ async fn handle_forward_intercepted_request(
         if let Some(ns) = name_spoof {
             if let Ok(mut json_val) = serde_json::from_slice::<serde_json::Value>(&final_body) {
                 let learned_pid_store = get_learned_player_id();
-                let target_pid = learned_pid_store.as_deref().or(ns.player_id.as_deref());
+                let target_pid = ns.player_id.as_deref().filter(|s| !s.trim().is_empty()).or(learned_pid_store.as_deref());
                 let learned_name_store = get_learned_real_name();
                 let filter_real = ns.real_name.as_deref().or(learned_name_store.as_deref());
 
@@ -1760,46 +1867,46 @@ async fn handle_broker_request(
                 "broker: AuthPlayer WS rewrite skipped — broker port not set",
             );
         }
-    } else {
-        let cfg_opt = match crate::psynet::load_active_spoof_from_disk() {
-            Some(c) => Some(c),
-            None => get_spoof_config().await,
-        };
-        if let Some(cfg) = &cfg_opt {
-            if path_lower.contains("getplayerwallet") {
-                if let Some(cs) = &cfg.credit_spoof {
-                    if cs.enabled {
-                        let (new_body, did_patch) = patch_player_wallet_json(&out_body, cs);
-                        if did_patch {
-                            out_body = new_body;
-                            patched = true;
-                            crate::applog::event(&format!(
-                                "broker: patched wallet credits in RPC response -> {}",
-                                cs.amount
-                            ));
-                        }
-                    }
-                }
-            }
+    }
 
-            if let Some(ns) = &cfg.name_spoof {
-                if ns.enabled && !ns.display_name.trim().is_empty() {
-                    let learned_pid = get_learned_player_id();
-                    let target_pid = learned_pid.as_deref().or(ns.player_id.as_deref());
-
-                    let (new_body, did_patch) = patch_ws_name_fields(
-                        &out_body,
-                        ns.display_name.trim(),
-                        target_pid,
-                    );
+    let cfg_opt = match crate::psynet::load_active_spoof_from_disk() {
+        Some(c) => Some(c),
+        None => get_spoof_config().await,
+    };
+    if let Some(cfg) = &cfg_opt {
+        if path_lower.contains("getplayerwallet") || path_lower.contains("wallet") || find_bytes(&out_body, b"\"Currencies\"").is_some() {
+            if let Some(cs) = &cfg.credit_spoof {
+                if cs.enabled {
+                    let (new_body, did_patch) = patch_player_wallet_json(&out_body, cs);
                     if did_patch {
                         out_body = new_body;
                         patched = true;
                         crate::applog::event(&format!(
-                            "broker: patched name in RPC response -> '{}'",
-                            ns.display_name.trim()
+                            "broker: patched wallet credits in RPC response -> {}",
+                            cs.amount
                         ));
                     }
+                }
+            }
+        }
+
+        if let Some(ns) = &cfg.name_spoof {
+            if ns.enabled && !ns.display_name.trim().is_empty() {
+                let learned_pid = get_learned_player_id();
+                let target_pid = ns.player_id.as_deref().filter(|s| !s.trim().is_empty()).or(learned_pid.as_deref());
+
+                let (new_body, did_patch) = patch_ws_name_fields(
+                    &out_body,
+                    ns.display_name.trim(),
+                    target_pid,
+                );
+                if did_patch {
+                    out_body = new_body;
+                    patched = true;
+                    crate::applog::event(&format!(
+                        "broker: patched name in RPC response -> '{}'",
+                        ns.display_name.trim()
+                    ));
                 }
             }
         }
@@ -2183,9 +2290,9 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
     let mut current_body = body_part.to_vec();
     let mut any_changed = false;
 
-    let is_wallet = svc.contains("shops/getplayerwallet")
-        || svc.contains("getplayerwallet")
-        || (find_bytes(body_part, b"\"Currencies\"").is_some() && find_bytes(body_part, b"\"IsTradable\"").is_some());
+    let is_wallet = svc.contains("getplayerwallet")
+        || svc.contains("wallet")
+        || find_bytes(body_part, b"\"Currencies\"").is_some();
 
     if is_wallet {
         if let Some(cs) = &cfg.credit_spoof {
@@ -2243,7 +2350,7 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         if ns.enabled && !cfg.is_steam && !ns.display_name.trim().is_empty() {
             if !is_loadout_sensitive(&svc, &current_body) {
                 let learned_pid = get_learned_player_id();
-                let target_pid = learned_pid.as_deref().or(ns.player_id.as_deref());
+                let target_pid = ns.player_id.as_deref().filter(|s| !s.trim().is_empty()).or(learned_pid.as_deref());
 
                 let (new_body, changed) = patch_ws_name_fields(
                     &current_body,
@@ -2498,12 +2605,13 @@ fn patch_leaderboard_json(
     });
 
     if let Some(pid) = target_pid {
-        let clean_pid = pid.trim_start_matches("Epic|").trim_start_matches("Steam|").trim_start_matches("Xbox|").trim_start_matches("PS4|").trim_end_matches("|0");
+        let clean_pid = normalize_player_id(pid);
         for key in &["Rows", "Entries", "LeaderboardRows"] {
             if let Some(rows_arr) = result_obj.get_mut(*key).and_then(|r| r.as_array_mut()) {
                 for row in rows_arr.iter_mut() {
                     let row_pid = row.get("PlayerID").and_then(|v| v.as_str()).unwrap_or("");
-                    if row_pid.contains(clean_pid) || clean_pid.contains(row_pid) {
+                    let clean_row_pid = normalize_player_id(row_pid);
+                    if clean_row_pid == clean_pid || (!clean_pid.is_empty() && (row_pid.contains(&clean_pid) || clean_pid.contains(row_pid))) {
                         row["Rank"] = serde_json::json!(assigned_rank);
                         row["Value"] = serde_json::json!(target_display_mmr.round() as i64);
                         row["Tier"] = serde_json::json!(target_tier);
@@ -2608,7 +2716,8 @@ fn patch_player_wallet_json(
         let mut found_credits = false;
         let mut found_tournament = false;
         for curr in currencies.iter_mut() {
-            if let Some(id) = curr.get("ID").and_then(|v| v.as_i64()) {
+            let curr_id = curr.get("ID").or_else(|| curr.get("CurrencyID")).or_else(|| curr.get("Id")).and_then(|v| v.as_i64());
+            if let Some(id) = curr_id {
                 if id == 13 {
                     curr["Amount"] = serde_json::json!(credit_spoof.amount);
                     found_credits = true;
@@ -4262,6 +4371,13 @@ mod tests {
         assert_eq!(val["Result"]["Rank"], 1);
         assert_eq!(val["Result"]["UserRow"]["Rank"], 1);
         assert_eq!(val["Result"]["UserRow"]["Value"], 3000);
+    }
+
+    #[test]
+    fn test_normalize_player_id_formats() {
+        assert_eq!(normalize_player_id("Epic|0123456789abcdef0123456789abcdef|0"), "0123456789abcdef0123456789abcdef");
+        assert_eq!(normalize_player_id("0123456789abcdef0123456789abcdef"), "0123456789abcdef0123456789abcdef");
+        assert_eq!(normalize_player_id("Steam|76561198000000000|0"), "76561198000000000");
     }
 }
 

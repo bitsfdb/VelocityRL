@@ -3820,10 +3820,20 @@ function initCameraTab() {
     });
 }
 
+function normalizePlayerIdForUi(id) {
+    if (!id) return '';
+    let s = String(id).trim();
+    s = s.replace(/^(Epic|Steam|Xbox|PS4|PSN|Switch)\|/i, '');
+    s = s.replace(/\|0$/i, '');
+    if (s.includes('|')) s = s.split('|')[0];
+    return s.trim().toLowerCase();
+}
+
 function nameSpoofPayloadFromUi() {
     const enabled = !!document.getElementById('name-spoof-enabled')?.checked;
     const display_name = (document.getElementById('name-spoof-display')?.value || '').trim();
-    const player_id = (document.getElementById('name-spoof-player-id')?.value || '').trim();
+    const rawPid = (document.getElementById('name-spoof-player-id')?.value || '').trim();
+    const player_id = normalizePlayerIdForUi(rawPid);
     return {
         enabled,
         display_name,
@@ -3844,18 +3854,19 @@ function initNamesTab() {
     enabledEl.checked = !!ns.enabled;
     syncNameSpoofSwitchAria(enabledEl);
     if (displayEl) displayEl.value = ns.display_name || '';
-    if (playerIdEl) playerIdEl.value = ns.player_id || '';
+    if (playerIdEl) playerIdEl.value = normalizePlayerIdForUi(ns.player_id) || '';
 
     const refreshLearnedIdentity = () => {
         try {
             invoke('get_learned_identity').then((ident) => {
                 if (ident && ident.player_id && playerIdEl) {
-                    if (playerIdEl.value !== ident.player_id) {
-                        playerIdEl.value = ident.player_id;
+                    const normId = normalizePlayerIdForUi(ident.player_id);
+                    if (normId && playerIdEl.value !== normId && document.activeElement !== playerIdEl) {
+                        playerIdEl.value = normId;
                         try {
                             const cur = JSON.parse(localStorage.getItem(NAME_SPOOF_KEY) || '{}');
                             if (cur.name_spoof) {
-                                cur.name_spoof.player_id = ident.player_id;
+                                cur.name_spoof.player_id = normId;
                                 localStorage.setItem(NAME_SPOOF_KEY, JSON.stringify(cur));
                             }
                         } catch {}

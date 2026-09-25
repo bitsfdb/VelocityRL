@@ -367,7 +367,39 @@ fn user_rl_config_dir() -> Option<std::path::PathBuf> {
         }
         Some(candidates[0].clone())
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(home) = std::env::var("HOME") {
+            let home_path = std::path::Path::new(&home);
+            let prefixes = [
+                home_path.join("Games/Heroic/Prefixes/Rocket League/drive_c"),
+                home_path.join("Games/Heroic/Prefixes/default/Rocket League/drive_c"),
+                home_path.join("Games/Heroic/Prefixes/rocketleague/drive_c"),
+                home_path.join("Games/Heroic/Prefixes/rocketleague/pfx/drive_c"),
+                home_path.join(".var/app/com.heroicgameslauncher.hgl/Prefixes/Rocket League/drive_c"),
+                home_path.join(".local/share/Steam/steamapps/compatdata/252950/pfx/drive_c"),
+                home_path.join(".steam/steam/steamapps/compatdata/252950/pfx/drive_c"),
+                home_path.join(".steam/root/steamapps/compatdata/252950/pfx/drive_c"),
+                home_path.join(".var/app/com.valvesoftware.Steam/data/Steam/steamapps/compatdata/252950/pfx/drive_c"),
+                home_path.join("Games/rocketleague/drive_c"),
+                home_path.join("Games/rocket-league/drive_c"),
+                home_path.join(".wine/drive_c"),
+            ];
+            for pfx in &prefixes {
+                let users_dir = pfx.join("users");
+                if let Ok(entries) = std::fs::read_dir(&users_dir) {
+                    for u in entries.flatten() {
+                        let cfg_cand = u.path().join("Documents/My Games/Rocket League/TAGame/Config");
+                        if cfg_cand.exists() {
+                            return Some(cfg_cand);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         None
     }
