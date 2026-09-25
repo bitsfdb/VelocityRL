@@ -3841,15 +3841,10 @@ fn patch_camera(body: &[u8], cam: &crate::psynet::CameraSpoofPayload) -> (Vec<u8
 }
 
 fn patch_palette(body: &[u8]) -> (Vec<u8>, bool) {
-    // Rocket League's GFx color picker evaluates ClassPropertyConfig overrides at boot.
-    // Pointing CarColorSet on Team_Soccar_TA to OrangeTeamV2 activates our custom 10x21
-    // swatch matrix in the garage without touching default BlueTeam/OrangeTeam exports.
-    upsert_class_property_override(
-        body,
-        "Team_Soccar_TA",
-        "CarColorSet",
-        "CarColorSet_TA'CarColors.OrangeTeamV2'",
-    )
+    // In Season 24 (Build 260918+), overriding Team_Soccar_TA.CarColorSet via ClassPropertyConfig
+    // causes an instant null pointer crash in GameInfo_Soccar_TA when loading Freeplay or matches.
+    // We safely no-op this injection to ensure gameplay stability.
+    (body.to_vec(), false)
 }
 
 /// Locate the byte span for the root `"ClassPropertyConfig"` JSON object.
@@ -4053,11 +4048,8 @@ mod tests {
     fn test_patch_palette() {
         let input = br#"{"ClassPropertyConfig":{"Class":"ClassPropertyConfig_X","Overrides":[{"Class":"GFxData_MusicPlayer_TA","Property":"bDebugMusicPlayer","Value":"true"},{"Class":"Camera_TA","Property":"FOVLimits","Value":"(Min=1.000000,Max=1000.000000,interval=1.000000)"}]}}"#;
         let (patched, changed) = patch_palette(input);
-        assert!(changed);
-        let s = String::from_utf8(patched).unwrap();
-        assert!(s.contains("\"Class\":\"Team_Soccar_TA\""));
-        assert!(s.contains("\"Property\":\"CarColorSet\""));
-        assert!(s.contains("\"Value\":\"CarColorSet_TA'CarColors.OrangeTeamV2'\""));
+        assert!(!changed);
+        assert_eq!(patched, input);
     }
 
     #[test]
