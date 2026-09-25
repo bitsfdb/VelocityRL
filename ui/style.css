@@ -536,23 +536,27 @@ select::-ms-expand { display: none; }
     text-transform: uppercase;
 }
 
-.q-common { color: #aaa; }
-.q-uncommon { color: #1fb141; }
-.q-rare { color: #4b92fb; }
-.q-veryrare { color: #8e44ad; }
-.q-import { color: #e67e22; }
-.q-exotic { color: #f1c40f; }
-.q-blackmarket { color: #e74c3c; }
-.q-limited { color: #ff69b4; }
+.q-common { color: #9ca3af; }
+.q-uncommon { color: #38bdf8; }
+.q-rare { color: #3b82f6; }
+.q-veryrare { color: #a855f7; }
+.q-import { color: #ef4444; }
+.q-exotic { color: #facc15; }
+.q-blackmarket { color: #e879f9; }
+.q-limited { color: #fb923c; }
+.q-premium { color: #34d399; }
+.q-legacy { color: #fcd34d; }
 
-.bg-common { background: #333; color: #aaa; }
-.bg-uncommon { background: #166534; color: #1fb141; }
-.bg-rare { background: #1e40af; color: #4b92fb; }
-.bg-veryrare { background: #581c87; color: #b57edc; }
-.bg-import { background: #9a3412; color: #ff9f43; }
-.bg-exotic { background: #854d0e; color: #ffd32a; }
-.bg-blackmarket { background: #991b1b; color: #ff6b6b; }
-.bg-limited { background: #be185d; color: #ff85c8; }
+.bg-common { background: rgba(156, 163, 175, 0.15); color: #d1d5db; border: 1px solid rgba(156, 163, 175, 0.3); }
+.bg-uncommon { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.35); }
+.bg-rare { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.35); }
+.bg-veryrare { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.35); }
+.bg-import { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.35); }
+.bg-exotic { background: rgba(250, 204, 21, 0.15); color: #fde047; border: 1px solid rgba(250, 204, 21, 0.35); }
+.bg-blackmarket { background: rgba(232, 121, 249, 0.15); color: #f0abfc; border: 1px solid rgba(232, 121, 249, 0.35); }
+.bg-limited { background: rgba(251, 146, 60, 0.15); color: #fb923c; border: 1px solid rgba(251, 146, 60, 0.35); }
+.bg-premium { background: rgba(52, 211, 153, 0.15); color: #34d399; border: 1px solid rgba(52, 211, 153, 0.35); }
+.bg-legacy { background: rgba(252, 211, 77, 0.15); color: #fde68a; border: 1px solid rgba(252, 211, 77, 0.35); }
 
 .swapper-controls {
     margin: 0;
@@ -2958,3 +2962,37 @@ select option {
     border-color: #3b82f6 !important;
     background: rgba(59, 130, 246, 0.12) !important;
 }
+
+/* Customization Tab Styles */
+.credit-badge-display {
+    padding: 8px 14px;
+    background: linear-gradient(135deg, rgba(234, 179, 8, 0.15), rgba(202, 138, 4, 0.25));
+    border: 1px solid rgba(234, 179, 8, 0.4);
+    border-radius: 8px;
+    color: #facc15;
+    font-weight: 700;
+    font-size: 13px;
+    white-space: nowrap;
+    text-shadow: 0 0 8px rgba(250, 204, 21, 0.3);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.preset-pill-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 12px;
+    color: var(--text-muted, #aaa);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.preset-pill-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--text-primary, #fff);
+    border-color: rgba(255, 255, 255, 0.25);
+}
+

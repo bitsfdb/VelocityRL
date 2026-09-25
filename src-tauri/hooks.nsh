@@ -1,43 +1,19 @@
 !macro NSIS_HOOK_POSTINSTALL
-  DetailPrint "Cleaning up stale VelocityRL certificates..."
-  nsExec::Exec 'powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem Cert:\LocalMachine\Root, Cert:\CurrentUser\Root, Cert:\LocalMachine\CA, Cert:\CurrentUser\CA -ErrorAction SilentlyContinue | Where-Object { $_.Subject -like \"*VelocityRL*\" -or $_.Issuer -like \"*VelocityRL*\" -or $_.Subject -like \"*config.psynet.gg*\" -or $_.Subject -like \"*ws.rlpp.psynet.gg*\" } | Remove-Item -Force -ErrorAction SilentlyContinue"'
-  ; Old CA thumbprints
-  nsExec::Exec 'certutil -f -delstore Root 05969B177719D7613DBED10B7FBE4A0DD846EB7A'
-  nsExec::Exec 'certutil -user -f -delstore Root 05969B177719D7613DBED10B7FBE4A0DD846EB7A'
-  nsExec::Exec 'certutil -f -delstore CA 05969B177719D7613DBED10B7FBE4A0DD846EB7A'
-  nsExec::Exec 'certutil -user -f -delstore CA 05969B177719D7613DBED10B7FBE4A0DD846EB7A'
+  DetailPrint "Cleaning up legacy VelocityRL certificates..."
   nsExec::Exec 'certutil -f -delstore Root 38A28A81A89A71CA078369073BD2F0597422983C'
   nsExec::Exec 'certutil -user -f -delstore Root 38A28A81A89A71CA078369073BD2F0597422983C'
-  ; Old leaf cert thumbprints (3AF... = config, E3BD... = ws)
   nsExec::Exec 'certutil -f -delstore Root 3AF665291A560DFE85D68950AF29FA588B567ACE'
   nsExec::Exec 'certutil -user -f -delstore Root 3AF665291A560DFE85D68950AF29FA588B567ACE'
-  nsExec::Exec 'certutil -f -delstore CA 3AF665291A560DFE85D68950AF29FA588B567ACE'
-  nsExec::Exec 'certutil -user -f -delstore CA 3AF665291A560DFE85D68950AF29FA588B567ACE'
   nsExec::Exec 'certutil -f -delstore Root E3BD3E2AFB6D30FC8B6DC87752CA68E73A648E76'
   nsExec::Exec 'certutil -user -f -delstore Root E3BD3E2AFB6D30FC8B6DC87752CA68E73A648E76'
-  nsExec::Exec 'certutil -f -delstore CA E3BD3E2AFB6D30FC8B6DC87752CA68E73A648E76'
-  nsExec::Exec 'certutil -user -f -delstore CA E3BD3E2AFB6D30FC8B6DC87752CA68E73A648E76'
-  ; Previous build leaf thumbprints (CFFF... = config, 2901... = ws)
   nsExec::Exec 'certutil -f -delstore Root CFFF312D754F62344E30E11D128CDB1F35CF8FC8'
   nsExec::Exec 'certutil -user -f -delstore Root CFFF312D754F62344E30E11D128CDB1F35CF8FC8'
-  nsExec::Exec 'certutil -f -delstore CA CFFF312D754F62344E30E11D128CDB1F35CF8FC8'
-  nsExec::Exec 'certutil -user -f -delstore CA CFFF312D754F62344E30E11D128CDB1F35CF8FC8'
   nsExec::Exec 'certutil -f -delstore Root 290193877074751336AECEE8554F0D065F8F11CE'
   nsExec::Exec 'certutil -user -f -delstore Root 290193877074751336AECEE8554F0D065F8F11CE'
-  nsExec::Exec 'certutil -f -delstore CA 290193877074751336AECEE8554F0D065F8F11CE'
-  nsExec::Exec 'certutil -user -f -delstore CA 290193877074751336AECEE8554F0D065F8F11CE'
-  ; Previous CRL hashes
-  nsExec::Exec 'certutil -f -delstore Root 9DB9369DF51127837DC086DBA047B8DBB4A626D3'
-  nsExec::Exec 'certutil -user -f -delstore Root 9DB9369DF51127837DC086DBA047B8DBB4A626D3'
-  nsExec::Exec 'certutil -f -delstore CA 9DB9369DF51127837DC086DBA047B8DBB4A626D3'
-  nsExec::Exec 'certutil -user -f -delstore CA 9DB9369DF51127837DC086DBA047B8DBB4A626D3'
-  ; ws leaf from current build (0A53...) - was erroneously installed in a previous build, clean up
   nsExec::Exec 'certutil -f -delstore Root 0A5340B975F5AD3E8B7B9382C9CF8B37BAAF7EC8'
   nsExec::Exec 'certutil -user -f -delstore Root 0A5340B975F5AD3E8B7B9382C9CF8B37BAAF7EC8'
-  nsExec::Exec 'certutil -f -delstore CA 0A5340B975F5AD3E8B7B9382C9CF8B37BAAF7EC8'
-  nsExec::Exec 'certutil -user -f -delstore CA 0A5340B975F5AD3E8B7B9382C9CF8B37BAAF7EC8'
 
-  DetailPrint "Installing VelocityRL CA and CRL to Windows Certificate Stores..."
+  DetailPrint "Installing VelocityRL CA, CRL, and Multi-Domain Leaf Certificates..."
   ${If} ${FileExists} "$INSTDIR\psynet_proxy\velocityrl_ca.crt"
     nsExec::Exec 'certutil -f -addstore Root "$INSTDIR\psynet_proxy\velocityrl_ca.crt"'
     nsExec::Exec 'certutil -user -f -addstore Root "$INSTDIR\psynet_proxy\velocityrl_ca.crt"'
@@ -52,7 +28,6 @@
     nsExec::Exec 'certutil -user -f -addstore CA "$INSTDIR\psynet_proxy\velocityrl.crl"'
   ${EndIf}
 
-  ; config.psynet.gg leaf is MITM-intercepted so Schannel checks its revocation - install it.
   ${If} ${FileExists} "$INSTDIR\psynet_proxy\leaf_config.psynet.gg.crt"
     nsExec::Exec 'certutil -f -addstore Root "$INSTDIR\psynet_proxy\leaf_config.psynet.gg.crt"'
     nsExec::Exec 'certutil -user -f -addstore Root "$INSTDIR\psynet_proxy\leaf_config.psynet.gg.crt"'
@@ -60,16 +35,12 @@
     nsExec::Exec 'certutil -user -f -addstore CA "$INSTDIR\psynet_proxy\leaf_config.psynet.gg.crt"'
   ${EndIf}
 
-  ; leaf_epic.crt for Epic Online Services proxying
   ${If} ${FileExists} "$INSTDIR\psynet_proxy\leaf_epic.crt"
     nsExec::Exec 'certutil -f -addstore Root "$INSTDIR\psynet_proxy\leaf_epic.crt"'
     nsExec::Exec 'certutil -user -f -addstore Root "$INSTDIR\psynet_proxy\leaf_epic.crt"'
     nsExec::Exec 'certutil -f -addstore CA "$INSTDIR\psynet_proxy\leaf_epic.crt"'
     nsExec::Exec 'certutil -user -f -addstore CA "$INSTDIR\psynet_proxy\leaf_epic.crt"'
   ${EndIf}
-
-  ; ws.rlpp.psynet.gg is cert-pinned and never redirected via hosts file - do NOT install its
-  ; leaf cert into Windows stores. Schannel never checks our fake ws cert for revocation.
 
   DetailPrint "Configuring WinINet certificate revocation policy..."
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Internet Settings" "CertificateRevocation" 0

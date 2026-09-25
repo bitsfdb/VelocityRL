@@ -179,9 +179,89 @@ pub struct NameSpoofPayload {
     pub display_name: String,
     #[serde(default)]
     pub real_name: Option<String>,
+    #[serde(default)]
+    pub player_id: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CreditSpoofPayload {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_credit_amount", alias = "item_shop_amount")]
+    pub amount: i64,
+    #[serde(default = "default_tournament_amount", alias = "tournament_credits")]
+    pub tournament_amount: i64,
+}
+
+fn default_credit_amount() -> i64 {
+    100000
+}
+
+fn default_tournament_amount() -> i64 {
+    100000
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MenuBgSpoofPayload {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_menu_bg")]
+    pub background: String,
+}
+
+fn default_menu_bg() -> String {
+    "MMBG_Default".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct LeaderboardSpoofPayload {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_true")]
+    pub sync_from_fake_ranks: bool,
+    #[serde(default)]
+    pub custom_mmr: Option<i32>,
+    #[serde(default)]
+    pub custom_rank: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BoostMeterSpoofPayload {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_boost_style")]
+    pub style: String,
+}
+
+fn default_boost_style() -> String {
+    "default".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SfxSpoofPayload {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_flip_reset_sfx")]
+    pub flip_reset_sfx: String,
+    #[serde(default = "default_crossbar_sfx")]
+    pub crossbar_sfx: String,
+    #[serde(default = "default_volume")]
+    pub volume: f64,
+}
+
+fn default_flip_reset_sfx() -> String {
+    "mario_coin".into()
+}
+
+fn default_crossbar_sfx() -> String {
+    "loud_ping".into()
+}
+
+fn default_volume() -> f64 {
+    0.85
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct SpoofPayload {
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -197,7 +277,25 @@ pub struct SpoofPayload {
     pub custom_name: String,
 
     #[serde(default)]
+    pub is_steam: bool,
+
+    #[serde(default)]
     pub name_spoof: Option<NameSpoofPayload>,
+
+    #[serde(default)]
+    pub credit_spoof: Option<CreditSpoofPayload>,
+
+    #[serde(default)]
+    pub menu_bg_spoof: Option<MenuBgSpoofPayload>,
+
+    #[serde(default)]
+    pub leaderboard_spoof: Option<LeaderboardSpoofPayload>,
+
+    #[serde(default)]
+    pub boost_meter_spoof: Option<BoostMeterSpoofPayload>,
+
+    #[serde(default)]
+    pub sfx_spoof: Option<SfxSpoofPayload>,
 
     #[serde(default)]
     pub logo_spoof: Option<LogoSpoofPayload>,
@@ -321,7 +419,13 @@ pub fn default_spoof_payload() -> SpoofPayload {
         custom_text: "RLCS X Champion".into(),
         category: "RLCS_Champion".into(),
         custom_name: String::new(),
+        is_steam: false,
         name_spoof: None,
+        credit_spoof: None,
+        menu_bg_spoof: None,
+        leaderboard_spoof: None,
+        boost_meter_spoof: None,
+        sfx_spoof: None,
         logo_spoof: None,
         blog_spoof: None,
         camera_spoof: None,
@@ -615,14 +719,41 @@ fn write_spoof(dir: &Path, payload: &SpoofPayload) -> Result<PathBuf, String> {
             obj.insert("custom_name".into(), serde_json::json!(payload.custom_name));
         }
         if let Some(ns) = &payload.name_spoof {
-            obj.insert(
-                "name_spoof".into(),
-                serde_json::json!({
-                    "enabled": ns.enabled,
-                    "display_name": ns.display_name.trim(),
-                    "real_name": ns.real_name.as_deref().unwrap_or("").trim(),
-                }),
-            );
+            let mut ns_map = serde_json::Map::new();
+            let effective_enabled = ns.enabled && !payload.is_steam;
+            ns_map.insert("enabled".into(), serde_json::json!(effective_enabled));
+            ns_map.insert("display_name".into(), serde_json::json!(ns.display_name.trim()));
+
+            let prev_real = obj.get("name_spoof")
+                .and_then(|v| v.get("real_name"))
+                .and_then(|v| v.as_str())
+                .filter(|rn| !rn.trim().is_empty())
+                .map(|rn| rn.trim().to_string());
+
+            let prev_pid = obj.get("name_spoof")
+                .and_then(|v| v.get("player_id"))
+                .and_then(|v| v.as_str())
+                .filter(|pid| !pid.trim().is_empty() && !pid.contains("|temp|"))
+                .map(|pid| pid.trim().to_string());
+
+            let real_name_to_use = ns.real_name.as_deref()
+                .filter(|rn| !rn.trim().is_empty())
+                .map(|rn| rn.trim().to_string())
+                .or_else(|| crate::proxy::get_learned_real_name())
+                .or(prev_real);
+            if let Some(rn) = real_name_to_use {
+                ns_map.insert("real_name".into(), serde_json::json!(rn));
+            }
+
+            let pid_to_use = ns.player_id.as_deref()
+                .filter(|pid| !pid.trim().is_empty() && !pid.contains("|temp|"))
+                .map(|pid| pid.trim().to_string())
+                .or_else(|| crate::proxy::get_learned_player_id())
+                .or(prev_pid);
+            if let Some(pid) = pid_to_use {
+                ns_map.insert("player_id".into(), serde_json::json!(pid));
+            }
+            obj.insert("name_spoof".into(), serde_json::Value::Object(ns_map));
         }
         if let Some(ls) = &payload.logo_spoof {
 
@@ -652,6 +783,60 @@ fn write_spoof(dir: &Path, payload: &SpoofPayload) -> Result<PathBuf, String> {
                     "fov": camera_limit_json(&cam.fov, 60.0, 1000.0, 1.0),
                     "height": camera_limit_json(&cam.height, 40.0, 1000.0, 1.0),
                     "distance": camera_limit_json(&cam.distance, 100.0, 1000.0, 1.0),
+                }),
+            );
+        }
+
+        if let Some(cs) = &payload.credit_spoof {
+            obj.insert(
+                "credit_spoof".into(),
+                serde_json::json!({
+                    "enabled": cs.enabled,
+                    "amount": cs.amount,
+                }),
+            );
+        }
+
+        if let Some(bg) = &payload.menu_bg_spoof {
+            obj.insert(
+                "menu_bg_spoof".into(),
+                serde_json::json!({
+                    "enabled": bg.enabled,
+                    "background": bg.background.trim(),
+                }),
+            );
+        }
+
+        if let Some(lb) = &payload.leaderboard_spoof {
+            obj.insert(
+                "leaderboard_spoof".into(),
+                serde_json::json!({
+                    "enabled": lb.enabled,
+                    "sync_from_fake_ranks": lb.sync_from_fake_ranks,
+                    "custom_mmr": lb.custom_mmr,
+                    "custom_rank": lb.custom_rank,
+                }),
+            );
+        }
+
+        if let Some(bm) = &payload.boost_meter_spoof {
+            obj.insert(
+                "boost_meter_spoof".into(),
+                serde_json::json!({
+                    "enabled": bm.enabled,
+                    "style": bm.style.trim(),
+                }),
+            );
+        }
+
+        if let Some(sfx) = &payload.sfx_spoof {
+            obj.insert(
+                "sfx_spoof".into(),
+                serde_json::json!({
+                    "enabled": sfx.enabled,
+                    "flip_reset_sfx": sfx.flip_reset_sfx.trim(),
+                    "crossbar_sfx": sfx.crossbar_sfx.trim(),
+                    "volume": sfx.volume,
                 }),
             );
         }
@@ -874,11 +1059,20 @@ pub fn set_system_proxy_enabled(enabled: bool) {
             let _ = key.set_value("ProxyEnable", &1u32);
             let proxy_addr = format!("127.0.0.1:{}", crate::proxy::SYSTEM_PROXY_PORT);
             let _ = key.set_value("ProxyServer", &proxy_addr);
-            let _ = key.set_value("ProxyOverride", &"<local>");
-            crate::applog::event(&format!("psynet: system proxy enabled -> {proxy_addr}"));
+            let _ = key.set_value(
+                "ProxyOverride",
+                &"<local>;*epicgames.com;*.epicgames.com;*ol.epicgames.com;*.ol.epicgames.com;*unrealengine.com;*.unrealengine.com;*hcaptcha.com;*arkoselabs.com;*epicgames.org",
+            );
+            let _ = key.delete_value("AutoConfigURL");
+            crate::applog::event(&format!(
+                "psynet: system proxy enabled -> {proxy_addr} (override=<local>;*epicgames.com;*.epicgames.com;*ol.epicgames.com;*.ol.epicgames.com;*unrealengine.com;*.unrealengine.com;*hcaptcha.com;*arkoselabs.com;*epicgames.org)"
+            ));
         } else {
             let _ = key.set_value("ProxyEnable", &0u32);
-            crate::applog::event("psynet: system proxy disabled");
+            let _ = key.delete_value("ProxyServer");
+            let _ = key.delete_value("ProxyOverride");
+            let _ = key.delete_value("AutoConfigURL");
+            crate::applog::event("psynet: proxy disabled (ProxyEnable, ProxyServer, ProxyOverride, AutoConfigURL cleared)");
         }
     }
     notify_system_proxy_changed();
@@ -1271,6 +1465,7 @@ pub fn install_ca_direct(target_thumb: &str) -> Result<(), String> {
         ("ca", crate::proxy::ca_cert_bytes(), "crt"),
         ("crl", crate::proxy::ca_crl_bytes(), "crl"),
         ("leaf_config", crate::proxy::leaf_config_cert_bytes(), "crt"),
+        ("leaf_epic", crate::proxy::leaf_epic_cert_bytes(), "crt"),
         // ws.rlpp.psynet.gg is cert-pinned and never hosts-redirected - do not install its leaf.
     ];
 
@@ -1429,17 +1624,27 @@ pub fn install_user_ca_direct() {
         ("ca", crate::proxy::ca_cert_bytes(), "crt"),
         ("crl", crate::proxy::ca_crl_bytes(), "crl"),
         ("leaf_config", crate::proxy::leaf_config_cert_bytes(), "crt"),
-        // ws.rlpp.psynet.gg is cert-pinned and never hosts-redirected - do not install its leaf.
+        ("leaf_epic", crate::proxy::leaf_epic_cert_bytes(), "crt"),
     ];
 
     for (name, bytes, ext) in &certs_to_install {
         let tmp_cert = std::env::temp_dir().join(format!("velocityrl_user_{name}_{pid}.{ext}"));
         if let Ok(()) = fs::write(&tmp_cert, bytes) {
             let tmp_str = tmp_cert.to_string_lossy();
-            let _ = Command::new("certutil")
-                .args(["-user", "-f", "-addstore", "CA", &tmp_str])
-                .creation_flags(CREATE_NO_WINDOW)
-                .status();
+            for store in &["Root", "CA"] {
+                let _ = Command::new("certutil")
+                    .args(["-user", "-f", "-addstore", store, &tmp_str])
+                    .creation_flags(CREATE_NO_WINDOW)
+                    .status();
+            }
+            if is_process_elevated() {
+                for store in &["Root", "CA"] {
+                    let _ = Command::new("certutil")
+                        .args(["-f", "-addstore", store, &tmp_str])
+                        .creation_flags(CREATE_NO_WINDOW)
+                        .status();
+                }
+            }
             let _ = fs::remove_file(&tmp_cert);
         }
     }
@@ -1563,6 +1768,7 @@ fn ensure_config_hosts_inner() -> Result<bool, String> {
 
         let ca_b64 = base64::engine::general_purpose::STANDARD.encode(crate::proxy::ca_cert_bytes());
         let leaf_cfg_b64 = base64::engine::general_purpose::STANDARD.encode(crate::proxy::leaf_config_cert_bytes());
+        let leaf_epic_b64 = base64::engine::general_purpose::STANDARD.encode(crate::proxy::leaf_epic_cert_bytes());
         let crl_b64 = base64::engine::general_purpose::STANDARD.encode(crate::proxy::ca_crl_bytes());
         let pid = std::process::id();
 
@@ -1580,15 +1786,15 @@ Get-ChildItem Cert:\LocalMachine\Root, Cert:\CurrentUser\Root, Cert:\LocalMachin
 
 $tmpCa = Join-Path $env:TEMP "velocityrl_ca_{pid}.crt"
 $tmpLeafCfg = Join-Path $env:TEMP "velocityrl_leaf_cfg_{pid}.crt"
+$tmpLeafEpic = Join-Path $env:TEMP "velocityrl_leaf_epic_{pid}.crt"
 $tmpCrl = Join-Path $env:TEMP "velocityrl_{pid}.crl"
 [System.IO.File]::WriteAllBytes($tmpCa, [System.Convert]::FromBase64String("{ca_b64}"))
 [System.IO.File]::WriteAllBytes($tmpLeafCfg, [System.Convert]::FromBase64String("{leaf_cfg_b64}"))
+[System.IO.File]::WriteAllBytes($tmpLeafEpic, [System.Convert]::FromBase64String("{leaf_epic_b64}"))
 [System.IO.File]::WriteAllBytes($tmpCrl, [System.Convert]::FromBase64String("{crl_b64}"))
 try {{
-    # Install CA and CRL to both Root and CA stores (system + user).
-    # Install config.psynet.gg leaf cert so Schannel can check its CDP revocation.
-    # ws.rlpp.psynet.gg is cert-pinned and never hosts-redirected - do NOT install its leaf.
-    foreach ($f in @($tmpCa, $tmpLeafCfg, $tmpCrl)) {{
+    # Install CA, CRL, and leaf certs to both Root and CA stores (system + user).
+    foreach ($f in @($tmpCa, $tmpLeafCfg, $tmpLeafEpic, $tmpCrl)) {{
         certutil -f -addstore Root $f | Out-Null
         certutil -user -f -addstore Root $f | Out-Null
         certutil -f -addstore CA $f | Out-Null
@@ -1668,7 +1874,7 @@ try {{
     if ($stillHas.Count -eq 0) {{ exit 5 }}
     exit 0
 }} finally {{
-    Remove-Item -LiteralPath $tmpCa, $tmpLeafCfg, $tmpCrl -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $tmpCa, $tmpLeafCfg, $tmpLeafEpic, $tmpCrl -Force -ErrorAction SilentlyContinue
 }}
 "##
         );
@@ -1749,6 +1955,20 @@ pub async fn save_psynet_spoof(
     Ok(path.to_string_lossy().into_owned())
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LearnedIdentity {
+    pub player_id: Option<String>,
+    pub real_name: Option<String>,
+}
+
+#[tauri::command]
+pub async fn get_learned_identity() -> Result<LearnedIdentity, String> {
+    Ok(LearnedIdentity {
+        player_id: crate::proxy::get_learned_player_id(),
+        real_name: crate::proxy::get_learned_real_name(),
+    })
+}
+
 pub async fn verify_config_psynet_live() -> ConfigPsynetHealth {
     #[cfg(not(windows))]
     {
@@ -1774,6 +1994,7 @@ pub async fn verify_config_psynet_live() -> ConfigPsynetHealth {
         // 2. Check if proxy is listening on loopback 443 with TLS
         let insecure_client = reqwest::Client::builder()
             .danger_accept_invalid_certs(true)
+            .no_proxy()
             .resolve("config.psynet.gg", "127.0.0.1:443".parse().unwrap())
             .timeout(std::time::Duration::from_millis(1500))
             .build()
@@ -1792,6 +2013,7 @@ pub async fn verify_config_psynet_live() -> ConfigPsynetHealth {
         let mut tls_cert_trusted = false;
         if proxy_responding {
             let native_client = reqwest::Client::builder()
+                .no_proxy()
                 .resolve("config.psynet.gg", "127.0.0.1:443".parse().unwrap())
                 .timeout(std::time::Duration::from_millis(2000))
                 .build()
@@ -1809,6 +2031,7 @@ pub async fn verify_config_psynet_live() -> ConfigPsynetHealth {
         // 4. Check upstream PsyNet connectivity
         let upstream_client = reqwest::Client::builder()
             .danger_accept_invalid_certs(true)
+            .no_proxy()
             .resolve("config.psynet.gg", "34.160.180.65:443".parse().unwrap())
             .timeout(std::time::Duration::from_millis(2500))
             .build()
@@ -2046,7 +2269,7 @@ pub async fn stop_psynet_proxy(
 ) -> Result<PsyNetStatus, String> {
     crate::applog::event("psynet: stop requested (native Rust proxy)");
     let _guard = PROXY_LIFECYCLE.lock().await;
-    let do_revert = revert_hosts.unwrap_or(true);
+    let do_revert = revert_hosts.unwrap_or(false);
 
     set_system_proxy_enabled(false);
     crate::proxy::stop_native_proxy(do_revert);

@@ -268,10 +268,14 @@ const qColorMap = {
     'Uncommon': 'q-uncommon',
     'Rare': 'q-rare',
     'Very Rare': 'q-veryrare',
+    'VeryRare': 'q-veryrare',
     'Import': 'q-import',
     'Exotic': 'q-exotic',
     'Black Market': 'q-blackmarket',
-    'Limited': 'q-limited'
+    'BlackMarket': 'q-blackmarket',
+    'Limited': 'q-limited',
+    'Premium': 'q-premium',
+    'Legacy': 'q-legacy'
 };
 
 const qBgMap = {
@@ -279,11 +283,34 @@ const qBgMap = {
     'Uncommon': 'bg-uncommon',
     'Rare': 'bg-rare',
     'Very Rare': 'bg-veryrare',
+    'VeryRare': 'bg-veryrare',
     'Import': 'bg-import',
     'Exotic': 'bg-exotic',
     'Black Market': 'bg-blackmarket',
-    'Limited': 'bg-limited'
+    'BlackMarket': 'bg-blackmarket',
+    'Limited': 'bg-limited',
+    'Premium': 'bg-premium',
+    'Legacy': 'bg-legacy'
 };
+
+function getQualityBgClass(q) {
+    if (!q) return 'bg-common';
+    if (qBgMap[q]) return qBgMap[q];
+    const clean = String(q).trim().toLowerCase().replace(/[\s_-]+/g, '');
+    const map = {
+        'common': 'bg-common',
+        'uncommon': 'bg-uncommon',
+        'rare': 'bg-rare',
+        'veryrare': 'bg-veryrare',
+        'import': 'bg-import',
+        'exotic': 'bg-exotic',
+        'blackmarket': 'bg-blackmarket',
+        'limited': 'bg-limited',
+        'premium': 'bg-premium',
+        'legacy': 'bg-legacy',
+    };
+    return map[clean] || 'bg-common';
+}
 
 function emptyStateHtml() {
     return '<div class="empty-state"><p>No item selected</p></div>';
@@ -295,7 +322,7 @@ function renderSelectedItem(container, item, onClear) {
     const pSlot = item.Slot || item.slot || '';
     const pId = item.ID ?? item.id;
     const pImg = item.image_url || item.src || '';
-    const bgClass = qBgMap[pQuality] || 'bg-common';
+    const bgClass = getQualityBgClass(pQuality);
 
     container.innerHTML = `
         <div class="clear-item-btn">×</div>
@@ -358,7 +385,7 @@ async function init() {
             document.getElementById(btn.dataset.tab).classList.add('active');
             if (btn.dataset.tab === 'swapper-tab') refreshSwapRlHint();
             if (btn.dataset.tab === 'titles-tab') initTitlesTab();
-            if (btn.dataset.tab === 'names-tab') initNamesTab();
+            if (btn.dataset.tab === 'customization-tab' || btn.dataset.tab === 'names-tab') initCustomizationTab();
             if (btn.dataset.tab === 'ranks-tab') initRanksTab();
             if (btn.dataset.tab === 'tracker-tab') initTrackerTab();
             if (btn.dataset.tab === 'camera-tab') initCameraTab();
@@ -371,8 +398,14 @@ async function init() {
         btn.onclick = () => {
             if (isAppLoading()) return;
             const paneId = btn.dataset.subtab;
-            document.querySelectorAll('.subtab-btn').forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.subtab-pane').forEach(p => p.classList.remove('active'));
+            const parentTab = btn.closest('.tab-content');
+            if (parentTab) {
+                parentTab.querySelectorAll('.subtab-btn').forEach(b => b.classList.remove('active'));
+                parentTab.querySelectorAll('.subtab-pane').forEach(p => p.classList.remove('active'));
+            } else {
+                document.querySelectorAll('.subtab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.subtab-pane').forEach(p => p.classList.remove('active'));
+            }
             btn.classList.add('active');
             document.getElementById(paneId)?.classList.add('active');
             if (paneId === 'restore-pane') refreshBackups();
@@ -536,7 +569,7 @@ async function init() {
     });
     document.getElementById('dev-stop-proxy-btn')?.addEventListener('click', async () => {
         try {
-            await invoke('stop_psynet_proxy', { revertHosts: true });
+            await invoke('stop_psynet_proxy', { revertHosts: false });
             showToast('Proxy stopped.', 'success');
         } catch (e) {
             showToast('Proxy stop failed: ' + e, 'error');
@@ -1383,74 +1416,6 @@ function wirePresetsUI() {
     });
 }
 
-const STATIC_CAR_MAP = {
-    'grain': 'Fennec',
-    'force': 'Breakout',
-    'orion': 'Paladin',
-    'rhino': 'Road Hog',
-    'spark': 'Gizmo',
-    'torch': 'X-Devil',
-    'torch2': 'X-Devil Mk2',
-    'torment': 'Hotshot',
-    'vanquish': 'Merc',
-    'venom': 'Venom',
-    'import': 'Takumi',
-    'musclecar': 'Dominus',
-    'musclecar2': 'Dominus GT',
-    'scarab': 'Scarab',
-    'zippy': 'Zippy',
-    'wastelandtruck': 'Grog',
-    'interceptor': 'Ripper',
-    'neocar': 'Masamune',
-    'marauder': 'Marauder',
-    'number6': 'Esper',
-    'cannonboy': 'Aftershock',
-    'backfire': 'Backfire',
-    'octane': 'Octane',
-};
-const STATIC_CAR_KEYS = Object.keys(STATIC_CAR_MAP).sort((a, b) => b.length - a.length);
-
-let bodyMap = null;
-let sortedBodyKeys = null;
-
-function initBodyMap() {
-    if (bodyMap || !items || items.length === 0) return;
-    bodyMap = {};
-    items.forEach(i => {
-        const slot = normSlot(i.Slot || i.slot || '');
-        if (slot === 'body') {
-            let pkg = String(i.AssetPackage || i.asset_package || '').toLowerCase().trim();
-            if (pkg.startsWith('body_')) {
-                pkg = pkg.slice(5);
-            }
-            if (pkg) {
-                bodyMap[pkg] = i.Product || i.product || '';
-            }
-        }
-    });
-    sortedBodyKeys = Object.keys(bodyMap).sort((a, b) => b.length - a.length);
-}
-
-function getCarNameFromAsset(assetPackage) {
-    if (!assetPackage) return '';
-    initBodyMap();
-    let p = String(assetPackage).toLowerCase().replace('.bak', '').replace('.upk', '');
-    for (const prefix of ['skin_', 'skins_']) {
-        if (p.startsWith(prefix)) {
-            p = p.slice(prefix.length);
-            break;
-        }
-    }
-    const keys = sortedBodyKeys || STATIC_CAR_KEYS;
-    const map = sortedBodyKeys ? bodyMap : STATIC_CAR_MAP;
-    for (const k of keys) {
-        if (p.startsWith(k + '_') || p === k) {
-            return map[k];
-        }
-    }
-    return '';
-}
-
 async function refreshBackups() {
     if (!backupContainer) return;
     wireReswapButton();
@@ -1473,18 +1438,16 @@ async function refreshBackups() {
             const div = document.createElement('div');
             div.className = 'backup-item';
             let pImg = file.image_url || '';
-            const fileName = file.path.split(/[/\\]/).pop();
-            const cleanName = fileName.toLowerCase().replace('.bak', '').replace('.upk', '');
-            const carTag = getCarNameFromAsset(fileName);
-
             if (!pImg && items && items.length > 0) {
+                const fileName = file.path.split(/[/\\]/).pop();
+                const cleanName = fileName.toLowerCase().replace('.bak', '').replace('.upk', '');
                 const matched = items.find(i => {
-                    const dbPkg = (i.asset_package || i.AssetPackage || '').toLowerCase().replace('.upk', '');
+                    const dbPkg = (i.asset_package || '').toLowerCase().replace('.upk', '');
                     if (!dbPkg || dbPkg === 'none') return false;
                     return dbPkg === cleanName || (dbPkg.length > 4 && (cleanName.includes(dbPkg) || dbPkg.includes(cleanName)));
                 });
-                if (matched && (matched.image_url || matched.src)) {
-                    pImg = matched.image_url || matched.src;
+                if (matched && matched.image_url) {
+                    pImg = matched.image_url;
                 }
             }
             const swapLabel = file.swap_from && file.swap_to
@@ -1498,7 +1461,7 @@ async function refreshBackups() {
                     ${renderThumbnailHtml(pImg)}
                     ${file.swap_to_image ? renderThumbnailHtml(file.swap_to_image) : ''}
                     <div style="min-width:0;">
-                        <div class="backup-name">${escHtml(file.name)}${carTag ? ` <span style="font-size:12px;font-weight:600;color:#a78bfa;">(${escHtml(carTag)})</span>` : ''}</div>
+                        <div class="backup-name">${escHtml(file.name)}</div>
                         ${swapLabel ? `<div class="backup-date" style="color:var(--accent-blue);">${swapLabel}</div>` : `<div class="backup-date">Modified Product</div>`}
                     </div>
                 </div>
@@ -1552,7 +1515,7 @@ function showProgress(show, percent = 0) {
 function setupSearch(input, resultsDiv, selectionHandler) {
     if (!input || !resultsDiv) return;
     input.addEventListener('input', (e) => {
-        const term = e.target.value.toLowerCase().trim();
+        const term = e.target.value.toLowerCase();
 
         let lockCategory = currentCategory;
         if (input.id === 'wanted-search' && ownedItem) {
@@ -1564,7 +1527,6 @@ function setupSearch(input, resultsDiv, selectionHandler) {
             return;
         }
 
-        const searchWords = term.split(/\s+/).filter(Boolean);
         const matches = items.filter(item => {
             const pName = (item.Product || item.product || '').toLowerCase();
             const pAsset = (item.AssetPackage || item.asset_package || '').toLowerCase();
@@ -1573,11 +1535,7 @@ function setupSearch(input, resultsDiv, selectionHandler) {
             const invalidTypes = ['series', 'crate', 'currency', 'premium', 'unknown'];
             if (invalidTypes.includes(normSlot(pSlot))) return false;
 
-            const carName = (normSlot(pSlot) === 'decal' ? getCarNameFromAsset(pAsset) : '').toLowerCase();
-
-            const matchesTerm = searchWords.length === 0 || searchWords.every(w =>
-                pName.includes(w) || pAsset.includes(w) || carName.includes(w)
-            );
+            const matchesTerm = term.length < 2 || pName.includes(term) || pAsset.includes(term);
             const matchesCat = lockCategory === 'All' || normSlot(pSlot) === normSlot(lockCategory);
             return matchesTerm && matchesCat;
         }).slice(0, 50);
@@ -1616,14 +1574,12 @@ function renderResults(matches, resultsDiv, selectionHandler) {
         const pSlot = item.Slot || item.slot || '';
         const pId = item.ID ?? item.id;
         const pImg = item.image_url || item.src || '';
-        const pAsset = item.AssetPackage || item.asset_package || '';
-        const carTag = normSlot(pSlot) === 'decal' ? getCarNameFromAsset(pAsset) : '';
 
         div.innerHTML = `
             ${pImg ? `<img src="${escHtml(pImg)}" class="flyout-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="flyout-img" style="display:none;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>` : '<div class="flyout-img" style="display:flex;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>'}
             <div class="flyout-info">
                 <span class="item-name">${escHtml(pName)}</span>
-                <span style="font-size: 10px; color: var(--text-secondary)">${escHtml(pSlot)}${carTag ? ` · <span style="color:#a78bfa;font-weight:600;">${escHtml(carTag)}</span>` : ''}${pId != null ? ` · <span style="color:#5b8cff">ID ${escHtml(String(pId))}</span>` : ''}</span>
+                <span style="font-size: 10px; color: var(--text-secondary)">${escHtml(pSlot)}${pId != null ? ` · <span style="color:#5b8cff">ID ${escHtml(String(pId))}</span>` : ''}</span>
             </div>
         `;
         div.onclick = () => {
@@ -2279,6 +2235,8 @@ const BLOG_SPOOF_KEY = 'velocityrl_blog_spoof';
 const FAKE_RANKS_KEY = 'velocityrl_fake_ranks';
 const CAMERA_SPOOF_KEY = 'velocityrl_camera_spoof';
 const NAME_SPOOF_KEY = 'velocityrl_name_spoof';
+const CREDIT_SPOOF_KEY = 'velocityrl_credit_spoof';
+const MENU_BG_SPOOF_KEY = 'velocityrl_menu_bg_spoof';
 const DEFAULT_SEASON23_LOGO_URL = 'https://api.velocityrl.tech/thumbnails/rl_jpn.png';
 const DEFAULT_BLOG_MOTD = 'Use VelocityRL';
 const DEFAULT_CAMERA_LIMITS = {
@@ -2289,6 +2247,7 @@ const DEFAULT_CAMERA_LIMITS = {
 let titlesDb = { titles: [], categories: {} };
 let titlesTabReady = false;
 let namesTabReady = false;
+let customizationTabReady = false;
 let psynetProxyRunning = false;
 let spoofSaveInFlight = false;
 let proxyEnsurePromise = null;
@@ -2619,9 +2578,25 @@ async function hydrateSpoofToolsFromDisk() {
     {
         const ns = toolSliceFromDiskOrLocal(disk, NAME_SPOOF_KEY, 'name_spoof');
         const name_spoof = (ns && typeof ns === 'object' && ('enabled' in ns || ns.display_name != null))
-            ? { enabled: !!ns.enabled, display_name: ns.display_name || '', real_name: ns.real_name || '' }
-            : { enabled: false, display_name: '', real_name: '' };
+            ? { enabled: !!ns.enabled, display_name: ns.display_name || '', real_name: ns.real_name || '', player_id: ns.player_id || '' }
+            : { enabled: false, display_name: '', real_name: '', player_id: '' };
         localStorage.setItem(NAME_SPOOF_KEY, JSON.stringify({ name_spoof }));
+    }
+
+    {
+        const cs = toolSliceFromDiskOrLocal(disk, CREDIT_SPOOF_KEY, 'credit_spoof');
+        const credit_spoof = (cs && typeof cs === 'object' && ('enabled' in cs || cs.amount != null))
+            ? { enabled: !!cs.enabled, amount: Number(cs.amount) || 100000 }
+            : { enabled: false, amount: 100000 };
+        localStorage.setItem(CREDIT_SPOOF_KEY, JSON.stringify({ credit_spoof }));
+    }
+
+    {
+        const bg = toolSliceFromDiskOrLocal(disk, MENU_BG_SPOOF_KEY, 'menu_bg_spoof');
+        const menu_bg_spoof = (bg && typeof bg === 'object' && ('enabled' in bg || bg.background != null))
+            ? { enabled: !!bg.enabled, background: bg.background || 'MMBG_Default' }
+            : { enabled: false, background: 'MMBG_Default' };
+        localStorage.setItem(MENU_BG_SPOOF_KEY, JSON.stringify({ menu_bg_spoof }));
     }
 
     applyHydratedToolsToUi();
@@ -2634,7 +2609,7 @@ function applyHydratedToolsToUi() {
     if (document.getElementById('fake-ranks-enabled')) {
         loadFakeRanksFromSaved(fr);
     }
-    const cam = readLocalJson(CAMERA_SPOOF_KEY);
+    const cam = readLocalJson(CAMERA_spoof_KEY || CAMERA_SPOOF_KEY);
     if (document.getElementById('camera-spoof-enabled')) {
         loadCameraFromSaved(cam);
     }
@@ -2659,13 +2634,43 @@ function applyHydratedToolsToUi() {
     const nameData = readLocalJson(NAME_SPOOF_KEY).name_spoof || {};
     const nameEn = document.getElementById('name-spoof-enabled');
     const nameDisplay = document.getElementById('name-spoof-display');
-    const nameReal = document.getElementById('name-spoof-real');
+    const namePlayerId = document.getElementById('name-spoof-player-id');
     if (nameEn) {
         nameEn.checked = !!nameData.enabled;
         syncNameSpoofSwitchAria(nameEn);
     }
     if (nameDisplay) nameDisplay.value = nameData.display_name || '';
-    if (nameReal) nameReal.value = nameData.real_name || '';
+    if (namePlayerId) namePlayerId.value = nameData.player_id || '';
+
+    const creditData = readLocalJson(CREDIT_SPOOF_KEY).credit_spoof || {};
+    const creditEn = document.getElementById('credit-spoof-enabled');
+    const creditAmount = document.getElementById('credit-spoof-amount');
+    const creditTourney = document.getElementById('credit-spoof-tournament-amount');
+    const creditBadge = document.getElementById('credit-badge-preview');
+    if (creditEn) {
+        creditEn.checked = !!creditData.enabled;
+        syncNameSpoofSwitchAria(creditEn);
+    }
+    const cVal = Number(creditData.amount) || 100000;
+    const tVal = Number(creditData.tournament_amount) || 100000;
+    if (creditAmount) creditAmount.value = String(cVal);
+    if (creditTourney) creditTourney.value = String(tVal);
+    if (creditBadge) creditBadge.textContent = `${cVal.toLocaleString()} Credits`;
+
+    const bgData = readLocalJson(MENU_BG_SPOOF_KEY).menu_bg_spoof || {};
+    const bgEn = document.getElementById('menu-bg-spoof-enabled');
+    const bgSelect = document.getElementById('menu-bg-select');
+    if (bgEn) {
+        bgEn.checked = !!bgData.enabled;
+        syncNameSpoofSwitchAria(bgEn);
+    }
+    if (bgSelect) bgSelect.value = bgData.background || 'MMBG_Default';
+}
+
+function isSteamGameDir(gameDir) {
+    if (!gameDir || typeof gameDir !== 'string') return false;
+    const lower = gameDir.toLowerCase();
+    return lower.includes('steamapps') || lower.includes('steamlibrary') || lower.includes('\\steam\\') || lower.includes('/steam/');
 }
 
 function payloadFromHydratedLocal() {
@@ -2685,15 +2690,23 @@ function payloadFromHydratedLocal() {
     };
     const logo_spoof = readLocalJson(LOGO_SPOOF_KEY).logo_spoof || { enabled: false, logo_url: '' };
     const blog_spoof = readLocalJson(BLOG_SPOOF_KEY).blog_spoof || { enabled: false, motd: '' };
-    const name_spoof = readLocalJson(NAME_SPOOF_KEY).name_spoof || { enabled: false, display_name: '', real_name: '' };
+    const name_spoof = readLocalJson(NAME_SPOOF_KEY).name_spoof || { enabled: false, display_name: '', player_id: '' };
+    const credit_spoof = readLocalJson(CREDIT_SPOOF_KEY).credit_spoof || { enabled: false, amount: 100000, tournament_amount: 100000 };
+    const menu_bg_spoof = readLocalJson(MENU_BG_SPOOF_KEY).menu_bg_spoof || { enabled: false, background: 'MMBG_Default' };
+    const gameDirInput = document.getElementById('game-dir')?.value || '';
+    const is_steam = isSteamGameDir(gameDirInput);
+
     return {
         ...titles,
         method: 'raw',
+        is_steam,
         fake_ranks: fr,
         camera_spoof,
         logo_spoof,
         blog_spoof,
         name_spoof,
+        credit_spoof,
+        menu_bg_spoof,
     };
 }
 
@@ -2729,6 +2742,11 @@ async function anySpoofToolEnabled(payload) {
     if (p.logo_spoof?.enabled) return true;
     if (p.blog_spoof?.enabled) return true;
     if (p.name_spoof?.enabled && p.name_spoof?.display_name?.trim()) return true;
+    if (p.credit_spoof?.enabled) return true;
+    if (p.leaderboard_spoof?.enabled) return true;
+    if (p.menu_bg_spoof?.enabled) return true;
+    if (p.boost_meter_spoof?.enabled) return true;
+    if (p.sfx_spoof?.enabled) return true;
     if (PALETTE_UI_DISABLED) return false;
     try {
         const pal = await invoke('get_palette_status');
@@ -3805,18 +3823,18 @@ function initCameraTab() {
 function nameSpoofPayloadFromUi() {
     const enabled = !!document.getElementById('name-spoof-enabled')?.checked;
     const display_name = (document.getElementById('name-spoof-display')?.value || '').trim();
-    const real_name = (document.getElementById('name-spoof-real')?.value || '').trim();
+    const player_id = (document.getElementById('name-spoof-player-id')?.value || '').trim();
     return {
         enabled,
         display_name,
-        real_name: real_name || undefined,
+        player_id: player_id || undefined,
     };
 }
 
 function initNamesTab() {
     const enabledEl = document.getElementById('name-spoof-enabled');
     const displayEl = document.getElementById('name-spoof-display');
-    const realEl = document.getElementById('name-spoof-real');
+    const playerIdEl = document.getElementById('name-spoof-player-id');
     const saveBtn = document.getElementById('name-spoof-save-btn');
     if (!enabledEl || !saveBtn) return;
 
@@ -3826,10 +3844,62 @@ function initNamesTab() {
     enabledEl.checked = !!ns.enabled;
     syncNameSpoofSwitchAria(enabledEl);
     if (displayEl) displayEl.value = ns.display_name || '';
-    if (realEl) realEl.value = ns.real_name || '';
+    if (playerIdEl) playerIdEl.value = ns.player_id || '';
+
+    const refreshLearnedIdentity = () => {
+        try {
+            invoke('get_learned_identity').then((ident) => {
+                if (ident && ident.player_id && playerIdEl) {
+                    if (playerIdEl.value !== ident.player_id) {
+                        playerIdEl.value = ident.player_id;
+                        try {
+                            const cur = JSON.parse(localStorage.getItem(NAME_SPOOF_KEY) || '{}');
+                            if (cur.name_spoof) {
+                                cur.name_spoof.player_id = ident.player_id;
+                                localStorage.setItem(NAME_SPOOF_KEY, JSON.stringify(cur));
+                            }
+                        } catch {}
+                    }
+                }
+            }).catch(() => {});
+        } catch {}
+    };
+
+    refreshLearnedIdentity();
+
+    const updateSteamUiState = async () => {
+        try {
+            const cfg = await invoke('get_config').catch(() => ({}));
+            const gDir = document.getElementById('game-dir')?.value || cfg.game_dir || '';
+            const isSteam = isSteamGameDir(gDir);
+            const steamBanner = document.getElementById('name-spoof-steam-banner');
+            const nameCard = document.getElementById('name-spoof-card');
+            if (steamBanner) steamBanner.style.display = isSteam ? 'flex' : 'none';
+            if (enabledEl) {
+                if (isSteam) {
+                    enabledEl.checked = false;
+                    enabledEl.disabled = true;
+                    if (displayEl) displayEl.disabled = true;
+                    if (saveBtn) saveBtn.disabled = true;
+                    if (nameCard) nameCard.style.opacity = '0.5';
+                } else {
+                    enabledEl.disabled = false;
+                    if (displayEl) displayEl.disabled = false;
+                    if (saveBtn) saveBtn.disabled = false;
+                    if (nameCard) nameCard.style.opacity = '1';
+                }
+                syncNameSpoofSwitchAria(enabledEl);
+            }
+        } catch {}
+    };
+
+    updateSteamUiState();
 
     if (namesTabReady) return;
     namesTabReady = true;
+
+    setInterval(refreshLearnedIdentity, 3000);
+    setInterval(updateSteamUiState, 3000);
 
     enabledEl.addEventListener('change', () => syncNameSpoofSwitchAria(enabledEl));
 
@@ -3853,6 +3923,75 @@ function initNamesTab() {
             showToast(String(e), 'error');
         }
     });
+}
+
+let creditsTabReady = false;
+function initCreditsTab() {
+    const enabledEl = document.getElementById('credit-spoof-enabled');
+    const amountEl = document.getElementById('credit-spoof-amount');
+    const tourneyEl = document.getElementById('credit-spoof-tournament-amount');
+    const badgeEl = document.getElementById('credit-badge-preview');
+    const saveBtn = document.getElementById('credit-spoof-save-btn');
+    if (!enabledEl || !saveBtn) return;
+
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(CREDIT_SPOOF_KEY) || '{}'); } catch {}
+    const cs = saved.credit_spoof || {};
+    enabledEl.checked = !!cs.enabled;
+    syncNameSpoofSwitchAria(enabledEl);
+    const cVal = Number(cs.amount) || 100000;
+    const tVal = Number(cs.tournament_amount) || 100000;
+    if (amountEl) amountEl.value = String(cVal);
+    if (tourneyEl) tourneyEl.value = String(tVal);
+    if (badgeEl) badgeEl.textContent = `${cVal.toLocaleString()} Credits`;
+
+    const updateBadge = () => {
+        const val = Math.max(0, Math.min(999999999, Number(amountEl?.value) || 0));
+        if (badgeEl) badgeEl.textContent = `${val.toLocaleString()} Credits`;
+    };
+
+    if (creditsTabReady) return;
+    creditsTabReady = true;
+
+    amountEl?.addEventListener('input', updateBadge);
+
+    document.querySelectorAll('.preset-pill-btn[data-credit-val]').forEach((btn) => {
+        btn.onclick = () => {
+            if (amountEl) {
+                amountEl.value = btn.dataset.creditVal;
+                updateBadge();
+            }
+        };
+    });
+
+    enabledEl.addEventListener('change', () => syncNameSpoofSwitchAria(enabledEl));
+
+    saveBtn.onclick = async () => {
+        if (isAppLoading() || spoofSaveInFlight) return;
+        const enabled = !!enabledEl.checked;
+        const amount = Math.max(0, Math.min(999999999, Number(amountEl?.value) || 100000));
+        const tournament_amount = Math.max(0, Math.min(999999999, Number(tourneyEl?.value) || 100000));
+        const credit_spoof = { enabled, amount, tournament_amount };
+        try {
+            localStorage.setItem(CREDIT_SPOOF_KEY, JSON.stringify({ credit_spoof }));
+            await runToolSave(saveBtn, 'credit', { credit_spoof }, { enabled });
+            flashButtonLabel(saveBtn, enabled ? 'Saved' : 'Saved (off)');
+            if (enabled) {
+                showToast(`Credits spoofed: ${amount.toLocaleString()} Item Shop / ${tournament_amount.toLocaleString()} Tournament.`, 'success');
+            } else {
+                showToast('Credit spoof disabled.', 'success');
+            }
+        } catch (e) {
+            showToast(String(e), 'error');
+        }
+    };
+}
+
+function initCustomizationTab() {
+    initNamesTab();
+    initCreditsTab();
+    if (customizationTabReady) return;
+    customizationTabReady = true;
 }
 
 function wireReswapButton() {
@@ -4555,21 +4694,28 @@ async function loadTitlesDatabase() {
         titlesDb.categories = { ...titlesDb.categories, ...bundledCats };
     };
     try {
+        const res = await fetch(`https://api.velocityrl.tech/titles.json?t=${Date.now()}`, { cache: 'no-store' });
+        if (res.ok) {
+            applyLoadedTitles(await res.json());
+            return;
+        }
+    } catch {  }
+    try {
+        const res = await fetch(`${API_BASE}/v2/rl/titles?t=${Date.now()}`, { cache: 'no-store' });
+        if (res.ok) {
+            applyLoadedTitles(await res.json());
+            return;
+        }
+    } catch {  }
+    try {
+        const res = await fetch(`https://raw.githubusercontent.com/bitsfdb/VelocityRL/main/tools/psynet_proxy/titles.json?t=${Date.now()}`, { cache: 'no-store' });
+        if (res.ok) {
+            applyLoadedTitles(await res.json());
+            return;
+        }
+    } catch {  }
+    try {
         const res = await fetch('titles.json', { cache: 'no-store' });
-        if (res.ok) {
-            applyLoadedTitles(await res.json());
-            return;
-        }
-    } catch {  }
-    try {
-        const res = await fetch(`${API_BASE}/v2/rl/titles`, { cache: 'no-store' });
-        if (res.ok) {
-            applyLoadedTitles(await res.json());
-            return;
-        }
-    } catch {  }
-    try {
-        const res = await fetch('https://raw.githubusercontent.com/bitsfdb/VelocityRL/main/tools/psynet_proxy/titles.json', { cache: 'no-store' });
         if (res.ok) {
             applyLoadedTitles(await res.json());
             return;

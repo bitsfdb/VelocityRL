@@ -35,54 +35,487 @@ pub fn leaf_epic_cert_bytes() -> &'static [u8] {
     LEAF_EPIC_CERT_PEM
 }
 
-pub const SYSTEM_PROXY_PORT: u16 = 27580;
+pub const SYSTEM_PROXY_PORT: u16 = 8080;
 
 pub fn is_intercept_target(host: &str) -> bool {
     let h = host.trim().to_ascii_lowercase();
-    let domain = h.split(':').next().unwrap_or(&h);
-    domain.ends_with(".epicgames.com")
-        || domain == "epicgames.com"
-        || domain.ends_with(".epicgames.dev")
-        || domain == "epicgames.dev"
-        || domain.ends_with(".psyonix.com")
-        || domain == "psyonix.com"
-        || domain.ends_with(".live.psynet.gg")
-        || domain == "live.psynet.gg"
+    h.contains("epicgames.dev") || h.contains("psyonix.com") || h.contains("live.psynet.gg")
 }
 
-fn replace_display_names(val: &mut serde_json::Value, new_name: &str, filter_real_name: Option<&str>) -> bool {
+static LEARNED_PLAYER_ID: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+static LEARNED_REAL_NAME: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+pub fn get_learned_player_id() -> Option<String> {
+    let mut lock = LEARNED_PLAYER_ID.lock().unwrap();
+    if lock.is_none() {
+        if let Some(cfg) = crate::psynet::load_active_spoof_from_disk() {
+            if let Some(ns) = cfg.name_spoof {
+                if let Some(pid) = ns.player_id {
+                    let clean = pid.trim();
+                    if !clean.is_empty() && !clean.contains("|temp|") {
+                        *lock = Some(clean.to_string());
+                    }
+                }
+            }
+        }
+        if lock.is_none() {
+            let dir = crate::psynet::config_dir();
+            let last_file = dir.join("last_player_id.txt");
+            if let Ok(content) = std::fs::read_to_string(&last_file) {
+                let clean = content.trim();
+                if !clean.is_empty() && !clean.contains("|temp|") {
+                    *lock = Some(clean.to_string());
+                }
+            }
+        }
+    }
+    lock.clone()
+}
+
+pub fn get_learned_real_name() -> Option<String> {
+    let mut lock = LEARNED_REAL_NAME.lock().unwrap();
+    if lock.is_none() {
+        if let Some(cfg) = crate::psynet::load_active_spoof_from_disk() {
+            if let Some(ns) = cfg.name_spoof {
+                if let Some(rn) = ns.real_name {
+                    let clean = rn.trim();
+                    if !clean.is_empty() {
+                        *lock = Some(clean.to_string());
+                    }
+                }
+            }
+        }
+        if lock.is_none() {
+            let dir = crate::psynet::config_dir();
+            let last_file = dir.join("last_real_name.txt");
+            if let Ok(content) = std::fs::read_to_string(&last_file) {
+                let clean = content.trim();
+                if !clean.is_empty() {
+                    *lock = Some(clean.to_string());
+                }
+            }
+        }
+    }
+    lock.clone()
+}
+
+pub fn set_learned_player_id(id: &str) {
+    let clean = id.trim();
+    if clean.is_empty() || clean.to_ascii_lowercase().contains("|temp|") {
+        return;
+    }
+    let mut lock = LEARNED_PLAYER_ID.lock().unwrap();
+    if lock.as_deref() != Some(clean) {
+        crate::applog::event(&format!("proxy: learned own PlayerID: '{clean}'"));
+        *lock = Some(clean.to_string());
+        persist_learned_identity_to_disk(Some(clean), None);
+        if let Ok(mut spoof_lock) = SPOOF_CONFIG.try_write() {
+            if let Some(cfg) = spoof_lock.as_mut() {
+                if let Some(ns) = cfg.name_spoof.as_mut() {
+                    ns.player_id = Some(clean.to_string());
+                }
+            }
+        }
+    }
+}
+
+pub fn set_learned_real_name(name: &str) {
+    let clean = name.trim();
+    if clean.is_empty() {
+        return;
+    }
+    let mut lock = LEARNED_REAL_NAME.lock().unwrap();
+    if lock.as_deref() != Some(clean) {
+        crate::applog::event(&format!("proxy: learned real displayName: '{clean}'"));
+        *lock = Some(clean.to_string());
+        persist_learned_identity_to_disk(None, Some(clean));
+    }
+}
+
+pub fn persist_learned_identity_to_disk(learned_id: Option<&str>, learned_name: Option<&str>) {
+    let dir = crate::psynet::config_dir();
+    let _ = std::fs::create_dir_all(&dir);
+
+    if let Some(id) = learned_id {
+        let clean = id.trim();
+        if !clean.is_empty() && !clean.contains("|temp|") {
+            let _ = std::fs::write(dir.join("last_player_id.txt"), clean);
+        }
+    }
+    if let Some(name) = learned_name {
+        let clean = name.trim();
+        if !clean.is_empty() {
+            let _ = std::fs::write(dir.join("last_real_name.txt"), clean);
+        }
+    }
+
+    let path = dir.join("psynet_config.json");
+    let mut v = if path.is_file() {
+        std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw.trim_start_matches('\u{feff}')).ok())
+            .unwrap_or_else(|| serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    if let Some(obj) = v.as_object_mut() {
+        let mut changed = false;
+        let ns_entry = obj.entry("name_spoof").or_insert_with(|| serde_json::json!({}));
+        if let Some(ns_map) = ns_entry.as_object_mut() {
+            if let Some(id) = learned_id {
+                let clean = id.trim();
+                if !clean.is_empty() && !clean.contains("|temp|") {
+                    if ns_map.get("player_id").and_then(|v| v.as_str()) != Some(clean) {
+                        ns_map.insert("player_id".into(), serde_json::json!(clean));
+                        changed = true;
+                    }
+                }
+            }
+            if let Some(name) = learned_name {
+                let clean = name.trim();
+                if !clean.is_empty() {
+                    if ns_map.get("real_name").and_then(|v| v.as_str()) != Some(clean) {
+                        ns_map.insert("real_name".into(), serde_json::json!(clean));
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        if changed {
+            if let Ok(formatted) = serde_json::to_string_pretty(&v) {
+                let _ = std::fs::write(&path, formatted);
+                crate::applog::event(&format!("psynet: persisted learned identity to {}", path.display()));
+            }
+        }
+    }
+}
+
+pub fn normalize_player_id(id: &str) -> String {
+    let lower = id.trim().to_ascii_lowercase();
+    let mut s = lower.as_str();
+    if let Some(rest) = s.strip_prefix("epic|") {
+        s = rest;
+    }
+    if let Some((core, _)) = s.split_once('|') {
+        s = core;
+    }
+    s.trim().to_string()
+}
+
+pub fn patch_eos_accounts_json(
+    val: &mut serde_json::Value,
+    new_name: &str,
+    target_pid: Option<&str>,
+    _filter_real_name: Option<&str>,
+) -> (bool, Option<String>, Option<String>) {
     let mut modified = false;
+    let mut learned_pid = None;
+    let mut learned_name = None;
+
+    let clean_target = target_pid
+        .map(normalize_player_id)
+        .filter(|s| !s.is_empty() && s != "temp");
+
+    if let serde_json::Value::Array(arr) = val {
+        let single_item = arr.len() == 1;
+        for user_data in arr.iter_mut().filter_map(|v| v.as_object_mut()) {
+            let acc: Option<String> = user_data
+                .get("accountId")
+                .or_else(|| user_data.get("account_id"))
+                .or_else(|| user_data.get("id"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let current_disp: Option<String> = user_data
+                .get("displayName")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+
+            let mut is_match = false;
+            if let Some(ref target) = clean_target {
+                if let Some(ref a) = acc {
+                    if normalize_player_id(a) == *target {
+                        is_match = true;
+                    }
+                }
+            } else if single_item {
+                is_match = true;
+                if let Some(ref a) = acc {
+                    learned_pid = Some(a.clone());
+                }
+            }
+
+            if is_match {
+                if let Some(old_name) = current_disp {
+                    if old_name != new_name {
+                        learned_name = Some(old_name);
+                    }
+                }
+                user_data.insert("displayName".to_string(), serde_json::json!(new_name));
+                user_data.insert("sanitizedDisplayName".to_string(), serde_json::json!(new_name));
+                modified = true;
+                if let Some(ref a) = acc {
+                    learned_pid = Some(a.clone());
+                }
+            }
+        }
+    } else if let serde_json::Value::Object(user_data) = val {
+        let acc: Option<String> = user_data
+            .get("accountId")
+            .or_else(|| user_data.get("account_id"))
+            .or_else(|| user_data.get("id"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let current_disp: Option<String> = user_data
+            .get("displayName")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let mut is_match = false;
+        if let Some(ref target) = clean_target {
+            if let Some(ref a) = acc {
+                if normalize_player_id(a) == *target {
+                    is_match = true;
+                }
+            }
+        } else {
+            is_match = true;
+            if let Some(ref a) = acc {
+                learned_pid = Some(a.clone());
+            }
+        }
+
+        if is_match {
+            if let Some(old_name) = current_disp {
+                if old_name != new_name {
+                    learned_name = Some(old_name);
+                }
+            }
+            user_data.insert("displayName".to_string(), serde_json::json!(new_name));
+            user_data.insert("sanitizedDisplayName".to_string(), serde_json::json!(new_name));
+            modified = true;
+        }
+    }
+
+    (modified, learned_pid, learned_name)
+}
+
+fn patch_ws_name_fields(
+    body: &[u8],
+    new_name: &str,
+    target_pid: Option<&str>,
+) -> (Vec<u8>, bool) {
+    if new_name.trim().is_empty() {
+        return (body.to_vec(), false);
+    }
+    let Ok(mut root) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return (body.to_vec(), false);
+    };
+
+    let clean_pid = target_pid
+        .map(normalize_player_id)
+        .filter(|s| !s.is_empty() && s != "temp");
+
+    let learned_real_name = get_learned_real_name();
+
+    let mut changed = false;
+    patch_ws_names_value(
+        &mut root,
+        new_name.trim(),
+        clean_pid.as_deref(),
+        learned_real_name.as_deref(),
+        &mut changed,
+    );
+
+    if !changed {
+        return (body.to_vec(), false);
+    }
+
+    let out = serde_json::to_vec(&root).unwrap_or_else(|_| body.to_vec());
+    (out, true)
+}
+
+fn patch_ws_names_value(
+    val: &mut serde_json::Value,
+    new_name: &str,
+    clean_pid: Option<&str>,
+    clean_real: Option<&str>,
+    changed: &mut bool,
+) {
+    const NAME_KEYS: &[&str] = &[
+        "VerifiedPlayerName",
+        "PlayerName",
+        "DisplayName",
+        "epicDisplayName",
+        "PlayerNickName",
+        "NickName",
+        "username",
+        "UserName",
+        "TargetName",
+        "AccountName",
+        "PersonaName",
+    ];
+
     match val {
         serde_json::Value::Object(map) => {
+            let mut is_own_obj = false;
+            let mut has_other_id = false;
+
+            for id_key in &[
+                "PlayerID",
+                "UserID",
+                "FromUserID",
+                "ForUserID",
+                "FromEpicUserID",
+                "PlayerId",
+                "AccountID",
+                "AccountId",
+                "EpicAccountId",
+                "id",
+                "Id",
+                "ID",
+            ] {
+                if let Some(id_val) = map.get(*id_key) {
+                    if let Some(s) = id_val.as_str() {
+                        let norm = normalize_player_id(s);
+                        if let Some(target) = clean_pid {
+                            if norm == target {
+                                is_own_obj = true;
+                                break;
+                            } else if !norm.is_empty() && norm != "0" {
+                                has_other_id = true;
+                            }
+                        }
+                    } else if let Some(sub_obj) = id_val.as_object() {
+                        for sub_k in &["ID", "Id", "id", "PlayerID", "AccountId"] {
+                            if let Some(s) = sub_obj.get(*sub_k).and_then(|v| v.as_str()) {
+                                let norm = normalize_player_id(s);
+                                if let Some(target) = clean_pid {
+                                    if norm == target {
+                                        is_own_obj = true;
+                                        break;
+                                    } else if !norm.is_empty() && norm != "0" {
+                                        has_other_id = true;
+                                    }
+                                }
+                            }
+                        }
+                        if is_own_obj {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if !is_own_obj && !has_other_id && clean_pid.is_none() {
+                is_own_obj = true;
+            }
+
             for (k, v) in map.iter_mut() {
-                if k.eq_ignore_ascii_case("displayName") {
-                    if let Some(s) = v.as_str() {
-                        let should_replace = match filter_real_name {
-                            Some(real) if !real.is_empty() => s.eq_ignore_ascii_case(real),
-                            _ => true,
-                        };
-                        if should_replace && s != new_name {
-                            *v = serde_json::json!(new_name);
-                            modified = true;
+                let is_name_key = NAME_KEYS.iter().any(|nk| nk.eq_ignore_ascii_case(k));
+                if is_name_key {
+                    let mut should_patch = is_own_obj;
+                    if !should_patch && clean_pid.is_none() {
+                        if let Some(real) = clean_real {
+                            if let Some(s) = v.as_str() {
+                                if s.eq_ignore_ascii_case(real) {
+                                    should_patch = true;
+                                }
+                            }
+                        }
+                    }
+                    if should_patch {
+                        if let Some(s) = v.as_str() {
+                            if s != new_name && !s.trim().is_empty() {
+                                *v = serde_json::json!(new_name);
+                                *changed = true;
+                            }
                         }
                     }
                 } else {
-                    if replace_display_names(v, new_name, filter_real_name) {
-                        modified = true;
+                    if let Some(s) = v.as_str() {
+                        let trimmed = s.trim();
+                        if (trimmed.starts_with('{') && trimmed.ends_with('}'))
+                            || (trimmed.starts_with('[') && trimmed.ends_with(']'))
+                        {
+                            if let Ok(mut inner_val) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                                let mut inner_changed = false;
+                                patch_ws_names_value(&mut inner_val, new_name, clean_pid, clean_real, &mut inner_changed);
+                                if inner_changed {
+                                    if let Ok(serialized) = serde_json::to_string(&inner_val) {
+                                        *v = serde_json::json!(serialized);
+                                        *changed = true;
+                                    }
+                                }
+                            }
+                        }
                     }
+                    patch_ws_names_value(v, new_name, clean_pid, clean_real, changed);
                 }
             }
         }
         serde_json::Value::Array(arr) => {
             for v in arr.iter_mut() {
-                if replace_display_names(v, new_name, filter_real_name) {
-                    modified = true;
-                }
+                patch_ws_names_value(v, new_name, clean_pid, clean_real, changed);
             }
         }
         _ => {}
     }
-    modified
+}
+
+fn is_loadout_sensitive(svc: &str, body: &[u8]) -> bool {
+    let s = svc.to_ascii_lowercase();
+    for needle in &[
+        "products/getloadoutproducts",
+        "products/matchcomplete",
+        "products/matchcompletefte",
+        "products/playerhasloadouttemplate",
+        "products/getcontainerdroptable",
+        "products/getdestructionproductvalues",
+        "products/productupgradelevel",
+        "products/schematicstradein",
+        "products/unlockcontainer",
+        "products/tradein",
+        "products/crossentitlement",
+        "genericstorage/getplayergenericstorage",
+        "genericstorage/setplayergenericstorage",
+        "rocketpass/getplayerprestigerewards",
+        "rocketpass/getrewardcontent",
+        "microtransaction/claimentitlements",
+        "microtransaction/getcatalog",
+        // Social/presence/party services — contain friends' data, must never be patched
+        "social/",
+        "presence/",
+        "party/",
+        "friends/",
+        "richpresence",
+        "beacon",
+        "roster",
+    ] {
+        if s.contains(needle) {
+            return true;
+        }
+    }
+
+    for cat in &[
+        b"ProfileLoadoutSave_TA" as &[u8],
+        b"ProductsSave_TA",
+        b"ExhibitionMatchSettingsSave_TA",
+        b"PrivateMatchSettingsSave_TA",
+        // Presence and party frames — these carry friends' online state and must not be modified
+        b"PresenceState",
+        b"PartyMember",
+        b"RichPresence",
+        b"SocialBeacon",
+        b"FriendStatus",
+    ] {
+        if find_bytes(body, cat).is_some() {
+            return true;
+        }
+    }
+
+    false
 }
 
 const PSY_CDN_KEY: &[u8] = b"cqhyz50f3c3j2pxhwo6b1kypxikah0wh";
@@ -184,6 +617,24 @@ pub fn is_proxy_running() -> bool {
 }
 
 pub async fn set_spoof_config(cfg: crate::psynet::SpoofPayload) {
+    if let Some(ns) = &cfg.name_spoof {
+        if let Some(pid) = &ns.player_id {
+            if !pid.trim().is_empty() {
+                let mut lock = LEARNED_PLAYER_ID.lock().unwrap();
+                if lock.is_none() {
+                    *lock = Some(pid.trim().to_string());
+                }
+            }
+        }
+        if let Some(rn) = &ns.real_name {
+            if !rn.trim().is_empty() {
+                let mut lock = LEARNED_REAL_NAME.lock().unwrap();
+                if lock.is_none() {
+                    *lock = Some(rn.trim().to_string());
+                }
+            }
+        }
+    }
     let mut lock = SPOOF_CONFIG.write().await;
     *lock = Some(cfg);
 }
@@ -211,11 +662,9 @@ impl ResolvesServerCert for SniCertResolver {
             if lower.contains("config.psynet.gg") {
                 return Some(self.config_key.clone());
             }
-            if is_intercept_target(&lower) {
-                return Some(self.epic_key.clone());
-            }
+            return Some(self.epic_key.clone());
         }
-        Some(self.config_key.clone())
+        Some(self.epic_key.clone())
     }
 }
 
@@ -347,6 +796,22 @@ async fn handle_crl_or_http(
             .body(full_body("OK"))
             .unwrap());
     }
+    if path == "/proxy.pac" || path == "/wpad.dat" {
+        let pac = format!(
+            "function FindProxyForURL(url, host) {{\n    \
+             if (shExpMatch(host, \"*.epicgames.dev\") || host == \"api.epicgames.dev\" || shExpMatch(host, \"*account-public-service*\")) {{\n        \
+                 return \"PROXY 127.0.0.1:{SYSTEM_PROXY_PORT}; DIRECT\";\n    \
+             }}\n    \
+             return \"DIRECT\";\n\
+             }}"
+        );
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/x-ns-proxy-autoconfig")
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body(pac))
+            .unwrap());
+    }
     Ok(Response::builder()
         .status(StatusCode::NOT_FOUND)
         .body(full_body("Not Found"))
@@ -388,9 +853,9 @@ pub async fn start_native_proxy() -> Result<(), String> {
         crate::applog::event(&format!("proxy: listening on 127.0.0.1:{SYSTEM_PROXY_PORT} (System Forward Proxy)"));
         let acceptor_forward = acceptor.clone();
         let forward_client = reqwest::Client::builder()
-            .no_gzip()
-            .no_brotli()
-            .no_deflate()
+            .danger_accept_invalid_certs(true)
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .unwrap_or_default();
 
@@ -468,9 +933,11 @@ pub async fn start_native_proxy() -> Result<(), String> {
 
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
+        .no_proxy()
         .no_gzip()
         .no_brotli()
         .no_deflate()
+        .redirect(reqwest::redirect::Policy::none())
         .resolve("config.psynet.gg", "34.160.180.65:443".parse().unwrap())
         .build()
         .map_err(|e| format!("failed to create reqwest client: {e}"))?;
@@ -618,6 +1085,7 @@ async fn handle_forward_proxy_connection(
 
             if let Err(e) = hyper::server::conn::http1::Builder::new()
                 .serve_connection(io, service)
+                .with_upgrades()
                 .await
             {
                 let err_str = e.to_string();
@@ -642,7 +1110,192 @@ async fn handle_forward_proxy_connection(
 
             let _ = tokio::io::copy_bidirectional(&mut client_stream, &mut upstream_conn).await;
         }
+    } else {
+        // Plain HTTP proxy request (e.g. GET http://api.velocityrl.tech/ HTTP/1.1)
+        let io = TokioIo::new(client_stream);
+        let service = service_fn(move |mut req: Request<Incoming>| {
+            let client = client.clone();
+            async move {
+                let uri = req.uri().clone();
+                let host = uri.host().or_else(|| {
+                    req.headers().get(hyper::header::HOST).and_then(|h| h.to_str().ok()).and_then(|s| s.split(':').next())
+                }).unwrap_or("127.0.0.1").to_string();
+                let port = uri.port_u16().unwrap_or(80);
+
+                let mut target_url = uri.to_string();
+                if !target_url.starts_with("http://") && !target_url.starts_with("https://") {
+                    let path_and_query = uri.path_and_query().map(|p| p.as_str()).unwrap_or("/");
+                    target_url = format!("http://{host}:{port}{path_and_query}");
+                }
+
+                let mut req_builder = client.request(req.method().clone(), &target_url);
+                for (k, v) in req.headers() {
+                    let k_lower = k.as_str().to_ascii_lowercase();
+                    if k_lower != "host" && k_lower != "proxy-connection" && k_lower != "connection" {
+                        req_builder = req_builder.header(k.as_str(), v.as_bytes());
+                    }
+                }
+
+                let body_bytes = match req.body_mut().collect().await {
+                    Ok(collected) => collected.to_bytes().to_vec(),
+                    Err(_) => Vec::new(),
+                };
+                if !body_bytes.is_empty() {
+                    req_builder = req_builder.body(body_bytes);
+                }
+
+                let resp = match req_builder.send().await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        return Ok::<_, hyper::Error>(Response::builder()
+                            .status(StatusCode::BAD_GATEWAY)
+                            .body(full_body(format!("Proxy upstream error: {e}").into_bytes()))
+                            .unwrap());
+                    }
+                };
+
+                let mut resp_builder = Response::builder().status(resp.status());
+                for (k, v) in resp.headers() {
+                    let k_lower = k.as_str().to_ascii_lowercase();
+                    if k_lower != "content-length" && k_lower != "transfer-encoding" && k_lower != "content-encoding" {
+                        resp_builder = resp_builder.header(k.as_str(), v.as_bytes());
+                    }
+                }
+                let resp_bytes = resp.bytes().await.unwrap_or_default().to_vec();
+                resp_builder = resp_builder.header("Content-Length", resp_bytes.len().to_string());
+                Ok(resp_builder.body(full_body(resp_bytes)).unwrap())
+            }
+        });
+
+        let _ = hyper::server::conn::http1::Builder::new()
+            .serve_connection(io, service)
+            .await;
     }
+}
+
+async fn handle_forward_websocket(
+    req: Request<Incoming>,
+    upstream_host: &str,
+    upstream_port: u16,
+) -> Result<Response<ResponseBoxBody>, hyper::Error> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let connector = create_upstream_tls_connector();
+    let addr = format!("{upstream_host}:{upstream_port}");
+    let tcp_conn = match tokio::net::TcpStream::connect(&addr).await {
+        Ok(t) => t,
+        Err(e) => {
+            crate::applog::event(&format!("forward proxy ws: connect to {addr} failed: {e}"));
+            return Ok(Response::builder()
+                .status(StatusCode::BAD_GATEWAY)
+                .body(full_body(format!("connect error: {e}")))
+                .unwrap());
+        }
+    };
+
+    let server_name = match tokio_rustls::rustls::pki_types::ServerName::try_from(upstream_host.to_string()) {
+        Ok(sn) => sn,
+        Err(e) => {
+            return Ok(Response::builder()
+                .status(StatusCode::BAD_GATEWAY)
+                .body(full_body(format!("invalid server name: {e}")))
+                .unwrap());
+        }
+    };
+
+    let mut tls_upstream = match connector.connect(server_name, tcp_conn).await {
+        Ok(s) => s,
+        Err(e) => {
+            crate::applog::event(&format!("forward proxy ws: tls handshake error with {upstream_host}: {e}"));
+            return Ok(Response::builder()
+                .status(StatusCode::BAD_GATEWAY)
+                .body(full_body(format!("upstream tls error: {e}")))
+                .unwrap());
+        }
+    };
+
+    let method = req.method().clone();
+    let path_and_query = req.uri().path_and_query().map(|pq| pq.as_str()).unwrap_or("/").to_string();
+    let mut req_raw = format!("{method} {path_and_query} HTTP/1.1\r\n");
+    req_raw.push_str(&format!("Host: {upstream_host}\r\n"));
+    for (k, v) in req.headers() {
+        if !k.as_str().eq_ignore_ascii_case("host") {
+            if let Ok(v_str) = v.to_str() {
+                req_raw.push_str(&format!("{}: {}\r\n", k.as_str(), v_str));
+            }
+        }
+    }
+    req_raw.push_str("\r\n");
+
+    if let Err(e) = tls_upstream.write_all(req_raw.as_bytes()).await {
+        crate::applog::event(&format!("forward proxy ws: failed to write upgrade req: {e}"));
+        return Ok(Response::builder()
+            .status(StatusCode::BAD_GATEWAY)
+            .body(full_body(format!("write upgrade req error: {e}")))
+            .unwrap());
+    }
+
+    let mut resp_buf = vec![0u8; 4096];
+    let mut total_read = 0;
+    let header_end;
+    loop {
+        let n = match tls_upstream.read(&mut resp_buf[total_read..]).await {
+            Ok(n) if n > 0 => n,
+            _ => {
+                return Ok(Response::builder()
+                    .status(StatusCode::BAD_GATEWAY)
+                    .body(full_body("empty upstream upgrade response"))
+                    .unwrap());
+            }
+        };
+        total_read += n;
+        if let Some(pos) = find_bytes(&resp_buf[..total_read], b"\r\n\r\n") {
+            header_end = pos + 4;
+            break;
+        }
+        if total_read >= resp_buf.len() {
+            resp_buf.resize(resp_buf.len() * 2, 0);
+        }
+    }
+
+    let header_bytes = &resp_buf[..header_end];
+    let extra_data = resp_buf[header_end..total_read].to_vec();
+
+    let header_str = String::from_utf8_lossy(header_bytes);
+    let first_line = header_str.lines().next().unwrap_or("HTTP/1.1 101 Switching Protocols");
+    let status_code = first_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse::<u16>().ok())
+        .unwrap_or(101);
+
+    let mut resp_builder = Response::builder().status(status_code);
+    for line in header_str.lines().skip(1) {
+        if let Some((k, v)) = line.split_once(':') {
+            let k = k.trim();
+            let v = v.trim();
+            if !k.is_empty() {
+                resp_builder = resp_builder.header(k, v);
+            }
+        }
+    }
+
+    tokio::spawn(async move {
+        match hyper::upgrade::on(req).await {
+            Ok(upgraded) => {
+                let mut client_stream = TokioIo::new(upgraded);
+                if !extra_data.is_empty() {
+                    let _ = client_stream.write_all(&extra_data).await;
+                }
+                let _ = tokio::io::copy_bidirectional(&mut client_stream, &mut tls_upstream).await;
+            }
+            Err(e) => {
+                log::debug!("forward proxy ws upgrade on(req) failed: {e}");
+            }
+        }
+    });
+
+    Ok(resp_builder.body(empty_body()).unwrap())
 }
 
 async fn handle_forward_intercepted_request(
@@ -651,6 +1304,16 @@ async fn handle_forward_intercepted_request(
     upstream_port: u16,
     client: reqwest::Client,
 ) -> Result<Response<ResponseBoxBody>, hyper::Error> {
+    let is_upgrade = req
+        .headers()
+        .get(hyper::header::UPGRADE)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.eq_ignore_ascii_case("websocket"))
+        .unwrap_or(false);
+
+    if is_upgrade {
+        return handle_forward_websocket(req, &upstream_host, upstream_port).await;
+    }
     let method = req.method().clone();
     let uri = req.uri();
     let path = uri.path();
@@ -678,6 +1341,16 @@ async fn handle_forward_intercepted_request(
             && k_lower != "if-match"
             && k_lower != "if-unmodified-since"
             && k_lower != "if-range"
+            && k_lower != "host"
+            && k_lower != "connection"
+            && k_lower != "keep-alive"
+            && k_lower != "proxy-connection"
+            && k_lower != "proxy-authorization"
+            && k_lower != "proxy-authenticate"
+            && k_lower != "te"
+            && k_lower != "trailers"
+            && k_lower != "transfer-encoding"
+            && k_lower != "upgrade"
         {
             up_req = up_req.header(k.as_str(), v.as_bytes());
         }
@@ -699,34 +1372,55 @@ async fn handle_forward_intercepted_request(
 
     let status = resp.status();
     let resp_headers = resp.headers().clone();
-    let resp_bytes = match resp.bytes().await {
-        Ok(b) => b.to_vec(),
-        Err(_) => {
-            return Ok(Response::builder()
-                .status(StatusCode::BAD_GATEWAY)
-                .body(empty_body())
-                .unwrap());
-        }
-    };
+    let is_json = resp_headers
+        .get(hyper::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|ct| ct.contains("application/json") || ct.contains("+json"))
+        .unwrap_or(false);
 
-    let spoof_cfg = get_spoof_config().await;
-    let name_spoof = spoof_cfg
-        .as_ref()
-        .and_then(|c| c.name_spoof.as_ref())
-        .filter(|n| n.enabled && !n.display_name.trim().is_empty());
+    if is_json {
+        let resp_bytes = match resp.bytes().await {
+            Ok(b) => b.to_vec(),
+            Err(_) => {
+                return Ok(Response::builder()
+                    .status(StatusCode::BAD_GATEWAY)
+                    .body(empty_body())
+                    .unwrap());
+            }
+        };
 
-    let mut final_body = resp_bytes;
-    if let Some(ns) = name_spoof {
-        let is_json = resp_headers
-            .get(hyper::header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-            .map(|ct| ct.contains("application/json") || ct.contains("+json"))
-            .unwrap_or(false);
+        let spoof_cfg = match crate::psynet::load_active_spoof_from_disk() {
+            Some(c) => Some(c),
+            None => get_spoof_config().await,
+        };
+        let name_spoof = spoof_cfg
+            .as_ref()
+            .and_then(|c| c.name_spoof.as_ref())
+            .filter(|n| n.enabled && !n.display_name.trim().is_empty());
 
-        if is_json || final_body.starts_with(b"{") || final_body.starts_with(b"[") {
+        let mut final_body = resp_bytes;
+        if let Some(ns) = name_spoof {
             if let Ok(mut json_val) = serde_json::from_slice::<serde_json::Value>(&final_body) {
-                let real_filter = ns.real_name.as_deref().map(|s| s.trim()).filter(|s| !s.is_empty());
-                if replace_display_names(&mut json_val, ns.display_name.trim(), real_filter) {
+                let learned_pid_store = get_learned_player_id();
+                let target_pid = learned_pid_store.as_deref().or(ns.player_id.as_deref());
+                let learned_name_store = get_learned_real_name();
+                let filter_real = ns.real_name.as_deref().or(learned_name_store.as_deref());
+
+                let (modified, learned_pid, learned_name) = patch_eos_accounts_json(
+                    &mut json_val,
+                    ns.display_name.trim(),
+                    target_pid,
+                    filter_real,
+                );
+
+                if let Some(pid) = learned_pid {
+                    set_learned_player_id(&pid);
+                }
+                if let Some(rn) = learned_name {
+                    set_learned_real_name(&rn);
+                }
+
+                if modified {
                     if let Ok(serialized) = serde_json::to_vec(&json_val) {
                         crate::applog::event(&format!(
                             "forward proxy: spoofed displayName -> '{}' in response from {}",
@@ -738,20 +1432,36 @@ async fn handle_forward_intercepted_request(
                 }
             }
         }
-    }
 
-    let mut resp_builder = Response::builder().status(status);
-    for (k, v) in resp_headers.iter() {
-        let k_lower = k.as_str().to_ascii_lowercase();
-        if k_lower != "content-length"
-            && k_lower != "content-encoding"
-            && k_lower != "transfer-encoding"
-        {
-            resp_builder = resp_builder.header(k.as_str(), v.as_bytes());
+        let mut resp_builder = Response::builder().status(status);
+        for (k, v) in resp_headers.iter() {
+            let k_lower = k.as_str().to_ascii_lowercase();
+            if k_lower != "content-length"
+                && k_lower != "content-encoding"
+                && k_lower != "transfer-encoding"
+            {
+                resp_builder = resp_builder.header(k.as_str(), v.as_bytes());
+            }
         }
+        resp_builder = resp_builder.header("Content-Length", final_body.len().to_string());
+        Ok(resp_builder.body(full_body(final_body)).unwrap())
+    } else {
+        use futures_util::StreamExt;
+        let stream = resp.bytes_stream().filter_map(|r| async {
+            r.ok().map(hyper::body::Frame::data).map(Ok::<_, std::convert::Infallible>)
+        });
+        let body_stream = http_body_util::StreamBody::new(stream);
+        let boxed_body = http_body_util::BodyExt::boxed(body_stream);
+
+        let mut resp_builder = Response::builder().status(status);
+        for (k, v) in resp_headers.iter() {
+            let k_lower = k.as_str().to_ascii_lowercase();
+            if k_lower != "transfer-encoding" {
+                resp_builder = resp_builder.header(k.as_str(), v.as_bytes());
+            }
+        }
+        Ok(resp_builder.body(boxed_body).unwrap())
     }
-    resp_builder = resp_builder.header("Content-Length", final_body.len().to_string());
-    Ok(resp_builder.body(full_body(final_body)).unwrap())
 }
 
 /// Active loopback health probe: initiates a TLS handshake and HTTP/1.1 request to
@@ -766,11 +1476,15 @@ pub async fn check_loopback_health() -> Result<(), String> {
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
         .resolve("config.psynet.gg", "127.0.0.1:443".parse().unwrap())
-        .timeout(std::time::Duration::from_millis(1500))
+        .no_proxy()
+        .timeout(std::time::Duration::from_millis(2000))
         .build()
         .map_err(|e| format!("failed to build loopback probe client: {e}"))?;
 
-    for attempt in 1..=6 {
+    // Give the spawned TLS accept loop a moment to start before first probe.
+    tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+
+    for attempt in 1..=8 {
         match client.get("https://config.psynet.gg/health").send().await {
             Ok(resp) => {
                 if resp.status().is_success() {
@@ -790,7 +1504,7 @@ pub async fn check_loopback_health() -> Result<(), String> {
             Err(e) => {
                 crate::applog::log_i18n(
                     "health_fail",
-                    "proxy: loopback health probe attempt {attempt}/6 failed: {err}",
+                    "proxy: loopback health probe attempt {attempt}/8 failed: {err}",
                     &[("attempt", &attempt.to_string()), ("err", &e.to_string())],
                 );
             }
@@ -798,7 +1512,7 @@ pub async fn check_loopback_health() -> Result<(), String> {
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
 
-    Err("Proxy loopback TLS health check on 127.0.0.1:443 failed after multiple attempts. Port 443 is blocked or not responding to TLS handshakes.".into())
+    Err("Proxy loopback TLS health check on 127.0.0.1:443 failed after 8 attempts. Run VelocityRL as Administrator — binding port 443 requires elevated privileges on Windows.".into())
 }
 
 pub async fn verify_proxy_loopback_health() -> Result<(), String> {
@@ -852,6 +1566,7 @@ pub async fn start_ws_broker() -> Result<u16, String> {
     let client = reqwest::Client::builder()
         .http1_only()
         .danger_accept_invalid_certs(true)
+        .no_proxy()
         .no_gzip()
         .no_brotli()
         .no_deflate()
@@ -967,7 +1682,7 @@ async fn handle_broker_request(
     }
     up_builder = up_builder.header("Host", "api.rlpp.psynet.gg");
     if !body_bytes.is_empty() {
-        up_builder = up_builder.body(body_bytes);
+        up_builder = up_builder.body(body_bytes.clone());
     }
 
     let up_resp = match up_builder.send().await {
@@ -999,6 +1714,31 @@ async fn handle_broker_request(
     let path_lower = path_and_query.to_ascii_lowercase();
     if path_lower.contains("authplayer") {
         cache_auth_ws(&out_body);
+        for k in &["VerifiedPlayerName", "PlayerName", "DisplayName"] {
+            if let Some(rn) = find_json_value(&out_body, k) {
+                set_learned_real_name(&rn);
+                break;
+            }
+        }
+        for k in &["PlayerID", "PlayerId", "UserID", "FromUserID"] {
+            if let Some(pid) = find_json_value(&out_body, k) {
+                set_learned_player_id(&pid);
+                break;
+            }
+        }
+        for k in &["PlayerName", "DisplayName"] {
+            if let Some(rn) = find_json_value(&body_bytes, k) {
+                set_learned_real_name(&rn);
+                break;
+            }
+        }
+        for k in &["PlayerID", "PlayerId", "UserID"] {
+            if let Some(pid) = find_json_value(&body_bytes, k) {
+                set_learned_player_id(&pid);
+                break;
+            }
+        }
+
         if let Some(http_base) = broker_http_base() {
             let local_ws_v2 = format!("{http_base}/ws/gc2");
             let local_ws_v1 = format!("{http_base}/ws/gc?PsyConnectionType=Player");
@@ -1019,6 +1759,49 @@ async fn handle_broker_request(
             crate::applog::event(
                 "broker: AuthPlayer WS rewrite skipped — broker port not set",
             );
+        }
+    } else {
+        let cfg_opt = match crate::psynet::load_active_spoof_from_disk() {
+            Some(c) => Some(c),
+            None => get_spoof_config().await,
+        };
+        if let Some(cfg) = &cfg_opt {
+            if path_lower.contains("getplayerwallet") {
+                if let Some(cs) = &cfg.credit_spoof {
+                    if cs.enabled {
+                        let (new_body, did_patch) = patch_player_wallet_json(&out_body, cs);
+                        if did_patch {
+                            out_body = new_body;
+                            patched = true;
+                            crate::applog::event(&format!(
+                                "broker: patched wallet credits in RPC response -> {}",
+                                cs.amount
+                            ));
+                        }
+                    }
+                }
+            }
+
+            if let Some(ns) = &cfg.name_spoof {
+                if ns.enabled && !ns.display_name.trim().is_empty() {
+                    let learned_pid = get_learned_player_id();
+                    let target_pid = learned_pid.as_deref().or(ns.player_id.as_deref());
+
+                    let (new_body, did_patch) = patch_ws_name_fields(
+                        &out_body,
+                        ns.display_name.trim(),
+                        target_pid,
+                    );
+                    if did_patch {
+                        out_body = new_body;
+                        patched = true;
+                        crate::applog::event(&format!(
+                            "broker: patched name in RPC response -> '{}'",
+                            ns.display_name.trim()
+                        ));
+                    }
+                }
+            }
         }
     }
 
@@ -1371,6 +2154,11 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
     let headers_part = &frame[..hdr_end];
     let body_part = &frame[hdr_end + 4..];
 
+    let conn_id = get_ws_header_value(headers_part, "PsyConnectionID");
+    if !conn_id.is_empty() {
+        set_learned_player_id(&conn_id);
+    }
+
     let svc = get_ws_header_value(headers_part, "PsyService");
     let is_skill = svc.contains("skills/getplayerskill")
         || svc.contains("skills/getplayersskills")
@@ -1378,15 +2166,6 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
             && (find_bytes(body_part, b"\"Mu\"").is_some()
                 || find_bytes(body_part, b"\"Tier\"").is_some()
                 || find_bytes(body_part, b"\"Playlist\"").is_some()));
-    let is_leaderboard = svc.contains("skills/getskillleaderboardvalueforuser")
-        || (find_bytes(body_part, b"\"LeaderboardID\"").is_some()
-            && (find_bytes(body_part, b"\"bHasSkill\"").is_some()
-                || find_bytes(body_part, b"\"MMR\"").is_some()
-                || find_bytes(body_part, b"\"Value\"").is_some()));
-
-    if !is_skill && !is_leaderboard {
-        return (frame.to_vec(), false);
-    }
 
     if is_skill {
         extract_and_save_real_skills(body_part);
@@ -1401,38 +2180,98 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         return (frame.to_vec(), false);
     };
 
-    let Some(fake_ranks) = &cfg.fake_ranks else {
-        return (frame.to_vec(), false);
-    };
+    let mut current_body = body_part.to_vec();
+    let mut any_changed = false;
 
-    let features = crate::features::get_cached_features();
-    if !fake_ranks.enabled || !features.flags.fake_ranks || !crate::features::is_build_supported() {
+    let is_wallet = svc.contains("shops/getplayerwallet")
+        || svc.contains("getplayerwallet")
+        || (find_bytes(body_part, b"\"Currencies\"").is_some() && find_bytes(body_part, b"\"IsTradable\"").is_some());
+
+    if is_wallet {
+        if let Some(cs) = &cfg.credit_spoof {
+            if cs.enabled {
+                let (new_body, changed) = patch_player_wallet_json(&current_body, cs);
+                if changed {
+                    current_body = new_body;
+                    any_changed = true;
+                    crate::applog::event(&format!(
+                        "proxy: patched wallet credits -> {} ({} -> {} bytes)",
+                        cs.amount,
+                        frame.len(),
+                        current_body.len()
+                    ));
+                }
+            }
+        }
+    }
+
+    let is_leaderboard = svc.contains("getleaderboard")
+        || svc.contains("leaderboard")
+        || is_leaderboard_body(body_part);
+
+    if is_leaderboard {
+        let (new_body, changed) = patch_leaderboard_json(&current_body, &cfg);
+        if changed {
+            current_body = new_body;
+            any_changed = true;
+            crate::applog::event(&format!(
+                "proxy: patched leaderboard ws frame ({} -> {} bytes)",
+                frame.len(),
+                current_body.len()
+            ));
+        }
+    }
+
+    if is_skill {
+        if let Some(fr) = cfg.fake_ranks.as_ref() {
+            if fr.enabled {
+                let (new_body, changed) = patch_get_player_skill_json(&current_body, fr);
+                if changed {
+                    current_body = new_body;
+                    any_changed = true;
+                    crate::applog::event(&format!(
+                        "proxy: patched fake ranks ws frame ({} -> {} bytes)",
+                        frame.len(),
+                        current_body.len()
+                    ));
+                }
+            }
+        }
+    }
+
+    if let Some(ns) = &cfg.name_spoof {
+        if ns.enabled && !cfg.is_steam && !ns.display_name.trim().is_empty() {
+            if !is_loadout_sensitive(&svc, &current_body) {
+                let learned_pid = get_learned_player_id();
+                let target_pid = learned_pid.as_deref().or(ns.player_id.as_deref());
+
+                let (new_body, changed) = patch_ws_name_fields(
+                    &current_body,
+                    ns.display_name.trim(),
+                    target_pid,
+                );
+                if changed {
+                    crate::applog::event(&format!(
+                        "proxy: patched name in WS frame -> '{}' (target_pid={:?})",
+                        ns.display_name.trim(),
+                        target_pid
+                    ));
+                    current_body = new_body;
+                    any_changed = true;
+                }
+            }
+        }
+    }
+
+    if !any_changed {
         return (frame.to_vec(), false);
     }
 
-    let (new_body, changed) = if is_skill {
-        patch_get_player_skill_json(body_part, fake_ranks)
-    } else if is_leaderboard {
-        patch_leaderboard_value_json(body_part, fake_ranks)
-    } else {
-        (body_part.to_vec(), false)
-    };
-
-    if !changed {
-        return (frame.to_vec(), false);
-    }
-
-    let new_headers = resign_ws_headers(headers_part, &new_body);
-    let mut out = Vec::with_capacity(new_headers.len() + 4 + new_body.len());
+    let new_headers = resign_ws_headers(headers_part, &current_body);
+    let mut out = Vec::with_capacity(new_headers.len() + 4 + current_body.len());
     out.extend_from_slice(&new_headers);
     out.extend_from_slice(b"\r\n\r\n");
-    out.extend_from_slice(&new_body);
-
-    crate::applog::event(&format!(
-        "proxy: patched fake ranks ws frame ({} -> {} bytes)",
-        frame.len(),
-        out.len()
-    ));
+    out.extend_from_slice(&current_body);
 
     (out, true)
 }
@@ -1499,6 +2338,191 @@ fn resign_ws_headers(headers: &[u8], body: &[u8]) -> Vec<u8> {
     replace_ws_header_value(headers, key_to_replace, &sig)
 }
 
+fn is_leaderboard_body(body: &[u8]) -> bool {
+    let trim = body.trim_ascii();
+    find_bytes(trim, b"\"LeaderboardID\"").is_some()
+        || find_bytes(trim, b"\"LeaderboardRows\"").is_some()
+        || (find_bytes(trim, b"\"Rows\"").is_some() && (find_bytes(trim, b"\"Rank\"").is_some() || find_bytes(trim, b"\"Value\"").is_some()))
+        || (find_bytes(trim, b"\"Entries\"").is_some() && (find_bytes(trim, b"\"Rank\"").is_some() || find_bytes(trim, b"\"Value\"").is_some()))
+}
+
+fn patch_leaderboard_json(
+    body: &[u8],
+    cfg: &crate::psynet::SpoofPayload,
+) -> (Vec<u8>, bool) {
+    let fake_ranks_opt = cfg.fake_ranks.as_ref().filter(|fr| fr.enabled);
+    let lb_spoof_opt = cfg.leaderboard_spoof.as_ref().filter(|lb| lb.enabled);
+
+    if fake_ranks_opt.is_none() && lb_spoof_opt.is_none() {
+        return (body.to_vec(), false);
+    }
+
+    let mut root: serde_json::Value = match serde_json::from_slice(body) {
+        Ok(v) => v,
+        Err(_) => return (body.to_vec(), false),
+    };
+
+    let result_obj = if let Some(r) = root.get_mut("Result") {
+        r
+    } else {
+        &mut root
+    };
+
+    let mut pl = 0;
+    if let Some(id_str) = result_obj.get("LeaderboardID").and_then(|v| v.as_str()) {
+        let num_str = id_str.trim_start_matches("Skill").trim_start_matches("skill");
+        if let Ok(n) = num_str.parse::<i32>() {
+            pl = n;
+        }
+    } else if let Some(p_val) = result_obj.get("Playlist").or_else(|| result_obj.get("PlaylistID")) {
+        if let Some(n) = p_val.as_i64() {
+            pl = n as i32;
+        } else if let Some(s) = p_val.as_str() {
+            if let Ok(n) = s.parse::<i32>() {
+                pl = n;
+            }
+        }
+    }
+
+    let mut target_display_mmr = 3000.0;
+    let mut target_tier = 22; // Supersonic Legend default
+    let mut custom_rank: Option<i64> = None;
+    let mut found_override = false;
+
+    if let Some(lb) = lb_spoof_opt {
+        if let Some(cr) = lb.custom_rank {
+            custom_rank = Some(cr as i64);
+            found_override = true;
+        }
+        if !lb.sync_from_fake_ranks {
+            if let Some(cm) = lb.custom_mmr {
+                target_display_mmr = cm as f64;
+                found_override = true;
+            }
+        }
+    }
+
+    if let Some(fr) = fake_ranks_opt {
+        if let Some(ov) = get_playlist_override(fr, pl) {
+            found_override = true;
+            if let Some(disp) = ov.display_mmr {
+                target_display_mmr = disp;
+            } else if let Some(mu) = ov.mu {
+                target_display_mmr = (mu * 20.0 + 100.0).max(0.0);
+            }
+            if let Some(tier) = ov.tier {
+                target_tier = tier;
+            }
+        }
+    }
+
+    if !found_override && lb_spoof_opt.is_none() {
+        return (body.to_vec(), false);
+    }
+
+    let target_mu = mu_from_display(target_display_mmr);
+
+    // Calculate auto rank if custom rank is not explicitly set
+    let assigned_rank = if let Some(cr) = custom_rank {
+        cr
+    } else {
+        // Inspect Rows/Entries in leaderboard to find where target_display_mmr ranks
+        let rows_opt = result_obj.get("Rows").and_then(|r| r.as_array())
+            .or_else(|| result_obj.get("Entries").and_then(|r| r.as_array()))
+            .or_else(|| result_obj.get("LeaderboardRows").and_then(|r| r.as_array()));
+
+        if let Some(rows) = rows_opt {
+            let mut computed_rank = 1;
+            let mut found_slot = false;
+            for (i, row) in rows.iter().enumerate() {
+                let row_val = row.get("Value").and_then(|v| v.as_f64())
+                    .or_else(|| row.get("Rating").and_then(|v| v.as_f64()))
+                    .or_else(|| row.get("Score").and_then(|v| v.as_f64()))
+                    .or_else(|| {
+                        row.get("MMR").and_then(|v| v.as_f64()).map(|m| {
+                            if m < 250.0 { m * 20.0 + 100.0 } else { m }
+                        })
+                    })
+                    .unwrap_or(0.0);
+
+                if target_display_mmr >= row_val {
+                    computed_rank = (i + 1) as i64;
+                    found_slot = true;
+                    break;
+                }
+            }
+            if !found_slot {
+                computed_rank = (rows.len() + 1) as i64;
+            }
+            computed_rank
+        } else {
+            // GetLeaderboardValue single-player response
+            if target_display_mmr >= 1900.0 || target_tier >= 22 {
+                1
+            } else if target_display_mmr >= 1500.0 {
+                50
+            } else {
+                1
+            }
+        }
+    };
+
+    // Patch top-level / Result fields
+    result_obj["MMR"] = serde_json::json!(target_mu);
+    result_obj["Value"] = serde_json::json!(target_tier);
+    result_obj["bHasSkill"] = serde_json::json!(true);
+    result_obj["Rank"] = serde_json::json!(assigned_rank);
+    result_obj["UserRank"] = serde_json::json!(assigned_rank);
+    result_obj["RankValue"] = serde_json::json!(assigned_rank);
+    result_obj["Position"] = serde_json::json!(assigned_rank);
+    result_obj["UserPosition"] = serde_json::json!(assigned_rank);
+    let mut changed = true;
+
+    // Patch user row if present (UserRow, PlayerRow, SelfRow, UserEntry)
+    for key in &["UserRow", "PlayerRow", "SelfRow", "UserEntry"] {
+        if let Some(user_row) = result_obj.get_mut(*key).and_then(|v| v.as_object_mut()) {
+            user_row.insert("Rank".into(), serde_json::json!(assigned_rank));
+            user_row.insert("UserRank".into(), serde_json::json!(assigned_rank));
+            user_row.insert("Value".into(), serde_json::json!(target_display_mmr.round() as i64));
+            user_row.insert("Tier".into(), serde_json::json!(target_tier));
+            user_row.insert("MMR".into(), serde_json::json!(target_mu));
+            user_row.insert("bHasSkill".into(), serde_json::json!(true));
+            changed = true;
+        }
+    }
+
+    // Check if user is in Rows / Entries array and update their entry
+    let learned_pid = get_learned_player_id();
+    let target_pid = learned_pid.as_deref().or_else(|| {
+        cfg.name_spoof.as_ref().and_then(|ns| ns.player_id.as_deref())
+    });
+
+    if let Some(pid) = target_pid {
+        let clean_pid = pid.trim_start_matches("Epic|").trim_start_matches("Steam|").trim_start_matches("Xbox|").trim_start_matches("PS4|").trim_end_matches("|0");
+        for key in &["Rows", "Entries", "LeaderboardRows"] {
+            if let Some(rows_arr) = result_obj.get_mut(*key).and_then(|r| r.as_array_mut()) {
+                for row in rows_arr.iter_mut() {
+                    let row_pid = row.get("PlayerID").and_then(|v| v.as_str()).unwrap_or("");
+                    if row_pid.contains(clean_pid) || clean_pid.contains(row_pid) {
+                        row["Rank"] = serde_json::json!(assigned_rank);
+                        row["Value"] = serde_json::json!(target_display_mmr.round() as i64);
+                        row["Tier"] = serde_json::json!(target_tier);
+                        row["MMR"] = serde_json::json!(target_mu);
+                        changed = true;
+                    }
+                }
+            }
+        }
+    }
+
+    if !changed {
+        return (body.to_vec(), false);
+    }
+
+    let out = serde_json::to_vec(&root).unwrap_or_else(|_| body.to_vec());
+    (out, true)
+}
+
 fn patch_get_player_skill_json(
     body: &[u8],
     fake_ranks: &crate::psynet::FakeRanksPayload,
@@ -1561,35 +2585,88 @@ fn patch_get_player_skill_json(
     (out, true)
 }
 
-fn patch_leaderboard_value_json(
+fn patch_player_wallet_json(
     body: &[u8],
-    fake_ranks: &crate::psynet::FakeRanksPayload,
+    credit_spoof: &crate::psynet::CreditSpoofPayload,
 ) -> (Vec<u8>, bool) {
+    if !credit_spoof.enabled {
+        return (body.to_vec(), false);
+    }
     let mut root: serde_json::Value = match serde_json::from_slice(body) {
         Ok(v) => v,
         Err(_) => return (body.to_vec(), false),
     };
 
-    let pl = root.get("LeaderboardID").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-    let Some(ov) = get_playlist_override(fake_ranks, pl) else {
-        return (body.to_vec(), false);
-    };
-
-    let mu_opt = if let Some(disp) = ov.display_mmr {
-        Some(mu_from_display(disp))
+    let result_obj = if let Some(r) = root.get_mut("Result") {
+        r
     } else {
-        ov.mu
+        &mut root
     };
 
-    let Some(mu) = mu_opt else {
+    let mut changed = false;
+    if let Some(currencies) = result_obj.get_mut("Currencies").and_then(|c| c.as_array_mut()) {
+        let mut found_credits = false;
+        let mut found_tournament = false;
+        for curr in currencies.iter_mut() {
+            if let Some(id) = curr.get("ID").and_then(|v| v.as_i64()) {
+                if id == 13 {
+                    curr["Amount"] = serde_json::json!(credit_spoof.amount);
+                    found_credits = true;
+                    changed = true;
+                } else if id == 15 || id == 14 {
+                    curr["Amount"] = serde_json::json!(credit_spoof.tournament_amount);
+                    found_tournament = true;
+                    changed = true;
+                }
+            }
+        }
+        if !found_credits {
+            currencies.push(serde_json::json!({
+                "ID": 13,
+                "Amount": credit_spoof.amount,
+                "ExpirationTime": null,
+                "UpdatedTimestamp": 1700000000,
+                "IsTradable": true,
+                "TradeHold": null
+            }));
+            changed = true;
+        }
+        if !found_tournament {
+            currencies.push(serde_json::json!({
+                "ID": 15,
+                "Amount": credit_spoof.tournament_amount,
+                "ExpirationTime": null,
+                "UpdatedTimestamp": 1700000000,
+                "IsTradable": false,
+                "TradeHold": null
+            }));
+            changed = true;
+        }
+    } else if result_obj.is_object() {
+        result_obj["Currencies"] = serde_json::json!([
+            {
+                "ID": 13,
+                "Amount": credit_spoof.amount,
+                "ExpirationTime": null,
+                "UpdatedTimestamp": 1700000000,
+                "IsTradable": true,
+                "TradeHold": null
+            },
+            {
+                "ID": 15,
+                "Amount": credit_spoof.tournament_amount,
+                "ExpirationTime": null,
+                "UpdatedTimestamp": 1700000000,
+                "IsTradable": false,
+                "TradeHold": null
+            }
+        ]);
+        changed = true;
+    }
+
+    if !changed {
         return (body.to_vec(), false);
-    };
-
-    let disp = (mu * 20.0 + 100.0).round() as i64;
-    root["Value"] = serde_json::json!(disp);
-    root["MMR"] = serde_json::json!(mu);
-    root["bHasSkill"] = serde_json::json!(true);
-
+    }
     let out = serde_json::to_vec(&root).unwrap_or_else(|_| body.to_vec());
     (out, true)
 }
@@ -2496,6 +3573,16 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
         }
     }
 
+    if let Some(menu_bg) = &cfg.menu_bg_spoof {
+        if menu_bg.enabled && !menu_bg.background.trim().is_empty() {
+            let (next, changed) = patch_menu_bg(&out, menu_bg.background.trim());
+            if changed {
+                out = next;
+                any_change = true;
+            }
+        }
+    }
+
     // Always rewrite PsyNetUrl to local broker (matches Go proxy architecture:
     // AuthPlayer and game RPC flow through 127.0.0.1 broker, eliminating external TLS/pinning issues)
     if let Some(next) = patch_psynet_url(&out) {
@@ -2504,6 +3591,71 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
     }
 
     (out, any_change)
+}
+
+fn patch_menu_bg(body: &[u8], bg: &str) -> (Vec<u8>, bool) {
+    let effective_bg = if bg.is_empty() || bg.eq_ignore_ascii_case("default") {
+        "MMBG_Default".to_string()
+    } else if !bg.starts_with("MMBG_") {
+        format!("MMBG_{bg}")
+    } else {
+        bg.to_string()
+    };
+
+    let mut out = body.to_vec();
+    let mut any_changed = false;
+
+    // 1. Override in ClassPropertyConfig for UIConfig_TA
+    let (next1, changed1) = upsert_class_property_override(
+        &out,
+        "UIConfig_TA",
+        "MainMenuBG",
+        &effective_bg,
+    );
+    if changed1 {
+        out = next1;
+        any_changed = true;
+    }
+
+    // 2. Override in ClassPropertyConfig for GFxData_MainMenu_TA
+    let (next2, changed2) = upsert_class_property_override(
+        &out,
+        "GFxData_MainMenu_TA",
+        "MainMenuBG",
+        &effective_bg,
+    );
+    if changed2 {
+        out = next2;
+        any_changed = true;
+    }
+
+    // 3. Direct UIConfig_TA JSON object if present
+    if let Some((obj_start, obj_end)) = find_named_object(&out, "UIConfig_TA")
+        .or_else(|| find_named_object(&out, "UIConfig"))
+    {
+        let obj = &out[obj_start..obj_end];
+        if let Some(patched_obj) = replace_json_string_field(obj, "MainMenuBG", &effective_bg) {
+            let mut next = Vec::with_capacity(out.len() + 64);
+            next.extend_from_slice(&out[..obj_start]);
+            next.extend_from_slice(&patched_obj);
+            next.extend_from_slice(&out[obj_end..]);
+            out = next;
+            any_changed = true;
+        } else if let Some(close_idx) = obj.iter().rposition(|&c| c == b'}') {
+            let inject_str = format!(",\"MainMenuBG\":\"{effective_bg}\"");
+            let mut res = Vec::with_capacity(out.len() + inject_str.len());
+            res.extend_from_slice(&out[..obj_start + close_idx]);
+            res.extend_from_slice(inject_str.as_bytes());
+            res.extend_from_slice(&out[obj_start + close_idx..]);
+            out = res;
+            any_changed = true;
+        }
+    } else if let Some(patched) = replace_json_string_field(&out, "MainMenuBG", &effective_bg) {
+        out = patched;
+        any_changed = true;
+    }
+
+    (out, any_changed)
 }
 
 fn patch_logo(body: &[u8], url: &str) -> (Vec<u8>, bool) {
@@ -2950,6 +4102,166 @@ mod tests {
         let s = String::from_utf8(patched).unwrap();
         assert!(s.contains("\"URL\":\"http://127.0.0.1:27505/Services\""));
         assert!(s.contains("\"URLv2\":\"http://127.0.0.1:27505/rpc\""));
+    }
+
+    #[test]
+    fn test_patch_eos_accounts_json_scoped_to_target_pid() {
+        let mut json: serde_json::Value = serde_json::json!([
+            {
+                "accountId": "37674b519c3544beb544f437f539ebf2",
+                "displayName": "RealPlayer",
+                "preferredLanguage": "en"
+            },
+            {
+                "accountId": "99999999999944beb544f437f539ebf2",
+                "displayName": "Teammate",
+                "preferredLanguage": "en"
+            }
+        ]);
+
+        let (modified, learned_pid, learned_name) = patch_eos_accounts_json(
+            &mut json,
+            "SpoofedName",
+            Some("37674b519c3544beb544f437f539ebf2"),
+            None,
+        );
+
+        assert!(modified);
+        assert_eq!(learned_pid.as_deref(), Some("37674b519c3544beb544f437f539ebf2"));
+        assert_eq!(learned_name.as_deref(), Some("RealPlayer"));
+
+        let arr = json.as_array().unwrap();
+        assert_eq!(arr[0]["displayName"], "SpoofedName");
+        assert_eq!(arr[1]["displayName"], "Teammate");
+    }
+
+    #[test]
+    fn test_patch_ws_name_fields_only_own_id() {
+        let body = br#"{"Result":{"PlayerData":[
+            {"PlayerID":"Epic|37674b519c3544beb544f437f539ebf2|0","PlayerName":"RealPlayer"},
+            {"PlayerID":"Epic|otherplayer123|0","PlayerName":"Teammate"}
+        ]}}"#;
+
+        let (patched, changed) = patch_ws_name_fields(
+            body,
+            "SpoofedName",
+            Some("37674b519c3544beb544f437f539ebf2"),
+        );
+
+        assert!(changed);
+        let s = String::from_utf8(patched).unwrap();
+        assert!(s.contains("\"PlayerName\":\"SpoofedName\""));
+        assert!(s.contains("\"PlayerName\":\"Teammate\""));
+        assert!(!s.contains("\"PlayerName\":\"RealPlayer\""));
+    }
+
+    #[test]
+    fn test_patch_ws_name_fields_nested_message_payload() {
+        let inner = r#"{"Players":[{"PlayerID":"Epic|me123|0","PlayerName":"RealPlayer"}],"Settings":{"MapName":"stadium_p"}}"#;
+        let root = serde_json::json!({
+            "MessageType": "AddReservationMessagePrivate_X",
+            "MessagePayload": inner
+        });
+        let raw = serde_json::to_vec(&root).unwrap();
+
+        let (patched, changed) = patch_ws_name_fields(
+            &raw,
+            "SpoofedName",
+            Some("me123"),
+        );
+
+        assert!(changed);
+        let s = String::from_utf8(patched).unwrap();
+        assert!(s.contains("SpoofedName"));
+        assert!(!s.contains("RealPlayer"));
+        assert!(s.contains("stadium_p"));
+    }
+
+    #[test]
+    fn test_patch_ws_name_fields_ignores_unmatched_id() {
+        let body = br#"{"Result":{"PlayerData":[
+            {"PlayerID":"Epic|otherplayer123|0","PlayerName":"Teammate"}
+        ]}}"#;
+        let (patched, changed) = patch_ws_name_fields(
+            body,
+            "SpoofedName",
+            Some("37674b519c3544beb544f437f539ebf2"),
+        );
+
+        assert!(!changed);
+        let s = String::from_utf8(patched).unwrap();
+        assert!(s.contains("\"PlayerName\":\"Teammate\""));
+        assert!(!s.contains("SpoofedName"));
+    }
+
+    #[test]
+    fn test_is_loadout_sensitive_detects_sensitive_frames() {
+        assert!(is_loadout_sensitive("products/getloadoutproducts v1", b"{}"));
+        assert!(is_loadout_sensitive("genericstorage/getplayergenericstorage v1", b"{}"));
+        assert!(is_loadout_sensitive("other", b"{\"SaveData\": \"ProfileLoadoutSave_TA\"}"));
+        assert!(!is_loadout_sensitive("skills/getplayerskill v1", b"{\"Skills\":[]}"));
+    }
+
+    #[test]
+    fn test_learned_identity_ignores_placeholders() {
+        set_learned_player_id("Epic|temp|0");
+        assert_ne!(get_learned_player_id().as_deref(), Some("Epic|temp|0"));
+
+        set_learned_player_id("Epic|realaccountid|0");
+        assert_eq!(get_learned_player_id().as_deref(), Some("Epic|realaccountid|0"));
+    }
+
+    #[test]
+    fn test_patch_leaderboard_json_single_value_auto_rank_1() {
+        let body = br#"{"Result":{"LeaderboardID":"Skill11","bHasSkill":true,"MMR":20.0,"Value":10}}"#;
+        let mut cfg = crate::psynet::SpoofPayload::default();
+        let mut ov = std::collections::HashMap::new();
+        ov.insert("11".to_string(), crate::psynet::FakeRankOverridePayload {
+            display_mmr: Some(3000.0),
+            tier: Some(22),
+            ..Default::default()
+        });
+        cfg.fake_ranks = Some(crate::psynet::FakeRanksPayload {
+            enabled: true,
+            playlists: Some(ov),
+            ..Default::default()
+        });
+
+        let (patched, changed) = patch_leaderboard_json(body, &cfg);
+        assert!(changed);
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        assert_eq!(val["Result"]["Rank"], 1);
+        assert_eq!(val["Result"]["UserRank"], 1);
+        assert_eq!(val["Result"]["Value"], 22);
+        assert_eq!(val["Result"]["MMR"], 145.0);
+    }
+
+    #[test]
+    fn test_patch_leaderboard_json_rows_auto_rank_computed() {
+        let body = br#"{"Result":{"LeaderboardID":"Skill11","Rows":[
+            {"PlayerID":"top1","Value":2004,"Rank":1},
+            {"PlayerID":"top2","Value":1978,"Rank":2}
+        ],"UserRow":{"PlayerID":"my_pid","Value":800,"Rank":0}}}"#;
+
+        let mut cfg = crate::psynet::SpoofPayload::default();
+        let mut ov = std::collections::HashMap::new();
+        ov.insert("11".to_string(), crate::psynet::FakeRankOverridePayload {
+            display_mmr: Some(3000.0),
+            tier: Some(22),
+            ..Default::default()
+        });
+        cfg.fake_ranks = Some(crate::psynet::FakeRanksPayload {
+            enabled: true,
+            playlists: Some(ov),
+            ..Default::default()
+        });
+
+        let (patched, changed) = patch_leaderboard_json(body, &cfg);
+        assert!(changed);
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        assert_eq!(val["Result"]["Rank"], 1);
+        assert_eq!(val["Result"]["UserRow"]["Rank"], 1);
+        assert_eq!(val["Result"]["UserRow"]["Value"], 3000);
     }
 }
 
