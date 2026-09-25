@@ -1084,18 +1084,58 @@ async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<()
         Err(_) => return Err("Restore failed unexpectedly. Close Rocket League and try again.".into()),
     }
 
-    let stem = std::path::Path::new(&path)
-        .file_name().unwrap_or_default().to_string_lossy()
-        .to_lowercase().replace(".upk.bak","").replace(".upk","");
+    let clean_stem = std::path::Path::new(&path)
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_lowercase()
+        .replace(".upk.bak", "")
+        .replace(".upk", "");
+    let stem_base = clean_stem.trim_end_matches("_sf").to_string();
+
     let items = get_items(app.clone()).await.unwrap_or_default();
-    if let Some(item) = items.iter().find(|i| i.asset_package.to_lowercase().replace(".upk","") == stem) {
-        let mut swaps = load_swaps(&app);
-        swaps.retain(|s| s.owned_id != item.id);
+    let matched_item = items.iter().find(|i| {
+        let db_pkg = i.asset_package.to_lowercase().replace(".upk", "");
+        if db_pkg.is_empty() || db_pkg == "none" {
+            return false;
+        }
+        let db_base = db_pkg.trim_end_matches("_sf");
+        if db_pkg == clean_stem || db_base == stem_base {
+            return true;
+        }
+        if db_pkg.len() > 4 && (clean_stem.contains(&db_pkg) || db_pkg.contains(&clean_stem)) {
+            return true;
+        }
+        false
+    });
+
+    let mut swaps = load_swaps(&app);
+    let orig_len = swaps.len();
+    if let Some(item) = matched_item {
+        swaps.retain(|s| {
+            if s.owned_id == item.id {
+                return false;
+            }
+            let s_pkg = s.asset_package.to_lowercase().replace(".upk", "");
+            let s_base = s_pkg.trim_end_matches("_sf");
+            if s_pkg == clean_stem || s_base == stem_base {
+                return false;
+            }
+            true
+        });
         record_swap_history(&app, "restore", &[], &format!("restored {}", item.product));
-        save_swaps(&app, &swaps);
         let mut state = load_integrity(&app);
         integrity::clear_swap_package(&mut state, &item.asset_package);
         let _ = save_integrity(&app, &state);
+    } else {
+        swaps.retain(|s| {
+            let s_pkg = s.asset_package.to_lowercase().replace(".upk", "");
+            let s_base = s_pkg.trim_end_matches("_sf");
+            s_pkg != clean_stem && s_base != stem_base
+        });
+    }
+    if swaps.len() != orig_len {
+        save_swaps(&app, &swaps);
     }
     Ok(())
 }

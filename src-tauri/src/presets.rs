@@ -181,22 +181,24 @@ pub async fn save_preset(
     }
 
     let mut f = load_preset_file(&app);
-    if f.presets.len() >= MAX_PRESETS {
-        return Err(format!("Preset limit reached ({MAX_PRESETS}). Delete one first."));
-    }
-
-    let existing = f.presets.iter_mut().find(|p| p.name == name).map(|p| {
+    let existing_idx = f.presets.iter().position(|p| p.name.trim().eq_ignore_ascii_case(&name));
+    if let Some(idx) = existing_idx {
+        let p = &mut f.presets[idx];
+        p.name = name.clone();
         p.swaps = swaps.clone();
-        p.maps = preset_maps.clone();
-        p.active_map_id = active_map_id.clone();
+        p.maps = preset_maps;
+        p.active_map_id = active_map_id;
         p.created_at = crate::now_iso8601_utc();
-        p.clone()
-    });
-    if let Some(updated) = existing {
+        let updated = p.clone();
         save_preset_file(&app, &f);
         append_history(&app, "preset_save", &swaps, &format!("updated preset '{name}'"));
         return Ok(updated);
     }
+
+    if f.presets.len() >= MAX_PRESETS {
+        return Err(format!("Preset limit reached ({MAX_PRESETS}). Delete one first."));
+    }
+
     let preset = Preset {
         id: generate_preset_uuid(),
         name: name.clone(),
