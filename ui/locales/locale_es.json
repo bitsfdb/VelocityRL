@@ -1,62 +1,62 @@
 {
   "nav": {
-    "swapper": "Intercambiador",
+    "swapper": "Swapper",
     "titles": "Títulos",
     "customization": "Personalización",
     "names": "Nombres",
-    "ranks": "Rangos Falsos",
+    "ranks": "Rangos falsos",
     "camera": "Cámara",
     "maps": "Mapas",
-    "tracker": "Overlay de Seguimiento",
-    "misc": "Misceláneo",
-    "website": "Sitio Web",
+    "tracker": "Overlay del Tracker",
+    "misc": "Varios",
+    "website": "Sitio web",
     "settings": "Ajustes"
   },
   "banner": {
-    "keep_open_title": "Mantén VelocityRL Abierto",
-    "keep_open_desc": "VelocityRL debe permanecer abierto en segundo plano para que los títulos, colores y nombres aparezcan en Rocket League."
+    "keep_open_title": "Mantén VelocityRL abierto",
+    "keep_open_desc": "VelocityRL debe seguir ejecutándose en segundo plano para que los títulos, colores y nombres aparezcan en Rocket League."
   },
   "subtabs": {
-    "swaps": "Intercambios",
+    "swaps": "Swaps activos",
     "restore": "Restaurar",
-    "presets": "Ajustes Predefinidos"
+    "presets": "Presets"
   },
   "categories": {
-    "all": "Todos los Objetos",
-    "bodies": "Carrocerías",
+    "all": "Todos los objetos",
+    "bodies": "Coches",
     "decals": "Calcomanías",
     "wheels": "Ruedas",
-    "boosts": "Aceleradores",
+    "boosts": "Turbos",
     "antennas": "Antenas",
     "toppers": "Adornos",
-    "explosions": "Explosiones de Gol"
+    "explosions": "Explosiones de gol"
   },
   "swapper": {
-    "owned_item": "Objeto Propio",
-    "target_asset": "Objeto Deseado",
+    "owned_item": "Tu objeto (base)",
+    "target_asset": "Objeto deseado",
     "search_owned": "Buscar en tus objetos...",
     "search_target": "Buscar objeto deseado...",
     "no_item_selected": "Ningún objeto seleccionado",
     "paint": "Pintura",
-    "swap_btn": "Intercambiar Objetos",
-    "rl_running_hint": "Rocket League está abierto — ciérralo antes de intercambiar o restaurar."
+    "swap_btn": "Aplicar swap",
+    "rl_running_hint": "Rocket League está abierto. Ciérralo antes de aplicar o restaurar cambios."
   },
   "palette": {
     "title": "Paleta de colores",
-    "desc": "Desbloquea colores personalizados para equipos y paletas extendidas en Rocket League.",
+    "desc": "Desbloquea colores personalizados para equipos y la paleta extendida en Rocket League.",
     "apply": "Aplicar",
     "restore": "Restaurar"
   },
   "settings": {
     "title": "Ajustes",
     "language": "Idioma",
-    "game_path": "Ruta de CookedPCConsole de Rocket League",
+    "game_path": "Ruta de CookedPCConsole (Rocket League)",
     "path_placeholder": "Ruta de la carpeta CookedPCConsole",
-    "autodetect": "Detectar auto",
-    "browse": "Explorar",
-    "startup_title": "Iniciar VelocityRL al encender",
-    "startup_desc": "Inicia VelocityRL automáticamente en segundo plano al iniciar sesión",
-    "privacy_policy": "Política de Privacidad",
+    "autodetect": "Detección automática",
+    "browse": "Examinar...",
+    "startup_title": "Iniciar VelocityRL con el sistema",
+    "startup_desc": "Abre VelocityRL automáticamente en segundo plano al iniciar sesión",
+    "privacy_policy": "Política de privacidad",
     "save": "Guardar"
   },
   "dialogs": {
@@ -68,18 +68,18 @@
     "proxy_listen": "proxy: escuchando en 127.0.0.1:443",
     "proxy_listen_v6": "proxy: escuchando en [::1]:443",
     "broker_listen": "broker: escuchando en {url}",
-    "health_ok": "proxy: verificación TLS de bucle local en 127.0.0.1:443 confirmada en intento {attempt}",
-    "health_fail": "proxy: prueba de estado bucle local intento {attempt}/6 falló: {err}",
+    "health_ok": "proxy: verificación TLS loopback en 127.0.0.1:443 confirmada en el intento {attempt}",
+    "health_fail": "proxy: prueba de estado loopback intento {attempt}/6 fallida: {err}",
     "config_intercepted": "proxy: >>> GET {path} (battlecars={battlecars})",
     "config_patched": "proxy: configuración parcheada ({bytes} bytes)",
-    "config_unpatched": "proxy: configuración sin parches ({bytes} bytes)",
+    "config_unpatched": "proxy: configuración original ({bytes} bytes)",
     "ws_connected": "proxy: WebSocket conectado al servidor {host}",
-    "ws_tunnel_ready": "proxy: túnel cliente WebSocket establecido",
-    "ranks_saved": "proxy: guardadas {count} listas de reproducción en real_skill.json",
-    "ranks_patched": "proxy: trama ws de rangos simulados parcheada ({old_bytes} -> {new_bytes} bytes)",
-    "auth_cached": "broker: PsyToken y sesión AuthPlayer cacheados ({session}...) para WS",
-    "auth_rewritten": "broker: URL de WS AuthPlayer reescrita al broker local ({url})",
+    "ws_tunnel_ready": "proxy: túnel del cliente WebSocket establecido",
+    "ranks_saved": "proxy: guardadas {count} playlists en real_skill.json",
+    "ranks_patched": "proxy: frame WS de rangos falsos parcheado ({old_bytes} -> {new_bytes} bytes)",
+    "auth_cached": "broker: PsyToken y sesión AuthPlayer guardados en caché ({session}...) para WS",
+    "auth_rewritten": "broker: URL de WS AuthPlayer redirigida al broker local ({url})",
     "palette_synced": "psynet: palette_spoof sincronizado -> {status}",
-    "build_detected": "proxy: detectado ID de compilación del juego: {build_id}"
+    "build_detected": "proxy: detectada la versión del juego: {build_id}"
   }
 }
