@@ -1338,11 +1338,11 @@ function wirePresetsUI() {
         saveBtn.dataset.wired = '1';
         saveBtn.onclick = async () => {
             const name = await appDialog({ title: 'Save preset', message: 'Preset name:', input: 'My preset', okLabel: 'Save' });
-            if (!name) return;
+            if (!name || !name.trim()) return;
             try {
-                await invoke('save_preset', { name: name.trim() });
-                showToast(`Preset <strong>${escHtml(name.trim())}</strong> saved`, 'success');
-                refreshPresets();
+                const saved = await invoke('save_preset', { name: name.trim() });
+                showToast(`Preset <strong>${escHtml(saved?.name || name.trim())}</strong> saved`, 'success');
+                await refreshPresets();
             } catch (e) {
                 showToast(String(e), 'error');
             }
