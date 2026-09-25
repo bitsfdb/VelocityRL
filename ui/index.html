@@ -41,48 +41,48 @@
 
             <div id="swapper-tab" class="tab-content active">
                 <div class="subtab-strip" role="tablist">
-                    <button type="button" class="subtab-btn active" data-subtab="swaps-pane">Swaps</button>
-                    <button type="button" class="subtab-btn" data-subtab="restore-pane">Restore</button>
-                    <button type="button" class="subtab-btn" data-subtab="presets-pane">Presets</button>
+                    <button type="button" class="subtab-btn active" data-subtab="swaps-pane" data-i18n="subtabs.swaps">Swaps</button>
+                    <button type="button" class="subtab-btn" data-subtab="restore-pane" data-i18n="subtabs.restore">Restore</button>
+                    <button type="button" class="subtab-btn" data-subtab="presets-pane" data-i18n="subtabs.presets">Presets</button>
                 </div>
 
                 <div id="swaps-pane" class="subtab-pane active">
                     <div class="category-strip">
-                        <button class="cat-btn active" data-slot="All">All Items</button>
-                        <button class="cat-btn" data-slot="Body">Bodies</button>
-                        <button class="cat-btn" data-slot="Decal">Decals</button>
-                        <button class="cat-btn" data-slot="Wheels">Wheels</button>
-                        <button class="cat-btn" data-slot="Rocket Boost">Boosts</button>
-                        <button class="cat-btn" data-slot="Antenna">Antennas</button>
-                        <button class="cat-btn" data-slot="Topper">Toppers</button>
-                        <button class="cat-btn" data-slot="Goal Explosion">Goal Explosions</button>
+                        <button class="cat-btn active" data-slot="All" data-i18n="categories.all">All Items</button>
+                        <button class="cat-btn" data-slot="Body" data-i18n="categories.bodies">Bodies</button>
+                        <button class="cat-btn" data-slot="Decal" data-i18n="categories.decals">Decals</button>
+                        <button class="cat-btn" data-slot="Wheels" data-i18n="categories.wheels">Wheels</button>
+                        <button class="cat-btn" data-slot="Rocket Boost" data-i18n="categories.boosts">Boosts</button>
+                        <button class="cat-btn" data-slot="Antenna" data-i18n="categories.antennas">Antennas</button>
+                        <button class="cat-btn" data-slot="Topper" data-i18n="categories.toppers">Toppers</button>
+                        <button class="cat-btn" data-slot="Goal Explosion" data-i18n="categories.explosions">Goal Explosions</button>
                     </div>
 
                     <div class="swapper-grid">
                         <div class="card">
-                            <h3>Owned Item</h3>
+                            <h3 data-i18n="swapper.owned_item">Owned Item</h3>
                             <div class="search-box">
-                                <input type="text" id="owned-search" placeholder="Search your items..." autocomplete="off">
+                                <input type="text" id="owned-search" data-i18n-placeholder="swapper.search_owned" placeholder="Search your items..." autocomplete="off">
                                 <div id="owned-results" class="search-flyout"></div>
                             </div>
                             <div id="owned-selected" class="item-selected-view">
                                 <div class="clear-item-btn" id="clear-owned">×</div>
                                 <div class="empty-state">
-                                    <p>No item selected</p>
+                                    <p data-i18n="swapper.no_item_selected">No item selected</p>
                                 </div>
                             </div>
                         </div>
 
                         <div class="card">
-                            <h3>Target Asset</h3>
+                            <h3 data-i18n="swapper.target_asset">Target Asset</h3>
                             <div class="search-box">
-                                <input type="text" id="wanted-search" placeholder="Search target assets..." autocomplete="off">
+                                <input type="text" id="wanted-search" data-i18n-placeholder="swapper.search_target" placeholder="Search target assets..." autocomplete="off">
                                 <div id="wanted-results" class="search-flyout"></div>
                             </div>
                             <div id="wanted-selected" class="item-selected-view">
                                 <div class="clear-item-btn" id="clear-wanted">×</div>
                                 <div class="empty-state">
-                                    <p>No item selected</p>
+                                    <p data-i18n="swapper.no_item_selected">No item selected</p>
                                 </div>
                             </div>
                         </div>
@@ -90,8 +90,8 @@
 
                     <div class="spawn-paint-block" id="swap-paint-block">
                         <div class="spawn-paint-head">
-                            <span class="spawn-paint-label">Paint</span>
-                            <span id="swap-paint-selected" class="spawn-paint-selected" style="color: var(--muted);">Coming Soon</span>
+                            <span class="spawn-paint-label" data-i18n="swapper.paint">Paint</span>
+                            <span id="swap-paint-selected" class="spawn-paint-selected" style="color: var(--muted);" data-i18n="swapper.coming_soon">Coming Soon</span>
                         </div>
                         <div id="swap-paint-swatches" class="paint-swatches" role="radiogroup" aria-label="Swap paint color" style="pointer-events: none; opacity: 0.3;">
                             <button type="button" class="paint-swatch is-active" data-paint="0" aria-label="None" aria-checked="true" disabled></button>
@@ -111,39 +111,39 @@
                         <select id="swap-paint" class="spawn-paint-select" aria-hidden="true" tabindex="-1" disabled>
                             <option value="0">None</option>
                         </select>
-                        <p id="swap-paint-hint" class="field-hint" style="display:block; color: var(--accent-red, #e05);">Unavailable — paint swaps cause items to become invisible in-game. Coming in a later update.</p>
+                        <p id="swap-paint-hint" class="field-hint" style="display:block; color: var(--accent-red, #e05);" data-i18n="swapper.paint_hint">Unavailable — paint swaps cause items to become invisible in-game. Coming in a later update.</p>
                     </div>
 
                     <div class="swapper-controls">
-                        <button id="apply-swap" class="action-btn" disabled>Swap Items</button>
+                        <button id="apply-swap" class="action-btn" disabled data-i18n="swapper.swap_btn">Swap Items</button>
                     </div>
-                    <p id="swap-rl-hint" class="field-hint" hidden>Rocket League is running — close it before swapping or restoring.</p>
+                    <p id="swap-rl-hint" class="field-hint" hidden data-i18n="swapper.rl_running_hint">Rocket League is running — close it before swapping or restoring.</p>
                 </div>
 
                 <div id="restore-pane" class="subtab-pane">
-                    <h2 class="section-title">Restore / Revert</h2>
-                    <p class="section-desc">Revert individual files or restore everything from backups.</p>
+                    <h2 class="section-title" data-i18n="restore.title">Restore / Revert</h2>
+                    <p class="section-desc" data-i18n="restore.desc">Revert individual files or restore everything from backups.</p>
                     <div class="restoration-grid">
                         <div id="backup-container" class="backup-list">
-                            <div class="backup-empty">Scanning for backups...</div>
+                            <div class="backup-empty" data-i18n="restore.scanning">Scanning for backups...</div>
                         </div>
                         <div style="display: flex; gap: 12px; margin-top: 12px;">
-                            <button id="restore-btn" class="action-btn action-btn-secondary" disabled>Restore All Items</button>
-                            <button id="reswap-btn" class="action-btn" style="background: var(--accent-blue); color: #fff;" disabled>Reswap All Items</button>
+                            <button id="restore-btn" class="action-btn action-btn-secondary" disabled data-i18n="restore.restore_all">Restore All Items</button>
+                            <button id="reswap-btn" class="action-btn" style="background: var(--accent-blue); color: #fff;" disabled data-i18n="restore.reswap_all">Reswap All Items</button>
                         </div>
                     </div>
                 </div>
 
                 <div id="presets-pane" class="subtab-pane">
-                    <h2 class="section-title">Presets</h2>
-                    <p class="section-desc">Save your active swaps as a loadout, share it with a code, or roll a random car.</p>
+                    <h2 class="section-title" data-i18n="presets.title">Presets</h2>
+                    <p class="section-desc" data-i18n="presets.desc">Save your active swaps as a loadout, share it with a code, or roll a random car.</p>
                     <div class="swapper-controls">
-                        <button id="preset-save-btn" class="action-btn" type="button">Save current as preset</button>
-                        <button id="preset-import-btn" class="action-btn action-btn-secondary" type="button">Import code</button>
-                        <button id="preset-random-btn" class="action-btn" type="button" style="background: var(--accent-blue); color: #fff;">Randomize car</button>
+                        <button id="preset-save-btn" class="action-btn" type="button" data-i18n="presets.save_current">Save current as preset</button>
+                        <button id="preset-import-btn" class="action-btn action-btn-secondary" type="button" data-i18n="presets.import_code">Import code</button>
+                        <button id="preset-random-btn" class="action-btn" type="button" style="background: var(--accent-blue); color: #fff;" data-i18n="presets.randomize">Randomize car</button>
                     </div>
                     <div id="preset-list" class="backup-list" style="margin-top:12px;">
-                        <div class="backup-empty">Loading presets...</div>
+                        <div class="backup-empty" data-i18n="presets.loading">Loading presets...</div>
                     </div>
                     <div class="card spoof-card" style="margin-top:14px;">
                         <div class="settings-group">
@@ -157,21 +157,21 @@
                                     </span>
                                 </span>
                                 <span class="switch-copy">
-                                    <span class="switch-title">Swap history</span>
-                                    <span class="switch-hint">Local log of swaps, restores, and presets</span>
+                                    <span class="switch-title" data-i18n="presets.history_title">Swap history</span>
+                                    <span class="switch-hint" data-i18n="presets.history_desc">Local log of swaps, restores, and presets</span>
                                 </span>
                             </label>
                         </div>
                         <div id="preset-history-list" class="backup-list" style="max-height:260px; overflow:auto;"></div>
                         <div class="swapper-controls" style="margin-top:8px;">
-                            <button id="preset-history-clear" class="action-btn action-btn-secondary" type="button">Clear history</button>
+                            <button id="preset-history-clear" class="action-btn action-btn-secondary" type="button" data-i18n="presets.clear_history">Clear history</button>
                         </div>
                     </div>
                 </div>
             </div>
 
             <div id="titles-tab" class="tab-content">
-                <h2 class="section-title titles-hero">Titles</h2>
+                <h2 class="section-title titles-hero" data-i18n="titles.title">Titles</h2>
 
                 <div class="card spoof-card titles-shell">
                     <div class="title-pick-grid">
@@ -179,40 +179,40 @@
                             <header class="title-pick-head">
                                 <span class="title-pick-step">1</span>
                                 <div>
-                                    <h3 id="donor-heading">Donor</h3>
-                                    <p>Title you have equipped.</p>
+                                    <h3 id="donor-heading" data-i18n="titles.donor_step">Donor</h3>
+                                    <p data-i18n="titles.donor_desc">Title you have equipped.</p>
                                 </div>
                             </header>
                             <div id="donor-selected" class="title-selected-slot is-empty">
-                                <span class="title-selected-label">Not picked</span>
-                                <span class="title-selected-meta">Search below</span>
+                                <span class="title-selected-label" data-i18n="titles.not_picked">Not picked</span>
+                                <span class="title-selected-meta" data-i18n="titles.search_below">Search below</span>
                             </div>
                             <input type="hidden" id="title-equip-id" value="">
                             <div class="search-box">
-                                <input type="text" id="donor-search" placeholder="Search your equipped title…" autocomplete="off" spellcheck="false">
+                                <input type="text" id="donor-search" data-i18n-placeholder="titles.search_equipped" placeholder="Search your equipped title…" autocomplete="off" spellcheck="false">
                             </div>
                             <div id="donor-list" class="titles-list title-pick-list"><div class="backup-empty">Loading…</div></div>
                         </section>
 
                         <div class="title-pick-bridge" aria-hidden="true">
-                            <span class="title-pick-bridge-label">becomes</span>
+                            <span class="title-pick-bridge-label" data-i18n="titles.becomes">becomes</span>
                         </div>
 
                         <section class="title-pick-panel title-pick-panel-display" data-role="display" aria-labelledby="display-heading">
                             <header class="title-pick-head">
                                 <span class="title-pick-step">2</span>
                                 <div>
-                                    <h3 id="display-heading">Look (optional)</h3>
-                                    <p>Catalog look or custom text below.</p>
+                                    <h3 id="display-heading" data-i18n="titles.look_step">Look (optional)</h3>
+                                    <p data-i18n="titles.look_desc">Catalog look or custom text below.</p>
                                 </div>
                             </header>
                             <div id="display-selected" class="title-selected-slot is-empty">
-                                <span class="title-selected-label">Not picked</span>
-                                <span class="title-selected-meta">Search below</span>
+                                <span class="title-selected-label" data-i18n="titles.not_picked">Not picked</span>
+                                <span class="title-selected-meta" data-i18n="titles.search_below">Search below</span>
                             </div>
                             <input type="hidden" id="title-display-id" value="">
                             <div class="search-box">
-                                <input type="text" id="display-search" placeholder="Search the look you want…" autocomplete="off" spellcheck="false">
+                                <input type="text" id="display-search" data-i18n-placeholder="titles.search_look" placeholder="Search the look you want…" autocomplete="off" spellcheck="false">
                             </div>
                             <div id="display-list" class="titles-list title-pick-list"><div class="backup-empty">Loading…</div></div>
                         </section>
@@ -220,19 +220,38 @@
 
                     <div class="title-custom-fields">
                         <div class="settings-group">
-                            <label for="title-custom-text">Custom text</label>
-                            <input type="text" id="title-custom-text" placeholder="Type any title (e.g. VelocityRL)" autocomplete="off" maxlength="128" spellcheck="false">
+                            <label for="title-custom-text" data-i18n="titles.custom_text">Custom text</label>
+                            <input type="text" id="title-custom-text" data-i18n-placeholder="titles.custom_text_placeholder" placeholder="Type any title (e.g. VelocityRL)" autocomplete="off" maxlength="128" spellcheck="false">
+                            <details class="title-tags-dropdown">
+                                <summary data-i18n="titles.variables_dropdown">Available variables &amp; tags</summary>
+                                <div class="title-tags-content">
+                                    <p class="title-tags-hint" data-i18n="titles.variables_hint">The following tags can be used in your custom text:</p>
+                                    <div class="title-tags-grid">
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{legend}')"><code>{legend}</code> — <span data-i18n="titles.var_legend">Legend Icon / Suffix</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{grandchampion}')"><code>{grandchampion}</code> — <span data-i18n="titles.var_gc">Grand Champion Icon</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{champion}')"><code>{champion}</code> — <span data-i18n="titles.var_champ">Champion Icon</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{diamond}')"><code>{diamond}</code> — <span data-i18n="titles.var_diamond">Diamond Icon</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{flag_us}')"><code>{flag_us}</code> — <span data-i18n="titles.var_flag_us">USA Flag</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{flag_nl}')"><code>{flag_nl}</code> — <span data-i18n="titles.var_flag_nl">Netherlands Flag</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{flag_de}')"><code>{flag_de}</code> — <span data-i18n="titles.var_flag_de">Germany Flag</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{flag_fr}')"><code>{flag_fr}</code> — <span data-i18n="titles.var_flag_fr">France Flag</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{flag_es}')"><code>{flag_es}</code> — <span data-i18n="titles.var_flag_es">Spain Flag</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{flag_br}')"><code>{flag_br}</code> — <span data-i18n="titles.var_flag_br">Brazil Flag</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{flag_gb}')"><code>{flag_gb}</code> — <span data-i18n="titles.var_flag_gb">UK Flag</span></span>
+                                    </div>
+                                </div>
+                            </details>
                         </div>
                         <div class="title-color-row">
                             <div class="settings-group">
-                                <label for="title-color-hex">Color</label>
+                                <label for="title-color-hex" data-i18n="titles.color">Color</label>
                                 <div class="title-color-inputs">
                                     <input type="color" id="title-color-picker" value="#c8c8c8" aria-label="Title color picker">
                                     <input type="text" id="title-color-hex" placeholder="AEF7FF" maxlength="7" autocomplete="off" spellcheck="false">
                                 </div>
                             </div>
                             <div class="settings-group">
-                                <label for="title-glow-hex">Glow</label>
+                                <label for="title-glow-hex" data-i18n="titles.glow">Glow</label>
                                 <div class="title-color-inputs">
                                     <input type="color" id="title-glow-picker" value="#43afff" aria-label="Title glow picker">
                                     <input type="text" id="title-glow-hex" placeholder="43AFFF" maxlength="7" autocomplete="off" spellcheck="false">
@@ -248,53 +267,54 @@
                                     </span>
                                 </span>
                                 <span class="switch-copy">
-                                    <span class="switch-title">Custom colors</span>
-                                    <span class="switch-hint">injects a new title category</span>
+                                    <span class="switch-title" data-i18n="titles.custom_colors">Custom colors</span>
+                                    <span class="switch-hint" data-i18n="titles.custom_colors_desc">injects a new title category</span>
                                 </span>
                             </label>
                         </div>
                     </div>
 
                     <div class="titles-preview-block">
-                        <h3 class="titles-preview-heading">Preview</h3>
+                        <h3 class="titles-preview-heading" data-i18n="titles.preview">Preview</h3>
                         <div class="titles-stage" id="titles-stage" aria-live="polite">
                             <div class="titles-stage-from">
-                                <span class="spoof-preview-label">Equipped</span>
+                                <span class="spoof-preview-label" data-i18n="titles.equipped">Equipped</span>
                                 <div id="donor-preview" class="title-preview-chip title-preview-muted">-</div>
                             </div>
                             <span class="titles-stage-sep" aria-hidden="true">→</span>
                             <div class="titles-stage-to">
-                                <span class="spoof-preview-label">In-game</span>
+                                <span class="spoof-preview-label" data-i18n="titles.in_game">In-game</span>
                                 <div id="title-preview" class="title-preview-chip">-</div>
                             </div>
                         </div>
                     </div>
                     <div class="swapper-controls">
-                        <button id="title-apply-btn" class="action-btn">Add swap</button>
+                        <button id="title-apply-btn" class="action-btn" data-i18n="titles.add_swap">Add swap</button>
                     </div>
 
                     <div class="title-swap-queue">
                         <div id="title-swap-list" class="backup-list">
-                            <div class="backup-empty">No title remaps yet.</div>
+                            <div class="backup-empty" data-i18n="titles.no_remaps">No title remaps yet.</div>
                         </div>
-                        <button id="title-restore-all-btn" class="action-btn action-btn-secondary" type="button" hidden>Restore all</button>
+                        <button id="title-restore-all-btn" class="action-btn action-btn-secondary" type="button" hidden data-i18n="titles.restore_all">Restore all</button>
                     </div>
                 </div>
             </div>
 
             <div id="customization-tab" class="tab-content">
                 <div class="subtab-strip" role="tablist">
-                    <button type="button" class="subtab-btn active" data-subtab="custom-names-pane">Names</button>
-                    <button type="button" class="subtab-btn" data-subtab="custom-credits-pane">Credits</button>
+                    <button type="button" class="subtab-btn active" data-subtab="custom-names-pane" data-i18n="custom.subtab_names">Names</button>
+                    <button type="button" class="subtab-btn" data-subtab="custom-credits-pane" data-i18n="custom.subtab_credits">Credits</button>
+                    <button type="button" class="subtab-btn" data-subtab="custom-leaderboard-pane" data-i18n="custom.subtab_leaderboard">Leaderboard</button>
                 </div>
 
                 <div id="custom-names-pane" class="subtab-pane active">
-                    <h2 class="section-title">Names</h2>
-                    <p class="section-desc">Change your display name locally in menus, scoreboards, and nametags.</p>
+                    <h2 class="section-title" data-i18n="custom.names_title">Names</h2>
+                    <p class="section-desc" data-i18n="custom.names_desc">Change your display name locally in menus, scoreboards, and nametags.</p>
 
                     <div id="name-spoof-steam-banner" class="tracker-borderless-banner" style="display:none;margin-bottom:12px;background:rgba(88,101,242,0.1);border-color:rgba(88,101,242,0.3);">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0; color:#5865f2;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                        <span><strong>Steam Version Detected:</strong> Steam already supports unlimited profile name changes directly in the Steam client, so Name Spoofing is disabled for Steam installations.</span>
+                        <span><strong data-i18n="custom.steam_banner_title">Steam Version Detected:</strong> <span data-i18n="custom.steam_banner_desc">Steam already supports unlimited profile name changes directly in the Steam client, so Name Spoofing is disabled for Steam installations.</span></span>
                     </div>
 
                     <div class="card spoof-card" id="name-spoof-card">
@@ -309,27 +329,32 @@
                                     </span>
                                 </span>
                                 <span class="switch-copy">
-                                    <span class="switch-title">Name spoofing</span>
-                                    <span class="switch-hint">Changes your in-game display name</span>
+                                    <span class="switch-title" data-i18n="custom.name_spoof_title">Name spoofing</span>
+                                    <span class="switch-hint" data-i18n="custom.name_spoof_desc">Changes your in-game display name</span>
                                 </span>
                             </label>
                         </div>
 
                         <div class="settings-group">
-                            <label for="name-spoof-display">Display Name</label>
-                            <input type="text" id="name-spoof-display" placeholder="Enter new display name..." autocomplete="off" spellcheck="false">
+                            <label for="name-spoof-real" data-i18n="custom.real_name">Original / Current Name</label>
+                            <input type="text" id="name-spoof-real" data-i18n-placeholder="custom.real_name_placeholder" placeholder="Enter your current in-game name (e.g. Zen)..." autocomplete="off" spellcheck="false">
+                        </div>
+
+                        <div class="settings-group">
+                            <label for="name-spoof-display" data-i18n="custom.display_name">Spoofed Name</label>
+                            <input type="text" id="name-spoof-display" data-i18n-placeholder="custom.display_name_placeholder" placeholder="Enter new spoofed name..." autocomplete="off" spellcheck="false">
                             <input type="hidden" id="name-spoof-player-id">
                         </div>
 
                         <div class="swapper-controls">
-                            <button id="name-spoof-save-btn" class="action-btn" type="button">Save name</button>
+                            <button id="name-spoof-save-btn" class="action-btn" type="button" data-i18n="custom.save_name">Save name</button>
                         </div>
                     </div>
                 </div>
 
                 <div id="custom-credits-pane" class="subtab-pane">
-                    <h2 class="section-title">Credits</h2>
-                    <p class="section-desc">Change your displayed Item Shop and Tournament credits locally.</p>
+                    <h2 class="section-title" data-i18n="custom.credits_title">Credits</h2>
+                    <p class="section-desc" data-i18n="custom.credits_desc">Change your displayed Item Shop and Tournament credits locally.</p>
 
                     <div class="card spoof-card">
                         <div class="settings-group">
@@ -343,31 +368,88 @@
                                     </span>
                                 </span>
                                 <span class="switch-copy">
-                                    <span class="switch-title">Credit spoofing</span>
-                                    <span class="switch-hint">Sets your displayed in-game credits</span>
+                                    <span class="switch-title" data-i18n="custom.credit_spoof_title">Credit spoofing</span>
+                                    <span class="switch-hint" data-i18n="custom.credit_spoof_desc">Sets your displayed in-game credits</span>
                                 </span>
                             </label>
                         </div>
 
                         <div class="settings-group">
-                            <label for="credit-spoof-amount">Item Shop Credits</label>
+                            <label for="credit-spoof-amount" data-i18n="custom.item_shop_credits">Item Shop Credits</label>
                             <input type="number" id="credit-spoof-amount" placeholder="100000" min="0" max="999999999" autocomplete="off">
                         </div>
 
                         <div class="settings-group">
-                            <label for="credit-spoof-tournament-amount">Tournament Credits</label>
+                            <label for="credit-spoof-tournament-amount" data-i18n="custom.tournament_credits">Tournament Credits</label>
                             <input type="number" id="credit-spoof-tournament-amount" placeholder="100000" min="0" max="999999999" autocomplete="off">
                         </div>
 
                         <div class="swapper-controls">
-                            <button id="credit-spoof-save-btn" class="action-btn" type="button">Save credits</button>
+                            <button id="credit-spoof-save-btn" class="action-btn" type="button" data-i18n="custom.save_credits">Save credits</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="custom-leaderboard-pane" class="subtab-pane">
+                    <h2 class="section-title" data-i18n="custom.leaderboard_title">Leaderboard</h2>
+                    <p class="section-desc" data-i18n="custom.leaderboard_desc">Spoof your placement and ranking on the global in-game leaderboards.</p>
+
+                    <div class="card spoof-card">
+                        <div class="settings-group">
+                            <label class="switch-row" for="leaderboard-spoof-enabled">
+                                <input type="checkbox" id="leaderboard-spoof-enabled" class="switch-input" role="switch">
+                                <span class="switch-ui" aria-hidden="true">
+                                    <span class="switch-track"><span class="switch-thumb"></span></span>
+                                    <span class="switch-state">
+                                        <span class="switch-state-on">On</span>
+                                        <span class="switch-state-off">Off</span>
+                                    </span>
+                                </span>
+                                <span class="switch-copy">
+                                    <span class="switch-title" data-i18n="custom.leaderboard_spoof_title">Leaderboard spoofing</span>
+                                    <span class="switch-hint" data-i18n="custom.leaderboard_spoof_desc">Injects your position into in-game leaderboard queries</span>
+                                </span>
+                            </label>
+                        </div>
+
+                        <div class="settings-group">
+                            <label class="switch-row" for="leaderboard-spoof-sync">
+                                <input type="checkbox" id="leaderboard-spoof-sync" class="switch-input" role="switch" checked>
+                                <span class="switch-ui" aria-hidden="true">
+                                    <span class="switch-track"><span class="switch-thumb"></span></span>
+                                    <span class="switch-state">
+                                        <span class="switch-state-on">On</span>
+                                        <span class="switch-state-off">Off</span>
+                                    </span>
+                                </span>
+                                <span class="switch-copy">
+                                    <span class="switch-title" data-i18n="custom.leaderboard_sync_title">Sync with Fake Ranks &amp; MMR</span>
+                                    <span class="switch-hint" data-i18n="custom.leaderboard_sync_desc">Automatically calculate placement from your active Fake Ranks setup</span>
+                                </span>
+                            </label>
+                        </div>
+
+                        <div id="leaderboard-custom-fields" style="display:none;">
+                            <div class="settings-group">
+                                <label for="leaderboard-spoof-rank" data-i18n="custom.leaderboard_rank">Custom Rank / Placement</label>
+                                <input type="number" id="leaderboard-spoof-rank" placeholder="1" min="1" max="1000000" autocomplete="off">
+                            </div>
+
+                            <div class="settings-group">
+                                <label for="leaderboard-spoof-mmr" data-i18n="custom.leaderboard_mmr">Custom Leaderboard MMR</label>
+                                <input type="number" id="leaderboard-spoof-mmr" placeholder="2150" min="0" max="9999" autocomplete="off">
+                            </div>
+                        </div>
+
+                        <div class="swapper-controls">
+                            <button id="leaderboard-spoof-save-btn" class="action-btn" type="button" data-i18n="custom.save_leaderboard">Save leaderboard</button>
                         </div>
                     </div>
                 </div>
             </div>
 
             <div id="ranks-tab" class="tab-content">
-                <h2 class="section-title">Fake Ranks</h2>
+                <h2 class="section-title" data-i18n="ranks.title">Fake Ranks</h2>
 
                 <div class="card spoof-card">
                     <div class="settings-group">
@@ -381,22 +463,22 @@
                                 </span>
                             </span>
                             <span class="switch-copy">
-                                <span class="switch-title">Fake ranks</span>
+                                <span class="switch-title" data-i18n="ranks.enable_ranks">Fake ranks</span>
                             </span>
                         </label>
                     </div>
                     <div class="settings-group rank-season-group">
-                        <label for="fake-ranks-season-level">Season reward level</label>
+                        <label for="fake-ranks-season-level" data-i18n="ranks.season_reward_level">Season reward level</label>
                         <div class="rank-season-row">
                             <select id="fake-ranks-season-level" aria-label="Season reward tier">
-                                <option value="">Keep real</option>
+                                <option value="" data-i18n="ranks.keep_real">Keep real</option>
                             </select>
-                            <label class="rank-season-wins-label" for="fake-ranks-season-wins">Wins this level</label>
+                            <label class="rank-season-wins-label" for="fake-ranks-season-wins" data-i18n="ranks.wins_this_level">Wins this level</label>
                             <input type="number" id="fake-ranks-season-wins" min="0" max="10" step="1" inputmode="numeric" autocomplete="off" placeholder="0" aria-label="Wins toward next season reward level">
                         </div>
                     </div>
                     <div class="settings-group">
-                        <label for="fake-ranks-playlist-add">Add playlist override</label>
+                        <label for="fake-ranks-playlist-add" data-i18n="ranks.add_playlist_override">Add playlist override</label>
                         <div class="rank-add-form">
                             <select id="fake-ranks-playlist-add" aria-label="Playlist"></select>
                             <button type="button" id="fake-ranks-add-rank-pick" class="rank-playlist-pick" aria-haspopup="listbox">
@@ -413,24 +495,24 @@
                         </div>
                     </div>
                     <div class="swapper-controls">
-                        <button id="fake-ranks-add-btn" class="action-btn" type="button">Add playlist</button>
+                        <button id="fake-ranks-add-btn" class="action-btn" type="button" data-i18n="ranks.add_playlist_btn">Add playlist</button>
                     </div>
                     <div id="fake-ranks-picker-popover" class="rank-picker-popover hidden" role="listbox" aria-label="Pick rank"></div>
                     <div class="fake-ranks-queue">
                         <div id="fake-ranks-queue-list" class="backup-list">
-                            <div class="backup-empty">No playlist overrides yet. Pick a playlist and rank above, then Add playlist.</div>
+                            <div class="backup-empty" data-i18n="ranks.no_overrides">No playlist overrides yet. Pick a playlist and rank above, then Add playlist.</div>
                         </div>
-                        <button id="fake-ranks-remove-all-btn" class="action-btn action-btn-secondary" type="button" hidden>Remove all</button>
+                        <button id="fake-ranks-remove-all-btn" class="action-btn action-btn-secondary" type="button" hidden data-i18n="ranks.remove_all">Remove all</button>
                     </div>
                     <div class="swapper-controls">
-                        <button id="fake-ranks-save-btn" class="action-btn" type="button">Save fake ranks</button>
+                        <button id="fake-ranks-save-btn" class="action-btn" type="button" data-i18n="ranks.save_ranks">Save fake ranks</button>
                     </div>
                 </div>
             </div>
 
             <div id="camera-tab" class="tab-content">
-                <h2 class="section-title">Camera</h2>
-                <p class="section-desc">Unlock FOV / height / distance slider limits. Save, then restart Rocket League.</p>
+                <h2 class="section-title" data-i18n="camera.title">Camera</h2>
+                <p class="section-desc" data-i18n="camera.desc">Unlock FOV / height / distance slider limits. Save, then restart Rocket League.</p>
                 <div class="card spoof-card">
                     <div class="settings-group">
                         <label class="switch-row" for="camera-spoof-enabled">
@@ -443,52 +525,51 @@
                                 </span>
                             </span>
                             <span class="switch-copy">
-                                <span class="switch-title">Camera limits</span>
-
+                                <span class="switch-title" data-i18n="camera.enable_limits">Camera limits</span>
                             </span>
                         </label>
                     </div>
                     <div class="settings-group camera-limit-group">
-                        <label>FOV limits</label>
+                        <label data-i18n="camera.fov_limits">FOV limits</label>
                         <div class="camera-limit-row">
-                            <label class="camera-limit-field" for="camera-fov-min">Min<input type="number" id="camera-fov-min" min="1" max="1000" step="1" inputmode="decimal" autocomplete="off"></label>
-                            <label class="camera-limit-field" for="camera-fov-max">Max<input type="number" id="camera-fov-max" min="1" max="1000" step="1" inputmode="decimal" autocomplete="off"></label>
-                            <label class="camera-limit-field" for="camera-fov-interval">Interval<input type="number" id="camera-fov-interval" min="0.1" max="100" step="0.1" inputmode="decimal" autocomplete="off"></label>
+                            <label class="camera-limit-field" for="camera-fov-min"><span data-i18n="camera.min">Min</span><input type="number" id="camera-fov-min" min="1" max="1000" step="1" inputmode="decimal" autocomplete="off"></label>
+                            <label class="camera-limit-field" for="camera-fov-max"><span data-i18n="camera.max">Max</span><input type="number" id="camera-fov-max" min="1" max="1000" step="1" inputmode="decimal" autocomplete="off"></label>
+                            <label class="camera-limit-field" for="camera-fov-interval"><span data-i18n="camera.interval">Interval</span><input type="number" id="camera-fov-interval" min="0.1" max="100" step="0.1" inputmode="decimal" autocomplete="off"></label>
                         </div>
                     </div>
                     <div class="settings-group camera-limit-group">
-                        <label>Height limits</label>
+                        <label data-i18n="camera.height_limits">Height limits</label>
                         <div class="camera-limit-row">
-                            <label class="camera-limit-field" for="camera-height-min">Min<input type="number" id="camera-height-min" min="1" max="1000" step="1" inputmode="decimal" autocomplete="off"></label>
-                            <label class="camera-limit-field" for="camera-height-max">Max<input type="number" id="camera-height-max" min="1" max="1000" step="1" inputmode="decimal" autocomplete="off"></label>
-                            <label class="camera-limit-field" for="camera-height-interval">Interval<input type="number" id="camera-height-interval" min="0.1" max="100" step="0.1" inputmode="decimal" autocomplete="off"></label>
+                            <label class="camera-limit-field" for="camera-height-min"><span data-i18n="camera.min">Min</span><input type="number" id="camera-height-min" min="1" max="1000" step="1" inputmode="decimal" autocomplete="off"></label>
+                            <label class="camera-limit-field" for="camera-height-max"><span data-i18n="camera.max">Max</span><input type="number" id="camera-height-max" min="1" max="1000" step="1" inputmode="decimal" autocomplete="off"></label>
+                            <label class="camera-limit-field" for="camera-height-interval"><span data-i18n="camera.interval">Interval</span><input type="number" id="camera-height-interval" min="0.1" max="100" step="0.1" inputmode="decimal" autocomplete="off"></label>
                         </div>
                     </div>
                     <div class="settings-group camera-limit-group">
-                        <label>Distance limits</label>
+                        <label data-i18n="camera.distance_limits">Distance limits</label>
                         <div class="camera-limit-row">
-                            <label class="camera-limit-field" for="camera-distance-min">Min<input type="number" id="camera-distance-min" min="1" max="1000" step="1" inputmode="decimal" autocomplete="off"></label>
-                            <label class="camera-limit-field" for="camera-distance-max">Max<input type="number" id="camera-distance-max" min="1" max="1000" step="1" inputmode="decimal" autocomplete="off"></label>
-                            <label class="camera-limit-field" for="camera-distance-interval">Interval<input type="number" id="camera-distance-interval" min="0.1" max="100" step="0.1" inputmode="decimal" autocomplete="off"></label>
+                            <label class="camera-limit-field" for="camera-distance-min"><span data-i18n="camera.min">Min</span><input type="number" id="camera-distance-min" min="1" max="1000" step="1" inputmode="decimal" autocomplete="off"></label>
+                            <label class="camera-limit-field" for="camera-distance-max"><span data-i18n="camera.max">Max</span><input type="number" id="camera-distance-max" min="1" max="1000" step="1" inputmode="decimal" autocomplete="off"></label>
+                            <label class="camera-limit-field" for="camera-distance-interval"><span data-i18n="camera.interval">Interval</span><input type="number" id="camera-distance-interval" min="0.1" max="100" step="0.1" inputmode="decimal" autocomplete="off"></label>
                         </div>
                     </div>
                     <div class="swapper-controls">
-                        <button id="camera-reset-defaults-btn" class="action-btn action-btn-secondary" type="button">Reset to defaults</button>
-                        <button id="camera-save-btn" class="action-btn" type="button">Save camera</button>
+                        <button id="camera-reset-defaults-btn" class="action-btn action-btn-secondary" type="button" data-i18n="camera.reset_defaults">Reset to defaults</button>
+                        <button id="camera-save-btn" class="action-btn" type="button" data-i18n="camera.save_camera">Save camera</button>
                     </div>
                 </div>
             </div>
 
             <div id="maps-tab" class="tab-content">
                 <div class="subtab-strip" role="tablist">
-                    <button type="button" class="subtab-btn active" data-subtab="browser-pane">Maps</button>
-                    <button type="button" class="subtab-btn" data-subtab="maplib-pane">Library</button>
-                    <button type="button" class="subtab-btn" data-subtab="mappresets-pane">Presets</button>
+                    <button type="button" class="subtab-btn active" data-subtab="browser-pane" data-i18n="maps.subtab_maps">Maps</button>
+                    <button type="button" class="subtab-btn" data-subtab="maplib-pane" data-i18n="maps.subtab_library">Library</button>
+                    <button type="button" class="subtab-btn" data-subtab="mappresets-pane" data-i18n="maps.subtab_presets">Presets</button>
                 </div>
 
                 <div id="workshop-url-progress" style="display:none;flex-direction:column;gap:4px;background:rgba(255,255,255,0.03);padding:10px;border-radius:8px;border:1px solid var(--border);margin-bottom:8px;">
                     <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-muted, #aaa);">
-                        <span id="workshop-url-progress-text">Downloading map…</span>
+                        <span id="workshop-url-progress-text" data-i18n="maps.downloading_map">Downloading map…</span>
                         <span id="workshop-url-progress-pct">0%</span>
                     </div>
                     <div class="progress-container" style="height:6px;border-radius:3px;overflow:hidden;background:rgba(255,255,255,0.08);">
@@ -499,39 +580,39 @@
                 <div id="browser-pane" class="subtab-pane active">
                     <div class="browser-toolbar" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between;">
                         <div style="display:flex;gap:8px;align-items:center;flex:1;min-width:260px;">
-                            <input type="text" id="workshop-catalog-search" placeholder="Search BakkesPlugins maps (e.g. Rings, Dribble, Aerial)..." style="flex:1;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:12px;">
-                            <button id="workshop-catalog-search-btn" class="action-btn" type="button">Search</button>
+                            <input type="text" id="workshop-catalog-search" data-i18n-placeholder="maps.search_placeholder" placeholder="Search BakkesPlugins maps (e.g. Rings, Dribble, Aerial)..." style="flex:1;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:12px;">
+                            <button id="workshop-catalog-search-btn" class="action-btn" type="button" data-i18n="maps.search_btn">Search</button>
                         </div>
                         <div style="display:flex;gap:8px;align-items:center;">
-                            <button id="workshop-catalog-prev-btn" class="action-btn action-btn-secondary" type="button" disabled>← Previous</button>
+                            <button id="workshop-catalog-prev-btn" class="action-btn action-btn-secondary" type="button" disabled data-i18n="maps.prev_btn">← Previous</button>
                             <span id="workshop-catalog-page-info" style="font-size:12px;color:var(--text-secondary);font-weight:600;">Page 1</span>
-                            <button id="workshop-catalog-next-btn" class="action-btn action-btn-secondary" type="button">Next →</button>
+                            <button id="workshop-catalog-next-btn" class="action-btn action-btn-secondary" type="button" data-i18n="maps.next_btn">Next →</button>
                         </div>
                     </div>
 
                     <div id="workshop-catalog-grid" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(230px, 1fr));gap:14px;max-height:calc(100vh - 270px);overflow-y:auto;padding-right:6px;">
                         <div style="grid-column:1/-1;text-align:center;padding:40px 20px;color:var(--text-secondary);">
                             <div class="spinner" style="width:28px;height:28px;margin:0 auto 12px;border:3px solid rgba(255,255,255,0.1);border-top-color:var(--accent-blue);border-radius:50%;animation:spin 1s linear infinite;"></div>
-                            <div>Loading BakkesPlugins Maps catalog…</div>
+                            <div data-i18n="maps.loading_catalog">Loading BakkesPlugins Maps catalog…</div>
                         </div>
                     </div>
                 </div>
 
                 <div id="maplib-pane" class="subtab-pane">
                     <div class="card spoof-card">
-                        <p class="switch-title" style="font-weight:600;font-size:13px;margin:0 0 6px 0;">Install map from URL or file</p>
-                        <p class="switch-hint" style="margin:0 0 10px 0;">Paste a direct .upk or .zip link, or select a downloaded .upk map from your computer.</p>
+                        <p class="switch-title" style="font-weight:600;font-size:13px;margin:0 0 6px 0;" data-i18n="maps.install_title">Install map from URL or file</p>
+                        <p class="switch-hint" style="margin:0 0 10px 0;" data-i18n="maps.install_desc">Paste a direct .upk or .zip link, or select a downloaded .upk map from your computer.</p>
                         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-                            <input type="text" id="workshop-url-input" placeholder="Paste direct .upk or .zip map URL here..." style="flex:1;min-width:220px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:12px;">
-                            <button id="workshop-url-btn" class="action-btn" type="button" style="white-space:nowrap;">Install from URL</button>
-                            <button id="workshop-add-map-btn" class="action-btn action-btn-secondary" type="button" style="white-space:nowrap;">Add map file (.upk)</button>
-                            <button id="workshop-restore-btn" class="action-btn action-btn-secondary" type="button" style="white-space:nowrap;">Restore original map</button>
+                            <input type="text" id="workshop-url-input" data-i18n-placeholder="maps.url_placeholder" placeholder="Paste direct .upk or .zip map URL here..." style="flex:1;min-width:220px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:12px;">
+                            <button id="workshop-url-btn" class="action-btn" type="button" style="white-space:nowrap;" data-i18n="maps.install_url_btn">Install from URL</button>
+                            <button id="workshop-add-map-btn" class="action-btn action-btn-secondary" type="button" style="white-space:nowrap;" data-i18n="maps.add_file_btn">Add map file (.upk)</button>
+                            <button id="workshop-restore-btn" class="action-btn action-btn-secondary" type="button" style="white-space:nowrap;" data-i18n="maps.restore_orig_btn">Restore original map</button>
                         </div>
                     </div>
 
                     <div class="card spoof-card">
                         <div style="display:flex;align-items:center;gap:10px;">
-                            <p class="switch-title" style="font-weight:600;font-size:13px;flex:1;margin:0;">Your custom maps</p>
+                            <p class="switch-title" style="font-weight:600;font-size:13px;flex:1;margin:0;" data-i18n="maps.your_maps">Your custom maps</p>
                         </div>
                         <div id="workshop-library-list" class="backup-list" style="margin-top:6px;"></div>
                     </div>
@@ -540,17 +621,17 @@
                 <div id="mappresets-pane" class="subtab-pane">
                     <div class="card spoof-card">
                         <div style="display:flex;align-items:center;gap:10px;">
-                            <p class="switch-title" style="font-weight:600;font-size:13px;flex:1;margin:0;">Map presets</p>
-                            <button id="workshop-preset-save-btn" class="action-btn" type="button">Save loaded map as preset</button>
+                            <p class="switch-title" style="font-weight:600;font-size:13px;flex:1;margin:0;" data-i18n="maps.presets_title">Map presets</p>
+                            <button id="workshop-preset-save-btn" class="action-btn" type="button" data-i18n="maps.save_preset_btn">Save loaded map as preset</button>
                         </div>
-                        <p class="switch-hint" style="display:block;margin-top:4px;">Save a loaded map under a name to switch between your favorites in one click. Separate from item-swap presets.</p>
+                        <p class="switch-hint" style="display:block;margin-top:4px;" data-i18n="maps.presets_desc">Save a loaded map under a name to switch between your favorites in one click. Separate from item-swap presets.</p>
                         <div id="workshop-preset-list" class="backup-list" style="margin-top:6px;"></div>
                     </div>
                 </div>
             </div>
 
             <div id="misc-tab" class="tab-content">
-                <h2 class="section-title">Miscellaneous</h2>
+                <h2 class="section-title" data-i18n="misc.title">Miscellaneous</h2>
 
                 <div class="card spoof-card palette-card">
                     <div id="palette-disabled-block" class="palette-disabled-block">
@@ -589,18 +670,18 @@
                                 </span>
                             </span>
                             <span class="switch-copy">
-                                <span class="switch-title">Season logo</span>
-                                <span class="switch-hint">Must be PNG, 1024×1024</span>
+                                <span class="switch-title" data-i18n="misc.season_logo">Season logo</span>
+                                <span class="switch-hint" data-i18n="misc.season_logo_desc">Must be PNG, 1024×1024</span>
                             </span>
                         </label>
                     </div>
                     <div class="settings-group">
-                        <label for="logo-spoof-url">Logo URL</label>
+                        <label for="logo-spoof-url" data-i18n="misc.logo_url">Logo URL</label>
                         <input type="text" id="logo-spoof-url" placeholder="https://rl-cdn.psyonix.com/LogoImages/S23/..." autocomplete="off" spellcheck="false">
-                        <a href="#" id="logo-spoof-default" class="titles-bg-default-link logo-spoof-default-link">Reset to default</a>
+                        <a href="#" id="logo-spoof-default" class="titles-bg-default-link logo-spoof-default-link" data-i18n="misc.reset_default">Reset to default</a>
                     </div>
                     <div class="swapper-controls">
-                        <button id="logo-spoof-save-btn" class="action-btn" type="button">Save season logo</button>
+                        <button id="logo-spoof-save-btn" class="action-btn" type="button" data-i18n="misc.save_logo">Save season logo</button>
                     </div>
                 </div>
                 <div class="card spoof-card">
@@ -615,43 +696,43 @@
                                 </span>
                             </span>
                             <span class="switch-copy">
-                                <span class="switch-title">Bottom Main Menu Text</span>
+                                <span class="switch-title" data-i18n="misc.bottom_text">Bottom Main Menu Text</span>
                             </span>
                         </label>
                     </div>
                     <div class="settings-group">
-                        <label for="blog-spoof-motd">Text</label>
+                        <label for="blog-spoof-motd" data-i18n="misc.text_label">Text</label>
                         <textarea id="blog-spoof-motd" rows="4" placeholder="Use VelocityRL :)" spellcheck="false"></textarea>
                     </div>
                     <div class="swapper-controls">
-                        <button id="blog-spoof-save-btn" class="action-btn" type="button">Save</button>
+                        <button id="blog-spoof-save-btn" class="action-btn" type="button" data-i18n="misc.save_text">Save</button>
                     </div>
                 </div>
             </div>
 
             <div id="tracker-tab" class="tab-content">
-                <h2 class="section-title">Tracker Overlay</h2>
-                <p class="section-desc">Track win streaks, match wins, and losses automatically on screen.</p>
+                <h2 class="section-title" data-i18n="tracker.title">Tracker Overlay</h2>
+                <p class="section-desc" data-i18n="tracker.desc">Track win streaks, match wins, and losses automatically on screen.</p>
 
                 <div class="tracker-borderless-banner">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0; color:#ff9f43;"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                    <span><strong>Notice:</strong> You must set Rocket League Video Settings to <strong>Borderless</strong> (or Windowed) for the tracker overlay to show in-game!</span>
+                    <span data-i18n="tracker.borderless_notice"><strong>Notice:</strong> You must set Rocket League Video Settings to <strong>Borderless</strong> (or Windowed) for the tracker overlay to show in-game!</span>
                 </div>
 
                 <div class="card spoof-card">
-                    <h3>Overlay Theme & Style</h3>
+                    <h3 data-i18n="tracker.theme_title">Overlay Theme & Style</h3>
                     <div class="swapper-themes-grid" style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-top:10px;">
                         <button type="button" class="theme-style-btn active" data-style="circle" style="padding:10px 8px; background:var(--panel-hover); border:1px solid var(--accent); border-radius:6px; color:var(--text); cursor:pointer; text-align:center;">
-                            <strong style="display:block; font-size:12px;">Boost Hugger</strong>
-                            <span style="font-size:10px; color:var(--text-secondary);">Curved 4 cards</span>
+                            <strong style="display:block; font-size:12px;" data-i18n="tracker.theme_boost_hugger">Boost Hugger</strong>
+                            <span style="font-size:10px; color:var(--text-secondary);" data-i18n="tracker.theme_boost_hugger_desc">Curved 4 cards</span>
                         </button>
                         <button type="button" class="theme-style-btn" data-style="minimal" style="padding:10px 8px; background:var(--panel-hover); border:1px solid var(--border); border-radius:6px; color:var(--text); cursor:pointer; text-align:center;">
-                            <strong style="display:block; font-size:12px;">Minimal Card</strong>
-                            <span style="font-size:10px; color:var(--text-secondary);">Ultra-compact bar</span>
+                            <strong style="display:block; font-size:12px;" data-i18n="tracker.theme_minimal">Minimal Card</strong>
+                            <span style="font-size:10px; color:var(--text-secondary);" data-i18n="tracker.theme_minimal_desc">Ultra-compact bar</span>
                         </button>
                         <button type="button" class="theme-style-btn" data-style="redesigned" style="padding:10px 8px; background:var(--panel-hover); border:1px solid var(--border); border-radius:6px; color:var(--text); cursor:pointer; text-align:center;">
-                            <strong style="display:block; font-size:12px;">Floating Card</strong>
-                            <span style="font-size:10px; color:var(--text-secondary);">2x2 Grid tile</span>
+                            <strong style="display:block; font-size:12px;" data-i18n="tracker.theme_floating">Floating Card</strong>
+                            <span style="font-size:10px; color:var(--text-secondary);" data-i18n="tracker.theme_floating_desc">2x2 Grid tile</span>
                         </button>
                     </div>
                 </div>
@@ -668,8 +749,8 @@
                                 </span>
                             </span>
                             <span class="switch-copy">
-                                <span class="switch-title">Enable Tracker Overlay</span>
-                                <span class="switch-hint">Automatically calculates MMR gain/loss and win streaks</span>
+                                <span class="switch-title" data-i18n="tracker.enable_title">Enable Tracker Overlay</span>
+                                <span class="switch-hint" data-i18n="tracker.enable_desc">Automatically calculates MMR gain/loss and win streaks</span>
                             </span>
                         </label>
                     </div>
@@ -677,16 +758,16 @@
                 </div>
 
                 <div class="card spoof-card">
-                    <h3>Overlay Customization & Placement</h3>
+                    <h3 data-i18n="tracker.placement_title">Overlay Customization & Placement</h3>
                     <div class="settings-group" style="margin-top:12px;">
                         <div style="max-width:320px;">
-                            <label for="tracker-position-select">Screen Position</label>
+                            <label for="tracker-position-select" data-i18n="tracker.position_label">Screen Position</label>
                             <select id="tracker-position-select" style="width:100%; background:var(--input-bg); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:8px;">
-                                <option value="top-right">Top Right (Default)</option>
-                                <option value="top-left">Top Left</option>
-                                <option value="bottom-right">Bottom Right</option>
-                                <option value="bottom-left">Bottom Left</option>
-                                <option value="custom">Custom (Free Drag)</option>
+                                <option value="top-right" data-i18n="tracker.pos_top_right">Top Right (Default)</option>
+                                <option value="top-left" data-i18n="tracker.pos_top_left">Top Left</option>
+                                <option value="bottom-right" data-i18n="tracker.pos_bottom_right">Bottom Right</option>
+                                <option value="bottom-left" data-i18n="tracker.pos_bottom_left">Bottom Left</option>
+                                <option value="custom" data-i18n="tracker.pos_custom">Custom (Free Drag)</option>
                             </select>
                         </div>
                     </div>
@@ -694,25 +775,25 @@
 
                     <div class="settings-group" style="margin-top:14px; display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.02); padding:12px 14px; border-radius:8px; border:1px solid var(--border);">
                         <div>
-                            <span style="font-size:13px; color:#fff; font-weight:normal;">Overlay Positioning & Mouse Locking</span>
-                            <div style="font-size:11px; color:var(--text-secondary); margin-top:2px;">Unlock to drag overlay across screen; lock to pass clicks through to game during play.</div>
+                            <span style="font-size:13px; color:#fff; font-weight:normal;" data-i18n="tracker.lock_title">Overlay Positioning & Mouse Locking</span>
+                            <div style="font-size:11px; color:var(--text-secondary); margin-top:2px;" data-i18n="tracker.lock_desc">Unlock to drag overlay across screen; lock to pass clicks through to game during play.</div>
                         </div>
-                        <button type="button" id="tracker-toggle-lock-btn" class="action-btn action-btn-secondary" style="padding:8px 16px; font-size:12px; font-weight:700; white-space:nowrap;">Unlock Position to Move</button>
+                        <button type="button" id="tracker-toggle-lock-btn" class="action-btn action-btn-secondary" style="padding:8px 16px; font-size:12px; font-weight:700; white-space:nowrap;" data-i18n="tracker.unlock_btn">Unlock Position to Move</button>
                     </div>
-                    <div style="font-size:11px; color:var(--muted); margin-top:8px;">Tip: For overlays to render over Rocket League, set <strong>Video Settings</strong> in-game to <strong>Borderless Windowed</strong>.</div>
+                    <div style="font-size:11px; color:var(--muted); margin-top:8px;" data-i18n="tracker.borderless_tip">Tip: For overlays to render over Rocket League, set <strong>Video Settings</strong> in-game to <strong>Borderless Windowed</strong>.</div>
                 </div>
 
                 <div class="card spoof-card">
-                    <h3>Overlay Launch & In-Game Behavior</h3>
-                    <p style="font-size:12px; color:var(--text-secondary); margin-top:4px; line-height:1.5;">
+                    <h3 data-i18n="tracker.behavior_title">Overlay Launch & In-Game Behavior</h3>
+                    <p style="font-size:12px; color:var(--text-secondary); margin-top:4px; line-height:1.5;" data-i18n="tracker.behavior_desc">
                         When enabled, the tracker HUD floats above Rocket League automatically when the game is running.
                         In-game stats (MMR, net gain/loss, match streak) update automatically after every match.
                     </p>
                     <div style="display:flex; gap:10px; margin-top:14px; flex-wrap:wrap;">
-                        <button type="button" id="tracker-test-preview-btn" class="action-btn action-btn-secondary" style="font-size:12px; padding:8px 16px;">Test Overlay (Open on Screen)</button>
-                        <button type="button" id="tracker-center-overlay-btn" class="action-btn action-btn-secondary" style="font-size:12px; padding:8px 16px;">Center Overlay on Screen</button>
-                        <button type="button" id="tracker-close-overlay-btn" class="action-btn action-btn-secondary" style="font-size:12px; padding:8px 16px;">Hide Overlay</button>
-                        <button type="button" id="tracker-reset-session-btn" class="action-btn action-btn-secondary" style="font-size:12px; padding:8px 16px; color:#ff6b6b; border-color:rgba(255,107,107,0.3);">Reset Session Stats</button>
+                        <button type="button" id="tracker-test-preview-btn" class="action-btn action-btn-secondary" style="font-size:12px; padding:8px 16px;" data-i18n="tracker.test_btn">Test Overlay (Open on Screen)</button>
+                        <button type="button" id="tracker-center-overlay-btn" class="action-btn action-btn-secondary" style="font-size:12px; padding:8px 16px;" data-i18n="tracker.center_btn">Center Overlay on Screen</button>
+                        <button type="button" id="tracker-close-overlay-btn" class="action-btn action-btn-secondary" style="font-size:12px; padding:8px 16px;" data-i18n="tracker.hide_btn">Hide Overlay</button>
+                        <button type="button" id="tracker-reset-session-btn" class="action-btn action-btn-secondary" style="font-size:12px; padding:8px 16px; color:#ff6b6b; border-color:rgba(255,107,107,0.3);" data-i18n="tracker.reset_btn">Reset Session Stats</button>
                     </div>
                 </div>
             </div>
@@ -745,6 +826,8 @@
                         <option value="de">Deutsch</option>
                         <option value="pt">Português</option>
                         <option value="it">Italiano</option>
+                        <option value="nl">Nederlands</option>
+                        <option value="tr">Türkçe</option>
                     </select>
                 </div>
             </div>
@@ -779,7 +862,7 @@
                     <div style="font-weight:600; font-size:12px;" data-i18n="settings.diagnostics_title">Troubleshooting</div>
                 </div>
                 <div style="display:flex; gap:8px;">
-                    <button type="button" id="settings-dev-panel-btn" class="path-btn"><span>Debug Panel</span></button>
+                    <button type="button" id="settings-dev-panel-btn" class="path-btn"><span data-i18n="settings.debug_panel">Debug Panel</span></button>
                     <button type="button" id="settings-export-diag-btn" class="path-btn"><span data-i18n="settings.export_diagnostics">Export Diagnostics</span></button>
                 </div>
             </div>
@@ -811,17 +894,17 @@
     <div id="outdated-build-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="outdated-build-title">
         <div class="modal">
             <div class="modal-header">
-                <h2 id="outdated-build-title">Build Outdated</h2>
+                <h2 id="outdated-build-title" data-i18n="outdated.title">Build Outdated</h2>
             </div>
-            <p style="color:var(--text-secondary); margin-bottom:16px;">This build of VelocityRL is outdated and is no longer supported. All features have been locked. Please update to the latest version to continue.</p>
+            <p style="color:var(--text-secondary); margin-bottom:16px;" data-i18n="outdated.desc">This build of VelocityRL is outdated and is no longer supported. All features have been locked. Please update to the latest version to continue.</p>
             <div style="background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:10px 14px; margin-bottom:16px; font-family:monospace; font-size:12px; display:flex; flex-direction:column; gap:6px;">
-                <div style="display:flex; justify-content:space-between;"><span style="color:var(--muted);">Current Build:</span> <span id="outdated-client-build" style="color:var(--danger); font-weight:600;">—</span></div>
-                <div style="display:flex; justify-content:space-between;"><span style="color:var(--muted);">Status:</span> <span style="color:var(--danger); font-weight:600;">Blacklisted Build</span></div>
+                <div style="display:flex; justify-content:space-between;"><span style="color:var(--muted);" data-i18n="outdated.current_build">Current Build:</span> <span id="outdated-client-build" style="color:var(--danger); font-weight:600;">—</span></div>
+                <div style="display:flex; justify-content:space-between;"><span style="color:var(--muted);" data-i18n="outdated.status">Status:</span> <span style="color:var(--danger); font-weight:600;" data-i18n="outdated.blacklisted">Blacklisted Build</span></div>
             </div>
             <div style="display:flex; flex-direction:column; gap:8px;">
-                <button id="outdated-update-btn" class="action-btn" type="button">Check for Updates</button>
-                <button id="outdated-website-btn" class="action-btn action-btn-secondary" type="button">Download from Website</button>
-                <button id="outdated-exit-btn" class="path-btn" type="button" style="text-align:center; justify-content:center; color:var(--muted);">Exit</button>
+                <button id="outdated-update-btn" class="action-btn" type="button" data-i18n="outdated.check_updates">Check for Updates</button>
+                <button id="outdated-website-btn" class="action-btn action-btn-secondary" type="button" data-i18n="outdated.download_website">Download from Website</button>
+                <button id="outdated-exit-btn" class="path-btn" type="button" style="text-align:center; justify-content:center; color:var(--muted);" data-i18n="outdated.exit">Exit</button>
             </div>
             <p id="outdated-update-status" style="font-size:12px; color:var(--muted); text-align:center; margin:12px 0 0; min-height:16px;"></p>
         </div>
@@ -830,14 +913,14 @@
     <div id="changelog-modal" class="modal-overlay">
         <div class="modal modal-wide">
             <div class="modal-header">
-                <h2>What's New</h2>
+                <h2 data-i18n="changelog.title">What's New</h2>
                 <div id="close-changelog" class="close-modal-btn">×</div>
             </div>
             <div id="changelog-body" class="changelog-scroll">
                 <div class="backup-empty">Loading...</div>
             </div>
             <div class="changelog-footer">
-                <button id="toggle-changelog-startup" class="path-btn">Don't show on startup</button>
+                <button id="toggle-changelog-startup" class="path-btn" data-i18n="changelog.toggle_startup">Don't show on startup</button>
             </div>
         </div>
     </div>
@@ -901,8 +984,8 @@
                 <input type="text" id="app-dialog-input" autocomplete="off" spellcheck="false">
             </div>
             <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px;">
-                <button id="app-dialog-cancel" class="action-btn action-btn-secondary" type="button">Cancel</button>
-                <button id="app-dialog-ok" class="action-btn" type="button">OK</button>
+                <button id="app-dialog-cancel" class="action-btn action-btn-secondary" type="button" data-i18n="dialogs.cancel">Cancel</button>
+                <button id="app-dialog-ok" class="action-btn" type="button" data-i18n="dialogs.ok">OK</button>
             </div>
         </div>
     </div>
@@ -910,7 +993,7 @@
     <div id="preset-preview-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="preset-preview-title">
         <div class="modal" style="max-width:620px; width:92vw; max-height:86vh; display:flex; flex-direction:column; overflow:hidden;">
             <div class="modal-header" style="margin-bottom:8px;">
-                <h2 id="preset-preview-title">Preset Details</h2>
+                <h2 id="preset-preview-title" data-i18n="preset_modal.title">Preset Details</h2>
                 <div id="preset-preview-close" class="close-modal-btn">×</div>
             </div>
 
@@ -920,13 +1003,13 @@
             </div>
 
             <div id="preset-download-banner" style="display:none; padding:10px 12px; border-radius:6px; background:rgba(33,150,243,0.1); border:1px solid rgba(33,150,243,0.3); margin-bottom:12px; font-size:12px; line-height:1.4;">
-                <strong id="preset-download-banner-title" style="display:block; margin-bottom:2px;">Maps Download Status</strong>
+                <strong id="preset-download-banner-title" style="display:block; margin-bottom:2px;" data-i18n="preset_modal.maps_download_status">Maps Download Status</strong>
                 <div id="preset-download-banner-desc" style="color:var(--text-secondary);"></div>
             </div>
 
             <div class="subtab-strip" id="preset-preview-subtabs" style="margin-bottom:12px;">
-                <button type="button" class="subtab-btn active" id="preset-tab-items-btn">Items to Swap</button>
-                <button type="button" class="subtab-btn" id="preset-tab-maps-btn">Workshop Maps</button>
+                <button type="button" class="subtab-btn active" id="preset-tab-items-btn" data-i18n="preset_modal.items_tab">Items to Swap</button>
+                <button type="button" class="subtab-btn" id="preset-tab-maps-btn" data-i18n="preset_modal.maps_tab">Workshop Maps</button>
             </div>
 
             <div id="preset-items-view" style="flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden;">
@@ -949,7 +1032,7 @@
 
             <div id="preset-download-progress-wrap" style="display:none; flex-direction:column; gap:4px; margin-top:10px;">
                 <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-secondary);">
-                    <span id="preset-download-progress-status">Downloading maps…</span>
+                    <span id="preset-download-progress-status" data-i18n="preset_modal.downloading_maps">Downloading maps…</span>
                     <span id="preset-download-progress-count"></span>
                 </div>
                 <div class="progress-container" style="height:6px; border-radius:3px; background:rgba(255,255,255,0.08); overflow:hidden;">
@@ -958,8 +1041,8 @@
             </div>
 
             <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:14px; padding-top:10px; border-top:1px solid var(--border);">
-                <button id="preset-preview-cancel" class="action-btn action-btn-secondary" type="button">Cancel</button>
-                <button id="preset-preview-action" class="action-btn" type="button" style="background:var(--accent-blue); color:#fff;">Apply Preset</button>
+                <button id="preset-preview-cancel" class="action-btn action-btn-secondary" type="button" data-i18n="preset_modal.cancel">Cancel</button>
+                <button id="preset-preview-action" class="action-btn" type="button" style="background:var(--accent-blue); color:#fff;" data-i18n="preset_modal.apply">Apply Preset</button>
             </div>
         </div>
     </div>

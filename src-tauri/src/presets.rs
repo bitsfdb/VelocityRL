@@ -146,12 +146,31 @@ pub async fn save_preset(
     app: tauri::AppHandle,
     name: String,
     maps: Option<Vec<PresetMapEntry>>,
+    swaps: Option<Vec<SwapEntry>>,
 ) -> Result<Preset, String> {
     let name = name.trim().to_string();
     if name.is_empty() || name.len() > 64 {
         return Err("Preset name must be 1–64 characters.".into());
     }
-    let swaps = crate::load_swaps(&app);
+    let mut current_swaps = swaps.unwrap_or_else(|| crate::load_swaps(&app));
+
+    let items = crate::get_items(app.clone(), None).await.unwrap_or_default();
+    for s in &mut current_swaps {
+        if s.owned_name.is_empty() {
+            if let Some(it) = items.iter().find(|i| i.id == s.owned_id) {
+                s.owned_name = it.product.clone();
+                if s.asset_package.is_empty() {
+                    s.asset_package = it.asset_package.clone();
+                }
+            }
+        }
+        if s.wanted_name.is_empty() {
+            if let Some(it) = items.iter().find(|i| i.id == s.wanted_id) {
+                s.wanted_name = it.product.clone();
+            }
+        }
+    }
+
     let mut preset_maps = maps.unwrap_or_default();
     let mut active_map_id = None;
 
@@ -170,11 +189,11 @@ pub async fn save_preset(
         active_map_id = preset_maps.first().map(|m| m.id.clone());
     }
 
-    if swaps.is_empty() && preset_maps.is_empty() {
-        return Err("No active swaps or maps to save as a preset.".into());
+    if current_swaps.is_empty() && preset_maps.is_empty() {
+        return Err("No active swaps or maps to save as a preset. Set up swaps first.".into());
     }
-    if swaps.len() > MAX_PRESET_ITEMS {
-        return Err(format!("Preset exceeds maximum limit of {MAX_PRESET_ITEMS} items (has {}).", swaps.len()));
+    if current_swaps.len() > MAX_PRESET_ITEMS {
+        return Err(format!("Preset exceeds maximum limit of {MAX_PRESET_ITEMS} items (has {}).", current_swaps.len()));
     }
     if preset_maps.len() > MAX_PRESET_MAPS {
         return Err(format!("Preset exceeds maximum limit of {MAX_PRESET_MAPS} maps (has {}).", preset_maps.len()));
@@ -185,13 +204,13 @@ pub async fn save_preset(
     if let Some(idx) = existing_idx {
         let p = &mut f.presets[idx];
         p.name = name.clone();
-        p.swaps = swaps.clone();
+        p.swaps = current_swaps.clone();
         p.maps = preset_maps;
         p.active_map_id = active_map_id;
         p.created_at = crate::now_iso8601_utc();
         let updated = p.clone();
         save_preset_file(&app, &f);
-        append_history(&app, "preset_save", &swaps, &format!("updated preset '{name}'"));
+        append_history(&app, "preset_save", &current_swaps, &format!("updated preset '{name}'"));
         return Ok(updated);
     }
 
@@ -203,13 +222,13 @@ pub async fn save_preset(
         id: generate_preset_uuid(),
         name: name.clone(),
         created_at: crate::now_iso8601_utc(),
-        swaps: swaps.clone(),
+        swaps: current_swaps.clone(),
         maps: preset_maps,
         active_map_id,
     };
     f.presets.push(preset.clone());
     save_preset_file(&app, &f);
-    append_history(&app, "preset_save", &swaps, &format!("saved preset '{name}'"));
+    append_history(&app, "preset_save", &current_swaps, &format!("saved preset '{name}'"));
     Ok(preset)
 }
 
@@ -245,14 +264,14 @@ pub async fn apply_preset(app: tauri::AppHandle, id: String) -> Result<Vec<Strin
     let mut applied: Vec<SwapEntry> = Vec::new();
 
     if !preset.swaps.is_empty() {
-        let _ = crate::get_items(app.clone()).await;
+        let _ = crate::get_items(app.clone(), None).await;
         let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
         let items_json = fs::read_to_string(config_dir.join("items.json"))
             .map_err(|_| "Items database missing — check your internet connection and try again.".to_string())?;
         let game_dir = crate::upk::palette::resolve_cooked_dir(std::path::Path::new(&config.game_dir))
             .unwrap_or_else(|_| config.game_dir.clone().into());
         let opts = crate::build_swap_opts(game_dir.clone(), items_json);
-        let items = crate::get_items(app.clone()).await.unwrap_or_default();
+        let items = crate::get_items(app.clone(), None).await.unwrap_or_default();
 
         for s in &preset.swaps {
             let pkg = if !s.asset_package.is_empty() {
@@ -565,7 +584,7 @@ pub async fn random_swap_plan(
     owned_ids: Vec<i32>,
 ) -> Result<Vec<SwapEntry>, String> {
     use rand::seq::SliceRandom;
-    let items = crate::get_items(app.clone()).await?;
+    let items = crate::get_items(app.clone(), None).await?;
     let swappable: Vec<&crate::Item> = items.iter().filter(|i| !crate::is_non_swappable(i)).collect();
     let mut rng = rand::thread_rng();
 
@@ -652,14 +671,14 @@ pub async fn apply_swap_plan(
     if crate::psynet::is_rocket_league_running() {
         return Err("Rocket League is running — close it first.".into());
     }
-    let _ = crate::get_items(app.clone()).await;
+    let _ = crate::get_items(app.clone(), None).await;
     let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
     let items_json = fs::read_to_string(config_dir.join("items.json"))
         .map_err(|_| "Items database missing — check your internet connection and try again.".to_string())?;
     let game_dir = crate::upk::palette::resolve_cooked_dir(std::path::Path::new(&config.game_dir))
         .unwrap_or_else(|_| config.game_dir.clone().into());
     let opts = crate::build_swap_opts(game_dir.clone(), items_json);
-    let items = crate::get_items(app.clone()).await.unwrap_or_default();
+    let items = crate::get_items(app.clone(), None).await.unwrap_or_default();
 
     let mut results = Vec::new();
     let mut applied: Vec<SwapEntry> = Vec::new();

@@ -208,7 +208,7 @@ pub fn patch_eos_accounts_json(
     val: &mut serde_json::Value,
     new_name: &str,
     target_pid: Option<&str>,
-    _filter_real_name: Option<&str>,
+    filter_real_name: Option<&str>,
 ) -> (bool, Option<String>, Option<String>) {
     let mut modified = false;
     let mut learned_pid = None;
@@ -233,16 +233,25 @@ pub fn patch_eos_accounts_json(
                 .map(|s| s.to_string());
 
             let mut is_match = false;
-            if let Some(ref target) = clean_target {
-                if let Some(ref a) = acc {
-                    if normalize_player_id(a) == *target {
+            if let Some(real) = filter_real_name {
+                if let Some(ref disp) = current_disp {
+                    if disp.eq_ignore_ascii_case(real) {
                         is_match = true;
                     }
                 }
-            } else if single_item {
-                is_match = true;
-                if let Some(ref a) = acc {
-                    learned_pid = Some(a.clone());
+            }
+            if !is_match {
+                if let Some(ref target) = clean_target {
+                    if let Some(ref a) = acc {
+                        if normalize_player_id(a) == *target {
+                            is_match = true;
+                        }
+                    }
+                } else if single_item {
+                    is_match = true;
+                    if let Some(ref a) = acc {
+                        learned_pid = Some(a.clone());
+                    }
                 }
             }
 
@@ -273,16 +282,25 @@ pub fn patch_eos_accounts_json(
             .map(|s| s.to_string());
 
         let mut is_match = false;
-        if let Some(ref target) = clean_target {
-            if let Some(ref a) = acc {
-                if normalize_player_id(a) == *target {
+        if let Some(real) = filter_real_name {
+            if let Some(ref disp) = current_disp {
+                if disp.eq_ignore_ascii_case(real) {
                     is_match = true;
                 }
             }
-        } else {
-            is_match = true;
-            if let Some(ref a) = acc {
-                learned_pid = Some(a.clone());
+        }
+        if !is_match {
+            if let Some(ref target) = clean_target {
+                if let Some(ref a) = acc {
+                    if normalize_player_id(a) == *target {
+                        is_match = true;
+                    }
+                }
+            } else {
+                is_match = true;
+                if let Some(ref a) = acc {
+                    learned_pid = Some(a.clone());
+                }
             }
         }
 
@@ -295,6 +313,9 @@ pub fn patch_eos_accounts_json(
             user_data.insert("displayName".to_string(), serde_json::json!(new_name));
             user_data.insert("sanitizedDisplayName".to_string(), serde_json::json!(new_name));
             modified = true;
+            if let Some(ref a) = acc {
+                learned_pid = Some(a.clone());
+            }
         }
     }
 
@@ -416,12 +437,10 @@ fn patch_ws_names_value(
                 let is_name_key = NAME_KEYS.iter().any(|nk| nk.eq_ignore_ascii_case(k));
                 if is_name_key {
                     let mut should_patch = is_own_obj;
-                    if !should_patch && clean_pid.is_none() {
-                        if let Some(real) = clean_real {
-                            if let Some(s) = v.as_str() {
-                                if s.eq_ignore_ascii_case(real) {
-                                    should_patch = true;
-                                }
+                    if let Some(real) = clean_real {
+                        if let Some(s) = v.as_str() {
+                            if s.eq_ignore_ascii_case(real) {
+                                should_patch = true;
                             }
                         }
                     }
@@ -1116,6 +1135,10 @@ async fn handle_forward_proxy_connection(
         let service = service_fn(move |mut req: Request<Incoming>| {
             let client = client.clone();
             async move {
+                let path = req.uri().path();
+                if path == "/proxy.pac" || path == "/wpad.dat" || path == "/health" || path == "/vrl-health" {
+                    return handle_crl_or_http(req).await;
+                }
                 let uri = req.uri().clone();
                 let host = uri.host().or_else(|| {
                     req.headers().get(hyper::header::HOST).and_then(|h| h.to_str().ok()).and_then(|s| s.split(':').next())
@@ -2491,26 +2514,50 @@ fn patch_leaderboard_json(
         }
     }
 
-    // Check if user is in Rows / Entries array and update their entry
+    // Build user row object
+    let player_name = cfg.name_spoof.as_ref()
+        .map(|n| n.display_name.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| get_learned_real_name())
+        .unwrap_or_else(|| "You".to_string());
+
     let learned_pid = get_learned_player_id();
     let target_pid = learned_pid.as_deref().or_else(|| {
         cfg.name_spoof.as_ref().and_then(|ns| ns.player_id.as_deref())
     });
+    let user_pid_str = target_pid.unwrap_or("Epic|local_user|0").to_string();
 
-    if let Some(pid) = target_pid {
-        let clean_pid = pid.trim_start_matches("Epic|").trim_start_matches("Steam|").trim_start_matches("Xbox|").trim_start_matches("PS4|").trim_end_matches("|0");
-        for key in &["Rows", "Entries", "LeaderboardRows"] {
-            if let Some(rows_arr) = result_obj.get_mut(*key).and_then(|r| r.as_array_mut()) {
-                for row in rows_arr.iter_mut() {
-                    let row_pid = row.get("PlayerID").and_then(|v| v.as_str()).unwrap_or("");
-                    if row_pid.contains(clean_pid) || clean_pid.contains(row_pid) {
-                        row["Rank"] = serde_json::json!(assigned_rank);
-                        row["Value"] = serde_json::json!(target_display_mmr.round() as i64);
-                        row["Tier"] = serde_json::json!(target_tier);
-                        row["MMR"] = serde_json::json!(target_mu);
-                        changed = true;
-                    }
+    let user_row_obj = serde_json::json!({
+        "PlayerID": user_pid_str,
+        "PlayerName": player_name,
+        "Rank": assigned_rank,
+        "UserRank": assigned_rank,
+        "Value": target_display_mmr.round() as i64,
+        "Tier": target_tier,
+        "MMR": target_mu,
+        "bHasSkill": true
+    });
+
+    // Check if user is in Rows / Entries array and update/insert their entry
+    let clean_pid = user_pid_str.trim_start_matches("Epic|").trim_start_matches("Steam|").trim_start_matches("Xbox|").trim_start_matches("PS4|").trim_end_matches("|0");
+    for key in &["Rows", "Entries", "LeaderboardRows"] {
+        if let Some(rows_arr) = result_obj.get_mut(*key).and_then(|r| r.as_array_mut()) {
+            if !rows_arr.is_empty() {
+                // Remove existing user entry if already in the list
+                rows_arr.retain(|row| {
+                    let r_pid = row.get("PlayerID").and_then(|v| v.as_str()).unwrap_or("");
+                    !(r_pid.contains(clean_pid) || clean_pid.contains(r_pid))
+                });
+
+                // Insert user at computed rank position (e.g. index 0 for Rank 1)
+                let insert_idx = ((assigned_rank - 1).max(0) as usize).min(rows_arr.len());
+                rows_arr.insert(insert_idx, user_row_obj.clone());
+
+                // Re-index ranks for the rows so they are monotonically ordered 1, 2, 3...
+                for (idx, row) in rows_arr.iter_mut().enumerate() {
+                    row["Rank"] = serde_json::json!((idx + 1) as i64);
                 }
+                changed = true;
             }
         }
     }
@@ -3841,10 +3888,8 @@ fn patch_camera(body: &[u8], cam: &crate::psynet::CameraSpoofPayload) -> (Vec<u8
 }
 
 fn patch_palette(body: &[u8]) -> (Vec<u8>, bool) {
-    // In Season 24 (Build 260918+), overriding Team_Soccar_TA.CarColorSet via ClassPropertyConfig
-    // causes an instant null pointer crash in GameInfo_Soccar_TA when loading Freeplay or matches.
-    // We safely no-op this injection to ensure gameplay stability.
-    (body.to_vec(), false)
+    let val_str = "CarColorSet_TA'CarColors.OrangeTeamV2'";
+    upsert_class_property_override(body, "Team_Soccar_TA", "CarColorSet", val_str)
 }
 
 /// Locate the byte span for the root `"ClassPropertyConfig"` JSON object.
@@ -4048,8 +4093,11 @@ mod tests {
     fn test_patch_palette() {
         let input = br#"{"ClassPropertyConfig":{"Class":"ClassPropertyConfig_X","Overrides":[{"Class":"GFxData_MusicPlayer_TA","Property":"bDebugMusicPlayer","Value":"true"},{"Class":"Camera_TA","Property":"FOVLimits","Value":"(Min=1.000000,Max=1000.000000,interval=1.000000)"}]}}"#;
         let (patched, changed) = patch_palette(input);
-        assert!(!changed);
-        assert_eq!(patched, input);
+        assert!(changed);
+        let s = String::from_utf8(patched).unwrap();
+        assert!(s.contains("\"Class\":\"Team_Soccar_TA\""));
+        assert!(s.contains("\"Property\":\"CarColorSet\""));
+        assert!(s.contains("\"Value\":\"CarColorSet_TA'CarColors.OrangeTeamV2'\""));
     }
 
     #[test]
@@ -4254,6 +4302,9 @@ mod tests {
         assert_eq!(val["Result"]["Rank"], 1);
         assert_eq!(val["Result"]["UserRow"]["Rank"], 1);
         assert_eq!(val["Result"]["UserRow"]["Value"], 3000);
+        assert_eq!(val["Result"]["Rows"][0]["Rank"], 1);
+        assert_eq!(val["Result"]["Rows"][0]["Value"], 3000);
+        assert_eq!(val["Result"]["Rows"][1]["Rank"], 2);
     }
 }
 

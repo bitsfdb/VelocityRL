@@ -111,6 +111,20 @@ struct Item {
     image_url: String,
     #[serde(default, alias = "AssetPackage", alias = "asset_package")]
     asset_package: String,
+    #[serde(default, alias = "AssetPath", alias = "asset_path")]
+    asset_path: String,
+    #[serde(default, alias = "ObjectName", alias = "object_name")]
+    object_name: Option<String>,
+    #[serde(default, alias = "ObjectClass", alias = "object_class")]
+    object_class: Option<String>,
+    #[serde(default, alias = "IsMultiAssetPackage", alias = "is_multi_asset_package")]
+    is_multi_asset_package: Option<bool>,
+    #[serde(default, alias = "PackageItemCount", alias = "package_item_count")]
+    package_item_count: Option<usize>,
+    #[serde(default, alias = "CompatibleBodyId", alias = "compatible_body_id")]
+    compatible_body_id: Option<i64>,
+    #[serde(default, alias = "CompatibleBodyName", alias = "compatible_body_name")]
+    compatible_body_name: Option<String>,
     #[serde(default, alias = "Type", alias = "Slot", alias = "slot")]
     slot: String,
     #[serde(default, alias = "Quality", alias = "quality")]
@@ -225,15 +239,43 @@ pub struct SwapEntry {
     pub asset_package: String,
 }
 
-static ITEMS_CACHE: std::sync::RwLock<Option<Vec<Item>>> = std::sync::RwLock::new(None);
+static ITEMS_CACHE: std::sync::RwLock<Option<std::collections::HashMap<u32, Vec<Item>>>> = std::sync::RwLock::new(None);
 
-fn get_cached_items() -> Option<Vec<Item>> {
-    ITEMS_CACHE.read().ok().and_then(|guard| guard.clone())
+pub fn rl_lang_id(lang: &str) -> u32 {
+    match lang.trim().to_lowercase().as_str() {
+        "de" | "deu" | "german" => 1,
+        "nl" | "dut" | "dutch" | "nederlands" => 2,
+        "es" | "esn" | "spanish" | "espanol" | "español" => 3,
+        "fr" | "fra" | "french" | "francais" | "français" => 4,
+        "it" | "ita" | "italian" | "italiano" => 5,
+        "ja" | "jpn" | "japanese" => 6,
+        "ko" | "kor" | "korean" => 7,
+        "pl" | "pol" | "polish" | "polski" => 8,
+        "pt" | "ptb" | "portuguese" | "portugues" | "português" => 9,
+        "ru" | "rus" | "russian" => 10,
+        "tr" | "trk" | "turkish" | "turkce" | "türkçe" => 11,
+        _ => 0, // "INT" / "en" / English default
+    }
 }
 
-fn set_cached_items(items: Vec<Item>) {
+pub fn items_api_url_for_lang(lang_id: u32) -> String {
+    if lang_id == 0 {
+        "https://api.velocityrl.tech/items.json".to_string()
+    } else {
+        format!("https://api.velocityrl.tech/items.json?l={lang_id}")
+    }
+}
+
+fn get_cached_items(lang_id: u32) -> Option<Vec<Item>> {
+    ITEMS_CACHE.read().ok().and_then(|guard| {
+        guard.as_ref().and_then(|map| map.get(&lang_id).cloned())
+    })
+}
+
+fn set_cached_items(lang_id: u32, items: Vec<Item>) {
     if let Ok(mut guard) = ITEMS_CACHE.write() {
-        *guard = Some(items);
+        let map = guard.get_or_insert_with(std::collections::HashMap::new);
+        map.insert(lang_id, items);
     }
 }
 
@@ -297,33 +339,47 @@ struct CatalogMetadata {
     last_modified: Option<String>,
 }
 
-fn read_catalog_meta(dir: &Path) -> CatalogMetadata {
-    let path = dir.join("items.meta.json");
+fn read_catalog_meta(dir: &Path, lang_id: u32) -> CatalogMetadata {
+    let filename = if lang_id == 0 {
+        "items.meta.json".to_string()
+    } else {
+        format!("items_{lang_id}.meta.json")
+    };
+    let path = dir.join(&filename);
     if let Ok(bytes) = fs::read(&path) {
         if let Ok(meta) = serde_json::from_slice::<CatalogMetadata>(&bytes) {
             return meta;
         }
     }
-    let ver_path = dir.join("items.ver");
-    if let Ok(ver) = fs::read_to_string(&ver_path) {
-        let v = ver.trim();
-        if !v.is_empty() {
-            return CatalogMetadata {
-                etag: Some(v.to_string()),
-                last_modified: None,
-            };
+    if lang_id == 0 {
+        let ver_path = dir.join("items.ver");
+        if let Ok(ver) = fs::read_to_string(&ver_path) {
+            let v = ver.trim();
+            if !v.is_empty() {
+                return CatalogMetadata {
+                    etag: Some(v.to_string()),
+                    last_modified: None,
+                };
+            }
         }
     }
     CatalogMetadata::default()
 }
 
-fn write_catalog_meta(dir: &Path, meta: &CatalogMetadata) {
-    let path = dir.join("items.meta.json");
+fn write_catalog_meta(dir: &Path, meta: &CatalogMetadata, lang_id: u32) {
+    let filename = if lang_id == 0 {
+        "items.meta.json".to_string()
+    } else {
+        format!("items_{lang_id}.meta.json")
+    };
+    let path = dir.join(&filename);
     if let Ok(data) = serde_json::to_vec(meta) {
         let _ = fs::write(&path, data);
     }
-    if let Some(etag) = &meta.etag {
-        let _ = fs::write(dir.join("items.ver"), etag);
+    if lang_id == 0 {
+        if let Some(etag) = &meta.etag {
+            let _ = fs::write(dir.join("items.ver"), etag);
+        }
     }
 }
 
@@ -339,7 +395,21 @@ fn get_catalog_dirs(app: &tauri::AppHandle) -> (PathBuf, Option<PathBuf>) {
 
 fn load_raw_items_json(app: &tauri::AppHandle) -> Result<String, String> {
     let (data_dir, config_dir) = get_catalog_dirs(app);
-    let mut candidates = vec![data_dir.join("items.json")];
+    let mut candidates = Vec::new();
+
+    if let Ok(cfg_content) = fs::read_to_string(config_dir.as_ref().unwrap_or(&data_dir).join("config.json")) {
+        if let Ok(cfg) = serde_json::from_str::<Config>(&cfg_content) {
+            let lid = rl_lang_id(&cfg.language);
+            if lid != 0 {
+                candidates.push(data_dir.join(format!("items_{lid}.json")));
+                if let Some(ref cfg_d) = config_dir {
+                    candidates.push(cfg_d.join(format!("items_{lid}.json")));
+                }
+            }
+        }
+    }
+
+    candidates.push(data_dir.join("items.json"));
     if let Some(cfg) = config_dir {
         candidates.push(cfg.join("items.json"));
     }
@@ -373,28 +443,35 @@ async fn persist_catalog(
     data_dir: PathBuf,
     config_dir: Option<PathBuf>,
     meta: Option<CatalogMetadata>,
+    lang_id: u32,
 ) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         let _ = fs::create_dir_all(&data_dir);
         let serialized = serde_json::to_vec(&serde_json::json!({ "Items": items }))
             .map_err(|e| format!("JSON serialize error: {e}"))?;
 
-        let primary_path = data_dir.join("items.json");
+        let file_name = if lang_id == 0 {
+            "items.json".to_string()
+        } else {
+            format!("items_{lang_id}.json")
+        };
+
+        let primary_path = data_dir.join(&file_name);
         fs::write(&primary_path, &serialized)
             .map_err(|e| format!("Failed to write {}: {e}", primary_path.display()))?;
 
         if let Some(ref cfg) = config_dir {
             if cfg != &data_dir {
                 let _ = fs::create_dir_all(cfg);
-                let _ = fs::write(cfg.join("items.json"), &serialized);
+                let _ = fs::write(cfg.join(&file_name), &serialized);
             }
         }
 
         if let Some(meta) = meta {
-            write_catalog_meta(&data_dir, &meta);
+            write_catalog_meta(&data_dir, &meta, lang_id);
             if let Some(ref cfg) = config_dir {
                 if cfg != &data_dir {
-                    write_catalog_meta(cfg, &meta);
+                    write_catalog_meta(cfg, &meta, lang_id);
                 }
             }
         }
@@ -451,7 +528,7 @@ async fn fetch_catalog_update(
     )))
 }
 
-async fn background_check_items_update(data_dir: PathBuf, config_dir: Option<PathBuf>) {
+async fn background_check_items_update(data_dir: PathBuf, config_dir: Option<PathBuf>, lang_id: u32) {
     let client = match reqwest::Client::builder()
         .user_agent(app_user_agent())
         .timeout(std::time::Duration::from_secs(6))
@@ -461,15 +538,19 @@ async fn background_check_items_update(data_dir: PathBuf, config_dir: Option<Pat
         Err(_) => return,
     };
 
-    let meta = read_catalog_meta(&data_dir);
-    let api_url = "https://api.velocityrl.tech/items.json";
+    let meta = read_catalog_meta(&data_dir, lang_id);
+    let api_url = items_api_url_for_lang(lang_id);
     let github_url = "https://raw.githubusercontent.com/CrunchyRL/RLUPKTools/refs/heads/main/items.json";
 
-    let result = match fetch_catalog_update(&client, api_url, &meta).await {
+    let result = match fetch_catalog_update(&client, &api_url, &meta).await {
         Ok(res) => Ok(res),
         Err(e) => {
-            log::warn!("Primary catalog update check failed ({e}), trying GitHub fallback");
-            fetch_catalog_update(&client, github_url, &meta).await
+            log::warn!("Primary catalog update check failed for lang {lang_id} ({e}), trying fallback");
+            if lang_id == 0 {
+                fetch_catalog_update(&client, github_url, &meta).await
+            } else {
+                Err(e)
+            }
         }
     };
 
@@ -479,29 +560,45 @@ async fn background_check_items_update(data_dir: PathBuf, config_dir: Option<Pat
         }
         Ok(Some((bytes, new_meta))) => {
             if let Ok(items) = parse_items_slice(bytes).await {
-                set_cached_items(items.clone());
-                let _ = persist_catalog(items, data_dir, config_dir, Some(new_meta)).await;
+                set_cached_items(lang_id, items.clone());
+                let _ = persist_catalog(items, data_dir, config_dir, Some(new_meta), lang_id).await;
             }
         }
         Err(e) => {
-            log::warn!("Catalog update check failed: {e}");
+            log::warn!("Catalog update check failed for lang {lang_id}: {e}");
         }
     }
 }
 
 #[tauri::command]
-async fn get_items(app: tauri::AppHandle) -> Result<Vec<Item>, String> {
-    if let Some(cached) = get_cached_items() {
+async fn get_items(app: tauri::AppHandle, lang: Option<String>) -> Result<Vec<Item>, String> {
+    let effective_lang = if let Some(l) = lang {
+        l
+    } else if let Ok(cfg) = get_config(app.clone()).await {
+        cfg.language
+    } else {
+        "en".to_string()
+    };
+
+    let lang_id = rl_lang_id(&effective_lang);
+
+    if let Some(cached) = get_cached_items(lang_id) {
         return Ok(cached);
     }
 
     let (data_dir, config_dir) = get_catalog_dirs(&app);
-    let cache_path = data_dir.join("items.json");
+    let file_name = if lang_id == 0 {
+        "items.json".to_string()
+    } else {
+        format!("items_{lang_id}.json")
+    };
+
+    let cache_path = data_dir.join(&file_name);
 
     let candidate_cache = if cache_path.is_file() {
         Some(cache_path.clone())
     } else if let Some(ref cfg) = config_dir {
-        let cfg_path = cfg.join("items.json");
+        let cfg_path = cfg.join(&file_name);
         if cfg_path.is_file() {
             Some(cfg_path)
         } else {
@@ -514,12 +611,12 @@ async fn get_items(app: tauri::AppHandle) -> Result<Vec<Item>, String> {
     if let Some(local_path) = candidate_cache {
         if let Ok(bytes) = fs::read(&local_path) {
             if let Ok(items) = parse_items_slice(bytes).await {
-                set_cached_items(items.clone());
+                set_cached_items(lang_id, items.clone());
 
                 let d_dir = data_dir.clone();
                 let c_dir = config_dir.clone();
                 tauri::async_runtime::spawn(async move {
-                    background_check_items_update(d_dir, c_dir).await;
+                    background_check_items_update(d_dir, c_dir, lang_id).await;
                 });
 
                 return Ok(items);
@@ -527,28 +624,30 @@ async fn get_items(app: tauri::AppHandle) -> Result<Vec<Item>, String> {
         }
     }
 
-    let mut bundled_candidates = Vec::new();
-    if let Ok(res_dir) = app.path().resource_dir() {
-        bundled_candidates.push(res_dir.join("items.json"));
-        bundled_candidates.push(res_dir.join("resources").join("items.json"));
-    }
-    bundled_candidates.push(PathBuf::from("resources").join("items.json"));
+    if lang_id == 0 {
+        let mut bundled_candidates = Vec::new();
+        if let Ok(res_dir) = app.path().resource_dir() {
+            bundled_candidates.push(res_dir.join("items.json"));
+            bundled_candidates.push(res_dir.join("resources").join("items.json"));
+        }
+        bundled_candidates.push(PathBuf::from("resources").join("items.json"));
 
-    for bundled in bundled_candidates {
-        if bundled.is_file() {
-            if let Ok(bytes) = fs::read(&bundled) {
-                if let Ok(items) = parse_items_slice(bytes).await {
-                    set_cached_items(items.clone());
+        for bundled in bundled_candidates {
+            if bundled.is_file() {
+                if let Ok(bytes) = fs::read(&bundled) {
+                    if let Ok(items) = parse_items_slice(bytes).await {
+                        set_cached_items(lang_id, items.clone());
 
-                    let d_dir = data_dir.clone();
-                    let c_dir = config_dir.clone();
-                    let items_for_save = items.clone();
-                    tauri::async_runtime::spawn(async move {
-                        let _ = persist_catalog(items_for_save, d_dir.clone(), c_dir.clone(), None).await;
-                        background_check_items_update(d_dir, c_dir).await;
-                    });
+                        let d_dir = data_dir.clone();
+                        let c_dir = config_dir.clone();
+                        let items_for_save = items.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = persist_catalog(items_for_save, d_dir.clone(), c_dir.clone(), None, lang_id).await;
+                            background_check_items_update(d_dir, c_dir, lang_id).await;
+                        });
 
-                    return Ok(items);
+                        return Ok(items);
+                    }
                 }
             }
         }
@@ -556,31 +655,51 @@ async fn get_items(app: tauri::AppHandle) -> Result<Vec<Item>, String> {
 
     let client = reqwest::Client::builder()
         .user_agent(app_user_agent())
-        .timeout(std::time::Duration::from_secs(5))
+        .timeout(std::time::Duration::from_secs(6))
         .build()
         .map_err(|e| e.to_string())?;
 
-    let api_url = "https://api.velocityrl.tech/items.json";
+    let api_url = items_api_url_for_lang(lang_id);
     let github_url = "https://raw.githubusercontent.com/CrunchyRL/RLUPKTools/refs/heads/main/items.json";
 
     let empty_meta = CatalogMetadata::default();
-    let fetch_res = match fetch_catalog_update(&client, api_url, &empty_meta).await {
+    let fetch_res = match fetch_catalog_update(&client, &api_url, &empty_meta).await {
         Ok(Some(res)) => Some(res),
-        _ => fetch_catalog_update(&client, github_url, &empty_meta).await.ok().flatten(),
+        _ => {
+            if lang_id == 0 {
+                fetch_catalog_update(&client, github_url, &empty_meta).await.ok().flatten()
+            } else {
+                fetch_catalog_update(&client, "https://api.velocityrl.tech/items.json", &empty_meta).await.ok().flatten()
+            }
+        }
     };
 
     if let Some((bytes, meta)) = fetch_res {
         let items = parse_items_slice(bytes).await?;
-        set_cached_items(items.clone());
+        set_cached_items(lang_id, items.clone());
 
         let d_dir = data_dir.clone();
         let c_dir = config_dir.clone();
         let items_for_save = items.clone();
         tauri::async_runtime::spawn(async move {
-            let _ = persist_catalog(items_for_save, d_dir, c_dir, Some(meta)).await;
+            let _ = persist_catalog(items_for_save, d_dir, c_dir, Some(meta), lang_id).await;
         });
 
         return Ok(items);
+    }
+
+    if lang_id != 0 {
+        if let Some(cached) = get_cached_items(0) {
+            return Ok(cached);
+        }
+        let fallback_en = data_dir.join("items.json");
+        if fallback_en.is_file() {
+            if let Ok(bytes) = fs::read(&fallback_en) {
+                if let Ok(items) = parse_items_slice(bytes).await {
+                    return Ok(items);
+                }
+            }
+        }
     }
 
     Err("Failed to load items database".into())
@@ -696,7 +815,7 @@ async fn get_backups(app: tauri::AppHandle) -> Result<Vec<BackupFile>, String> {
     let config = get_config(app.clone()).await?;
     if config.game_dir.is_empty() { return Ok(vec![]); }
 
-    let items = get_items(app.clone()).await.unwrap_or_default();
+    let items = get_items(app.clone(), None).await.unwrap_or_default();
     let swaps = load_swaps(&app);
     let mut backups = Vec::new();
     let dir = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
@@ -992,7 +1111,7 @@ async fn apply_swap(
         return Err(format!("invalid paint id {paint_id} (use 0 for None, or 1–12)"));
     }
 
-    let all_items = get_items(app.clone()).await
+    let all_items = get_items(app.clone(), None).await
         .map_err(|e| format!("Failed to load items database: {}", e))?;
     if paint_id > 0 {
         if let Ok(wid) = wanted_id.parse::<i32>() {
@@ -1093,7 +1212,7 @@ async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<()
         .replace(".upk", "");
     let stem_base = clean_stem.trim_end_matches("_sf").to_string();
 
-    let items = get_items(app.clone()).await.unwrap_or_default();
+    let items = get_items(app.clone(), None).await.unwrap_or_default();
     let matched_item = items.iter().find(|i| {
         let db_pkg = i.asset_package.to_lowercase().replace(".upk", "");
         if db_pkg.is_empty() || db_pkg == "none" {
@@ -1185,11 +1304,11 @@ async fn reswap_all(app: tauri::AppHandle) -> Result<String, String> {
             "No recorded swaps to re-apply. Swap items again from the Swapper tab.".into(),
         );
     }
-    let _ = get_items(app.clone()).await;
+    let _ = get_items(app.clone(), None).await;
     let items_json = load_raw_items_json(&app)?;
     let game_dir = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
         .unwrap_or_else(|_| PathBuf::from(&config.game_dir));
-    let items = get_items(app.clone()).await.unwrap_or_default();
+    let items = get_items(app.clone(), None).await.unwrap_or_default();
     let opts = build_swap_opts(game_dir.clone(), items_json);
 
     let mut ok = 0usize;
@@ -1955,7 +2074,7 @@ pub fn run() {
                             }
                         }
                     }
-                    psynet::set_system_proxy_enabled(false);
+                    psynet::clean_system_proxy();
                     let active_cfg = psynet::load_active_spoof_from_disk();
                     if let Some(ref cfg) = active_cfg {
                         crate::proxy::set_spoof_config(cfg.clone()).await;
@@ -1973,7 +2092,7 @@ pub fn run() {
                         }
                         Err(e) => {
                             applog::event(&format!("psynet: proxy auto-start failed: {e}"));
-                            psynet::set_system_proxy_enabled(false);
+                            psynet::clean_system_proxy();
                             let _ = psynet::revert_config_hosts();
                             return;
                         }

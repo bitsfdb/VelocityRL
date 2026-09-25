@@ -16,6 +16,69 @@ function normItemSlot(slot) {
     return slot;
 }
 
+function getItemDecalBody(item) {
+    if (!item) return '';
+    const slot = normSlot(item.Slot || item.slot || '');
+    if (!slot.includes('decal') && !normSlot(item.category || '').includes('decal')) return '';
+    const name = item.Product || item.product || item.name || '';
+    if (name.includes(':')) {
+        return name.split(':')[0].trim();
+    }
+    const quality = (item.Quality || item.quality || '').toLowerCase();
+    if (quality === 'black market' || quality === 'blackmarket') {
+        return 'Universal';
+    }
+    const pkg = (item.AssetPackage || item.asset_package || item.internal_name || '').toLowerCase();
+    const bodyMap = [
+        ['octane', 'Octane'],
+        ['fennec', 'Fennec'],
+        ['musclecar', 'Dominus'],
+        ['dominus', 'Dominus'],
+        ['force', 'Breakout'],
+        ['breakout', 'Breakout'],
+        ['vanquish', 'Merc'],
+        ['merc', 'Merc'],
+        ['wheatbread', 'Samurai'],
+        ['samurai', 'Samurai'],
+        ['twinzer', 'Twinzer'],
+        ['dingo', 'Dingo'],
+        ['takumi', 'Takumi'],
+        ['skyline', 'Nissan Skyline'],
+        ['batman', 'Batmobile'],
+        ['aftershock', 'Aftershock'],
+        ['animagp', 'Animus GP'],
+        ['backfire', 'Backfire'],
+        ['centio', 'Centio'],
+        ['cyclone', 'Cyclone'],
+        ['diestro', 'Diestro'],
+        ['esper', 'Esper'],
+        ['gizmo', 'Gizmo'],
+        ['grog', 'Grog'],
+        ['hotshot', 'Hotshot'],
+        ['imperator', 'Imperator DT5'],
+        ['jager', 'Jäger 619'],
+        ['mantis', 'Mantis'],
+        ['masamune', 'Masamune'],
+        ['maverick', 'Maverick'],
+        ['nemesis', 'Nemesis'],
+        ['paladin', 'Paladin'],
+        ['peregrine', 'Peregrine TT'],
+        ['ripper', 'Ripper'],
+        ['roadhog', 'Road Hog'],
+        ['scarab', 'Scarab'],
+        ['sentinel', 'Sentinel'],
+        ['tyrano', 'Tyranno'],
+        ['venom', 'Venom'],
+        ['werewolf', 'Werewolf'],
+        ['xdevil', 'X-Devil'],
+        ['zippy', 'Zippy'],
+    ];
+    for (const [key, label] of bodyMap) {
+        if (pkg.includes(key)) return label;
+    }
+    return 'Universal';
+}
+
 function escHtml(str) {
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
@@ -54,7 +117,8 @@ function t(key, fallback = '') {
 }
 
 async function setAppLanguage(lang) {
-    if (!lang || !['en', 'es', 'fr', 'de'].includes(lang)) {
+    const supported = ['en', 'es', 'fr', 'de', 'pt', 'it', 'nl', 'tr'];
+    if (!lang || !supported.includes(lang)) {
         lang = 'en';
     }
     currentLanguage = lang;
@@ -150,7 +214,14 @@ async function fetchItemsFromAPI() {
                 product: p.name,
                 slot: p.category,
                 quality: p.quality,
-                asset_package: p.internal_name,
+                asset_package: p.internal_name || p.asset_package,
+                asset_path: p.asset_path || p.AssetPath || '',
+                object_name: p.object_name || p.ObjectName || null,
+                object_class: p.object_class || p.ObjectClass || null,
+                is_multi_asset_package: p.is_multi_asset_package ?? p.IsMultiAssetPackage ?? null,
+                package_item_count: p.package_item_count ?? p.PackageItemCount ?? null,
+                compatible_body_id: p.compatible_body_id ?? p.CompatibleBodyId ?? null,
+                compatible_body_name: p.compatible_body_name ?? p.CompatibleBodyName ?? null,
                 image_url: p.thumbnail_url ? `${API_BASE}${p.thumbnail_url}` : '',
                 paintable: p.paintable ?? p.Paintable,
                 paints: p.paints ?? p.Paints,
@@ -323,13 +394,18 @@ function renderSelectedItem(container, item, onClear) {
     const pId = item.ID ?? item.id;
     const pImg = item.image_url || item.src || '';
     const bgClass = getQualityBgClass(pQuality);
+    const decalBody = getItemDecalBody(item);
+    const decalBadge = decalBody ? `<span class="quality-badge" style="background:rgba(91,140,255,0.18);color:#93c5fd;border:1px solid rgba(91,140,255,0.35);">${escHtml(decalBody)} Decal</span>` : '';
 
     container.innerHTML = `
         <div class="clear-item-btn">×</div>
         ${pImg ? `<img src="${escHtml(pImg)}" class="selected-img" />` : ''}
         <h2>${escHtml(pName)}</h2>
-        <span class="quality-badge ${bgClass}">${escHtml(pQuality)}</span>
-        <p class="item-slot-label">${escHtml(pSlot)}${pId != null ? ` · <span style="color:#5b8cff">ID ${escHtml(String(pId))}</span>` : ''}</p>
+        <div style="display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;margin:4px 0;">
+            <span class="quality-badge ${bgClass}">${escHtml(pQuality)}</span>
+            ${decalBadge}
+        </div>
+        <p class="item-slot-label">${escHtml(pSlot)}${decalBody ? ` (${escHtml(decalBody)})` : ''}${pId != null ? ` · <span style="color:#5b8cff">ID ${escHtml(String(pId))}</span>` : ''}</p>
     `;
     container.querySelector('.clear-item-btn').addEventListener('click', onClear);
     container.classList.add('selected');
@@ -483,7 +559,19 @@ async function init() {
         await setAppLanguage(newLang);
         const cfg = await invoke('get_config').catch(() => ({}));
         await invoke('save_config', { config: { ...cfg, language: newLang } }).catch(() => {});
-        const toastMsg = newLang === 'es' ? 'Idioma cambiado a Español' : newLang === 'fr' ? 'Langue changée en Français' : newLang === 'de' ? 'Sprache auf Deutsch geändert' : 'Language set to English';
+        invoke('get_items', { lang: newLang }).then(fetched => {
+            if (fetched) {
+                items = Array.isArray(fetched) ? fetched : (fetched.items || fetched.Items || []);
+            }
+        }).catch(() => {});
+        const toastMsg = newLang === 'es' ? 'Idioma cambiado a Español' :
+            newLang === 'fr' ? 'Langue changée en Français' :
+            newLang === 'de' ? 'Sprache auf Deutsch geändert' :
+            newLang === 'pt' ? 'Idioma alterado para Português' :
+            newLang === 'it' ? 'Lingua cambiata in Italiano' :
+            newLang === 'nl' ? 'Taal gewijzigd naar Nederlands' :
+            newLang === 'tr' ? 'Dil Türkçe olarak ayarlandı' :
+            'Language set to English';
         showToast(toastMsg, 'success');
     });
     document.getElementById('settings-modal').onclick = (e) => {
@@ -969,9 +1057,11 @@ function renderPresetItemsPage() {
     list.innerHTML = itemsToShow.map(s => {
         const slot = normItemSlot(s.slot || 'Item');
         const paint = s.paint_id > 0 ? `<span class="quality-badge bg-uncommon" style="font-size:9px;padding:2px 5px;">Paint ${s.paint_id}</span>` : '';
+        const decalBody = s.asset_package ? getItemDecalBody({ AssetPackage: s.asset_package, Product: s.owned_name, Slot: 'Decal' }) : (slot === 'Decal' ? getItemDecalBody({ Product: s.owned_name, Slot: 'Decal' }) : '');
+        const decalPill = decalBody ? `<span style="font-size:10px;padding:2px 5px;background:rgba(91,140,255,0.18);color:#93c5fd;border-radius:3px;font-weight:600;margin-left:4px;">${escHtml(decalBody)}</span>` : '';
         return `
             <div class="preset-item-row">
-                <span class="preset-item-slot">${escHtml(slot)}</span>
+                <span class="preset-item-slot">${escHtml(slot)}${decalPill}</span>
                 <div class="preset-item-names">
                     <span style="color:var(--text);font-weight:500;">${escHtml(s.owned_name)}</span>
                     <span class="preset-item-arrow">→</span>
@@ -1340,9 +1430,31 @@ function wirePresetsUI() {
             const name = await appDialog({ title: 'Save preset', message: 'Preset name:', input: 'My preset', okLabel: 'Save' });
             if (!name || !name.trim()) return;
             try {
-                const saved = await invoke('save_preset', { name: name.trim() });
+                let swapsToSend = null;
+                const existingSwaps = await invoke('get_swaps').catch(() => []);
+                if (ownedItem && wantedItem) {
+                    const ownedId = Number(ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id);
+                    const wantedId = Number(wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id);
+                    let paintId = Number(document.getElementById('swap-paint')?.value || 0);
+                    if (!itemIsPaintable(wantedItem)) paintId = 0;
+                    const oName = ownedItem.Product || ownedItem.product || '';
+                    const wName = wantedItem.Product || wantedItem.product || '';
+                    const pkg = ownedItem.AssetPackage || ownedItem.asset_package || '';
+                    const list = Array.isArray(existingSwaps) ? existingSwaps.filter(s => s.owned_id !== ownedId) : [];
+                    list.push({
+                        owned_id: ownedId,
+                        wanted_id: wantedId,
+                        owned_name: oName,
+                        wanted_name: wName,
+                        paint_id: paintId,
+                        asset_package: pkg,
+                    });
+                    swapsToSend = list;
+                }
+                const saved = await invoke('save_preset', { name: name.trim(), swaps: swapsToSend });
                 showToast(`Preset <strong>${escHtml(saved?.name || name.trim())}</strong> saved`, 'success');
                 await refreshPresets();
+                await refreshSwapHistory();
             } catch (e) {
                 showToast(String(e), 'error');
             }
@@ -1438,18 +1550,22 @@ async function refreshBackups() {
             const div = document.createElement('div');
             div.className = 'backup-item';
             let pImg = file.image_url || '';
-            if (!pImg && items && items.length > 0) {
-                const fileName = file.path.split(/[/\\]/).pop();
-                const cleanName = fileName.toLowerCase().replace('.bak', '').replace('.upk', '');
-                const matched = items.find(i => {
-                    const dbPkg = (i.asset_package || '').toLowerCase().replace('.upk', '');
-                    if (!dbPkg || dbPkg === 'none') return false;
-                    return dbPkg === cleanName || (dbPkg.length > 4 && (cleanName.includes(dbPkg) || dbPkg.includes(cleanName)));
-                });
-                if (matched && matched.image_url) {
-                    pImg = matched.image_url;
-                }
+            const fileName = file.path.split(/[/\\]/).pop();
+            const cleanName = fileName.toLowerCase().replace('.bak', '').replace('.upk', '');
+            let matched = items && items.length > 0 ? items.find(i => {
+                const dbPkg = (i.asset_package || '').toLowerCase().replace('.upk', '');
+                if (!dbPkg || dbPkg === 'none') return false;
+                return dbPkg === cleanName || (dbPkg.length > 4 && (cleanName.includes(dbPkg) || dbPkg.includes(cleanName)));
+            }) : null;
+            if (!matched && file.swap_from && items && items.length > 0) {
+                matched = items.find(i => (i.product || i.Product || '') === file.swap_from);
             }
+            if (matched && matched.image_url && !pImg) {
+                pImg = matched.image_url;
+            }
+            const decalBody = matched ? getItemDecalBody(matched) : (cleanName.includes('skin_') ? getItemDecalBody({ AssetPackage: cleanName, Product: file.name, Slot: 'Decal' }) : '');
+            const decalBadge = decalBody ? `<span style="font-size:10px;padding:2px 6px;background:rgba(91,140,255,0.18);color:#93c5fd;border-radius:4px;font-weight:600;margin-left:6px;border:1px solid rgba(91,140,255,0.3);">${escHtml(decalBody)} Decal</span>` : '';
+
             const swapLabel = file.swap_from && file.swap_to
                 ? `${escHtml(file.swap_from)} is now ${escHtml(file.swap_to)}`
                 : '';
@@ -1461,7 +1577,10 @@ async function refreshBackups() {
                     ${renderThumbnailHtml(pImg)}
                     ${file.swap_to_image ? renderThumbnailHtml(file.swap_to_image) : ''}
                     <div style="min-width:0;">
-                        <div class="backup-name">${escHtml(file.name)}</div>
+                        <div class="backup-name" style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;">
+                            <span>${escHtml(file.name)}</span>
+                            ${decalBadge}
+                        </div>
                         ${swapLabel ? `<div class="backup-date" style="color:var(--accent-blue);">${swapLabel}</div>` : `<div class="backup-date">Modified Product</div>`}
                     </div>
                 </div>
@@ -1575,11 +1694,14 @@ function renderResults(matches, resultsDiv, selectionHandler) {
         const pId = item.ID ?? item.id;
         const pImg = item.image_url || item.src || '';
 
+        const decalBody = getItemDecalBody(item);
+        const decalPill = decalBody ? ` <span style="font-size:10px;padding:1px 5px;background:rgba(91,140,255,0.15);color:#93c5fd;border-radius:3px;font-weight:600;">${escHtml(decalBody)}</span>` : '';
+
         div.innerHTML = `
             ${pImg ? `<img src="${escHtml(pImg)}" class="flyout-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="flyout-img" style="display:none;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>` : '<div class="flyout-img" style="display:flex;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>'}
             <div class="flyout-info">
-                <span class="item-name">${escHtml(pName)}</span>
-                <span style="font-size: 10px; color: var(--text-secondary)">${escHtml(pSlot)}${pId != null ? ` · <span style="color:#5b8cff">ID ${escHtml(String(pId))}</span>` : ''}</span>
+                <span class="item-name">${escHtml(pName)}${decalPill}</span>
+                <span style="font-size: 10px; color: var(--text-secondary)">${escHtml(pSlot)}${decalBody ? ` (${escHtml(decalBody)})` : ''}${pId != null ? ` · <span style="color:#5b8cff">ID ${escHtml(String(pId))}</span>` : ''}</span>
             </div>
         `;
         div.onclick = () => {
@@ -1720,8 +1842,9 @@ function setPaintBlockEnabled(opts) {
 }
 
 function syncSwapPaintUi() {
-
-    const enabled = false;
+    const slot = wantedItem ? normSlot(wantedItem.Slot || wantedItem.slot) : '';
+    const isPaintableSlot = ['body', 'wheel', 'wheels', 'boost', 'topper', 'antenna', 'explosions', 'explosion'].includes(slot);
+    const enabled = wantedItem ? (itemIsPaintable(wantedItem) || isPaintableSlot) : false;
     setPaintBlockEnabled({
         blockId: 'swap-paint-block',
         swatchId: 'swap-paint-swatches',
@@ -2236,6 +2359,7 @@ const FAKE_RANKS_KEY = 'velocityrl_fake_ranks';
 const CAMERA_SPOOF_KEY = 'velocityrl_camera_spoof';
 const NAME_SPOOF_KEY = 'velocityrl_name_spoof';
 const CREDIT_SPOOF_KEY = 'velocityrl_credit_spoof';
+const LEADERBOARD_SPOOF_KEY = 'velocityrl_leaderboard_spoof';
 const MENU_BG_SPOOF_KEY = 'velocityrl_menu_bg_spoof';
 const DEFAULT_SEASON23_LOGO_URL = 'https://api.velocityrl.tech/thumbnails/rl_jpn.png';
 const DEFAULT_BLOG_MOTD = 'Use VelocityRL';
@@ -2592,6 +2716,14 @@ async function hydrateSpoofToolsFromDisk() {
     }
 
     {
+        const lbs = toolSliceFromDiskOrLocal(disk, LEADERBOARD_SPOOF_KEY, 'leaderboard_spoof');
+        const leaderboard_spoof = (lbs && typeof lbs === 'object' && ('enabled' in lbs || lbs.sync_from_fake_ranks != null))
+            ? { enabled: !!lbs.enabled, sync_from_fake_ranks: lbs.sync_from_fake_ranks !== false, custom_rank: lbs.custom_rank, custom_mmr: lbs.custom_mmr }
+            : { enabled: false, sync_from_fake_ranks: true };
+        localStorage.setItem(LEADERBOARD_SPOOF_KEY, JSON.stringify({ leaderboard_spoof }));
+    }
+
+    {
         const bg = toolSliceFromDiskOrLocal(disk, MENU_BG_SPOOF_KEY, 'menu_bg_spoof');
         const menu_bg_spoof = (bg && typeof bg === 'object' && ('enabled' in bg || bg.background != null))
             ? { enabled: !!bg.enabled, background: bg.background || 'MMBG_Default' }
@@ -2657,6 +2789,24 @@ function applyHydratedToolsToUi() {
     if (creditTourney) creditTourney.value = String(tVal);
     if (creditBadge) creditBadge.textContent = `${cVal.toLocaleString()} Credits`;
 
+    const lbData = readLocalJson(LEADERBOARD_SPOOF_KEY).leaderboard_spoof || {};
+    const lbEn = document.getElementById('leaderboard-spoof-enabled');
+    const lbSync = document.getElementById('leaderboard-spoof-sync');
+    const lbRank = document.getElementById('leaderboard-spoof-rank');
+    const lbMmr = document.getElementById('leaderboard-spoof-mmr');
+    const lbCustomFields = document.getElementById('leaderboard-custom-fields');
+    if (lbEn) {
+        lbEn.checked = !!lbData.enabled;
+        syncNameSpoofSwitchAria(lbEn);
+    }
+    if (lbSync) {
+        lbSync.checked = lbData.sync_from_fake_ranks !== false;
+        syncNameSpoofSwitchAria(lbSync);
+        if (lbCustomFields) lbCustomFields.style.display = lbSync.checked ? 'none' : 'block';
+    }
+    if (lbRank) lbRank.value = lbData.custom_rank != null ? String(lbData.custom_rank) : '1';
+    if (lbMmr) lbMmr.value = lbData.custom_mmr != null ? String(lbData.custom_mmr) : '2150';
+
     const bgData = readLocalJson(MENU_BG_SPOOF_KEY).menu_bg_spoof || {};
     const bgEn = document.getElementById('menu-bg-spoof-enabled');
     const bgSelect = document.getElementById('menu-bg-select');
@@ -2692,6 +2842,7 @@ function payloadFromHydratedLocal() {
     const blog_spoof = readLocalJson(BLOG_SPOOF_KEY).blog_spoof || { enabled: false, motd: '' };
     const name_spoof = readLocalJson(NAME_SPOOF_KEY).name_spoof || { enabled: false, display_name: '', player_id: '' };
     const credit_spoof = readLocalJson(CREDIT_SPOOF_KEY).credit_spoof || { enabled: false, amount: 100000, tournament_amount: 100000 };
+    const leaderboard_spoof = readLocalJson(LEADERBOARD_SPOOF_KEY).leaderboard_spoof || { enabled: false, sync_from_fake_ranks: true };
     const menu_bg_spoof = readLocalJson(MENU_BG_SPOOF_KEY).menu_bg_spoof || { enabled: false, background: 'MMBG_Default' };
     const gameDirInput = document.getElementById('game-dir')?.value || '';
     const is_steam = isSteamGameDir(gameDirInput);
@@ -2706,6 +2857,7 @@ function payloadFromHydratedLocal() {
         blog_spoof,
         name_spoof,
         credit_spoof,
+        leaderboard_spoof,
         menu_bg_spoof,
     };
 }
@@ -3822,10 +3974,12 @@ function initCameraTab() {
 
 function nameSpoofPayloadFromUi() {
     const enabled = !!document.getElementById('name-spoof-enabled')?.checked;
+    const real_name = (document.getElementById('name-spoof-real')?.value || '').trim();
     const display_name = (document.getElementById('name-spoof-display')?.value || '').trim();
     const player_id = (document.getElementById('name-spoof-player-id')?.value || '').trim();
     return {
         enabled,
+        real_name: real_name || undefined,
         display_name,
         player_id: player_id || undefined,
     };
@@ -3833,6 +3987,7 @@ function nameSpoofPayloadFromUi() {
 
 function initNamesTab() {
     const enabledEl = document.getElementById('name-spoof-enabled');
+    const realEl = document.getElementById('name-spoof-real');
     const displayEl = document.getElementById('name-spoof-display');
     const playerIdEl = document.getElementById('name-spoof-player-id');
     const saveBtn = document.getElementById('name-spoof-save-btn');
@@ -3843,14 +3998,18 @@ function initNamesTab() {
     const ns = saved.name_spoof || {};
     enabledEl.checked = !!ns.enabled;
     syncNameSpoofSwitchAria(enabledEl);
+    if (realEl) realEl.value = ns.real_name || '';
     if (displayEl) displayEl.value = ns.display_name || '';
     if (playerIdEl) playerIdEl.value = ns.player_id || '';
 
     const refreshLearnedIdentity = () => {
         try {
             invoke('get_learned_identity').then((ident) => {
-                if (ident && ident.player_id && playerIdEl) {
-                    if (playerIdEl.value !== ident.player_id) {
+                if (ident) {
+                    if (ident.real_name && realEl && !realEl.value) {
+                        realEl.value = ident.real_name;
+                    }
+                    if (ident.player_id && playerIdEl && playerIdEl.value !== ident.player_id) {
                         playerIdEl.value = ident.player_id;
                         try {
                             const cur = JSON.parse(localStorage.getItem(NAME_SPOOF_KEY) || '{}');
@@ -3987,9 +4146,74 @@ function initCreditsTab() {
     };
 }
 
+let leaderboardTabReady = false;
+function initLeaderboardTab() {
+    const enabledEl = document.getElementById('leaderboard-spoof-enabled');
+    const syncEl = document.getElementById('leaderboard-spoof-sync');
+    const rankEl = document.getElementById('leaderboard-spoof-rank');
+    const mmrEl = document.getElementById('leaderboard-spoof-mmr');
+    const customFields = document.getElementById('leaderboard-custom-fields');
+    const saveBtn = document.getElementById('leaderboard-spoof-save-btn');
+    if (!enabledEl || !saveBtn) return;
+
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(LEADERBOARD_SPOOF_KEY) || '{}'); } catch {}
+    const lb = saved.leaderboard_spoof || {};
+    enabledEl.checked = !!lb.enabled;
+    syncNameSpoofSwitchAria(enabledEl);
+    if (syncEl) {
+        syncEl.checked = lb.sync_from_fake_ranks !== false;
+        syncNameSpoofSwitchAria(syncEl);
+        if (customFields) customFields.style.display = syncEl.checked ? 'none' : 'block';
+    }
+    if (rankEl) rankEl.value = lb.custom_rank != null ? String(lb.custom_rank) : '1';
+    if (mmrEl) mmrEl.value = lb.custom_mmr != null ? String(lb.custom_mmr) : '2150';
+
+    if (leaderboardTabReady) return;
+    leaderboardTabReady = true;
+
+    enabledEl.addEventListener('change', () => syncNameSpoofSwitchAria(enabledEl));
+    syncEl?.addEventListener('change', () => {
+        syncNameSpoofSwitchAria(syncEl);
+        if (customFields) customFields.style.display = syncEl.checked ? 'none' : 'block';
+    });
+
+    saveBtn.onclick = async () => {
+        if (isAppLoading() || spoofSaveInFlight) return;
+        const enabled = !!enabledEl.checked;
+        const sync_from_fake_ranks = syncEl ? !!syncEl.checked : true;
+        const custom_rank = rankEl ? Math.max(1, Number(rankEl.value) || 1) : 1;
+        const custom_mmr = mmrEl ? Math.max(0, Number(mmrEl.value) || 2150) : 2150;
+        const leaderboard_spoof = {
+            enabled,
+            sync_from_fake_ranks,
+            custom_rank: !sync_from_fake_ranks ? custom_rank : undefined,
+            custom_mmr: !sync_from_fake_ranks ? custom_mmr : undefined,
+        };
+        try {
+            localStorage.setItem(LEADERBOARD_SPOOF_KEY, JSON.stringify({ leaderboard_spoof }));
+            await runToolSave(saveBtn, 'leaderboard', { leaderboard_spoof }, { enabled });
+            flashButtonLabel(saveBtn, enabled ? 'Saved' : 'Saved (off)');
+            if (enabled) {
+                showToast(
+                    sync_from_fake_ranks
+                        ? 'Leaderboard spoof active (synced with Fake Ranks).'
+                        : `Leaderboard spoof active: Rank #${custom_rank} (${custom_mmr} MMR).`,
+                    'success'
+                );
+            } else {
+                showToast('Leaderboard spoof disabled.', 'success');
+            }
+        } catch (e) {
+            showToast(String(e), 'error');
+        }
+    };
+}
+
 function initCustomizationTab() {
     initNamesTab();
     initCreditsTab();
+    initLeaderboardTab();
     if (customizationTabReady) return;
     customizationTabReady = true;
 }
@@ -4499,6 +4723,18 @@ function wireTitleSpoofControls() {
     });
 }
 
+window.insertTitleTag = function(tag) {
+    const input = document.getElementById('title-custom-text');
+    if (!input) return;
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? input.value.length;
+    const val = input.value;
+    input.value = val.substring(0, start) + tag + val.substring(end);
+    input.selectionStart = input.selectionEnd = start + tag.length;
+    input.focus();
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+};
+
 function flagEmoji(cc) {
     const code = String(cc || '').toLowerCase();
     if (!/^[a-z]{2}$/.test(code)) return '';
@@ -4529,6 +4765,11 @@ function flagImgHtml(cc) {
     return `<img class="title-flag" src="${src}" alt="${alt}" title="${code.toUpperCase()}" width="18" height="18" draggable="false" loading="lazy">`;
 }
 
+function rankImgHtml(tier, label) {
+    const src = `https://trackercdn.com/cdn/tracker.gg/rocket-league/ranks/s15rank${tier}.png`;
+    return `<img class="title-rank-icon" src="${src}" alt="${label}" title="${label}" width="20" height="20" style="vertical-align: middle; margin: 0 3px; display: inline-block;" draggable="false" loading="lazy">`;
+}
+
 function formatTitleText(text) {
     return String(text || '')
         .replace(/\{(?:super\s*sonic\s*)?legend\}/gi, 'Supersonic Legend')
@@ -4544,8 +4785,27 @@ function formatTitleText(text) {
 }
 
 function formatTitleHtml(text) {
-    const plain = formatTitleText(text);
-    const chars = [...plain];
+    let raw = String(text || '')
+        .replace(/\{flag_([a-z]{2})\}/gi, (m, cc) => (APPLE_FLAG_PNG.has(String(cc).toLowerCase()) ? flagEmoji(cc) : m))
+        .replace(/\bFLAG_([A-Z]{2})\b/gi, (m, cc) => (APPLE_FLAG_PNG.has(String(cc).toLowerCase()) ? flagEmoji(cc) : m));
+
+    // Tokenize rank placeholders before char-by-char loop
+    const rankTokens = [
+        { regex: /\{(?:super\s*sonic\s*)?legend\}/gi, token: '___RANK_22___', tier: 22, label: 'Supersonic Legend' },
+        { regex: /\{grand\s*champion\}/gi, token: '___RANK_19___', tier: 19, label: 'Grand Champion' },
+        { regex: /\{champion\}/gi, token: '___RANK_16___', tier: 16, label: 'Champion' },
+        { regex: /\{diamond\}/gi, token: '___RANK_13___', tier: 13, label: 'Diamond' },
+        { regex: /\{platinum\}/gi, token: '___RANK_10___', tier: 10, label: 'Platinum' },
+        { regex: /\{gold\}/gi, token: '___RANK_7___', tier: 7, label: 'Gold' },
+        { regex: /\{silver\}/gi, token: '___RANK_4___', tier: 4, label: 'Silver' },
+        { regex: /\{bronze\}/gi, token: '___RANK_1___', tier: 1, label: 'Bronze' }
+    ];
+
+    for (const rt of rankTokens) {
+        raw = raw.replace(rt.regex, rt.token);
+    }
+
+    const chars = [...raw];
     let out = '';
     for (let i = 0; i < chars.length; i++) {
         const cc = i + 1 < chars.length ? regionalIndicatorsToCc(chars[i], chars[i + 1]) : '';
@@ -4556,6 +4816,14 @@ function formatTitleHtml(text) {
         }
         out += escHtml(chars[i]);
     }
+
+    for (const rt of rankTokens) {
+        const safeToken = escHtml(rt.token);
+        while (out.includes(safeToken)) {
+            out = out.replace(safeToken, rankImgHtml(rt.tier, rt.label));
+        }
+    }
+
     return out;
 }
 
@@ -4640,21 +4908,60 @@ function selectDonor(title, toast) {
     if (toast && id) showToast(`Donor set: ${id}`, 'success');
 }
 
+function getTitleDefaultTag(title) {
+    if (!title) return '';
+    const rawText = String(title.text || title.Text || '').trim();
+    if (/\{(?:super\s*sonic\s*)?legend\}|\{grand\s*champion\}|\{champion\}|\{diamond\}|\{platinum\}|\{gold\}|\{silver\}|\{bronze\}/i.test(rawText)) {
+        return '';
+    }
+    const cat = String(title.category || title.Category || '').toLowerCase();
+    const id = String(title.id || title.Id || '').toLowerCase();
+    const lowerText = rawText.toLowerCase();
+
+    if (cat.includes('supersoniclegend') || cat.includes('ssl') || id.includes('supersoniclegend') || lowerText.startsWith('supersonic legend')) {
+        return '{legend} ';
+    }
+    if (cat.includes('grandchampion') || cat.includes('gc') || id.includes('grandchampion') || lowerText.startsWith('grand champion')) {
+        return '{grandchampion} ';
+    }
+    if (cat.includes('champion') || id.includes('champion') || lowerText.startsWith('champion')) {
+        return '{champion} ';
+    }
+    if (cat.includes('diamond') || id.includes('diamond') || lowerText.startsWith('diamond')) {
+        return '{diamond} ';
+    }
+    if (cat.includes('platinum') || id.includes('platinum') || lowerText.startsWith('platinum')) {
+        return '{platinum} ';
+    }
+    if (cat.includes('gold') || id.includes('gold') || lowerText.startsWith('gold')) {
+        return '{gold} ';
+    }
+    if (cat.includes('silver') || id.includes('silver') || lowerText.startsWith('silver')) {
+        return '{silver} ';
+    }
+    if (cat.includes('bronze') || id.includes('bronze') || lowerText.startsWith('bronze')) {
+        return '{bronze} ';
+    }
+    return '';
+}
+
 function selectDisplay(title, toast) {
     displayPick = title;
     const id = title?.id || title?.Id || '';
-    const text = formatTitleText(title?.text || title?.Text || '');
+    const rawText = String(title?.text || title?.Text || '');
+    const defaultTag = getTitleDefaultTag(title);
+    const textWithTag = defaultTag + rawText;
     const setInputValue = (eid, v) => { const el = document.getElementById(eid); if (el) el.value = v; };
     const customEl = document.getElementById('title-custom-text');
     const hasCustom = !!(customEl?.value?.trim());
     setInputValue('title-display-id', id);
 
-    if (!hasCustom) setInputValue('title-custom-text', text);
-    setSelectedSlot('display-selected', title, 'Search below - or type custom text');
+    if (!hasCustom) setInputValue('title-custom-text', textWithTag);
+    setSelectedSlot('display-selected', { ...title, text: textWithTag }, 'Search below - or type custom text');
     renderDisplayList(document.getElementById('display-search')?.value || '');
     updateTitlePreview();
     if (toast && id) {
-        const shown = (customEl?.value?.trim()) || text || id;
+        const shown = (customEl?.value?.trim()) || textWithTag || id;
         showToast(`Look set: ${formatTitleText(shown)}`, 'success');
     }
 }
