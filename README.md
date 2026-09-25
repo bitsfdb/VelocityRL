@@ -6,6 +6,13 @@ The all-in-one customization app for Rocket League. Swap items, show off ranks, 
 ![Release](https://img.shields.io/github/v/release/bitsfdb/velocityrl?style=for-the-badge&color=e0e0e0&labelColor=111111)
 ![Platform](https://img.shields.io/badge/Platform-Windows-111111?style=for-the-badge&logo=windows&logoColor=00d9ff)
 
+## A Thank you to the following users:
+
+| Role | Member |
+|------|--------|
+| Committers & Approvers | [@bitsfdb](https://github.com/bitsfdb) |
+
+
 ## Features
 
 ### Item Swapper
@@ -49,10 +56,6 @@ Massive credits to [dank/rlapi](https://github.com/dank/rlapi)
 
 Contact me on Discord: **@sfdb**
 Or join the support server: https://discord.gg/2HhBNbrGMj
-
-| Role | Member |
-|------|--------|
-| Committers & Approvers | [@bitsfdb](https://github.com/bitsfdb) |
 
 ## Privacy Policy
 
