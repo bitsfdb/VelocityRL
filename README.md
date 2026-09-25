@@ -52,7 +52,7 @@ Customize the season logo and the text on the bottom of the main menu.
 
 ## Credits
 
-Massive credits to [dank/rlapi](https://github.com/dank/rlapi)
+Massive credits to [dank/rlapi](https://github.com/dank/rlapi) and [CodeRedModding/UnrealEngine3](https://github.com/CodeRedModding/UnrealEngine3)
 
 ## Support
 
