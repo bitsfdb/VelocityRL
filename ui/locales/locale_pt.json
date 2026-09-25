@@ -1,0 +1,85 @@
+{
+  "nav": {
+    "swapper": "Troca de Itens",
+    "titles": "Títulos",
+    "customization": "Personalização",
+    "names": "Nomes",
+    "ranks": "Ranks Falsos",
+    "camera": "Câmera",
+    "maps": "Mapas",
+    "tracker": "Overlay de Estatísticas",
+    "misc": "Diversos",
+    "website": "Website",
+    "settings": "Definições"
+  },
+  "banner": {
+    "keep_open_title": "Mantenha o VelocityRL aberto",
+    "keep_open_desc": "VelocityRL deve permanecer em execução em segundo plano para que os títulos, modificações e nomes apareçam no Rocket League."
+  },
+  "subtabs": {
+    "swaps": "Substituições",
+    "restore": "Restaurar",
+    "presets": "Predefinições"
+  },
+  "categories": {
+    "all": "Todos os Itens",
+    "bodies": "Carros",
+    "decals": "Decalques",
+    "wheels": "Rodas",
+    "boosts": "Turbos",
+    "antennas": "Antenas",
+    "toppers": "Acessórios",
+    "explosions": "Explosões de Golo"
+  },
+  "swapper": {
+    "owned_item": "Item possuído",
+    "target_asset": "Item de destino",
+    "search_owned": "Pesquisar nos teus itens...",
+    "search_target": "Pesquisar itens de destino...",
+    "no_item_selected": "Nenhum item selecionado",
+    "paint": "Pintura",
+    "swap_btn": "Substituir Itens",
+    "rl_running_hint": "Rocket League está em execução — fecha-o antes de realizar alterações ou restauros."
+  },
+  "palette": {
+    "title": "Paleta de cores",
+    "desc": "Desbloqueia cores personalizadas para os carros das equipas e opções expandidas de paletas de cores no Rocket League.",
+    "apply": "Aplicar",
+    "restore": "Restaurar"
+  },
+  "settings": {
+    "title": "Definições",
+    "language": "Idioma",
+    "game_path": "Caminho da pasta CookedPCConsole do Rocket League",
+    "path_placeholder": "Caminho da pasta CookedPCConsole",
+    "autodetect": "Deteção automática",
+    "browse": "Procurar",
+    "startup_title": "Iniciar o VelocityRL com o sistema",
+    "startup_desc": "Inicia automaticamente o VelocityRL em segundo plano ao iniciar sessão",
+    "privacy_policy": "Política de Privacidade",
+    "save": "Guardar"
+  },
+  "dialogs": {
+    "cancel": "Cancelar",
+    "ok": "OK",
+    "close": "Fechar"
+  },
+  "logs": {
+    "proxy_listen": "proxy: a escutar em 127.0.0.1:443",
+    "proxy_listen_v6": "proxy: a escutar em [::1]:443",
+    "broker_listen": "broker: a escutar em {url}",
+    "health_ok": "proxy: verificação de integridade TLS de loopback em 127.0.0.1:443 confirmada OK na tentativa {attempt}",
+    "health_fail": "proxy: tentativa de teste de integridade de loopback {attempt}/6 falhou: {err}",
+    "config_intercepted": "proxy: >>> GET {path} (battlecars={battlecars})",
+    "config_patched": "proxy: configuração modificada ({bytes} bytes)",
+    "config_unpatched": "proxy: configuração não modificada ({bytes} bytes)",
+    "ws_connected": "proxy: WebSocket de enviado ligado a {host}",
+    "ws_tunnel_ready": "proxy: túnel de cliente WebSocket estabelecido",
+    "ranks_saved": "proxy: guardadas {count} listas de reprodução em real_skill.json",
+    "ranks_patched": "proxy: frame WS de ranks falsos modificado ({old_bytes} -> {new_bytes} bytes)",
+    "auth_cached": "broker: AuthPlayer PsyToken e sessão ({session}...) armazenados em cache para WS",
+    "auth_rewritten": "broker: URL de WS do AuthPlayer reescrito para o broker local ({url})",
+    "palette_synced": "psynet: palette_spoof sincronizado -> {status}",
+    "build_detected": "proxy: ID da compilação do jogo detetado: {build_id}"
+  }
+}
