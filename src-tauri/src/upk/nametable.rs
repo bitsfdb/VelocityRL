@@ -23,179 +23,58 @@ fn u64_at(data: &[u8], off: usize) -> Result<u64, String> {
     Ok(u64::from_le_bytes(raw))
 }
 
+fn i64_at(data: &[u8], off: usize) -> Result<i64, String> {
+    let raw: [u8; 8] = data
+        .get(off..off + 8)
+        .and_then(|s| s.try_into().ok())
+        .ok_or_else(|| "truncated i64 in table".to_string())?;
+    Ok(i64::from_le_bytes(raw))
+}
+
 fn serialize_name_entry(name: &str, flags: u64) -> Vec<u8> {
     let mut out = serialize_fstring(name);
     out.extend_from_slice(&flags.to_le_bytes());
     out
 }
 
-fn patch_export_serial_offsets(export_bytes: &mut Vec<u8>, threshold: i64, delta: i64) {
+fn patch_export_serial_offsets(export_bytes: &mut [u8], threshold: i64, delta: i64) {
     let mut pos = 0usize;
     while pos + 72 <= export_bytes.len() {
-
         let serial_off_pos = pos + 36;
-        let mut buf = [0u8; 8];
-        buf.copy_from_slice(&export_bytes[serial_off_pos..serial_off_pos + 8]);
-        let serial_offset = i64::from_le_bytes(buf);
-        if serial_offset >= threshold {
-            let new_val = serial_offset + delta;
-            export_bytes[serial_off_pos..serial_off_pos + 8]
-                .copy_from_slice(&new_val.to_le_bytes());
+        if let Ok(serial_offset) = i64_at(export_bytes, serial_off_pos) {
+            if serial_offset >= threshold {
+                let new_val = serial_offset + delta;
+                export_bytes[serial_off_pos..serial_off_pos + 8]
+                    .copy_from_slice(&new_val.to_le_bytes());
+            }
         }
-
-        let noc_pos = pos + 68;
-        if noc_pos + 4 > export_bytes.len() {
-            break;
-        }
-        let noc = match i32_at(export_bytes, noc_pos) {
-            Ok(n) => n,
-            Err(_) => break,
-        };
-        let entry_size = 72 + (noc.max(0) as usize) * 4;
-        pos += entry_size;
+        pos += 72;
     }
 }
 
-pub fn rebuild_with_rename(
-    data: &[u8],
-    name_offset: i32,
-    import_offset: i32,
-    export_offset: i32,
-    depends_offset: i32,
-    name_idx: usize,
-    new_name: &str,
-) -> Result<Vec<u8>, String> {
-    let no = name_offset as usize;
-    let io = import_offset as usize;
-    let eo = export_offset as usize;
-    let dep = depends_offset as usize;
+fn patch_chunk_table_uncompressed_offsets(beyond: &mut [u8], threshold: i64, delta: i64) {
+    let found = super::parser::parse_chunks_with_stride(beyond, 0)
+        .map(|(stride, chunks)| (0usize, stride, chunks))
+        .or_else(|_| {
+            for off in 1..beyond.len().saturating_sub(4) {
+                if let Ok((stride, chunks)) = super::parser::parse_chunks_with_stride(beyond, off as i32) {
+                    return Ok((off, stride, chunks));
+                }
+            }
+            Err(())
+        });
 
-    if dep > data.len() || eo > dep || io > eo || no > io {
-        return Err("header offsets OOB for rebuild".into());
-    }
-
-    let old_name_table = &data[no..io];
-    let import_table = &data[io..eo];
-    let export_table = &data[eo..dep];
-    let body_and_beyond = &data[dep..];
-
-    let mut new_name_table: Vec<u8> = Vec::new();
-    let mut pos = 0usize;
-    let mut idx = 0usize;
-    while pos < old_name_table.len() {
-        if pos + 4 > old_name_table.len() { break; }
-        let fstr_len = i32_at(old_name_table, pos)?;
-        let (char_bytes, char_count) = if fstr_len > 0 {
-            (fstr_len as usize, fstr_len as usize)
-        } else if fstr_len < 0 {
-            ((-fstr_len as usize) * 2, (-fstr_len as usize) * 2)
-        } else {
-            (0, 0)
-        };
-        let entry_end = pos + 4 + char_bytes + 8;
-        if entry_end > old_name_table.len() { break; }
-        let flags = u64_at(old_name_table, entry_end - 8)?;
-
-        if idx == name_idx {
-            new_name_table.extend_from_slice(&serialize_name_entry(new_name, flags));
-        } else {
-            new_name_table.extend_from_slice(&old_name_table[pos..entry_end]);
-        }
-        pos = entry_end;
-        idx += 1;
-        let _ = char_count;
-    }
-
-    let delta = new_name_table.len() as i64 - old_name_table.len() as i64;
-
-    let mut new_export_table = export_table.to_vec();
-    if delta != 0 {
-        patch_export_serial_offsets(&mut new_export_table, depends_offset as i64, delta);
-    }
-
-    let mut out = Vec::with_capacity(data.len() + delta.unsigned_abs() as usize);
-    out.extend_from_slice(&data[..no]);
-    out.extend_from_slice(&new_name_table);
-    out.extend_from_slice(import_table);
-    out.extend_from_slice(&new_export_table);
-    out.extend_from_slice(body_and_beyond);
-
-    let new_import_offset = (io as i64 + (new_name_table.len() as i64 - old_name_table.len() as i64)) as i32;
-    let new_export_offset = new_import_offset + (eo as i32 - io as i32);
-    let new_depends_offset = new_export_offset + (dep as i32 - eo as i32);
-    patch_prefix_offset(&mut out, import_offset, new_import_offset);
-    patch_prefix_offset(&mut out, export_offset, new_export_offset);
-    patch_prefix_offset(&mut out, depends_offset, new_depends_offset);
-
-    Ok(out)
-}
-
-fn patch_prefix_offset(data: &mut [u8], old_val: i32, new_val: i32) {
-    if old_val == new_val { return; }
-    if let Ok(summary) = super::parser::find_summary_offsets(data) {
-        let targets = [
-            summary.import_offset_offset,
-            summary.export_offset_offset,
-            summary.depends_offset_offset,
-        ];
-        let old_bytes = old_val.to_le_bytes();
-        let new_bytes = new_val.to_le_bytes();
-        for off in targets {
-            if off + 4 <= data.len() && data[off..off + 4] == old_bytes {
-                data[off..off + 4].copy_from_slice(&new_bytes);
+    if let Ok((table_off, stride, chunks)) = found {
+        for (i, chunk) in chunks.iter().enumerate() {
+            if chunk.uncompressed_offset >= threshold {
+                let pos = table_off + 4 + i * stride;
+                let new_unc_off = chunk.uncompressed_offset + delta;
+                if pos + 8 <= beyond.len() {
+                    beyond[pos..pos + 8].copy_from_slice(&new_unc_off.to_le_bytes());
+                }
             }
         }
     }
-}
-
-pub fn apply_name_pairs(
-    data: &mut Vec<u8>,
-    name_offset: i32,
-    import_offset: i32,
-    export_offset: i32,
-    depends_offset: i32,
-    name_count: i32,
-    pairs: &[(String, String)],
-) -> Result<(), String> {
-
-    let mut cur_import_offset = import_offset;
-    let mut cur_export_offset = export_offset;
-    let mut cur_depends_offset = depends_offset;
-
-    for (old_str, new_str) in pairs {
-
-        let slots = parse_name_slots(data, name_offset, name_count)?;
-        let rename_indices: Vec<usize> = slots.iter().enumerate()
-            .filter(|(_, s)| s.name.eq_ignore_ascii_case(old_str))
-            .map(|(i, _)| i)
-            .collect();
-        if rename_indices.is_empty() { continue; }
-
-        for &idx in &rename_indices {
-            let slot = &slots[idx];
-            if slot.fstr_len_raw < 0 {
-                return Err(format!("Name '{}' uses UTF-16; in-place rename not supported.", old_str));
-            }
-            {
-
-                let new_data = rebuild_with_rename(
-                    data,
-                    name_offset,
-                    cur_import_offset,
-                    cur_export_offset,
-                    cur_depends_offset,
-                    idx,
-                    new_str,
-                )?;
-                let delta = new_data.len() as i64 - data.len() as i64;
-                *data = new_data;
-                cur_import_offset = (cur_import_offset as i64 + delta) as i32;
-                cur_export_offset = (cur_export_offset as i64 + delta) as i32;
-                cur_depends_offset = (cur_depends_offset as i64 + delta) as i32;
-            }
-        }
-    }
-    Ok(())
 }
 
 struct NameSlotInfo {
@@ -236,11 +115,54 @@ fn parse_name_slots(data: &[u8], name_offset: i32, name_count: i32) -> Result<Ve
     Ok(slots)
 }
 
+fn is_unsafe_compensation_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    (lower.starts_with("textures") && (lower.len() == 8 || lower[8..].chars().all(|c| c.is_ascii_digit())))
+        || lower.ends_with(".tfc")
+        || lower.contains("tfc")
+        || lower.starts_with("thumbnail")
+        || matches!(
+            lower.as_str(),
+            "none"
+                | "core"
+                | "engine"
+                | "tagame"
+                | "package"
+                | "object"
+                | "class"
+                | "component"
+                | "group"
+                | "model"
+                | "polys"
+        )
+}
+
+fn is_preferred_compensation_name(name: &str) -> bool {
+    name.starts_with("WheelAttachments_Scene")
+        || name.starts_with("Side_BPW")
+        || name.starts_with("Default__")
+        || name == "bRenderOnce"
+        || name == "NeverStream"
+        || name == "FunctionExpressions"
+        || name == "CompressionNone"
+        || name == "MipGenSettings"
+        || name == "TextureMipGenSettings"
+        || name.starts_with("bHas")
+        || name.starts_with("bAuto")
+        || name.starts_with("bPrecomputed")
+        || name.starts_with("bUsed")
+        || name.starts_with("bPerPixel")
+        || name.starts_with("Include")
+        || name.starts_with("SourceArt")
+        || name.starts_with("Tire_")
+}
+
 pub fn apply_header_renames(
     header: Vec<u8>,
     import_off: usize,
     export_off: usize,
     depends_off: usize,
+    base_depends_offset: i32,
     name_count: i32,
     pairs: &[(String, String)],
 ) -> Result<(Vec<u8>, i64), String> {
@@ -258,8 +180,62 @@ pub fn apply_header_renames(
     let mut cur_import = import_off;
     let mut cur_export = export_off;
     let mut cur_depends = depends_off;
+    let mut cur_base_depends = base_depends_offset as i64;
 
-    for (old_str, new_str) in pairs {
+    let mut effective_pairs = pairs.to_vec();
+    if let Ok(slots) = parse_name_slots(&cur, 0, name_count) {
+        let mut net_delta: i64 = 0;
+        let mut matched_slot_indices = std::collections::HashSet::new();
+
+        // Calculate net delta per matched slot (each slot is renamed at most once by the first matching pair)
+        for (i, slot) in slots.iter().enumerate() {
+            if let Some((_, new_str)) = pairs.iter().find(|(old_str, _)| slot.name.eq_ignore_ascii_case(old_str)) {
+                matched_slot_indices.insert(i);
+                let diff = (new_str.len() as i64) - (slot.name.len() as i64);
+                net_delta += diff;
+            }
+        }
+
+        if net_delta != 0 {
+            let mut used_names = std::collections::HashSet::new();
+            let mut pos = import_off;
+            while pos + 28 <= export_off && pos + 28 <= cur.len() {
+                if let Ok(pkg) = i32_at(&cur, pos) { used_names.insert(pkg as usize); }
+                if let Ok(cls) = i32_at(&cur, pos + 8) { used_names.insert(cls as usize); }
+                if let Ok(obj) = i32_at(&cur, pos + 20) { used_names.insert(obj as usize); }
+                pos += 28;
+            }
+            let mut pos = export_off;
+            while pos + 72 <= depends_off && pos + 72 <= cur.len() {
+                if let Ok(obj) = i32_at(&cur, pos + 12) { used_names.insert(obj as usize); }
+                pos += 72;
+            }
+
+            let min_len_needed = if net_delta > 0 { (net_delta as usize) + 4 } else { 0 };
+            let is_eligible = |(i, s): &(usize, &NameSlotInfo)| -> bool {
+                !matched_slot_indices.contains(i)
+                    && !used_names.contains(i)
+                    && !is_unsafe_compensation_name(&s.name)
+                    && s.fstr_len_raw > 0
+                    && s.name.len() > min_len_needed
+            };
+
+            let candidate = slots.iter().enumerate().rev()
+                .find(|item| is_eligible(item) && is_preferred_compensation_name(&item.1.name))
+                .or_else(|| slots.iter().enumerate().rev().find(is_eligible));
+
+            if let Some((_, slot)) = candidate {
+                let comp_new_str = if net_delta > 0 {
+                    slot.name[..slot.name.len() - (net_delta as usize)].to_string()
+                } else {
+                    format!("{}{}", slot.name, "X".repeat((-net_delta) as usize))
+                };
+                effective_pairs.push((slot.name.clone(), comp_new_str));
+            }
+        }
+    }
+
+    for (old_str, new_str) in &effective_pairs {
         let slots = parse_name_slots(&cur, 0, name_count)?;
         let rename_idxs: Vec<usize> = slots.iter().enumerate()
             .filter(|(_, s)| s.name.eq_ignore_ascii_case(old_str))
@@ -282,8 +258,8 @@ pub fn apply_header_renames(
             }
             let old_name_table = &cur[..cur_import];
             let import_table = cur[cur_import..cur_export].to_vec();
-            let export_table = cur[cur_export..cur_depends].to_vec();
-            let beyond = cur[cur_depends..].to_vec();
+            let mut export_table = cur[cur_export..cur_depends].to_vec();
+            let mut beyond = cur[cur_depends..].to_vec();
 
             let mut new_name_table: Vec<u8> = Vec::new();
             let mut pos = 0usize;
@@ -322,6 +298,12 @@ pub fn apply_header_renames(
             }
 
             let delta = new_name_table.len() as i64 - old_name_table.len() as i64;
+            if delta != 0 {
+                patch_export_serial_offsets(&mut export_table, cur_base_depends, delta);
+                patch_chunk_table_uncompressed_offsets(&mut beyond, cur_base_depends, delta);
+                cur_base_depends += delta;
+            }
+
             let mut rebuilt = Vec::with_capacity(cur.len() + delta.unsigned_abs() as usize);
             rebuilt.extend_from_slice(&new_name_table);
             rebuilt.extend_from_slice(&import_table);
@@ -475,6 +457,7 @@ mod tests {
             import_off,
             export_off,
             depends_off,
+            depends_off as i32,
             3,
             &pairs,
         ).expect("rebuild succeeds");
@@ -487,8 +470,114 @@ mod tests {
         assert_eq!(parsed[0].flags, 0x11223344);
         assert_eq!(parsed[1].name, "WHEEL_Triad_SF");
         assert_eq!(parsed[1].flags, 0x55667788);
-        assert_eq!(parsed[2].name, "SomeOtherName");
+        assert_eq!(parsed[2].name, "SomeOtherNameXXXXXXXXXX");
         assert_eq!(parsed[2].flags, 0x99AABBCC);
-        assert!(delta < 0, "shortening names reduces table size");
+        assert_eq!(delta, 0, "shortening rename should absorb delta to 0 via compensation");
+    }
+
+    #[test]
+    fn test_expanding_rename_absorbs_delta_via_compensation() {
+        let mut header = Vec::new();
+        header.extend_from_slice(&serialize_name_entry("body_grain", 0x11223344));
+        header.extend_from_slice(&serialize_name_entry("body_grain_SF", 0x55667788));
+        header.extend_from_slice(&serialize_name_entry("Tire_Scorpion_Vesper_Textures", 0x99AABBCC));
+
+        let import_off = header.len();
+        let export_off = header.len();
+        let depends_off = header.len();
+
+        let pairs = vec![
+            ("body_grain".to_string(), "Body_Octane".to_string()),
+            ("Body_Grain".to_string(), "Body_Octane".to_string()),
+            ("BODY_GRAIN".to_string(), "Body_Octane".to_string()),
+            ("body_grain_SF".to_string(), "Body_Octane_SF".to_string()),
+            ("body_grain_sf".to_string(), "Body_Octane_sf".to_string()),
+        ];
+
+        let (new_header, delta) = apply_header_renames(
+            header,
+            import_off,
+            export_off,
+            depends_off,
+            depends_off as i32,
+            3,
+            &pairs,
+        ).expect("rebuild succeeds");
+
+        assert_eq!(delta, 0, "expanding rename should absorb delta to 0 via compensation");
+
+        let parsed = crate::upk::parser::parse_name_table(&new_header, 0, 3)
+            .expect("parse name table succeeds");
+        assert_eq!(parsed[0].name, "Body_Octane");
+        assert_eq!(parsed[1].name, "Body_Octane_SF");
+        assert_eq!(parsed[2].name, "Tire_Scorpion_Vesper_Textur");
+    }
+
+    #[test]
+    fn test_compensation_avoids_texture_cache_names() {
+        let mut header = Vec::new();
+        header.extend_from_slice(&serialize_name_entry("LongMaterialInstanceName", 0x11223344));
+        header.extend_from_slice(&serialize_name_entry("bHasQualitySwitch", 0x55667788));
+        header.extend_from_slice(&serialize_name_entry("Textures7", 0x99AABBCC));
+
+        let import_off = header.len();
+        let export_off = header.len();
+        let depends_off = header.len();
+
+        let pairs = vec![
+            ("LongMaterialInstanceName".to_string(), "ShortMaterial".to_string()),
+        ];
+
+        let (new_header, delta) = apply_header_renames(
+            header,
+            import_off,
+            export_off,
+            depends_off,
+            depends_off as i32,
+            3,
+            &pairs,
+        ).expect("rebuild succeeds");
+
+        assert_eq!(delta, 0);
+
+        let parsed = crate::upk::parser::parse_name_table(&new_header, 0, 3)
+            .expect("parse name table succeeds");
+        assert_eq!(parsed[0].name, "ShortMaterial");
+        assert_eq!(parsed[1].name, "bHasQualitySwitchXXXXXXXXXXX");
+        assert_eq!(parsed[2].name, "Textures7");
+    }
+
+    #[test]
+    fn test_compensation_avoids_thumbnail_names() {
+        let mut header = Vec::new();
+        header.extend_from_slice(&serialize_name_entry("LongMaterialInstanceName", 0x11223344));
+        header.extend_from_slice(&serialize_name_entry("ThumbnailRenderers", 0x55667788));
+        header.extend_from_slice(&serialize_name_entry("NeverStream", 0x99AABBCC));
+
+        let import_off = header.len();
+        let export_off = header.len();
+        let depends_off = header.len();
+
+        let pairs = vec![
+            ("LongMaterialInstanceName".to_string(), "ShortMaterial".to_string()),
+        ];
+
+        let (new_header, delta) = apply_header_renames(
+            header,
+            import_off,
+            export_off,
+            depends_off,
+            depends_off as i32,
+            3,
+            &pairs,
+        ).expect("rebuild succeeds");
+
+        assert_eq!(delta, 0);
+
+        let parsed = crate::upk::parser::parse_name_table(&new_header, 0, 3)
+            .expect("parse name table succeeds");
+        assert_eq!(parsed[0].name, "ShortMaterial");
+        assert_eq!(parsed[1].name, "ThumbnailRenderers");
+        assert_eq!(parsed[2].name, "NeverStreamXXXXXXXXXXX");
     }
 }

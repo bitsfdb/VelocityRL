@@ -2046,7 +2046,7 @@ pub async fn stop_psynet_proxy(
 ) -> Result<PsyNetStatus, String> {
     crate::applog::event("psynet: stop requested (native Rust proxy)");
     let _guard = PROXY_LIFECYCLE.lock().await;
-    let do_revert = revert_hosts.unwrap_or(false);
+    let do_revert = revert_hosts.unwrap_or(true);
 
     set_system_proxy_enabled(false);
     crate::proxy::stop_native_proxy(do_revert);

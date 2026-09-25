@@ -381,6 +381,10 @@ fn infer_name_pairs(target: &Item, donor: &Item) -> Vec<(String, String)> {
         add_pair(&mut pairs, format!("MIC_{donor_pascal}"), format!("MIC_{target_pascal}"));
         add_pair(&mut pairs, format!("MIC_WHEEL_{donor_base}"), format!("MIC_WHEEL_{target_base}"));
         add_pair(&mut pairs, format!("MIC_WHEEL_{donor_pascal}"), format!("MIC_WHEEL_{target_pascal}"));
+
+        // 5. StaticMesh companions
+        add_pair(&mut pairs, format!("{donor_base}_SM"), format!("{target_base}_SM"));
+        add_pair(&mut pairs, format!("{donor_pascal}_SM"), format!("{target_pascal}_SM"));
     }
     pairs
 }
@@ -1016,6 +1020,7 @@ pub fn swap_asset(
         import_off,
         export_off,
         depends_off,
+        donor_summary.depends_offset,
         donor_summary.name_count,
         &pairs,
     )
@@ -1165,6 +1170,11 @@ pub fn swap_asset(
             patch_i32_le(
                 &mut output,
                 offsets.depends_offset_offset,
+                donor_summary.depends_offset + header_delta as i32,
+            );
+            patch_i32_le(
+                &mut output,
+                offsets.import_export_guids_offset_offset,
                 donor_summary.depends_offset + header_delta as i32,
             );
         }

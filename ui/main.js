@@ -536,7 +536,7 @@ async function init() {
     });
     document.getElementById('dev-stop-proxy-btn')?.addEventListener('click', async () => {
         try {
-            await invoke('stop_psynet_proxy', { revertHosts: false });
+            await invoke('stop_psynet_proxy', { revertHosts: true });
             showToast('Proxy stopped.', 'success');
         } catch (e) {
             showToast('Proxy stop failed: ' + e, 'error');
@@ -1383,6 +1383,74 @@ function wirePresetsUI() {
     });
 }
 
+const STATIC_CAR_MAP = {
+    'grain': 'Fennec',
+    'force': 'Breakout',
+    'orion': 'Paladin',
+    'rhino': 'Road Hog',
+    'spark': 'Gizmo',
+    'torch': 'X-Devil',
+    'torch2': 'X-Devil Mk2',
+    'torment': 'Hotshot',
+    'vanquish': 'Merc',
+    'venom': 'Venom',
+    'import': 'Takumi',
+    'musclecar': 'Dominus',
+    'musclecar2': 'Dominus GT',
+    'scarab': 'Scarab',
+    'zippy': 'Zippy',
+    'wastelandtruck': 'Grog',
+    'interceptor': 'Ripper',
+    'neocar': 'Masamune',
+    'marauder': 'Marauder',
+    'number6': 'Esper',
+    'cannonboy': 'Aftershock',
+    'backfire': 'Backfire',
+    'octane': 'Octane',
+};
+const STATIC_CAR_KEYS = Object.keys(STATIC_CAR_MAP).sort((a, b) => b.length - a.length);
+
+let bodyMap = null;
+let sortedBodyKeys = null;
+
+function initBodyMap() {
+    if (bodyMap || !items || items.length === 0) return;
+    bodyMap = {};
+    items.forEach(i => {
+        const slot = normSlot(i.Slot || i.slot || '');
+        if (slot === 'body') {
+            let pkg = String(i.AssetPackage || i.asset_package || '').toLowerCase().trim();
+            if (pkg.startsWith('body_')) {
+                pkg = pkg.slice(5);
+            }
+            if (pkg) {
+                bodyMap[pkg] = i.Product || i.product || '';
+            }
+        }
+    });
+    sortedBodyKeys = Object.keys(bodyMap).sort((a, b) => b.length - a.length);
+}
+
+function getCarNameFromAsset(assetPackage) {
+    if (!assetPackage) return '';
+    initBodyMap();
+    let p = String(assetPackage).toLowerCase().replace('.bak', '').replace('.upk', '');
+    for (const prefix of ['skin_', 'skins_']) {
+        if (p.startsWith(prefix)) {
+            p = p.slice(prefix.length);
+            break;
+        }
+    }
+    const keys = sortedBodyKeys || STATIC_CAR_KEYS;
+    const map = sortedBodyKeys ? bodyMap : STATIC_CAR_MAP;
+    for (const k of keys) {
+        if (p.startsWith(k + '_') || p === k) {
+            return map[k];
+        }
+    }
+    return '';
+}
+
 async function refreshBackups() {
     if (!backupContainer) return;
     wireReswapButton();
@@ -1405,16 +1473,18 @@ async function refreshBackups() {
             const div = document.createElement('div');
             div.className = 'backup-item';
             let pImg = file.image_url || '';
+            const fileName = file.path.split(/[/\\]/).pop();
+            const cleanName = fileName.toLowerCase().replace('.bak', '').replace('.upk', '');
+            const carTag = getCarNameFromAsset(fileName);
+
             if (!pImg && items && items.length > 0) {
-                const fileName = file.path.split(/[/\\]/).pop();
-                const cleanName = fileName.toLowerCase().replace('.bak', '').replace('.upk', '');
                 const matched = items.find(i => {
-                    const dbPkg = (i.asset_package || '').toLowerCase().replace('.upk', '');
+                    const dbPkg = (i.asset_package || i.AssetPackage || '').toLowerCase().replace('.upk', '');
                     if (!dbPkg || dbPkg === 'none') return false;
                     return dbPkg === cleanName || (dbPkg.length > 4 && (cleanName.includes(dbPkg) || dbPkg.includes(cleanName)));
                 });
-                if (matched && matched.image_url) {
-                    pImg = matched.image_url;
+                if (matched && (matched.image_url || matched.src)) {
+                    pImg = matched.image_url || matched.src;
                 }
             }
             const swapLabel = file.swap_from && file.swap_to
@@ -1428,7 +1498,7 @@ async function refreshBackups() {
                     ${renderThumbnailHtml(pImg)}
                     ${file.swap_to_image ? renderThumbnailHtml(file.swap_to_image) : ''}
                     <div style="min-width:0;">
-                        <div class="backup-name">${escHtml(file.name)}</div>
+                        <div class="backup-name">${escHtml(file.name)}${carTag ? ` <span style="font-size:12px;font-weight:600;color:#a78bfa;">(${escHtml(carTag)})</span>` : ''}</div>
                         ${swapLabel ? `<div class="backup-date" style="color:var(--accent-blue);">${swapLabel}</div>` : `<div class="backup-date">Modified Product</div>`}
                     </div>
                 </div>
@@ -1482,7 +1552,7 @@ function showProgress(show, percent = 0) {
 function setupSearch(input, resultsDiv, selectionHandler) {
     if (!input || !resultsDiv) return;
     input.addEventListener('input', (e) => {
-        const term = e.target.value.toLowerCase();
+        const term = e.target.value.toLowerCase().trim();
 
         let lockCategory = currentCategory;
         if (input.id === 'wanted-search' && ownedItem) {
@@ -1494,6 +1564,7 @@ function setupSearch(input, resultsDiv, selectionHandler) {
             return;
         }
 
+        const searchWords = term.split(/\s+/).filter(Boolean);
         const matches = items.filter(item => {
             const pName = (item.Product || item.product || '').toLowerCase();
             const pAsset = (item.AssetPackage || item.asset_package || '').toLowerCase();
@@ -1502,7 +1573,11 @@ function setupSearch(input, resultsDiv, selectionHandler) {
             const invalidTypes = ['series', 'crate', 'currency', 'premium', 'unknown'];
             if (invalidTypes.includes(normSlot(pSlot))) return false;
 
-            const matchesTerm = term.length < 2 || pName.includes(term) || pAsset.includes(term);
+            const carName = (normSlot(pSlot) === 'decal' ? getCarNameFromAsset(pAsset) : '').toLowerCase();
+
+            const matchesTerm = searchWords.length === 0 || searchWords.every(w =>
+                pName.includes(w) || pAsset.includes(w) || carName.includes(w)
+            );
             const matchesCat = lockCategory === 'All' || normSlot(pSlot) === normSlot(lockCategory);
             return matchesTerm && matchesCat;
         }).slice(0, 50);
@@ -1541,12 +1616,14 @@ function renderResults(matches, resultsDiv, selectionHandler) {
         const pSlot = item.Slot || item.slot || '';
         const pId = item.ID ?? item.id;
         const pImg = item.image_url || item.src || '';
+        const pAsset = item.AssetPackage || item.asset_package || '';
+        const carTag = normSlot(pSlot) === 'decal' ? getCarNameFromAsset(pAsset) : '';
 
         div.innerHTML = `
             ${pImg ? `<img src="${escHtml(pImg)}" class="flyout-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="flyout-img" style="display:none;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>` : '<div class="flyout-img" style="display:flex;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>'}
             <div class="flyout-info">
                 <span class="item-name">${escHtml(pName)}</span>
-                <span style="font-size: 10px; color: var(--text-secondary)">${escHtml(pSlot)}${pId != null ? ` · <span style="color:#5b8cff">ID ${escHtml(String(pId))}</span>` : ''}</span>
+                <span style="font-size: 10px; color: var(--text-secondary)">${escHtml(pSlot)}${carTag ? ` · <span style="color:#a78bfa;font-weight:600;">${escHtml(carTag)}</span>` : ''}${pId != null ? ` · <span style="color:#5b8cff">ID ${escHtml(String(pId))}</span>` : ''}</span>
             </div>
         `;
         div.onclick = () => {
