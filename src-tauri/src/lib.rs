@@ -8,7 +8,7 @@ mod applog;
 mod integrity;
 mod jobobject;
 mod presets;
-mod psynet;
+pub mod psynet;
 pub mod upk;
 pub mod workshop;
 pub mod tracker;

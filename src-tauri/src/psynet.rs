@@ -721,7 +721,7 @@ fn write_spoof(dir: &Path, payload: &SpoofPayload) -> Result<PathBuf, String> {
         }
         if let Some(ns) = &payload.name_spoof {
             let mut ns_map = serde_json::Map::new();
-            let effective_enabled = ns.enabled && !payload.is_steam;
+            let effective_enabled = ns.enabled;
             ns_map.insert("enabled".into(), serde_json::json!(effective_enabled));
             ns_map.insert("display_name".into(), serde_json::json!(ns.display_name.trim()));
 
@@ -940,7 +940,31 @@ fn hosts_path() -> PathBuf {
 
 const CONFIG_HOST_PAIRS: &[(&str, &str)] = &[
     ("127.0.0.1", "config.psynet.gg"),
+    // Proton/Wine ignores WinINET proxies; name spoof needs the same hosts MITM as PsyNet.
+    ("127.0.0.1", "api.epicgames.dev"),
 ];
+
+const HOSTS_MANAGED_MARKERS: &[&str] = &[
+    "config.psynet.gg",
+    "api.rlpp.psynet.gg",
+    "ws.rlpp.psynet.gg",
+    "api.epicgames.dev",
+];
+
+fn hosts_line_is_managed(line: &str) -> bool {
+    HOSTS_MANAGED_MARKERS.iter().any(|m| line.contains(m))
+}
+
+fn append_missing_host_pairs(text: &mut String, newline: &str) {
+    for (ip, host) in CONFIG_HOST_PAIRS {
+        if !hosts_has_pair(text, ip, host) {
+            text.push_str(ip);
+            text.push(' ');
+            text.push_str(host);
+            text.push_str(newline);
+        }
+    }
+}
 
 fn hosts_has_pair(text: &str, ip: &str, host: &str) -> bool {
     let ip_l = ip.to_ascii_lowercase();
@@ -1091,6 +1115,25 @@ fn update_linux_wine_proxies(enabled: bool) {
 }
 
 #[cfg(target_os = "linux")]
+fn collect_wine_prefix_user_regs<F>(v: &serde_json::Value, cands: &mut Vec<PathBuf>, add_if_exists: &F)
+where
+    F: Fn(&mut Vec<PathBuf>, PathBuf),
+{
+    if let Some(p) = v.get("winePrefix").and_then(|p| p.as_str()) {
+        add_if_exists(cands, PathBuf::from(p).join("user.reg"));
+        add_if_exists(cands, PathBuf::from(p).join("pfx/user.reg"));
+    }
+    if let Some(obj) = v.as_object() {
+        for val in obj.values() {
+            if let Some(p) = val.get("winePrefix").and_then(|p| p.as_str()) {
+                add_if_exists(cands, PathBuf::from(p).join("user.reg"));
+                add_if_exists(cands, PathBuf::from(p).join("pfx/user.reg"));
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn find_candidate_wine_user_regs() -> Vec<PathBuf> {
     let mut cands = Vec::new();
     let add_if_exists = |list: &mut Vec<PathBuf>, p: PathBuf| {
@@ -1103,13 +1146,51 @@ fn find_candidate_wine_user_regs() -> Vec<PathBuf> {
         add_if_exists(&mut cands, PathBuf::from(wp).join("user.reg"));
     }
 
+    let mut homes = Vec::new();
     if let Ok(home) = std::env::var("HOME") {
-        let h = Path::new(&home);
+        let p = PathBuf::from(home);
+        if !homes.contains(&p) {
+            homes.push(p);
+        }
+    }
+    if let Ok(sudo_user) = std::env::var("SUDO_USER") {
+        let u = sudo_user.trim();
+        if !u.is_empty() && u != "root" {
+            let p = PathBuf::from("/home").join(u);
+            if !homes.contains(&p) {
+                homes.push(p);
+            }
+        }
+    }
+
+    for h in &homes {
         // Heroic Launcher prefixes
         add_if_exists(&mut cands, h.join("Games/Heroic/Prefixes/Rocket League/user.reg"));
         add_if_exists(&mut cands, h.join("Games/Heroic/Prefixes/default/Rocket League/user.reg"));
         add_if_exists(&mut cands, h.join(".var/app/com.heroicgameslauncher.hgl/config/heroic/Prefixes/Rocket League/user.reg"));
         add_if_exists(&mut cands, h.join(".var/app/com.heroicgameslauncher.hgl/Prefixes/Rocket League/user.reg"));
+
+        // Heroic GamesConfig winePrefix (any install path)
+        for cfg_dir in &[
+            h.join(".config/heroic/GamesConfig"),
+            h.join(".var/app/com.heroicgameslauncher.hgl/config/heroic/GamesConfig"),
+        ] {
+            if let Ok(entries) = std::fs::read_dir(cfg_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                        continue;
+                    }
+                    let Ok(raw) = fs::read_to_string(&path) else {
+                        continue;
+                    };
+                    let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else {
+                        continue;
+                    };
+                    collect_wine_prefix_user_regs(&v, &mut cands, &add_if_exists);
+                }
+            }
+        }
 
         // Lutris prefixes
         add_if_exists(&mut cands, h.join("Games/rocket-league/user.reg"));
@@ -1739,19 +1820,14 @@ pub fn write_config_hosts_direct() -> Result<(), String> {
 
     let lines: Vec<&str> = content
         .lines()
-        .filter(|line| {
-            !line.contains("config.psynet.gg")
-                && !line.contains("api.rlpp.psynet.gg")
-                && !line.contains("ws.rlpp.psynet.gg")
-                && !line.contains("::1")
-        })
+        .filter(|line| !hosts_line_is_managed(line) && !line.contains("::1"))
         .collect();
 
     let mut new_text = lines.join("\n");
     if !new_text.is_empty() && !new_text.ends_with('\n') {
         new_text.push('\n');
     }
-    new_text.push_str("127.0.0.1 config.psynet.gg\n");
+    append_missing_host_pairs(&mut new_text, "\n");
 
     if fs::write(&p, new_text.as_bytes()).is_ok() {
         crate::applog::event("psynet: /etc/hosts updated directly");
@@ -1781,7 +1857,7 @@ pub fn write_config_hosts_direct() -> Result<(), String> {
         return Ok(());
     }
 
-    Err("Could not update /etc/hosts. Run: echo '127.0.0.1 config.psynet.gg' | sudo tee -a /etc/hosts".into())
+    Err("Could not update /etc/hosts. Run: echo -e '127.0.0.1 config.psynet.gg\\n127.0.0.1 api.epicgames.dev' | sudo tee -a /etc/hosts".into())
 }
 
 #[cfg(windows)]
@@ -1815,22 +1891,19 @@ pub fn write_config_hosts_direct() -> Result<(), String> {
 
     let lines: Vec<&str> = content
         .lines()
-        .filter(|line| {
-            !line.contains("api.rlpp.psynet.gg")
-                && !line.contains("ws.rlpp.psynet.gg")
-                && !line.contains("::1")
-        })
-        .collect();
+            .filter(|line| {
+                !line.contains("api.rlpp.psynet.gg")
+                    && !line.contains("ws.rlpp.psynet.gg")
+                    && !line.contains("::1")
+            })
+            .collect();
 
     let mut new_text = lines.join("\r\n");
     if !new_text.is_empty() && !new_text.ends_with("\r\n") {
         new_text.push_str("\r\n");
     }
 
-    let has_ipv4 = hosts_has_pair(&new_text, "127.0.0.1", "config.psynet.gg");
-    if !has_ipv4 {
-        new_text.push_str("127.0.0.1 config.psynet.gg\r\n");
-    }
+    append_missing_host_pairs(&mut new_text, "\r\n");
 
     let mut last_err = None;
     for attempt in 1..=4 {
@@ -1952,12 +2025,15 @@ pub fn revert_config_hosts() -> Result<(), String> {
         let Ok(content) = fs::read_to_string(&p) else {
             return Ok(());
         };
-        if !content.contains("config.psynet.gg") && !content.contains("rlpp.psynet.gg") {
+        if !content.contains("config.psynet.gg")
+            && !content.contains("rlpp.psynet.gg")
+            && !content.contains("api.epicgames.dev")
+        {
             return Ok(());
         }
         let cleaned: Vec<&str> = content
             .lines()
-            .filter(|line| !line.contains("config.psynet.gg") && !line.contains("ws.rlpp.psynet.gg") && !line.contains("api.rlpp.psynet.gg"))
+            .filter(|line| !hosts_line_is_managed(line))
             .collect();
         let mut new_text = cleaned.join("\n");
         new_text.push('\n');
@@ -1965,8 +2041,25 @@ pub fn revert_config_hosts() -> Result<(), String> {
         if fs::write(&p, new_text.as_bytes()).is_ok() {
             crate::applog::event("psynet: /etc/hosts reverted directly");
             let _ = crate::winprobe::flush_dns_cache();
+            return Ok(());
         }
-        return Ok(());
+
+        if crate::winprobe::is_elevated() {
+            let pid = std::process::id();
+            let tmp = std::env::temp_dir().join(format!("vrl_hosts_revert_{pid}"));
+            let _ = fs::write(&tmp, new_text.as_bytes());
+            let cmd = format!("cp '{}' /etc/hosts && rm -f '{}'", tmp.display(), tmp.display());
+            let ok = std::process::Command::new("sh").args(["-c", &cmd]).status().map(|s| s.success()).unwrap_or(false);
+            let _ = fs::remove_file(&tmp);
+            if ok {
+                crate::applog::event("psynet: /etc/hosts reverted via root");
+                let _ = crate::winprobe::flush_dns_cache();
+                return Ok(());
+            }
+        }
+
+        crate::applog::event("psynet: /etc/hosts requires root to revert; run 'sudo ./velocity-rl --recover' to reset");
+        Ok(())
     }
     #[cfg(not(any(windows, target_os = "linux")))]
     {
@@ -1987,7 +2080,7 @@ pub fn revert_config_hosts() -> Result<(), String> {
                 if let Ok(content) = fs::read_to_string(&p) {
                     let cleaned: Vec<&str> = content
                         .lines()
-                        .filter(|line| !line.contains("config.psynet.gg") && !line.contains("ws.rlpp.psynet.gg") && !line.contains("api.rlpp.psynet.gg"))
+                        .filter(|line| !hosts_line_is_managed(line))
                         .collect();
                     let mut new_text = cleaned.join("\r\n");
                     new_text.push_str("\r\n");
@@ -2007,7 +2100,7 @@ $hostsPath = Join-Path $env:SystemRoot "System32\drivers\etc\hosts"
 if (Test-Path -LiteralPath $hostsPath) {
     try { (Get-Item -LiteralPath $hostsPath).IsReadOnly = $false } catch {}
     $lines = Get-Content -LiteralPath $hostsPath
-    $clean = $lines | Where-Object { $_ -notmatch 'config\.psynet\.gg' -and $_ -notmatch 'ws\.rlpp\.psynet\.gg' -and $_ -notmatch 'api\.rlpp\.psynet\.gg' }
+    $clean = $lines | Where-Object { $_ -notmatch 'config\.psynet\.gg' -and $_ -notmatch 'ws\.rlpp\.psynet\.gg' -and $_ -notmatch 'api\.rlpp\.psynet\.gg' -and $_ -notmatch 'api\.epicgames\.dev' }
     [System.IO.File]::WriteAllLines($hostsPath, $clean)
     ipconfig /flushdns | Out-Null
 }
@@ -2047,7 +2140,7 @@ pub fn setup_linux_system(need_ca: bool, need_hosts: bool) -> Result<(), String>
     }
 
     if LINUX_ELEVATION_ATTEMPTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
-        crate::applog::event("psynet: skipping repeated elevation prompt on Linux. If hosts/CA are missing, run: sudo ./setup-linux.sh");
+        crate::applog::event("psynet: skipping repeated elevation prompt on Linux. If hosts/CA are missing, run: sudo ./velocity-rl");
         return Ok(());
     }
 
@@ -2083,20 +2176,12 @@ pub fn setup_linux_system(need_ca: bool, need_hosts: bool) -> Result<(), String>
     if need_hosts {
         let p = hosts_path();
         let content = fs::read_to_string(&p).unwrap_or_default();
-        let lines: Vec<&str> = content
-            .lines()
-            .filter(|line| {
-                !line.contains("config.psynet.gg")
-                    && !line.contains("api.rlpp.psynet.gg")
-                    && !line.contains("ws.rlpp.psynet.gg")
-                    && !line.contains("::1")
-            })
-            .collect();
+        let lines: Vec<&str> = content.lines().filter(|line| !hosts_line_is_managed(line)).collect();
         let mut new_text = lines.join("\n");
         if !new_text.is_empty() && !new_text.ends_with('\n') {
             new_text.push('\n');
         }
-        new_text.push_str("127.0.0.1 config.psynet.gg\n");
+        append_missing_host_pairs(&mut new_text, "\n");
         if let Ok(()) = fs::write(&tmp_hosts, new_text.as_bytes()) {
             parts.push(format!("cp '{}' /etc/hosts", tmp_hosts.display()));
         }
@@ -2119,7 +2204,7 @@ pub fn setup_linux_system(need_ca: bool, need_hosts: bool) -> Result<(), String>
         let _ = crate::winprobe::flush_dns_cache();
         Ok(())
     } else {
-        crate::applog::event("psynet: elevation was cancelled or failed. You can run 'sudo ./setup-linux.sh' manually.");
+        crate::applog::event("psynet: elevation was cancelled or failed. You can run 'sudo ./velocity-rl' manually.");
         Ok(())
     }
 }
@@ -2247,7 +2332,8 @@ try {{
         $raw = ($raw -split "`r?`n" | Where-Object {{ $_ -notmatch '::1\s+config\.psynet\.gg' }}) -join "`r`n"
         [System.IO.File]::WriteAllText($hostsPath, $raw)
         foreach ($pair in @(
-            @{{ Ip = "127.0.0.1"; Host = "config.psynet.gg" }}
+            @{{ Ip = "127.0.0.1"; Host = "config.psynet.gg" }},
+            @{{ Ip = "127.0.0.1"; Host = "api.epicgames.dev" }}
         )) {{
             $pat = [regex]::Escape($pair.Ip) + "\s+" + [regex]::Escape($pair.Host)
             if ($raw -notmatch $pat) {{
@@ -2623,16 +2709,34 @@ pub fn clear_rocket_league_cache() -> Result<usize, String> {
     }
     #[cfg(target_os = "linux")]
     {
+        let mut homes = Vec::new();
         if let Ok(home) = std::env::var("HOME") {
-            let home_path = Path::new(&home);
+            homes.push(PathBuf::from(home));
+        }
+        if let Ok(sudo_user) = std::env::var("SUDO_USER") {
+            let u = sudo_user.trim();
+            if !u.is_empty() && u != "root" {
+                let p = PathBuf::from("/home").join(u);
+                if !homes.contains(&p) {
+                    homes.push(p);
+                }
+            }
+        }
+        for home_path in &homes {
             let prefixes = [
                 home_path.join(".local/share/Steam/steamapps/compatdata/252950/pfx/drive_c"),
                 home_path.join(".steam/steam/steamapps/compatdata/252950/pfx/drive_c"),
                 home_path.join(".steam/root/steamapps/compatdata/252950/pfx/drive_c"),
                 home_path.join(".var/app/com.valvesoftware.Steam/data/Steam/steamapps/compatdata/252950/pfx/drive_c"),
+                home_path.join("Games/Heroic/Prefixes/Rocket League/drive_c"),
+                home_path.join("Games/Heroic/Prefixes/default/Rocket League/drive_c"),
+                home_path.join("Games/Heroic/Prefixes/rocketleague/drive_c"),
                 home_path.join("Games/Heroic/Prefixes/rocketleague/pfx/drive_c"),
+                home_path.join(".var/app/com.heroicgameslauncher.hgl/Prefixes/Rocket League/drive_c"),
                 home_path.join("Games/rocketleague/drive_c"),
+                home_path.join("Games/rocket-league/drive_c"),
                 home_path.join("Games/epic-games-store/drive_c"),
+                home_path.join(".wine/drive_c"),
             ];
             for pfx in &prefixes {
                 let users_dir = pfx.join("users");
@@ -2648,6 +2752,9 @@ pub fn clear_rocket_league_cache() -> Result<usize, String> {
                 if cache_dir_opt.is_some() {
                     break;
                 }
+            }
+            if cache_dir_opt.is_some() {
+                break;
             }
         }
     }

@@ -369,8 +369,20 @@ fn user_rl_config_dir() -> Option<std::path::PathBuf> {
     }
     #[cfg(target_os = "linux")]
     {
+        let mut homes = Vec::new();
         if let Ok(home) = std::env::var("HOME") {
-            let home_path = std::path::Path::new(&home);
+            homes.push(std::path::PathBuf::from(home));
+        }
+        if let Ok(sudo_user) = std::env::var("SUDO_USER") {
+            let u = sudo_user.trim();
+            if !u.is_empty() && u != "root" {
+                let p = std::path::PathBuf::from("/home").join(u);
+                if !homes.contains(&p) {
+                    homes.push(p);
+                }
+            }
+        }
+        for home_path in &homes {
             let prefixes = [
                 home_path.join("Games/Heroic/Prefixes/Rocket League/drive_c"),
                 home_path.join("Games/Heroic/Prefixes/default/Rocket League/drive_c"),

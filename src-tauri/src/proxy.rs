@@ -37,9 +37,176 @@ pub fn leaf_epic_cert_bytes() -> &'static [u8] {
 
 pub const SYSTEM_PROXY_PORT: u16 = 8080;
 
+/// EOS account/profile API hosts. On Linux these are hosts-redirected to the
+/// local :443 MITM (Wine WinINET proxies are ignored by Proton/EOS).
+pub const EOS_ACCOUNT_HOSTS: &[&str] = &["api.epicgames.dev"];
+
+pub fn hostname_only(host: &str) -> &str {
+    host.split(':').next().unwrap_or(host).trim()
+}
+
+pub fn host_header_port(host_hdr: &str, default: u16) -> u16 {
+    if let Some(p) = host_hdr.rsplit_once(':').map(|(_, p)| p.trim()) {
+        if !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()) {
+            return p.parse().unwrap_or(default);
+        }
+    }
+    default
+}
+
+pub fn is_eos_account_host(host: &str) -> bool {
+    let h = hostname_only(host).to_ascii_lowercase();
+    h == "api.epicgames.dev" || h.ends_with(".epicgames.dev")
+}
+
 pub fn is_intercept_target(host: &str) -> bool {
-    let h = host.trim().to_ascii_lowercase();
+    let h = hostname_only(host).to_ascii_lowercase();
     h.contains("epicgames.dev") || h.contains("psyonix.com") || h.contains("live.psynet.gg")
+}
+
+static RESOLVED_IPS_CACHE: std::sync::Mutex<Option<std::collections::HashMap<String, std::net::SocketAddr>>> = std::sync::Mutex::new(None);
+
+/// Resolve an A record via public DNS, bypassing /etc/hosts (so MITM loopback
+/// entries cannot poison our upstream client).
+pub fn resolve_ipv4_public(host: &str) -> Option<std::net::SocketAddr> {
+    let host = hostname_only(host);
+    if host.is_empty() || host == "localhost" {
+        return None;
+    }
+    if let Ok(guard) = RESOLVED_IPS_CACHE.lock() {
+        if let Some(map) = guard.as_ref() {
+            if let Some(addr) = map.get(host) {
+                return Some(*addr);
+            }
+        }
+    }
+    for server in ["1.1.1.1:53", "8.8.8.8:53"] {
+        if let Some(ip) = dns_query_a(host, server) {
+            crate::applog::event(&format!("proxy: public DNS {host} -> {ip} via {server}"));
+            let addr = std::net::SocketAddr::from((ip, 443));
+            if let Ok(mut guard) = RESOLVED_IPS_CACHE.lock() {
+                guard.get_or_insert_with(std::collections::HashMap::new).insert(host.to_string(), addr);
+            }
+            return Some(addr);
+        }
+    }
+    if host.eq_ignore_ascii_case("api.epicgames.dev") {
+        let fallback = std::net::SocketAddr::from(([104, 18, 125, 108], 443));
+        crate::applog::event("proxy: using fallback Cloudflare IP for api.epicgames.dev");
+        return Some(fallback);
+    }
+    crate::applog::event(&format!("proxy: public DNS lookup failed for {host}"));
+    None
+}
+
+fn dns_query_a(host: &str, server: &str) -> Option<std::net::Ipv4Addr> {
+    use std::net::UdpSocket;
+    use std::time::Duration;
+
+    let mut q = Vec::with_capacity(16 + host.len());
+    q.extend_from_slice(&[0x12, 0x34, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    for label in host.trim_end_matches('.').split('.') {
+        if label.is_empty() || label.len() > 63 {
+            return None;
+        }
+        q.push(label.len() as u8);
+        q.extend_from_slice(label.as_bytes());
+    }
+    q.push(0);
+    q.extend_from_slice(&[0x00, 0x01, 0x00, 0x01]);
+
+    let sock = UdpSocket::bind("0.0.0.0:0").ok()?;
+    sock.set_read_timeout(Some(Duration::from_millis(900))).ok()?;
+    sock.send_to(&q, server).ok()?;
+    let mut buf = [0u8; 512];
+    let (n, _) = sock.recv_from(&mut buf).ok()?;
+    parse_dns_a_answer(&buf[..n])
+}
+
+fn skip_dns_name(buf: &[u8], mut pos: usize) -> Option<usize> {
+    loop {
+        if pos >= buf.len() {
+            return None;
+        }
+        let len = buf[pos];
+        if len == 0 {
+            return Some(pos + 1);
+        }
+        if len & 0xC0 == 0xC0 {
+            if pos + 1 >= buf.len() {
+                return None;
+            }
+            return Some(pos + 2);
+        }
+        pos = pos.checked_add(1 + len as usize)?;
+    }
+}
+
+fn parse_dns_a_answer(buf: &[u8]) -> Option<std::net::Ipv4Addr> {
+    if buf.len() < 12 {
+        return None;
+    }
+    let ancount = u16::from_be_bytes([buf[6], buf[7]]) as usize;
+    if ancount == 0 {
+        return None;
+    }
+    let mut i = skip_dns_name(buf, 12)?;
+    i = i.checked_add(4)?;
+    for _ in 0..ancount {
+        i = skip_dns_name(buf, i)?;
+        if i.checked_add(10)? > buf.len() {
+            return None;
+        }
+        let typ = u16::from_be_bytes([buf[i], buf[i + 1]]);
+        let class = u16::from_be_bytes([buf[i + 2], buf[i + 3]]);
+        let rdlen = u16::from_be_bytes([buf[i + 8], buf[i + 9]]) as usize;
+        i += 10;
+        if i.checked_add(rdlen)? > buf.len() {
+            return None;
+        }
+        if typ == 1 && class == 1 && rdlen == 4 {
+            return Some(std::net::Ipv4Addr::new(buf[i], buf[i + 1], buf[i + 2], buf[i + 3]));
+        }
+        i += rdlen;
+    }
+    None
+}
+
+fn pin_host_on_builder(mut builder: reqwest::ClientBuilder, host: &str) -> reqwest::ClientBuilder {
+    if let Some(addr) = resolve_ipv4_public(host) {
+        builder = builder.resolve(host, addr);
+    }
+    builder
+}
+
+fn pin_eos_hosts_on_builder(mut builder: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
+    for host in EOS_ACCOUNT_HOSTS {
+        builder = pin_host_on_builder(builder, host);
+    }
+    builder
+}
+
+fn http_client_pinned_for(host: &str) -> reqwest::Client {
+    pin_host_on_builder(
+        reqwest::Client::builder()
+            .danger_accept_invalid_certs(true)
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none()),
+        host,
+    )
+    .build()
+    .unwrap_or_default()
+}
+
+fn build_intercept_http_client() -> reqwest::Client {
+    pin_eos_hosts_on_builder(
+        reqwest::Client::builder()
+            .danger_accept_invalid_certs(true)
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none()),
+    )
+    .build()
+    .unwrap_or_default()
 }
 
 static LEARNED_PLAYER_ID: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
@@ -138,15 +305,9 @@ pub fn get_learned_player_id() -> Option<String> {
             }
         }
         if lock.is_none() {
-            let (id_opt, name_opt) = try_detect_identity_from_game_logs();
+            let (id_opt, _) = try_detect_identity_from_game_logs();
             if let Some(id) = id_opt {
                 *lock = Some(id);
-            }
-            if let Some(name) = name_opt {
-                let mut name_lock = LEARNED_REAL_NAME.lock().unwrap();
-                if name_lock.is_none() {
-                    *name_lock = Some(name);
-                }
             }
         }
     }
@@ -177,15 +338,9 @@ pub fn get_learned_real_name() -> Option<String> {
             }
         }
         if lock.is_none() {
-            let (id_opt, name_opt) = try_detect_identity_from_game_logs();
+            let (_, name_opt) = try_detect_identity_from_game_logs();
             if let Some(name) = name_opt {
                 *lock = Some(name);
-            }
-            if let Some(id) = id_opt {
-                let mut id_lock = LEARNED_PLAYER_ID.lock().unwrap();
-                if id_lock.is_none() {
-                    *id_lock = Some(id);
-                }
             }
         }
     }
@@ -307,7 +462,7 @@ pub fn patch_eos_accounts_json(
     val: &mut serde_json::Value,
     new_name: &str,
     target_pid: Option<&str>,
-    _filter_real_name: Option<&str>,
+    filter_real_name: Option<&str>,
 ) -> (bool, Option<String>, Option<String>) {
     let mut modified = false;
     let mut learned_pid = None;
@@ -341,6 +496,19 @@ pub fn patch_eos_accounts_json(
                 if let Some(ref a) = acc {
                     if normalize_player_id(a) == *target {
                         is_match = true;
+                    }
+                }
+            }
+
+            if !is_match {
+                if let Some(real) = filter_real_name {
+                    let r = real.trim();
+                    if !r.is_empty() {
+                        if let Some(ref d) = current_disp {
+                            if d.eq_ignore_ascii_case(r) {
+                                is_match = true;
+                            }
+                        }
                     }
                 }
             }
@@ -382,6 +550,19 @@ pub fn patch_eos_accounts_json(
             is_match = true;
             if let Some(ref a) = acc {
                 learned_pid = Some(a.clone());
+            }
+        }
+
+        if !is_match {
+            if let Some(real) = filter_real_name {
+                let r = real.trim();
+                if !r.is_empty() {
+                    if let Some(ref d) = current_disp {
+                        if d.eq_ignore_ascii_case(r) {
+                            is_match = true;
+                        }
+                    }
+                }
             }
         }
 
@@ -959,12 +1140,14 @@ pub async fn start_native_proxy() -> Result<(), String> {
     if let Ok(listener_forward) = tokio::net::TcpListener::bind(format!("127.0.0.1:{SYSTEM_PROXY_PORT}")).await {
         crate::applog::event(&format!("proxy: listening on 127.0.0.1:{SYSTEM_PROXY_PORT} (System Forward Proxy)"));
         let acceptor_forward = acceptor.clone();
-        let forward_client = reqwest::Client::builder()
-            .danger_accept_invalid_certs(true)
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .unwrap_or_default();
+        let forward_client = pin_eos_hosts_on_builder(
+            reqwest::Client::builder()
+                .danger_accept_invalid_certs(true)
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none()),
+        )
+        .build()
+        .unwrap_or_default();
 
         tokio::spawn(async move {
             loop {
@@ -1038,16 +1221,19 @@ pub async fn start_native_proxy() -> Result<(), String> {
         crate::applog::event("proxy: port 80 unavailable for HTTP CRL responder (non-critical; store & port 443 active)");
     }
 
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
-        .no_proxy()
-        .no_gzip()
-        .no_brotli()
-        .no_deflate()
-        .redirect(reqwest::redirect::Policy::none())
-        .resolve("config.psynet.gg", "34.160.180.65:443".parse().unwrap())
-        .build()
-        .map_err(|e| format!("failed to create reqwest client: {e}"))?;
+    let intercept_client = build_intercept_http_client();
+    let client = pin_eos_hosts_on_builder(
+        reqwest::Client::builder()
+            .danger_accept_invalid_certs(true)
+            .no_proxy()
+            .no_gzip()
+            .no_brotli()
+            .no_deflate()
+            .redirect(reqwest::redirect::Policy::none())
+            .resolve("config.psynet.gg", "34.160.180.65:443".parse().unwrap()),
+    )
+    .build()
+    .map_err(|e| format!("failed to create reqwest client: {e}"))?;
 
     tokio::spawn(async move {
         loop {
@@ -1073,6 +1259,7 @@ pub async fn start_native_proxy() -> Result<(), String> {
 
             let acceptor = acceptor.clone();
             let client = client.clone();
+            let intercept_client = intercept_client.clone();
 
             tokio::spawn(async move {
                 let tls_stream = match acceptor.accept(stream).await {
@@ -1089,8 +1276,9 @@ pub async fn start_native_proxy() -> Result<(), String> {
                 let io = TokioIo::new(tls_stream);
                 let service = service_fn(move |req: Request<Incoming>| {
                     let client = client.clone();
+                    let intercept_client = intercept_client.clone();
                     async move {
-                        handle_request(req, client).await
+                        handle_request(req, client, intercept_client).await
                     }
                 });
 
@@ -1421,6 +1609,13 @@ async fn handle_forward_intercepted_request(
     if is_upgrade {
         return handle_forward_websocket(req, &upstream_host, upstream_port).await;
     }
+    let client = if EOS_ACCOUNT_HOSTS.iter().any(|h| h.eq_ignore_ascii_case(&upstream_host)) {
+        client
+    } else if resolve_ipv4_public(&upstream_host).is_some() {
+        http_client_pinned_for(&upstream_host)
+    } else {
+        client
+    };
     let method = req.method().clone();
     let uri = req.uri();
     let path = uri.path();
@@ -1943,6 +2138,7 @@ async fn handle_broker_request(
 async fn handle_request(
     req: Request<Incoming>,
     client: reqwest::Client,
+    intercept_client: reqwest::Client,
 ) -> Result<Response<ResponseBoxBody>, hyper::Error> {
     let path = req.uri().path();
     if path == "/health" || path == "/vrl-health" {
@@ -1980,6 +2176,24 @@ async fn handle_request(
 
     if host_hdr.contains("ws.rlpp.psynet.gg") || is_upgrade {
         return handle_websocket(req).await;
+    }
+
+    if is_eos_account_host(&host_hdr) {
+        let host = hostname_only(&host_hdr).to_string();
+        let port = host_header_port(&host_hdr, 443);
+        crate::applog::event(&format!(
+            "proxy: MITM EOS account host {host}:{port} {}",
+            req.uri().path()
+        ));
+        let up_client = if EOS_ACCOUNT_HOSTS
+            .iter()
+            .any(|h| h.eq_ignore_ascii_case(&host))
+        {
+            intercept_client
+        } else {
+            http_client_pinned_for(&host)
+        };
+        return handle_forward_intercepted_request(req, host, port, up_client).await;
     }
 
     handle_http_config(req, client).await
@@ -2347,7 +2561,7 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
     }
 
     if let Some(ns) = &cfg.name_spoof {
-        if ns.enabled && !cfg.is_steam && !ns.display_name.trim().is_empty() {
+        if ns.enabled && !ns.display_name.trim().is_empty() {
             if !is_loadout_sensitive(&svc, &current_body) {
                 let learned_pid = get_learned_player_id();
                 let target_pid = ns.player_id.as_deref().filter(|s| !s.trim().is_empty()).or(learned_pid.as_deref());
