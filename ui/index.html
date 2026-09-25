@@ -310,20 +310,15 @@
                                 </span>
                                 <span class="switch-copy">
                                     <span class="switch-title">Name spoofing</span>
-                                    <span class="switch-hint">Routes profile requests through local forward proxy</span>
+                                    <span class="switch-hint">Changes your in-game display name</span>
                                 </span>
                             </label>
                         </div>
 
                         <div class="settings-group">
-                            <label for="name-spoof-display">Spoofed Name</label>
+                            <label for="name-spoof-display">Display Name</label>
                             <input type="text" id="name-spoof-display" placeholder="Enter new display name..." autocomplete="off" spellcheck="false">
-                        </div>
-
-                        <div class="settings-group">
-                            <label for="name-spoof-player-id">Player ID (Auto-detected)</label>
-                            <input type="text" id="name-spoof-player-id" readonly placeholder="Auto-detected when Rocket League connects..." autocomplete="off" spellcheck="false" style="opacity: 0.75; cursor: default;">
-                            <p class="switch-hint" style="margin-top:6px;">Auto-detected when Rocket League connects. Automatically updates if you switch accounts.</p>
+                            <input type="hidden" id="name-spoof-player-id">
                         </div>
 
                         <div class="swapper-controls">
@@ -349,7 +344,7 @@
                                 </span>
                                 <span class="switch-copy">
                                     <span class="switch-title">Credit spoofing</span>
-                                    <span class="switch-hint">Patches wallet balance RPC responses locally</span>
+                                    <span class="switch-hint">Sets your displayed in-game credits</span>
                                 </span>
                             </label>
                         </div>
