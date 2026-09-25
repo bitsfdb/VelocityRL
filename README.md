@@ -10,7 +10,7 @@ The all-in-one customization app for Rocket League. Swap items, show off ranks, 
 
 | Role | Member |
 |------|--------|
-| Committers & Approvers | [@bitsfdb](https://github.com/bitsfdb), [@oypi](https://github.com/oypi) |
+| Contributers | [@bitsfdb](https://github.com/bitsfdb), [@oypi](https://github.com/oypi) |
 | Portuguese Translator | [killot.](https://discord.com/users/786719947036164127) |
 | Italian Translator | [doktor_fdr](https://discord.com/users/930479487953539082) |
 
