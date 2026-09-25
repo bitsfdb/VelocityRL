@@ -361,6 +361,7 @@ pub struct SummaryOffsets {
     pub import_count_offset: usize,
     pub import_offset_offset: usize,
     pub depends_offset_offset: usize,
+    pub import_export_guids_offset_offset: usize,
 }
 
 pub fn find_summary_offsets(data: &[u8]) -> io::Result<SummaryOffsets> {
@@ -400,6 +401,8 @@ pub fn find_summary_offsets(data: &[u8]) -> io::Result<SummaryOffsets> {
     let import_offset_offset = c.position() as usize;
     c.read_exact(&mut b4)?;
     let depends_offset_offset = c.position() as usize;
+    c.read_exact(&mut b4)?;
+    let import_export_guids_offset_offset = c.position() as usize;
 
     Ok(SummaryOffsets {
         total_header_size_offset,
@@ -410,6 +413,7 @@ pub fn find_summary_offsets(data: &[u8]) -> io::Result<SummaryOffsets> {
         import_count_offset,
         import_offset_offset,
         depends_offset_offset,
+        import_export_guids_offset_offset,
     })
 }
 
