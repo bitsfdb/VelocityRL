@@ -1078,8 +1078,27 @@ pub fn set_system_proxy_enabled(enabled: bool) {
     notify_system_proxy_changed();
 }
 
+#[cfg(windows)]
+pub fn clean_system_proxy() {
+    use winreg::enums::*;
+    use winreg::RegKey;
+
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    if let Ok((key, _)) = hkcu.create_subkey(r"Software\Microsoft\Windows\CurrentVersion\Internet Settings") {
+        let _ = key.set_value("ProxyEnable", &0u32);
+        let _ = key.delete_value("ProxyServer");
+        let _ = key.delete_value("ProxyOverride");
+        let _ = key.delete_value("AutoConfigURL");
+        crate::applog::event("psynet: system proxy cleared (ProxyEnable=0, ProxyServer, ProxyOverride, AutoConfigURL cleared)");
+    }
+    notify_system_proxy_changed();
+}
+
 #[cfg(not(windows))]
 pub fn set_system_proxy_enabled(_enabled: bool) {}
+
+#[cfg(not(windows))]
+pub fn clean_system_proxy() {}
 
 pub fn kill_proxy_on_exit() {
     crate::applog::event("psynet: exit cleanup — stopping proxy and reverting hosts");
@@ -2198,9 +2217,7 @@ pub async fn start_psynet_proxy(
         .and_then(|p| p.name_spoof)
         .map(|n| n.enabled)
         .unwrap_or(false);
-    if name_spoof_active {
-        set_system_proxy_enabled(true);
-    }
+    set_system_proxy_enabled(name_spoof_active);
     crate::applog::event(&format!(
         "psynet: native proxy running; hosts_redirected={} port443_ok=true dns_flushed={flushed}",
         psynet_hosts_redirected()

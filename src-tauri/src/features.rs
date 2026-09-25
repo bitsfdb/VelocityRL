@@ -48,6 +48,12 @@ pub struct FeatureFlags {
     #[serde(default = "default_true")]
     pub live_tracker_overlay: bool,
     #[serde(default = "default_true")]
+    pub name_spoof: bool,
+    #[serde(default = "default_true")]
+    pub leaderboard_spoof: bool,
+    #[serde(default = "default_true")]
+    pub credit_spoof: bool,
+    #[serde(default = "default_true")]
     pub auto_updater: bool,
     #[serde(default = "default_false")]
     pub replay_analysis_v2: bool,
@@ -75,6 +81,9 @@ impl Default for FeatureFlags {
             workshop_browser: true,
             workshop_upload_enabled: false,
             live_tracker_overlay: true,
+            name_spoof: true,
+            leaderboard_spoof: true,
+            credit_spoof: true,
             auto_updater: true,
             replay_analysis_v2: false,
         }
@@ -185,6 +194,9 @@ fn process_features(mut feat: FeaturesConfig) -> FeaturesConfig {
             workshop_browser: false,
             workshop_upload_enabled: false,
             live_tracker_overlay: false,
+            name_spoof: false,
+            leaderboard_spoof: false,
+            credit_spoof: false,
             auto_updater: true,
             replay_analysis_v2: false,
         };

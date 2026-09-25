@@ -52,6 +52,18 @@ pub struct Item {
     pub asset_package: String,
     #[serde(alias = "AssetPath", alias = "asset_path", default)]
     pub asset_path: String,
+    #[serde(alias = "ObjectName", alias = "object_name", default)]
+    pub object_name: Option<String>,
+    #[serde(alias = "ObjectClass", alias = "object_class", default)]
+    pub object_class: Option<String>,
+    #[serde(alias = "IsMultiAssetPackage", alias = "is_multi_asset_package", default)]
+    pub is_multi_asset_package: Option<bool>,
+    #[serde(alias = "PackageItemCount", alias = "package_item_count", default)]
+    pub package_item_count: Option<usize>,
+    #[serde(alias = "CompatibleBodyId", alias = "compatible_body_id", default)]
+    pub compatible_body_id: Option<i64>,
+    #[serde(alias = "CompatibleBodyName", alias = "compatible_body_name", default)]
+    pub compatible_body_name: Option<String>,
 }
 
 pub struct SwapOptions {
@@ -276,7 +288,7 @@ fn load_items(json: &str) -> Result<Vec<Item>, SwapError> {
         .cloned()
         .or_else(|| v.as_array().cloned())
         .ok_or_else(|| SwapError::Msg("items.json has no Items array".into()))?;
-    let items: Vec<Item> = arr
+    let mut items: Vec<Item> = arr
         .iter()
         .filter_map(|entry| serde_json::from_value(entry.clone()).ok())
         .filter(|i: &Item| !i.asset_package.is_empty())
@@ -286,6 +298,40 @@ fn load_items(json: &str) -> Result<Vec<Item>, SwapError> {
             "items.json has no usable items (every entry needs AssetPackage)".into(),
         ));
     }
+
+    // Compute package cardinality across dataset
+    let mut package_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for item in &items {
+        let base = package_base(&file_stem(&item.asset_package)).to_ascii_lowercase();
+        if !base.is_empty() {
+            *package_counts.entry(base).or_insert(0) += 1;
+        }
+    }
+
+    for item in &mut items {
+        let base = package_base(&file_stem(&item.asset_package)).to_ascii_lowercase();
+        let count = package_counts.get(&base).copied().unwrap_or(1);
+        if item.package_item_count.is_none() {
+            item.package_item_count = Some(count);
+        }
+        if item.is_multi_asset_package.is_none() {
+            item.is_multi_asset_package = Some(count > 1);
+        }
+        if item.object_name.is_none() || item.object_name.as_deref() == Some("") {
+            if let Some(last) = item.asset_path.split('.').filter(|s| !s.is_empty()).last() {
+                item.object_name = Some(last.to_string());
+            }
+        }
+        if item.object_class.is_none() || item.object_class.as_deref() == Some("") {
+            let slot_lower = item.slot.to_ascii_lowercase();
+            if slot_lower.contains("skin") || slot_lower.contains("decal") {
+                item.object_class = Some("MaterialInstanceConstant".to_string());
+            } else if slot_lower.contains("wheel") {
+                item.object_class = Some("StaticMesh".to_string());
+            }
+        }
+    }
+
     Ok(items)
 }
 
@@ -332,6 +378,31 @@ fn infer_name_pairs(target: &Item, donor: &Item) -> Vec<(String, String)> {
         .collect();
 
     let mut pairs: Vec<(String, String)> = Vec::new();
+
+    let is_intra_package = !donor_base.is_empty()
+        && !target_base.is_empty()
+        && donor_base.eq_ignore_ascii_case(target_base);
+
+    if is_intra_package {
+        // Intra-package swapping: donor and target share the same UPK container.
+        // Move target object -> target object_Orig, then map donor object -> target object.
+        if !donor_parts.is_empty() && !target_parts.is_empty() {
+            let donor_obj = donor_parts.last().unwrap().to_string();
+            let target_obj = target_parts.last().unwrap().to_string();
+            if !donor_obj.eq_ignore_ascii_case(&target_obj) {
+                // 1. Move target object to a backup slot so references don't conflict
+                add_pair(&mut pairs, target_obj.clone(), format!("{target_obj}_Orig"));
+                add_pair(&mut pairs, format!("{target_obj}_TA"), format!("{target_obj}_Orig_TA"));
+                add_pair(&mut pairs, format!("{target_obj}_archetype"), format!("{target_obj}_Orig_archetype"));
+
+                // 2. Map donor object to target object
+                add_pair(&mut pairs, donor_obj.clone(), target_obj.clone());
+                add_pair(&mut pairs, format!("{donor_obj}_TA"), format!("{target_obj}_TA"));
+                add_pair(&mut pairs, format!("{donor_obj}_archetype"), format!("{target_obj}_archetype"));
+            }
+        }
+        return pairs;
+    }
 
     if !donor_parts.is_empty() && !target_parts.is_empty() {
         let donor_obj = donor_parts.last().unwrap().to_string();
@@ -822,9 +893,9 @@ pub fn swap_asset(
     let did: i64 = donor_id
         .parse()
         .map_err(|_| SwapError::Msg(format!("invalid donor id: {}", donor_id)))?;
-    if tid == did {
+    if tid == did && paint_id == 0 {
         return Err(SwapError::Msg(
-            "owned item and target asset are the same — nothing to swap".into(),
+            "owned item and target asset are the same — select a paint or pick a different item to swap".into(),
         ));
     }
     let mut target = find_item_by_id(&items, tid)
@@ -1330,6 +1401,12 @@ mod tests {
             slot: "Body".into(),
             asset_package: pkg.into(),
             asset_path: path.into(),
+            object_name: None,
+            object_class: None,
+            is_multi_asset_package: None,
+            package_item_count: None,
+            compatible_body_id: None,
+            compatible_body_name: None,
         }
     }
 
@@ -1441,5 +1518,64 @@ mod tests {
         let size_growth = new_enc_size_aligned as i64 - enc_size_aligned as i64;
         assert_eq!(new_enc_size_aligned, enc_size_aligned);
         assert_eq!(size_growth, 0);
+    }
+
+    #[test]
+    fn test_intra_package_name_pairs() {
+        let target = Item {
+            id: 132,
+            product: "Dragon Lord".into(),
+            slot: "Skin".into(),
+            asset_package: "body_octane_premium_skins.upk".into(),
+            asset_path: "body_octane_premium_skins.Skin_Octane_Dragon".into(),
+            object_name: Some("Skin_Octane_Dragon".into()),
+            object_class: Some("MaterialInstanceConstant".into()),
+            is_multi_asset_package: Some(true),
+            package_item_count: Some(14),
+            compatible_body_id: Some(23),
+            compatible_body_name: Some("Octane".into()),
+        };
+        let donor = Item {
+            id: 3306,
+            product: "Jetstream".into(),
+            slot: "Skin".into(),
+            asset_package: "body_octane_premium_skins.upk".into(),
+            asset_path: "body_octane_premium_skins.skin_octane_jetstream".into(),
+            object_name: Some("skin_octane_jetstream".into()),
+            object_class: Some("MaterialInstanceConstant".into()),
+            is_multi_asset_package: Some(true),
+            package_item_count: Some(14),
+            compatible_body_id: Some(23),
+            compatible_body_name: Some("Octane".into()),
+        };
+
+        let pairs = infer_name_pairs(&target, &donor);
+        // Target should be moved to Orig
+        assert!(pairs.iter().any(|(o, n)| o == "Skin_Octane_Dragon" && n == "Skin_Octane_Dragon_Orig"));
+        // Donor should be mapped to Target
+        assert!(pairs.iter().any(|(o, n)| o == "skin_octane_jetstream" && n == "Skin_Octane_Dragon"));
+        // Should NOT remap the whole package name
+        assert!(!pairs.iter().any(|(o, n)| o == "body_octane_premium_skins" && n != "body_octane_premium_skins"));
+    }
+
+    #[test]
+    fn test_multi_asset_package_detection() {
+        let json = r#"[
+            {"ID": 132, "Product": "Dragon Lord", "Slot": "Skin", "AssetPackage": "body_octane_premium_skins", "AssetPath": "body_octane_premium_skins.Skin_Octane_Dragon"},
+            {"ID": 135, "Product": "Snakeskin", "Slot": "Skin", "AssetPackage": "body_octane_premium_skins", "AssetPath": "body_octane_premium_skins.Skin_Octane_SnakeSkin"},
+            {"ID": 500, "Product": "Heatwave", "Slot": "Skin", "AssetPackage": "skin_heatwave_sf", "AssetPath": "skin_heatwave_sf.skin_heatwave"}
+        ]"#;
+
+        let items = load_items(json).unwrap();
+        assert_eq!(items.len(), 3);
+        let dragon = items.iter().find(|i| i.id == 132).unwrap();
+        assert_eq!(dragon.is_multi_asset_package, Some(true));
+        assert_eq!(dragon.package_item_count, Some(2));
+        assert_eq!(dragon.object_name.as_deref(), Some("Skin_Octane_Dragon"));
+
+        let heatwave = items.iter().find(|i| i.id == 500).unwrap();
+        assert_eq!(heatwave.is_multi_asset_package, Some(false));
+        assert_eq!(heatwave.package_item_count, Some(1));
+        assert_eq!(heatwave.object_name.as_deref(), Some("skin_heatwave"));
     }
 }

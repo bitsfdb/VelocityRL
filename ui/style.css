@@ -1038,6 +1038,73 @@ select::-ms-expand { display: none; }
     font-size: 14px;
 }
 
+.title-tags-dropdown {
+    margin-top: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 12px;
+}
+
+.title-tags-dropdown summary {
+    cursor: pointer;
+    font-weight: 500;
+    color: var(--accent-cyan, #00d2ff);
+    outline: none;
+    user-select: none;
+    transition: color 0.15s ease;
+}
+
+.title-tags-dropdown summary:hover {
+    color: #fff;
+}
+
+.title-tags-content {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.title-tags-hint {
+    margin: 0 0 8px 0;
+    color: var(--muted, #888);
+    font-size: 11px;
+}
+
+.title-tags-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.title-tag-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 3px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: #ccc;
+    font-size: 11px;
+    transition: all 0.15s ease;
+}
+
+.title-tag-badge:hover {
+    background: rgba(0, 210, 255, 0.15);
+    border-color: rgba(0, 210, 255, 0.4);
+    color: #fff;
+    transform: translateY(-1px);
+}
+
+.title-tag-badge code {
+    color: var(--accent-cyan, #00d2ff);
+    font-family: ui-monospace, Consolas, monospace;
+    font-weight: 600;
+}
+
 .spoof-card .settings-group {
     margin: 0;
 }
