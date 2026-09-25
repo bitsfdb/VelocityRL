@@ -54,6 +54,10 @@ pub struct FeatureFlags {
     #[serde(default = "default_true")]
     pub credit_spoof: bool,
     #[serde(default = "default_true")]
+    pub tagame_swapper: bool,
+    #[serde(default = "default_true")]
+    pub custom_avatar: bool,
+    #[serde(default = "default_true")]
     pub auto_updater: bool,
     #[serde(default = "default_false")]
     pub replay_analysis_v2: bool,
@@ -84,6 +88,8 @@ impl Default for FeatureFlags {
             name_spoof: true,
             leaderboard_spoof: true,
             credit_spoof: true,
+            tagame_swapper: true,
+            custom_avatar: true,
             auto_updater: true,
             replay_analysis_v2: false,
         }
@@ -197,6 +203,8 @@ fn process_features(mut feat: FeaturesConfig) -> FeaturesConfig {
             name_spoof: false,
             leaderboard_spoof: false,
             credit_spoof: false,
+            tagame_swapper: false,
+            custom_avatar: false,
             auto_updater: true,
             replay_analysis_v2: false,
         };

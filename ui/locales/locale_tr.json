@@ -103,6 +103,7 @@
     "subtab_names": "İsimler",
     "subtab_credits": "Krediler",
     "subtab_leaderboard": "Liderlik Tablosu",
+    "subtab_avatar": "Profil Resmi (PFP)",
     "names_title": "İsimler",
     "names_desc": "Görünen adınızı menülerde, skor tablolarında ve isim etiketlerinde yerel olarak değiştirin.",
     "steam_banner_title": "Steam Sürümü Tespit Edildi:",
@@ -129,7 +130,19 @@
     "leaderboard_sync_desc": "Aktif Sahte Rütbe ayarlarınızdan sıranızı otomatik olarak hesaplar",
     "leaderboard_rank": "Özel Sıralama / Konum",
     "leaderboard_mmr": "Özel Liderlik Tablosu MMR",
-    "save_leaderboard": "Liderlik tablosunu kaydet"
+    "save_leaderboard": "Liderlik tablosunu kaydet",
+    "avatar_title": "Özel Profil Resmi (PFP)",
+    "avatar_desc": "Skor tablolarında, ana menülerde ve afişlerde yerel oyuncunuz için özel bir avatar ayarlayın.",
+    "avatar_enable_title": "Özel Avatar",
+    "avatar_enable_desc": "Özel yerel profil resminizi ayarlar",
+    "avatar_asset_path": "Avatar UPK Varlık Yolu",
+    "avatar_asset_placeholder": "MyAvatar.AvatarTex (veya CookedPCConsole UPK dokusu)",
+    "avatar_asset_hint": "CookedPCConsole UPK dosyaları veya özel avatar paketi içindeki yol.",
+    "avatar_image_file": "Özel Resim / PNG (İsteğe bağlı)",
+    "avatar_preview": "Avatar Önizleme",
+    "avatar_status_ready": "Avatar uygulanmaya hazır",
+    "apply_avatar": "Özel Avatarı Uygula",
+    "restore_avatar": "Varsayılana Sıfırla"
   },
   "ranks": {
     "title": "Sahte Rütbeler",

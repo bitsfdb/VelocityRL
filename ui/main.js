@@ -4210,10 +4210,104 @@ function initLeaderboardTab() {
     };
 }
 
+const CUSTOM_AVATAR_KEY = 'velocityrl_custom_avatar';
+let avatarTabReady = false;
+
+function initAvatarTab() {
+    const enabledEl = document.getElementById('avatar-spoof-enabled');
+    const assetPathEl = document.getElementById('avatar-asset-path');
+    const imagePathEl = document.getElementById('avatar-image-path');
+    const browseBtn = document.getElementById('avatar-browse-btn');
+    const applyBtn = document.getElementById('avatar-apply-btn');
+    const restoreBtn = document.getElementById('avatar-restore-btn');
+    const statusEl = document.getElementById('avatar-preview-status');
+    const previewBox = document.getElementById('avatar-preview-box');
+    if (!enabledEl || !applyBtn) return;
+
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(CUSTOM_AVATAR_KEY) || '{}'); } catch {}
+    const av = saved.custom_avatar || {};
+    enabledEl.checked = !!av.enabled;
+    syncNameSpoofSwitchAria(enabledEl);
+    if (assetPathEl) assetPathEl.value = av.avatar_asset_path || 'MyAvatar.AvatarTex';
+    if (imagePathEl) imagePathEl.value = av.raw_image_path || '';
+
+    const updatePreview = () => {
+        if (imagePathEl?.value) {
+            previewBox.innerHTML = `<img src="tauri://localhost/${encodeURIComponent(imagePathEl.value)}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML='👤'">`;
+        } else {
+            previewBox.innerHTML = '👤';
+        }
+    };
+    updatePreview();
+
+    if (avatarTabReady) return;
+    avatarTabReady = true;
+
+    enabledEl.addEventListener('change', () => syncNameSpoofSwitchAria(enabledEl));
+
+    browseBtn?.addEventListener('click', async () => {
+        try {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/png,image/jpeg,image/webp';
+            input.onchange = (e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                    if (imagePathEl) imagePathEl.value = file.name;
+                    updatePreview();
+                }
+            };
+            input.click();
+        } catch {}
+    });
+
+    applyBtn.onclick = async () => {
+        if (isAppLoading()) return;
+        const enabled = !!enabledEl.checked;
+        const avatar_asset_path = (assetPathEl?.value || 'MyAvatar.AvatarTex').trim();
+        const raw_image_path = imagePathEl?.value ? imagePathEl.value.trim() : null;
+        const custom_avatar = { enabled, avatar_asset_path, raw_image_path };
+
+        try {
+            localStorage.setItem(CUSTOM_AVATAR_KEY, JSON.stringify({ custom_avatar }));
+            if (statusEl) statusEl.textContent = 'Applying custom avatar...';
+            const res = await invoke('apply_custom_avatar', {
+                avatarAssetPath: avatar_asset_path,
+                rawImagePath: raw_image_path,
+            });
+            flashButtonLabel(applyBtn, 'Applied');
+            if (statusEl) statusEl.textContent = res.avatar_applied ? 'Active (in-game)' : 'Avatar configured';
+            showToast('Custom Avatar applied. Restart Rocket League to see your PFP in-game!', 'success');
+        } catch (e) {
+            if (statusEl) statusEl.textContent = 'Error applying avatar';
+            showToast(String(e), 'error');
+        }
+    };
+
+    restoreBtn?.addEventListener('click', async () => {
+        if (isAppLoading()) return;
+        try {
+            if (statusEl) statusEl.textContent = 'Restoring TAGame.upk default...';
+            await invoke('restore_custom_avatar');
+            flashButtonLabel(restoreBtn, 'Restored');
+            if (enabledEl) {
+                enabledEl.checked = false;
+                syncNameSpoofSwitchAria(enabledEl);
+            }
+            if (statusEl) statusEl.textContent = 'Restored to default';
+            showToast('TAGame.upk restored from backup.', 'success');
+        } catch (e) {
+            showToast(String(e), 'error');
+        }
+    });
+}
+
 function initCustomizationTab() {
     initNamesTab();
     initCreditsTab();
     initLeaderboardTab();
+    initAvatarTab();
     if (customizationTabReady) return;
     customizationTabReady = true;
 }
