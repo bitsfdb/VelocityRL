@@ -16,6 +16,7 @@ mod winprobe;
 pub mod proxy;
 pub mod features;
 
+#[allow(dead_code)]
 pub(crate) fn default_true() -> bool { true }
 
 pub(crate) fn app_config_dir_of(app: &tauri::AppHandle) -> Option<PathBuf> {
@@ -56,7 +57,7 @@ struct Config {
     privacy_agreed: bool,
     #[serde(default)]
     privacy_version: String,
-    #[serde(default = "default_true")]
+    #[serde(default)]
     changelog_on_startup: bool,
 
     #[serde(default)]
@@ -1920,6 +1921,7 @@ pub fn run() {
                         crate::proxy::set_spoof_config(cfg.clone()).await;
                     }
                     psynet::ensure_wininet_revocation_disabled();
+                    psynet::install_user_ca_direct();
                     match crate::proxy::start_native_proxy().await {
                         Ok(()) => {
                             applog::event("psynet: native proxy auto-started on port 443");
@@ -2048,6 +2050,7 @@ pub fn run() {
             applog::open_log_folder,
             psynet::save_psynet_spoof,
             psynet::get_psynet_spoof,
+            psynet::get_learned_identity,
             psynet::get_psynet_status,
             psynet::check_config_psynet,
             psynet::ensure_psynet_hosts,
