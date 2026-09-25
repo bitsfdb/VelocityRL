@@ -1513,6 +1513,124 @@ async fn sync_palette_psynet_config(app: tauri::AppHandle) -> Result<(), String>
     Ok(())
 }
 
+#[tauri::command]
+async fn apply_tagame_swaps(
+    app: tauri::AppHandle,
+    swaps: Vec<upk::TagameSwapItem>,
+    custom_avatar: Option<upk::CustomAvatarConfig>,
+) -> Result<upk::TagameSwapperStatus, String> {
+    let config = get_config(app.clone()).await?;
+    if config.game_dir.is_empty() {
+        return Err("Game directory not set. Open Settings and select CookedPCConsole folder.".into());
+    }
+    let cooked = upk::tagame_swapper::resolve_cooked_dir(Path::new(&config.game_dir))
+        .map_err(|e| e.to_string())?;
+
+    let keys_txt = include_str!("../resources/keys.txt");
+    let keys_map_json = include_str!("../resources/keys_map.json");
+
+    let status = upk::tagame_swapper::apply_tagame_modifications(
+        &cooked,
+        &swaps,
+        custom_avatar.as_ref(),
+        keys_txt,
+        keys_map_json,
+    ).map_err(|e| e.to_string())?;
+
+    applog::event(&format!(
+        "tagame_swapper: applied {} swaps and avatar={}",
+        swaps.len(),
+        custom_avatar.as_ref().map(|a| a.enabled).unwrap_or(false)
+    ));
+    Ok(status)
+}
+
+#[tauri::command]
+async fn restore_tagame_swaps(app: tauri::AppHandle) -> Result<upk::TagameSwapperStatus, String> {
+    let config = get_config(app.clone()).await?;
+    if config.game_dir.is_empty() {
+        return Err("Game directory not set. Open Settings and select CookedPCConsole folder.".into());
+    }
+    let cooked = upk::tagame_swapper::resolve_cooked_dir(Path::new(&config.game_dir))
+        .map_err(|e| e.to_string())?;
+
+    let status = upk::tagame_swapper::restore_tagame_upk(&cooked)
+        .map_err(|e| e.to_string())?;
+
+    applog::event("tagame_swapper: restored TAGame.upk to default");
+    Ok(status)
+}
+
+#[tauri::command]
+async fn get_tagame_swapper_status(app: tauri::AppHandle) -> Result<upk::TagameSwapperStatus, String> {
+    let config = get_config(app.clone()).await?;
+    let tagame_path = if !config.game_dir.is_empty() {
+        if let Ok(cooked) = upk::tagame_swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
+            cooked.join("TAGame.upk").to_string_lossy().into_owned()
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
+    let backup_present = if !tagame_path.is_empty() {
+        let p = Path::new(&tagame_path);
+        p.parent().map(|d| d.join("TAGame.upk.bak").is_file()).unwrap_or(false)
+    } else {
+        false
+    };
+
+    Ok(upk::TagameSwapperStatus {
+        applied: false,
+        avatar_applied: false,
+        backup_present,
+        tagame_path,
+        active_swaps: Vec::new(),
+        custom_avatar: None,
+        message: "Ready".to_string(),
+    })
+}
+
+#[tauri::command]
+async fn apply_custom_avatar(
+    app: tauri::AppHandle,
+    avatar_asset_path: String,
+    raw_image_path: Option<String>,
+) -> Result<upk::TagameSwapperStatus, String> {
+    let config = get_config(app.clone()).await?;
+    if config.game_dir.is_empty() {
+        return Err("Game directory not set. Open Settings and select CookedPCConsole folder.".into());
+    }
+    let cooked = upk::tagame_swapper::resolve_cooked_dir(Path::new(&config.game_dir))
+        .map_err(|e| e.to_string())?;
+
+    let keys_txt = include_str!("../resources/keys.txt");
+    let keys_map_json = include_str!("../resources/keys_map.json");
+
+    let avatar_cfg = upk::CustomAvatarConfig {
+        enabled: true,
+        avatar_asset_path: avatar_asset_path.clone(),
+        raw_image_path,
+    };
+
+    let status = upk::tagame_swapper::apply_tagame_modifications(
+        &cooked,
+        &[],
+        Some(&avatar_cfg),
+        keys_txt,
+        keys_map_json,
+    ).map_err(|e| e.to_string())?;
+
+    applog::event(&format!("custom_avatar: applied avatar path '{avatar_asset_path}'"));
+    Ok(status)
+}
+
+#[tauri::command]
+async fn restore_custom_avatar(app: tauri::AppHandle) -> Result<upk::TagameSwapperStatus, String> {
+    restore_tagame_swaps(app).await
+}
+
 fn user_rl_logs_dir() -> Option<PathBuf> {
     #[cfg(windows)]
     {
@@ -2230,6 +2348,11 @@ pub fn run() {
             repair_engine_refs,
             reset_tagame_for_verify,
             sync_palette_psynet_config,
+            apply_tagame_swaps,
+            restore_tagame_swaps,
+            get_tagame_swapper_status,
+            apply_custom_avatar,
+            restore_custom_avatar,
             features::get_features,
             workshop::workshop_get_auth,
             workshop::workshop_search_maps,

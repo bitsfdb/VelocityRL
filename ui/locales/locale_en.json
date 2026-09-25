@@ -103,6 +103,7 @@
     "subtab_names": "Names",
     "subtab_credits": "Credits",
     "subtab_leaderboard": "Leaderboard",
+    "subtab_avatar": "Avatar (PFP)",
     "names_title": "Names",
     "names_desc": "Change your display name locally in menus, scoreboards, and nametags.",
     "steam_banner_title": "Steam Version Detected:",
@@ -129,7 +130,19 @@
     "leaderboard_sync_desc": "Automatically calculate placement from your active Fake Ranks setup",
     "leaderboard_rank": "Custom Rank / Placement",
     "leaderboard_mmr": "Custom Leaderboard MMR",
-    "save_leaderboard": "Save leaderboard"
+    "save_leaderboard": "Save leaderboard",
+    "avatar_title": "Custom Profile Picture (PFP)",
+    "avatar_desc": "Inject a custom avatar for your local player in scoreboards, main menus, and banners.",
+    "avatar_enable_title": "Custom Avatar",
+    "avatar_enable_desc": "Sets your custom local profile picture",
+    "avatar_asset_path": "Avatar UPK Asset Path",
+    "avatar_asset_placeholder": "MyAvatar.AvatarTex (or CookedPCConsole UPK texture)",
+    "avatar_asset_hint": "Path inside CookedPCConsole UPK files or custom avatar package.",
+    "avatar_image_file": "Custom Image / PNG (Optional)",
+    "avatar_preview": "Avatar Preview",
+    "avatar_status_ready": "Ready to apply avatar",
+    "apply_avatar": "Apply Custom Avatar",
+    "restore_avatar": "Restore Default"
   },
   "ranks": {
     "title": "Fake Ranks",

@@ -306,6 +306,7 @@
                     <button type="button" class="subtab-btn active" data-subtab="custom-names-pane" data-i18n="custom.subtab_names">Names</button>
                     <button type="button" class="subtab-btn" data-subtab="custom-credits-pane" data-i18n="custom.subtab_credits">Credits</button>
                     <button type="button" class="subtab-btn" data-subtab="custom-leaderboard-pane" data-i18n="custom.subtab_leaderboard">Leaderboard</button>
+                    <button type="button" class="subtab-btn" data-subtab="custom-avatar-pane" data-i18n="custom.subtab_avatar">Avatar (PFP)</button>
                 </div>
 
                 <div id="custom-names-pane" class="subtab-pane active">
@@ -443,6 +444,62 @@
 
                         <div class="swapper-controls">
                             <button id="leaderboard-spoof-save-btn" class="action-btn" type="button" data-i18n="custom.save_leaderboard">Save leaderboard</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="custom-avatar-pane" class="subtab-pane">
+                    <h2 class="section-title" data-i18n="custom.avatar_title">Custom Profile Picture (PFP)</h2>
+                    <p class="section-desc" data-i18n="custom.avatar_desc">Inject a custom avatar for your local player in scoreboards, main menus, and banners.</p>
+
+                    <div class="card spoof-card">
+                        <div class="settings-group">
+                            <label class="switch-row" for="avatar-spoof-enabled">
+                                <input type="checkbox" id="avatar-spoof-enabled" class="switch-input" role="switch">
+                                <span class="switch-ui" aria-hidden="true">
+                                    <span class="switch-track"><span class="switch-thumb"></span></span>
+                                    <span class="switch-state">
+                                        <span class="switch-state-on">On</span>
+                                        <span class="switch-state-off">Off</span>
+                                    </span>
+                                </span>
+                                <span class="switch-copy">
+                                    <span class="switch-title" data-i18n="custom.avatar_enable_title">Custom Avatar</span>
+                                    <span class="switch-hint" data-i18n="custom.avatar_enable_desc">Sets your custom local profile picture</span>
+                                </span>
+                            </label>
+                        </div>
+
+                        <div class="settings-group">
+                            <label for="avatar-asset-path" data-i18n="custom.avatar_asset_path">Avatar UPK Asset Path</label>
+                            <input type="text" id="avatar-asset-path" data-i18n-placeholder="custom.avatar_asset_placeholder" placeholder="MyAvatar.AvatarTex (or CookedPCConsole UPK texture)" autocomplete="off" spellcheck="false" value="MyAvatar.AvatarTex">
+                            <span class="field-hint" data-i18n="custom.avatar_asset_hint">Path inside CookedPCConsole UPK files or custom avatar package.</span>
+                        </div>
+
+                        <div class="settings-group">
+                            <label for="avatar-image-file" data-i18n="custom.avatar_image_file">Custom Image / PNG (Optional)</label>
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <input type="text" id="avatar-image-path" placeholder="C:\path\to\avatar.png" readonly style="flex:1;">
+                                <button type="button" id="avatar-browse-btn" class="action-btn action-btn-secondary" style="padding:6px 14px;" data-i18n="custom.browse">Browse</button>
+                            </div>
+                        </div>
+
+                        <div class="titles-preview-block" style="margin-top:14px;">
+                            <h3 class="titles-preview-heading" data-i18n="custom.avatar_preview">Avatar Preview</h3>
+                            <div style="display:flex;align-items:center;gap:16px;padding:12px;background:rgba(0,0,0,0.25);border-radius:8px;border:1px solid var(--border);">
+                                <div id="avatar-preview-box" style="width:64px;height:64px;border-radius:8px;border:2px solid var(--accent-blue);overflow:hidden;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--muted);">
+                                    👤
+                                </div>
+                                <div>
+                                    <strong id="avatar-preview-name" style="font-size:14px;color:var(--text);">Local Player</strong>
+                                    <p id="avatar-preview-status" style="font-size:12px;color:var(--muted);margin-top:2px;" data-i18n="custom.avatar_status_ready">Ready to apply avatar</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="swapper-controls" style="margin-top:14px;display:flex;gap:10px;">
+                            <button id="avatar-apply-btn" class="action-btn" type="button" data-i18n="custom.apply_avatar">Apply Custom Avatar</button>
+                            <button id="avatar-restore-btn" class="action-btn action-btn-secondary" type="button" data-i18n="custom.restore_avatar">Restore Default</button>
                         </div>
                     </div>
                 </div>
