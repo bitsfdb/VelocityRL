@@ -1148,7 +1148,7 @@ pub(crate) async fn sync_all_swaps_to_tagame(
         tagame_items.push(upk::TagameSwapItem {
             slot: slot_str,
             slot_index: Some(slot_index),
-            owned_id: None, // Unconditional bytecode override: NewLoadout.Products[slot] = product_id
+            owned_id: Some(s.owned_id),
             product_id,
             paint_id: if s.paint_id > 0 { Some(s.paint_id) } else { None },
             package_name: Some(pkg),
