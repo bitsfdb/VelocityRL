@@ -997,11 +997,19 @@ pub fn restore_tagame_upk(cooked_dir: &Path) -> Result<TagameSwapperStatus, Taga
         TagameSwapError::Msg(format!("Failed to restore TAGame.upk from backup: {e}"))
     })?;
 
-    // Restore body_grain_SF.upk if backup exists
-    let grain_path = cooked_dir.join("body_grain_SF.upk");
-    let grain_bak = cooked_dir.join("body_grain_SF.upk.bak");
-    if grain_bak.is_file() {
-        let _ = fs::copy(&grain_bak, &grain_path);
+    // Restore any modified body packages from backup
+    if let Ok(entries) = fs::read_dir(cooked_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                let lower = file_name.to_lowercase();
+                if lower.starts_with("body_") && lower.ends_with(".upk.bak") {
+                    let live_name = file_name.trim_end_matches(".bak");
+                    let live_path = cooked_dir.join(live_name);
+                    let _ = fs::copy(&path, &live_path);
+                }
+            }
+        }
     }
 
     Ok(TagameSwapperStatus {
