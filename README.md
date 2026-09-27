@@ -1,4 +1,4 @@
-# VelocityRL 🚀
+# VelocityRL
 
 The all-in-one customization app for Rocket League. Swap items, show off ranks, play community maps, track your matches — all client-side, all in one clean app.
 
@@ -17,9 +17,6 @@ The all-in-one customization app for Rocket League. Swap items, show off ranks, 
 | Dutch (`nl` / Nederlands) | [kweizii](https://discord.com/users/1030728163615064097) |
 | Turkish (`tr` / Türkçe) | [Deniz](https://discord.com/users/521513972646543413) |
 | Russian (`ru` / Русский) | [individualist.](https://discord.com/users/659669003278614558) |
-| German (`de` / Deutsch) | [@bitsfdb](https://github.com/bitsfdb) & Community |
-| French (`fr` / Français) | [@bitsfdb](https://github.com/bitsfdb) & Community |
-| English (`en`) | VelocityRL Core |
 
 
 ## Features
