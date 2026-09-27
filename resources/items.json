@@ -4798,6 +4798,17 @@
       "LongLabel": "Octane: Flames"
     },
     {
+      "ID": 990301,
+      "Product": "Printstream",
+      "Slot": "Decal",
+      "Quality": "Import",
+      "UnlockMethod": "UnlockMethod_Default",
+      "Paintable": false,
+      "AssetPackage": "Body_Octane_SF",
+      "AssetPath": "Body_Octane_SF.Skin_Octane_Printstream",
+      "LongLabel": "Octane: Printstream"
+    },
+    {
       "ID": 303,
       "Product": "Lightning",
       "Slot": "Decal",
@@ -265664,15 +265675,15 @@
       "AssetPath": "skin_neonmarmot_livery01.skin_neonmarmot_livery01"
     },
     {
-      "ID": 999901,
-      "Product": "Bot Banner",
+      "ID": 999902,
+      "Product": "AI Bot Banner",
       "Slot": "Player Banner",
       "Quality": "Limited",
-      "UnlockMethod": "UnlockMethod_Online",
+      "UnlockMethod": "UnlockMethod_Default",
       "Paintable": false,
-      "AssetPackage": "PlayerBanner_Bot",
-      "AssetPath": "PlayerBanner_Bot.PlayerBanner_Bot",
-      "LongLabel": "Bot Banner (AI Banner)"
+      "AssetPackage": "playerBanner_RLShield",
+      "AssetPath": "playerBanner_RLShield.playerBanner_RLShield",
+      "LongLabel": "AI Bot Banner (Hardcoded Scaleform AI Banner)"
     }
   ],
   "meta": {

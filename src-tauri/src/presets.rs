@@ -251,9 +251,6 @@ pub async fn apply_preset(app: tauri::AppHandle, id: String) -> Result<Vec<Strin
     if preset.swaps.is_empty() && preset.maps.is_empty() {
         return Err("Preset has no swaps or maps.".into());
     }
-    if crate::psynet::is_rocket_league_running() {
-        return Err("Rocket League is running — close it before applying a preset.".into());
-    }
 
     let config = crate::get_config(app.clone()).await?;
     if config.game_dir.is_empty() {
@@ -649,6 +646,7 @@ pub async fn random_swap_plan(
             wanted_name: pick.product.clone(),
             paint_id: 0,
             asset_package: donor.asset_package.clone(),
+            slot: Some(donor.slot.clone()),
         });
     }
 
@@ -667,9 +665,6 @@ pub async fn apply_swap_plan(
     let config = crate::get_config(app.clone()).await?;
     if config.game_dir.is_empty() {
         return Err("Game directory not set".to_string());
-    }
-    if crate::psynet::is_rocket_league_running() {
-        return Err("Rocket League is running — close it first.".into());
     }
     let _ = crate::get_items(app.clone(), None).await;
     let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;

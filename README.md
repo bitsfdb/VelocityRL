@@ -12,6 +12,7 @@ The all-in-one customization app for Rocket League. Swap items, show off ranks, 
 |-----------------|----------------------|
 | Committers & Approvers | [@bitsfdb](https://github.com/bitsfdb), [@oypi](https://github.com/oypi) |
 | Spanish (`es` / Español) | [@oypi](https://github.com/oypi) |
+| French (`fr` / Français) | [prcokamii](https://discord.com/users/1144707742456619048) |
 | Portuguese (`pt` / Português) | [killot.](https://discord.com/users/786719947036164127) |
 | Italian (`it` / Italiano) | [doktor_fdr](https://discord.com/users/930479487953539082) |
 | Dutch (`nl` / Nederlands) | [kweizii](https://discord.com/users/1030728163615064097) |
@@ -32,9 +33,6 @@ Change your display name locally in menus, scoreboards, and nametags to any name
 
 ### Credit Spoof
 Customize your displayed Item Shop and Tournament credits locally to test or record UI views.
-
-### Custom Profile Pictures (PFP)
-Inject your own custom profile picture for your local player in scoreboards, main menus, winner screens, and party lobbies, with support for rendering Steam PFPs.
 
 ### Live Match Tracker
 A clean overlay while you play — live score, your stats, and your MMR change after every match. Position it wherever you want, and it never touches your game.

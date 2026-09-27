@@ -1543,6 +1543,9 @@ pub fn restore_single(path: &str) -> Result<(), SwapError> {
     };
 
     if !bak.exists() {
+        if orig.exists() {
+            return Ok(());
+        }
         return Err(SwapError::Msg(format!(
             "no backup found for {}",
             orig.display()

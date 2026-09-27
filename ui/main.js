@@ -83,29 +83,6 @@ function escHtml(str) {
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
-function ensureCustomItems(list) {
-    if (!Array.isArray(list)) return [];
-    if (!list.some(it => it.id === 999901 || (it.Product || it.product || '').toLowerCase() === 'bot banner')) {
-        list.push({
-            id: 999901,
-            ID: 999901,
-            product: 'Bot Banner',
-            Product: 'Bot Banner',
-            Slot: 'Player Banner',
-            slot: 'Player Banner',
-            quality: 'Limited',
-            Quality: 'Limited',
-            image_url: '',
-            asset_package: 'PlayerBanner_Bot',
-            AssetPackage: 'PlayerBanner_Bot',
-            asset_path: 'PlayerBanner_Bot.PlayerBanner_Bot',
-            AssetPath: 'PlayerBanner_Bot.PlayerBanner_Bot',
-            LongLabel: 'Bot Banner (Custom AI Banner)'
-        });
-    }
-    return list;
-}
-
 let ownedItem = null;
 let wantedItem = null;
 let items = [];
@@ -263,21 +240,41 @@ async function fetchItemsFromAPI() {
 }
 
 function formatError(err) {
-    if (err == null || err === '') return 'Unknown error';
-    if (typeof err === 'string') return err;
-    if (err instanceof Error) return err.stack || err.message || String(err);
-    if (typeof err === 'object') {
-        if (typeof err.message === 'string' && err.message) {
-            const extra = err.code != null ? `\ncode: ${err.code}` : '';
-            return err.message + extra;
-        }
-        try {
-            return JSON.stringify(err, null, 2);
-        } catch {
-            return String(err);
-        }
+    if (err == null || err === '') return 'An unexpected issue occurred. Please retry.';
+    let raw = '';
+    if (typeof err === 'string') {
+        raw = err;
+    } else if (err instanceof Error) {
+        raw = err.message || String(err);
+    } else if (typeof err === 'object') {
+        raw = err.message || err.error || JSON.stringify(err);
+    } else {
+        raw = String(err);
     }
-    return String(err);
+
+    const lower = raw.toLowerCase();
+    if (lower.includes('os error 32') || lower.includes('os error 33') || lower.includes('locked by another') || lower.includes('file is in use')) {
+        return 'Game file is currently in use. Please close Rocket League and retry.';
+    }
+    if (lower.includes('os error 5') || lower.includes('access is denied') || lower.includes('permission denied')) {
+        return 'Permission denied. Please run VelocityRL as Administrator.';
+    }
+    if (lower.includes('game directory not set') || lower.includes('cookedpcconsole') || lower.includes('could not find tagame')) {
+        return 'Rocket League directory not found. Please verify your game path in Settings.';
+    }
+    if (lower.includes('base64') || lower.includes('decode error') || lower.includes('invalid image')) {
+        return 'Could not read image file. Please use a standard PNG, JPG, or WebP image.';
+    }
+
+    let cleaned = raw
+        .replace(/\(pid\s*:\s*\d+\)|\bpid\s*:\s*\d+|\(PID\s*\d+\)|\bPID\s*\d+/gi, '')
+        .replace(/\(os error \d+\)/gi, '')
+        .replace(/0x[0-9a-fA-F]{4,16}/g, '')
+        .replace(/at\s+[\w\.\/\\:]+\.(rs|js):\d+(:\d+)?/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    return cleaned || 'An unexpected issue occurred. Please retry.';
 }
 
 function linkifyUrls(text) {
@@ -476,7 +473,7 @@ function renderSelectedItem(container, item, onClear) {
             <span class="quality-badge ${bgClass}">${escHtml(pQuality)}</span>
             ${decalBadge}
         </div>
-        <p class="item-slot-label">${escHtml(pSlot)}${decalBody ? ` (${escHtml(decalBody)})` : ''}${pId != null ? ` · <span style="color:#5b8cff">ID ${escHtml(String(pId))}</span>` : ''}</p>
+        <p class="item-slot-label">${escHtml(pSlot)}${decalBody ? ` (${escHtml(decalBody)})` : ''}</p>
     `;
 
     const paintWrap = container.querySelector('.card-paint-wrap');
@@ -592,6 +589,7 @@ async function init() {
             }
             btn.classList.add('active');
             document.getElementById(paneId)?.classList.add('active');
+            if (paneId === 'custom-decals-pane') initDecalsTab();
             if (paneId === 'restore-pane') refreshBackups();
             if (paneId === 'presets-pane') refreshPresets();
             if (paneId === 'maplib-pane') refreshWorkshopLibrary();
@@ -674,8 +672,7 @@ async function init() {
         await invoke('save_config', { config: { ...cfg, language: newLang } }).catch(() => {});
         invoke('get_items', { lang: newLang }).then(fetched => {
             if (fetched) {
-                const raw = Array.isArray(fetched) ? fetched : (fetched.items || fetched.Items || []);
-                items = ensureCustomItems(raw);
+                items = Array.isArray(fetched) ? fetched : (fetched.items || fetched.Items || []);
             }
         }).catch(() => {});
         const toastMsg = newLang === 'es' ? 'Idioma cambiado a Español' :
@@ -879,28 +876,17 @@ async function loadData() {
         }
 
         if (itemsResult) {
-            const raw = Array.isArray(itemsResult) ? itemsResult : (itemsResult.items || itemsResult.Items || []);
-            items = ensureCustomItems(raw);
+            items = Array.isArray(itemsResult) ? itemsResult : (itemsResult.items || itemsResult.Items || []);
         } else {
             invoke('get_items').catch(() => {}).then(fetched => {
                 if (fetched) {
-                    const raw = Array.isArray(fetched) ? fetched : (fetched.items || fetched.Items || []);
-                    items = ensureCustomItems(raw);
+                    items = Array.isArray(fetched) ? fetched : (fetched.items || fetched.Items || []);
                 }
             });
         }
 
         if (config && config.game_dir) {
             document.getElementById('game-dir').value = config.game_dir;
-            invoke('repair_engine_refs').then((msg) => {
-                if (!msg) return;
-                const text = String(msg);
-                if (text.includes('Color palette') || text.includes('newer than TAGame') || text.includes('Reset for verify')) {
-                    showToast(text, 'error');
-                } else if (!text.includes('already')) {
-                    showToast(text, 'success');
-                }
-            }).catch(() => {});
         } else {
 
             invoke('detect_game_dir').catch(() => []).then(async (installs) => {
@@ -1858,7 +1844,7 @@ function renderResults(matches, resultsDiv, selectionHandler) {
             ${pImg ? `<img src="${escHtml(pImg)}" class="flyout-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="flyout-img" style="display:none;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>` : '<div class="flyout-img" style="display:flex;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>'}
             <div class="flyout-info">
                 <span class="item-name">${escHtml(pName)}${decalPill}</span>
-                <span style="font-size: 10px; color: var(--text-secondary)">${escHtml(pSlot)}${decalBody ? ` (${escHtml(decalBody)})` : ''}${pId != null ? ` · <span style="color:#5b8cff">ID ${escHtml(String(pId))}</span>` : ''}</span>
+                <span style="font-size: 10px; color: var(--text-secondary)">${escHtml(pSlot)}${decalBody ? ` (${escHtml(decalBody)})` : ''}</span>
             </div>
         `;
         div.onclick = () => {
@@ -2014,44 +2000,8 @@ async function refreshSwapRlHint() {
     }
 }
 
-let rlToastShown = false;
-let rlRunningPoll = null;
-function startRlRunningPoll() {
-    if (rlRunningPoll) return;
-    rlRunningPoll = setInterval(async () => {
-        if (isAppLoading()) return;
-        try {
-            const running = await invoke('is_rocket_league_running');
-            if (running && !rlToastShown) {
-                rlToastShown = true;
-                showRlRunningToast();
-            } else if (!running) {
-                rlToastShown = false;
-            }
-        } catch {}
-    }, 5000);
-}
-function showRlRunningToast() {
-    const container = document.getElementById('toast-container');
-    if (!container) return;
-    const toast = document.createElement('div');
-    toast.className = 'toast warning';
-    toast.id = 'rl-running-toast';
-    toast.innerHTML = `
-        <div class="toast-content">
-            <div style="margin-bottom:6px;font-weight:600;">Rocket League is running</div>
-            <div style="font-size:12px;color:var(--text-secondary);">Close it before swapping or restoring items.</div>
-        </div>
-    `;
-    container.appendChild(toast);
-    setTimeout(() => {
-        if (toast.parentNode) {
-            toast.style.animation = 'toastSlideOut 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards';
-            setTimeout(() => toast.remove(), 300);
-            rlToastShown = false;
-        }
-    }, 5000);
-}
+function startRlRunningPoll() {}
+function showRlRunningToast() {}
 
 async function openSettingsForPath() {
     const cfg = await invoke('get_config').catch(() => ({ game_dir: '' }));
@@ -4349,86 +4299,241 @@ function initLeaderboardTab() {
     };
 }
 
-const CUSTOM_AVATAR_KEY = 'velocityrl_custom_avatar';
-let avatarTabReady = false;
 
-function initAvatarTab() {
-    const enabledEl = document.getElementById('avatar-spoof-enabled');
-    const imagePathEl = document.getElementById('avatar-image-path');
-    const browseBtn = document.getElementById('avatar-browse-btn');
-    const applyBtn = document.getElementById('avatar-apply-btn');
-    const restoreBtn = document.getElementById('avatar-restore-btn');
-    if (!enabledEl || !applyBtn) return;
 
-    let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(CUSTOM_AVATAR_KEY) || '{}'); } catch {}
-    const av = saved.custom_avatar || {};
-    enabledEl.checked = !!av.enabled;
-    syncNameSpoofSwitchAria(enabledEl);
-    if (imagePathEl) imagePathEl.value = av.raw_image_path || '';
+let decalsTabReady = false;
 
-    if (avatarTabReady) return;
-    avatarTabReady = true;
+function initDecalsTab() {
+    const enabledEl = document.getElementById('custom-decal-enabled');
+    const carBadge = document.getElementById('decal-detected-car-badge');
+    const carSelect = document.getElementById('decal-target-car-select');
+    const nameInput = document.getElementById('decal-name-input');
+    const donorSearchInput = document.getElementById('decal-donor-search');
+    const donorSelect = document.getElementById('decal-donor-item-select');
+    const dropzone = document.getElementById('decal-dropzone');
+    const browseBtn = document.getElementById('decal-browse-btn');
+    const jsonInput = document.getElementById('decal-json-file');
+    const swapBtn = document.getElementById('decal-swap-btn');
 
-    enabledEl.addEventListener('change', () => syncNameSpoofSwitchAria(enabledEl));
+    if (!enabledEl || !swapBtn) return;
 
-    browseBtn?.addEventListener('click', () => {
-        try {
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.accept = 'image/png';
-            input.onchange = (e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                    if (imagePathEl) imagePathEl.value = file.name;
-                    if (!enabledEl.checked) {
-                        enabledEl.checked = true;
-                        syncNameSpoofSwitchAria(enabledEl);
-                    }
-                }
-            };
-            input.click();
-        } catch {}
-    });
+    let catalogItems = [];
+    let currentCarDecals = [];
 
-    applyBtn.onclick = async () => {
-        if (isAppLoading()) return;
-        const enabled = !!enabledEl.checked;
-        const raw_image_path = imagePathEl?.value ? imagePathEl.value.trim() : '';
-        if (enabled && !raw_image_path) {
-            showToast('Please select a PNG image for your avatar.', 'error');
+    const renderDonorOptions = (filterQuery = '') => {
+        if (!donorSelect) return;
+        const q = filterQuery.toLowerCase().trim();
+        const filtered = q
+            ? currentCarDecals.filter(d => {
+                const name = (d.LongLabel || d.long_label || d.Product || d.product || '').toLowerCase();
+                return name.includes(q);
+            })
+            : currentCarDecals;
+
+        if (filtered.length === 0) {
+            donorSelect.innerHTML = '<option value="">No matching decals found</option>';
             return;
         }
-        const avatar_asset_path = 'MyAvatar.AvatarTex';
-        const custom_avatar = { enabled, avatar_asset_path, raw_image_path: raw_image_path || null };
 
+        donorSelect.innerHTML = filtered.map(d => {
+            const name = d.LongLabel || d.long_label || `${d.Product || d.product} (${d.Slot || d.slot})`;
+            return `<option value="${d.ID || d.id}">${escHtml(name)}</option>`;
+        }).join('');
+    };
+
+    const loadDonorDecals = async (carId) => {
+        if (!donorSelect) return;
         try {
-            localStorage.setItem(CUSTOM_AVATAR_KEY, JSON.stringify({ custom_avatar }));
-            await invoke('apply_custom_avatar', {
-                avatarAssetPath: avatar_asset_path,
-                rawImagePath: raw_image_path || null,
+            if (!catalogItems || catalogItems.length === 0) {
+                catalogItems = await invoke('get_items');
+            }
+            const carName = (carId === 4284 ? 'fennec' : carId === 403 ? 'dominus' : carId === 1624 ? 'breakout' : carId === 1151 ? 'skyline' : 'octane');
+            
+            currentCarDecals = catalogItems.filter(item => {
+                const s = (item.Slot || item.slot || '').toLowerCase();
+                if (s !== 'decal') return false;
+                const p = (item.Product || item.product || '').toLowerCase();
+                const l = (item.LongLabel || item.long_label || '').toLowerCase();
+                const pkg = (item.AssetPackage || item.asset_package || '').toLowerCase();
+                return p.includes(carName) || l.includes(carName) || pkg.includes(carName) || (carName === 'fennec' && pkg.includes('grain')) || (carName === 'dominus' && pkg.includes('musclecar')) || (carName === 'octane' && (pkg.includes('octane') || !pkg.includes('_')));
             });
-            flashButtonLabel(applyBtn, enabled ? 'Applied' : 'Saved (off)');
-            showToast(enabled ? 'Custom Profile Picture applied! Restart Rocket League to see your PFP.' : 'Custom Profile Picture disabled.', 'success');
-        } catch (e) {
-            showToast(String(e), 'error');
+
+            const currentQuery = donorSearchInput?.value || '';
+            renderDonorOptions(currentQuery);
+        } catch (err) {
+            console.error('Failed to load donor decals:', err);
         }
     };
 
-    restoreBtn?.addEventListener('click', async () => {
-        if (isAppLoading()) return;
+    const refreshDetectedCar = async () => {
         try {
-            await invoke('restore_custom_avatar');
-            flashButtonLabel(restoreBtn, 'Restored');
-            if (enabledEl) {
-                enabledEl.checked = false;
-                syncNameSpoofSwitchAria(enabledEl);
+            const car = await invoke('get_detected_car_body');
+            if (car && carBadge) {
+                carBadge.textContent = car.car_name;
             }
-            if (imagePathEl) imagePathEl.value = '';
-            localStorage.removeItem(CUSTOM_AVATAR_KEY);
-            showToast('Profile picture restored to default.', 'success');
+            const activeCarId = car ? car.car_id : 23;
+            loadDonorDecals(activeCarId);
+        } catch {}
+    };
+
+    const loadDecalConfig = async () => {
+        try {
+            const cfg = await invoke('get_custom_decal_config');
+            if (cfg) {
+                enabledEl.checked = !!cfg.enabled;
+                syncNameSpoofSwitchAria(enabledEl);
+                if (cfg.decal_name && nameInput) {
+                    nameInput.value = cfg.decal_name;
+                }
+                if (cfg.car_id && carSelect) {
+                    carSelect.value = String(cfg.car_id);
+                    loadDonorDecals(cfg.car_id);
+                }
+            }
+        } catch {}
+    };
+
+    if (decalsTabReady) return;
+    decalsTabReady = true;
+
+    refreshDetectedCar();
+    loadDecalConfig();
+
+    enabledEl.addEventListener('change', () => syncNameSpoofSwitchAria(enabledEl));
+
+    donorSearchInput?.addEventListener('input', (e) => {
+        renderDonorOptions(e.target.value);
+    });
+
+    carSelect?.addEventListener('change', (e) => {
+        const val = e.target.value;
+        const carId = val === 'auto' ? 23 : parseInt(val, 10);
+        loadDonorDecals(carId);
+    });
+
+    const handleDecalPackageFile = async (file) => {
+        if (!file) return;
+        flashButtonLabel(swapBtn, 'Analyzing…', 10000);
+
+        // Try path first if present
+        if (file.path) {
+            try {
+                const isZip = file.name.toLowerCase().endsWith('.zip');
+                const parsed = isZip
+                    ? await invoke('import_decal_zip_path', { zipFilePath: file.path })
+                    : await invoke('import_decal_json_path', { jsonFilePath: file.path });
+
+                if (nameInput && parsed.decal_name) nameInput.value = parsed.decal_name;
+                if (carBadge && parsed.car_name) {
+                    carBadge.textContent = parsed.car_name;
+                }
+                if (carSelect && parsed.car_id) {
+                    carSelect.value = String(parsed.car_id);
+                }
+                loadDonorDecals(parsed.car_id);
+                enabledEl.checked = true;
+                syncNameSpoofSwitchAria(enabledEl);
+                showToast(`Loaded ${parsed.decal_name} for ${parsed.car_name}! Select a donor decal to swap over.`, 'success');
+                return;
+            } catch (err) {
+                console.warn('Path import failed, falling back to bytes:', err);
+            }
+        }
+
+        // Always read bytes directly (works for all drop and file-picker scenarios)
+        const reader = new FileReader();
+        reader.onload = async (ev) => {
+            const dataUrl = ev.target?.result;
+            if (!dataUrl) return;
+            try {
+                const parsed = await invoke('upload_decal_package_bytes', {
+                    filename: file.name,
+                    base64Data: String(dataUrl),
+                });
+                if (nameInput && parsed.decal_name) nameInput.value = parsed.decal_name;
+                if (carBadge && parsed.car_name) {
+                    carBadge.textContent = parsed.car_name;
+                }
+                if (carSelect && parsed.car_id) {
+                    carSelect.value = String(parsed.car_id);
+                }
+                loadDonorDecals(parsed.car_id);
+                enabledEl.checked = true;
+                syncNameSpoofSwitchAria(enabledEl);
+                showToast(`Loaded ${parsed.decal_name} for ${parsed.car_name}! Select donor decal to swap over.`, 'success');
+            } catch (e) {
+                showToast('Failed to import decal package: ' + String(e), 'error');
+            }
+        };
+        reader.readAsDataURL(file);
+    };
+
+    if (dropzone && jsonInput) {
+        dropzone.addEventListener('click', () => jsonInput.click());
+        jsonInput.addEventListener('change', (e) => {
+            const file = e.target.files?.[0];
+            if (file) handleDecalPackageFile(file);
+        });
+
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.classList.add('drag-over');
+        });
+        dropzone.addEventListener('dragleave', () => {
+            dropzone.classList.remove('drag-over');
+        });
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('drag-over');
+            const file = e.dataTransfer?.files?.[0];
+            if (file) handleDecalPackageFile(file);
+        });
+    }
+
+    // Swap Custom Decal over Donor Decal
+    swapBtn.addEventListener('click', async () => {
+        const donorId = parseInt(donorSelect?.value || '0', 10);
+        if (!donorId) {
+            showToast('Please select a donor decal to swap over.', 'error');
+            return;
+        }
+
+        const decalName = nameInput?.value?.trim() || 'Custom Decal';
+        const originalText = swapBtn.dataset.originalText || swapBtn.textContent || 'Swap Decal';
+        swapBtn.dataset.originalText = originalText;
+        swapBtn.disabled = true;
+        swapBtn.textContent = 'Swapping…';
+        showProgress(true, 35);
+        updateStatus('Swapping custom decal...', false);
+
+        try {
+            showProgress(true, 75);
+            const res = await invoke('swap_custom_decal_to_donor', {
+                donorItemId: donorId,
+                decalName,
+                diffuseBase64: null,
+                skinBase64: null,
+                roughnessBase64: null,
+                metallicBase64: null,
+                normalBase64: null,
+            });
+
+            showProgress(true, 100);
+            swapBtn.textContent = 'Swapped!';
+            refreshBackups();
+            setTimeout(() => {
+                swapBtn.textContent = originalText;
+                swapBtn.disabled = false;
+            }, 2500);
         } catch (e) {
+            swapBtn.textContent = originalText;
+            swapBtn.disabled = false;
             showToast(String(e), 'error');
+        } finally {
+            setTimeout(() => {
+                showProgress(false);
+                updateStatus('bitsfdb', false);
+            }, 1000);
         }
     });
 }
@@ -4436,6 +4541,7 @@ function initAvatarTab() {
 function initCustomizationTab() {
     initNamesTab();
     initCreditsTab();
+    initDecalsTab();
     initLeaderboardTab();
     if (customizationTabReady) return;
     customizationTabReady = true;
@@ -6653,6 +6759,11 @@ async function startApp() {
     document.getElementById('privacy-link')?.addEventListener('click', (e) => {
         e.preventDefault();
         window.__TAURI__?.core?.invoke('open_external_url', { url: PRIVACY_POLICY_URL });
+    });
+
+    document.getElementById('settings-discord-link')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        window.__TAURI__?.core?.invoke('open_external_url', { url: 'https://discord.gg/2HhBNbrGMj' });
     });
 
     try {

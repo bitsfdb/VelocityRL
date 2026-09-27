@@ -42,6 +42,7 @@
             <div id="swapper-tab" class="tab-content active">
                 <div class="subtab-strip" role="tablist">
                     <button type="button" class="subtab-btn active" data-subtab="swaps-pane" data-i18n="subtabs.swaps">Swaps</button>
+                    <button type="button" class="subtab-btn" data-subtab="custom-decals-pane">Custom Decals</button>
                     <button type="button" class="subtab-btn" data-subtab="restore-pane" data-i18n="subtabs.restore">Restore</button>
                     <button type="button" class="subtab-btn" data-subtab="presets-pane" data-i18n="subtabs.presets">Presets</button>
                 </div>
@@ -95,6 +96,94 @@
                         <button id="apply-swap" class="action-btn" disabled data-i18n="swapper.swap_btn">Swap Items</button>
                     </div>
                     <p id="swap-rl-hint" class="field-hint" hidden data-i18n="swapper.rl_running_hint">Rocket League is running — close it before swapping or restoring.</p>
+                </div>
+
+                <div id="custom-decals-pane" class="subtab-pane">
+                    <h2 class="section-title">Custom Decals</h2>
+                    <p class="section-desc">Import and inject custom car decals (AlphaConsole / BakkesMod packages) with automatic car body detection and channel packing.</p>
+
+                    <div class="card spoof-card">
+                        <div class="settings-group">
+                            <label class="switch-row" for="custom-decal-enabled">
+                                <input type="checkbox" id="custom-decal-enabled" class="switch-input" role="switch">
+                                <span class="switch-ui" aria-hidden="true">
+                                    <span class="switch-track"><span class="switch-thumb"></span></span>
+                                    <span class="switch-state">
+                                        <span class="switch-state-on">On</span>
+                                        <span class="switch-state-off">Off</span>
+                                    </span>
+                                </span>
+                                <span class="switch-copy">
+                                    <span class="switch-title">Enable custom decal</span>
+                                    <span class="switch-hint">Replaces active car skin with custom compiled PBR maps</span>
+                                </span>
+                            </label>
+                        </div>
+
+                        <!-- Decal Package Dropzone / Import -->
+                        <div class="settings-group" style="margin-top: 12px; margin-bottom: 16px;">
+                            <label>Decal Package (.zip / .json)</label>
+                            <div id="decal-dropzone" class="dropzone-minimal">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="dropzone-icon"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                <div class="dropzone-text">
+                                    <span class="dropzone-title">Drop Decal package here <span class="dropzone-sub">or click to browse</span></span>
+                                    <span class="dropzone-formats">.zip · .json</span>
+                                </div>
+                                <input type="file" id="decal-json-file" accept=".zip,.json,application/zip,application/json" style="display: none;">
+                            </div>
+                        </div>
+
+                        <!-- Car Detection & Decal Name -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+                            <div class="settings-group">
+                                <label>Target Car Body</label>
+                                <select id="decal-target-car-select" class="stylish-select" style="width: 100%; padding: 8px 12px; border-radius: 6px; background: var(--bg-card); color: var(--text); border: 1px solid var(--border);">
+                                    <option value="auto">Auto-Detect (Current Active Body)</option>
+                                    <option value="23">Octane</option>
+                                    <option value="4284">Fennec</option>
+                                    <option value="403">Dominus</option>
+                                    <option value="1624">Breakout</option>
+                                    <option value="1151">Nissan Skyline GT-R R34</option>
+                                </select>
+                            </div>
+                            <div class="settings-group">
+                                <label>Decal Name</label>
+                                <input type="text" id="decal-name-input" placeholder="Enter custom decal name..." style="width: 100%; padding: 8px 12px; border-radius: 6px; background: var(--bg-card); color: var(--text); border: 1px solid var(--border);">
+                            </div>
+                        </div>
+
+                        <!-- Donor Decal Selector with Search Bar -->
+                        <div class="settings-group" style="margin-bottom: 16px;">
+                            <label style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                <span>Swap Over (Donor Decal to Replace)</span>
+                                <span style="font-size: 11px; color: var(--text-muted);">Equip this decal in-game to see custom skin</span>
+                            </label>
+                            <input type="text" id="decal-donor-search" placeholder="Search donor decals (e.g. Flames, Stripes, Distortion)..." style="width: 100%; padding: 8px 12px; border-radius: 6px; background: var(--bg-card); color: var(--text); border: 1px solid var(--border); font-size: 13px; margin-bottom: 8px;" autocomplete="off" spellcheck="false">
+                            <select id="decal-donor-item-select" class="stylish-select" style="width: 100%; padding: 10px 12px; border-radius: 6px; background: var(--bg-card); color: var(--text); border: 1px solid var(--border); font-weight: 500;">
+                                <option value="">Loading available decals...</option>
+                            </select>
+                        </div>
+
+                        <div class="info-notice-banner" style="margin-bottom: 16px;">
+                            <svg width="18" height="18" viewBox="0 -0.5 21 21" fill="currentColor"><path fill-rule="evenodd" d="M2.1,18 L18.9,18 L18.9,2 L2.1,2 L2.1,18 Z M0,20 L21,20 L21,0 L0,0 L0,20 Z M9.45,7 L11.55,7 L11.55,5 L9.45,5 L9.45,7 Z M9.45,15 L11.55,15 L11.55,9 L9.45,9 L9.45,15 Z"/></svg>
+                            <div>
+                                <strong>Active Body Target:</strong>
+                                <span id="decal-detected-car-badge" style="color: var(--accent-blue); font-weight: 600;">Auto-Detecting...</span>
+                            </div>
+                        </div>
+
+                        <div class="info-notice-banner" style="margin-bottom: 16px; background: rgba(91,140,255,0.06); border: 1px solid rgba(91,140,255,0.2);">
+                            <svg width="18" height="18" viewBox="0 -0.5 21 21" fill="currentColor"><path fill-rule="evenodd" d="M2.1,18 L18.9,18 L18.9,2 L2.1,2 L2.1,18 Z M0,20 L21,20 L21,0 L0,0 L0,20 Z M9.45,7 L11.55,7 L11.55,5 L9.45,5 L9.45,7 Z M9.45,15 L11.55,15 L11.55,9 L9.45,9 L9.45,15 Z"/></svg>
+                            <div>
+                                <strong>Decal Swapping Tip:</strong>
+                                <span>If you previously swapped this decal or want to reset to clean textures, use the <strong>Restore</strong> tab to revert before re-swapping.</span>
+                            </div>
+                        </div>
+
+                        <div class="swapper-controls" style="margin-top: 16px; display: flex; gap: 12px;">
+                            <button id="decal-swap-btn" class="action-btn" type="button" style="flex: 1;">Swap Decal</button>
+                        </div>
+                    </div>
                 </div>
 
                 <div id="restore-pane" class="subtab-pane">
@@ -292,9 +381,12 @@
                     <h2 class="section-title" data-i18n="custom.names_title">Names</h2>
                     <p class="section-desc" data-i18n="custom.names_desc">Changes your display name.</p>
 
-                    <div id="name-spoof-steam-banner" class="tracker-borderless-banner" style="display:none;margin-bottom:12px;background:rgba(88,101,242,0.1);border-color:rgba(88,101,242,0.3);">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0; color:#5865f2;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                        <span><strong data-i18n="custom.steam_banner_title">Steam Version Detected:</strong> <span data-i18n="custom.steam_banner_desc">Steam already supports unlimited profile name changes directly in the Steam client, so Name Spoofing is disabled for Steam installations.</span></span>
+                    <div id="name-spoof-steam-banner" class="info-notice-banner" style="display:none;">
+                        <svg width="18" height="18" viewBox="0 -0.5 21 21" fill="currentColor"><path fill-rule="evenodd" d="M2.1,18 L18.9,18 L18.9,2 L2.1,2 L2.1,18 Z M0,20 L21,20 L21,0 L0,0 L0,20 Z M9.45,7 L11.55,7 L11.55,5 L9.45,5 L9.45,7 Z M9.45,15 L11.55,15 L11.55,9 L9.45,9 L9.45,15 Z"/></svg>
+                        <div>
+                            <strong data-i18n="custom.steam_banner_title">Steam Version Detected:</strong>
+                            <span data-i18n="custom.steam_banner_desc">Steam already supports unlimited profile name changes directly in the Steam client, so Name Spoofing is disabled for Steam installations.</span>
+                        </div>
                     </div>
 
                     <div class="card spoof-card" id="name-spoof-card">
@@ -806,9 +898,10 @@
                     <button type="button" id="settings-export-diag-btn" class="path-btn"><span data-i18n="settings.export_diagnostics">Export Diagnostics</span></button>
                 </div>
             </div>
-            <p id="settings-action-msg" style="font-size:11px; color:var(--text-secondary); margin:6px 0 0; min-height:14px; word-break:break-all;"></p>
-            <div id="install-chooser" style="display:none;"></div>
-            <p class="settings-footer-note"><a id="privacy-link" data-i18n="settings.privacy_policy" href="https://velocityrl.tech/privacy.html" target="_blank" rel="noopener noreferrer">Privacy Policy</a></p>
+            <p class="settings-footer-note">
+                <a id="settings-discord-link" href="https://discord.gg/2HhBNbrGMj" target="_blank" rel="noopener noreferrer" style="color:var(--accent); text-decoration:none; margin-right:12px; font-weight:500;">Join Support Discord</a>
+                <a id="privacy-link" data-i18n="settings.privacy_policy" href="https://velocityrl.tech/privacy.html" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
+            </p>
             <button id="close-settings" class="action-btn" data-i18n="settings.save">Save</button>
         </div>
     </div>

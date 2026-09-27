@@ -16,6 +16,7 @@ mod winprobe;
 pub mod proxy;
 pub mod features;
 
+
 #[allow(dead_code)]
 pub(crate) fn default_true() -> bool { true }
 
@@ -242,6 +243,8 @@ pub struct SwapEntry {
     pub paint_id: i32,
     #[serde(default)]
     pub asset_package: String,
+    #[serde(default)]
+    pub slot: Option<String>,
 }
 
 static ITEMS_CACHE: std::sync::RwLock<Option<std::collections::HashMap<u32, Vec<Item>>>> = std::sync::RwLock::new(None);
@@ -438,26 +441,6 @@ async fn parse_items_slice(bytes: Vec<u8>) -> Result<Vec<Item>, String> {
             ItemsResponse::List(items) => items,
         };
         populate_thumbnails(&mut items);
-        if !items.iter().any(|it| it.id == 999901 || it.product.eq_ignore_ascii_case("bot banner")) {
-            items.push(Item {
-                id: 999901,
-                product: "Bot Banner".to_string(),
-                image_url: "".to_string(),
-                asset_package: "PlayerBanner_Bot".to_string(),
-                asset_path: "PlayerBanner_Bot.PlayerBanner_Bot".to_string(),
-                object_name: None,
-                object_class: None,
-                is_multi_asset_package: None,
-                package_item_count: None,
-                compatible_body_id: None,
-                compatible_body_name: None,
-                slot: "Player Banner".to_string(),
-                quality: "Limited".to_string(),
-                paintable: Some(false),
-                attributes: vec![],
-                dlc: "".to_string(),
-            });
-        }
         Ok(items)
     })
     .await
@@ -852,15 +835,8 @@ async fn get_backups(app: tauri::AppHandle) -> Result<Vec<BackupFile>, String> {
     let items = get_items(app.clone(), None).await.unwrap_or_default();
     let swaps = load_swaps(&app);
     let mut backups = Vec::new();
-    let dir = match upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
-        Ok(d) => d,
-        Err(_) => PathBuf::from(&config.game_dir),
-    };
+    let mut seen_ids = std::collections::HashSet::<i32>::new();
 
-    let mut seen_paths = std::collections::HashSet::<String>::new();
-    let mut seen_packages = std::collections::HashSet::<String>::new();
-
-    // 1. Process active swaps recorded in swaps.json
     for swap in &swaps {
         let owned_item = items.iter().find(|i| i.id == swap.owned_id);
         let wanted_item = items.iter().find(|i| i.id == swap.wanted_id);
@@ -878,25 +854,6 @@ async fn get_backups(app: tauri::AppHandle) -> Result<Vec<BackupFile>, String> {
         };
         let swap_to_image = wanted_item.map(|i| i.image_url.clone()).unwrap_or_default();
 
-        let actual_bak_path = if !swap.asset_package.is_empty() {
-            if let Some((target_path, _)) = upk::swapper::resolve_package_path(&dir, &swap.asset_package) {
-                target_path.with_file_name(format!("{}.bak", target_path.file_name().unwrap_or_default().to_string_lossy()))
-            } else {
-                dir.join(format!("{}.upk.bak", swap.asset_package))
-            }
-        } else {
-            dir.join(format!("Item_{}.upk.bak", swap.owned_id))
-        };
-
-        let pkg_key = if !swap.asset_package.is_empty() {
-            swap.asset_package.to_lowercase().replace(".upk", "").trim_end_matches("_sf").to_string()
-        } else {
-            format!("item_{}", swap.owned_id)
-        };
-
-        let path_str = actual_bak_path.to_string_lossy().to_string();
-        let path_norm = path_str.to_lowercase();
-
         let slot = wanted_item.or(owned_item).map(|i| i.slot.clone()).unwrap_or_default();
         let paint_name = if swap.paint_id > 0 {
             upk::swapper::paint_label(swap.paint_id).to_string()
@@ -904,11 +861,10 @@ async fn get_backups(app: tauri::AppHandle) -> Result<Vec<BackupFile>, String> {
             String::new()
         };
 
-        if seen_paths.insert(path_norm) {
-            seen_packages.insert(pkg_key);
+        if seen_ids.insert(swap.owned_id) {
             backups.push(BackupFile {
                 name: display_name,
-                path: path_str,
+                path: format!("item_{}", swap.owned_id),
                 image_url,
                 swap_from,
                 swap_to,
@@ -919,86 +875,6 @@ async fn get_backups(app: tauri::AppHandle) -> Result<Vec<BackupFile>, String> {
         }
     }
 
-    // 2. Scan CookedPCConsole directory for any other .upk.bak files
-    if let Ok(entries) = fs::read_dir(&dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let file_name_lower = path.file_name()
-                .and_then(|n| n.to_str())
-                .map(|n| n.to_lowercase())
-                .unwrap_or_default();
-
-            if !file_name_lower.ends_with(".upk.bak") {
-                continue;
-            }
-
-            // Exclude system files and companion thumbnails
-            if file_name_lower == "tagame.upk.bak"
-                || file_name_lower == "engine.upk.bak"
-                || file_name_lower.starts_with("labs_underpass_p")
-                || file_name_lower.ends_with("_t_sf.upk.bak")
-                || file_name_lower.ends_with("_t.upk.bak")
-                || file_name_lower.ends_with("_thumbnail_sf.upk.bak")
-                || file_name_lower.ends_with("_thumbnail.upk.bak")
-            {
-                continue;
-            }
-
-            let path_str = path.to_string_lossy().to_string();
-            let path_norm = path_str.to_lowercase();
-            if seen_paths.contains(&path_norm) {
-                continue;
-            }
-
-            let file_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-            let clean_name = file_name.to_lowercase()
-                .replace(".upk.bak", "")
-                .replace(".upk", "");
-            let clean_base = clean_name.trim_end_matches("_sf").to_string();
-
-            if seen_packages.contains(&clean_base) {
-                continue;
-            }
-
-            let matched_item = items.iter()
-                .find(|i| {
-                    let db_pkg = i.asset_package.to_lowercase().replace(".upk", "");
-                    if db_pkg.is_empty() || db_pkg == "none" { return false; }
-                    let db_base = db_pkg.trim_end_matches("_sf");
-                    db_pkg == clean_name || db_base == clean_base || db_pkg == clean_base
-                });
-
-            let display_name = matched_item.map(|i| i.product.clone()).unwrap_or_else(|| file_name.clone());
-            let image_url = matched_item.map(|i| i.image_url.clone()).unwrap_or_default();
-
-            let swap_entry = matched_item.and_then(|item| swaps.iter().find(|s| s.owned_id == item.id));
-            let (swap_from, swap_to) = swap_entry
-                .map(|s| (s.owned_name.clone(), s.wanted_name.clone()))
-                .unwrap_or_default();
-            let swap_to_image = swap_entry
-                .and_then(|s| items.iter().find(|i| i.id == s.wanted_id))
-                .map(|i| i.image_url.clone())
-                .unwrap_or_default();
-            let slot = matched_item.map(|i| i.slot.clone()).unwrap_or_default();
-            let paint_name = swap_entry
-                .filter(|s| s.paint_id > 0)
-                .map(|s| upk::swapper::paint_label(s.paint_id).to_string())
-                .unwrap_or_default();
-
-            seen_paths.insert(path_norm);
-            seen_packages.insert(clean_base);
-            backups.push(BackupFile {
-                name: display_name,
-                path: path_str,
-                image_url,
-                swap_from,
-                swap_to,
-                swap_to_image,
-                slot,
-                paint_name,
-            });
-        }
-    }
     Ok(backups)
 }
 
@@ -1056,11 +932,6 @@ async fn get_palette_status(app: tauri::AppHandle) -> Result<upk::PaletteStatus,
     Ok(upk::palette::read_palette_status(Path::new(&config.game_dir), fp))
 }
 
-fn palette_blocked_by_game(action: &str) -> Option<String> {
-    psynet::rocket_league_lock_holder()
-        .map(|who| format!("Rocket League is running ({who}). Close it, then {action}."))
-}
-
 fn explain_upk_lock(err: String, what: &str) -> String {
     if err.contains("os error 32") || err.contains("os error 33") {
         return format!(
@@ -1081,9 +952,6 @@ fn explain_palette_error(err: String) -> String {
 
 #[tauri::command]
 async fn apply_rich_palette(app: tauri::AppHandle) -> Result<upk::PaletteStatus, String> {
-    if let Some(msg) = palette_blocked_by_game("Apply") {
-        return Err(msg);
-    }
     let config = get_config(app.clone()).await?;
     if config.game_dir.is_empty() {
         return Err("Game directory not set".into());
@@ -1103,14 +971,18 @@ async fn apply_rich_palette(app: tauri::AppHandle) -> Result<upk::PaletteStatus,
     integrity::mark_palette_on_with_rl(&mut state, &st.fingerprint, &rl_fp);
     save_integrity(&app, &state)?;
     let _ = psynet::merge_palette_spoof(true);
+
+    // Re-apply any active loadout swaps so palette and item swaps coexist perfectly
+    let swaps = load_swaps(&app);
+    if let Ok(cooked_path) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
+        let _ = sync_all_swaps_to_tagame(&app, &cooked_path, &swaps).await;
+    }
+
     Ok(st)
 }
 
 #[tauri::command]
 async fn restore_rich_palette(app: tauri::AppHandle) -> Result<upk::PaletteStatus, String> {
-    if let Some(msg) = palette_blocked_by_game("Restore") {
-        return Err(msg);
-    }
     let config = get_config(app.clone()).await?;
     if config.game_dir.is_empty() {
         return Err("Game directory not set".into());
@@ -1121,6 +993,13 @@ async fn restore_rich_palette(app: tauri::AppHandle) -> Result<upk::PaletteStatu
     integrity::mark_palette_off(&mut state);
     save_integrity(&app, &state)?;
     let _ = psynet::merge_palette_spoof(false);
+
+    // Re-apply any active loadout swaps after restoring palette
+    let swaps = load_swaps(&app);
+    if let Ok(cooked_path) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
+        let _ = sync_all_swaps_to_tagame(&app, &cooked_path, &swaps).await;
+    }
+
     Ok(st)
 }
 
@@ -1185,6 +1064,80 @@ async fn get_swaps(app: tauri::AppHandle) -> Result<Vec<SwapEntry>, String> {
     Ok(load_swaps(&app))
 }
 
+pub(crate) async fn sync_all_swaps_to_tagame(
+    app: &tauri::AppHandle,
+    cooked: &Path,
+    swaps: &[SwapEntry],
+) -> Result<(), String> {
+    let _ = upk::write_swaps_ini(cooked, swaps, !swaps.is_empty());
+
+    if swaps.is_empty() {
+        let _ = upk::tagame_swapper::restore_tagame_upk(cooked);
+        return Ok(());
+    }
+
+    let items = get_items(app.clone(), None).await.unwrap_or_default();
+    let mut tagame_items = Vec::new();
+
+    for s in swaps {
+        let owned_item = items.iter().find(|i| i.id == s.owned_id);
+        let wanted_item = items.iter().find(|i| i.id == s.wanted_id);
+
+        let slot_str = s.slot.clone()
+            .or_else(|| owned_item.map(|i| i.slot.clone()))
+            .or_else(|| wanted_item.map(|i| i.slot.clone()))
+            .unwrap_or_else(|| "Body".to_string());
+
+        let slot_index = match slot_str.to_lowercase().as_str() {
+            "body" => 0,
+            "skin" | "decal" => 1,
+            "wheel" | "wheels" => 2,
+            "boost" | "rocket boost" | "rocketboost" => 3,
+            "antenna" => 4,
+            "topper" => 5,
+            "paint finish" | "paintfinish" | "paint" => 6,
+            "engine audio" | "engineaudio" => 8,
+            "trail" => 9,
+            "goal explosion" | "goalexplosion" => 10,
+            "player banner" | "playerbanner" | "banner" => 11,
+            "player anthem" | "playeranthem" | "anthem" | "music" => 12,
+            "avatar border" | "avatarborder" | "border" => 13,
+            _ => 0,
+        };
+
+        let pkg = wanted_item
+            .map(|w| w.asset_package.clone())
+            .unwrap_or_else(|| s.asset_package.clone());
+
+        let product_id = match s.wanted_id {
+            999902 => 2526,
+            12968 => 32, // (Alpha Reward) Gold Rush
+            _ => s.wanted_id,
+        };
+
+        tagame_items.push(upk::TagameSwapItem {
+            slot: slot_str,
+            slot_index: Some(slot_index),
+            owned_id: None, // Unconditional bytecode override: NewLoadout.Products[slot] = product_id
+            product_id,
+            paint_id: if s.paint_id > 0 { Some(s.paint_id) } else { None },
+            package_name: Some(pkg),
+        });
+    }
+
+    let keys_txt = include_str!("../resources/keys.txt");
+    let keys_map_json = include_str!("../resources/keys_map.json");
+
+    upk::tagame_swapper::apply_tagame_modifications(
+        cooked,
+        &tagame_items,
+        keys_txt,
+        keys_map_json,
+    ).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 #[tauri::command]
 async fn delete_swap(app: tauri::AppHandle, owned_id: i32) -> Result<(), String> {
     let mut swaps = load_swaps(&app);
@@ -1194,31 +1147,7 @@ async fn delete_swap(app: tauri::AppHandle, owned_id: i32) -> Result<(), String>
     if let Ok(config) = get_config(app.clone()).await {
         if !config.game_dir.is_empty() {
             if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                if swaps.is_empty() {
-                    let _ = upk::tagame_swapper::restore_tagame_upk(&cooked);
-                } else {
-                    let tagame_items: Vec<upk::TagameSwapItem> = swaps
-                        .iter()
-                        .map(|s| upk::TagameSwapItem {
-                            slot: "Body".into(),
-                            slot_index: Some(0),
-                            owned_id: Some(s.owned_id),
-                            product_id: s.wanted_id,
-                            paint_id: if s.paint_id > 0 { Some(s.paint_id) } else { None },
-                            package_name: Some(s.asset_package.clone()),
-                        })
-                        .collect();
-
-                    let keys_txt = include_str!("../resources/keys.txt");
-                    let keys_map_json = include_str!("../resources/keys_map.json");
-                    let _ = upk::tagame_swapper::apply_tagame_modifications(
-                        &cooked,
-                        &tagame_items,
-                        None,
-                        keys_txt,
-                        keys_map_json,
-                    );
-                }
+                let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
             }
         }
     }
@@ -1240,18 +1169,6 @@ fn run_swap_caught(
             "Swap failed unexpectedly. If a .bak exists, restore it from the Restore tab — the app did not crash."
                 .into(),
         ),
-    }
-}
-
-#[allow(dead_code)]
-fn load_avatar_config(app: &tauri::AppHandle) -> Option<upk::CustomAvatarConfig> {
-    let config_dir = app.path().app_config_dir().ok()?;
-    let path = config_dir.join("custom_avatar.json");
-    if path.is_file() {
-        let text = fs::read_to_string(&path).ok()?;
-        serde_json::from_str::<upk::CustomAvatarConfig>(&text).ok()
-    } else {
-        None
     }
 }
 
@@ -1314,61 +1231,10 @@ async fn apply_swap(
         }
     };
 
-    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
-    let items_json = fs::read_to_string(config_dir.join("items.json"))
-        .unwrap_or_else(|_| include_str!("../../resources/items.json").to_string());
-    let _opts = build_swap_opts(cooked.clone(), items_json);
-
-    // If target package was already swapped, restore it first before applying new swap
-    if let Some((target_path, _)) = upk::swapper::resolve_package_path(&cooked, &owned.asset_package) {
-        let bak = target_path.with_file_name(format!("{}.bak", target_path.file_name().unwrap_or_default().to_string_lossy()));
-        if bak.is_file() {
-            let _ = upk::swapper::restore_single(&bak.to_string_lossy());
-        }
-    }
-
     applog::event(&format!(
         "apply_swap: starting owned_id={} wanted_id={} paint_id={} cooked='{}'",
         owned_id, wanted_id, paint_id, cooked.display()
     ));
-
-    let slot_str = owned.slot.clone();
-    let slot_index = match owned.slot.to_lowercase().as_str() {
-        "body" => 0,
-        "skin" | "decal" => 1,
-        "wheel" | "wheels" => 2,
-        "boost" | "rocket boost" | "rocketboost" => 3,
-        "antenna" => 4,
-        "topper" => 5,
-        "paint finish" | "paintfinish" | "paint" => 6,
-        "engine audio" | "engineaudio" => 8,
-        "trail" => 9,
-        "goal explosion" | "goalexplosion" => 10,
-        "player banner" | "playerbanner" | "banner" => 11,
-        "player anthem" | "playeranthem" | "anthem" | "music" => 12,
-        "avatar border" | "avatarborder" | "border" => 13,
-        _ => 0,
-    };
-
-    let swap_item = upk::TagameSwapItem {
-        slot: slot_str,
-        slot_index: Some(slot_index),
-        owned_id: Some(oid),
-        product_id: wid,
-        paint_id: if paint_id > 0 { Some(paint_id) } else { None },
-        package_name: Some(wanted.asset_package.clone()),
-    };
-
-    let keys_txt = include_str!("../resources/keys.txt");
-    let keys_map_json = include_str!("../resources/keys_map.json");
-
-    let _ = upk::tagame_swapper::apply_tagame_modifications(
-        &cooked,
-        &[swap_item],
-        None,
-        keys_txt,
-        keys_map_json,
-    ).map_err(|e| e.to_string())?;
 
     let mut swaps = load_swaps(&app);
     swaps.retain(|s| s.owned_id != oid);
@@ -1378,10 +1244,13 @@ async fn apply_swap(
         owned_name: owned.product.clone(),
         wanted_name: wanted.product.clone(),
         paint_id,
-        asset_package: owned.asset_package.clone(),
+        asset_package: wanted.asset_package.clone(),
+        slot: Some(owned.slot.clone()),
     };
     swaps.push(new_entry.clone());
     save_swaps(&app, &swaps);
+
+    sync_all_swaps_to_tagame(&app, &cooked, &swaps).await?;
 
     record_swap_history(&app, "swap", std::slice::from_ref(&new_entry), "");
 
@@ -1412,68 +1281,30 @@ async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<()
     let cooked = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
         .unwrap_or_else(|_| PathBuf::from(&config.game_dir));
 
-    let bak_path = if path.ends_with(".bak") {
-        PathBuf::from(&path)
-    } else {
-        PathBuf::from(format!("{path}.bak"))
-    };
-
-    let bak_str = bak_path.to_string_lossy().into_owned();
-    upk::swapper::restore_single(&bak_str).map_err(|e| e.to_string())?;
-
-    // Also restore companion thumbnail if present
-    let clean_stem = bak_path
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .replace(".upk.bak", "")
-        .replace(".upk", "");
-    let base_stem = clean_stem.trim_end_matches("_sf").trim_end_matches("_SF");
-    for thumb_candidate in &[
-        cooked.join(format!("{clean_stem}_T_SF.upk.bak")),
-        cooked.join(format!("{base_stem}_T_SF.upk.bak")),
-        cooked.join(format!("{clean_stem}_t_sf.upk.bak")),
-        cooked.join(format!("{base_stem}_t_sf.upk.bak")),
-        cooked.join(format!("{clean_stem}_Thumbnail_SF.upk.bak")),
-        cooked.join(format!("{base_stem}_Thumbnail_SF.upk.bak")),
-    ] {
-        if thumb_candidate.is_file() {
-            let _ = upk::swapper::restore_single(&thumb_candidate.to_string_lossy());
-        }
-    }
-
-    let items = get_items(app.clone(), None).await.unwrap_or_default();
-    let stem_lower = clean_stem.to_lowercase();
-    let stem_base = stem_lower.trim_end_matches("_sf").to_string();
-
-    let matched_item = items.iter().find(|i| {
-        let db_pkg = i.asset_package.to_lowercase().replace(".upk", "");
-        if db_pkg.is_empty() || db_pkg == "none" {
-            return false;
-        }
-        let db_base = db_pkg.trim_end_matches("_sf");
-        db_pkg == stem_lower || db_base == stem_base || db_pkg.contains(&stem_lower)
-    });
-
     let mut swaps = load_swaps(&app);
     let orig_len = swaps.len();
-    if let Some(item) = matched_item {
-        swaps.retain(|s| s.owned_id != item.id);
-        record_swap_history(&app, "restore", &[], &format!("restored {}", item.product));
-    } else if let Some(id_str) = clean_stem.strip_prefix("item_") {
-        if let Ok(id) = id_str.parse::<i32>() {
-            swaps.retain(|s| s.owned_id != id);
-            record_swap_history(&app, "restore", &[], &format!("restored item #{id}"));
-        }
+
+    let target_id = path
+        .strip_prefix("item_")
+        .and_then(|s| s.parse::<i32>().ok());
+
+    if let Some(id) = target_id {
+        swaps.retain(|s| s.owned_id != id && s.wanted_id != id);
+        record_swap_history(&app, "restore", &[], &format!("restored item #{id}"));
     } else {
         swaps.retain(|s| {
-            let s_pkg = s.asset_package.to_lowercase().replace(".upk", "");
-            let s_base = s_pkg.trim_end_matches("_sf");
-            s_pkg != stem_lower && s_base != stem_base
+            s.asset_package.to_lowercase() != path.to_lowercase()
+                && s.owned_name.to_lowercase() != path.to_lowercase()
         });
     }
-    if swaps.len() != orig_len {
+
+    if swaps.len() != orig_len || swaps.is_empty() {
         save_swaps(&app, &swaps);
+        if swaps.is_empty() {
+            let _ = upk::tagame_swapper::restore_tagame_upk(&cooked);
+        } else {
+            let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
+        }
     }
 
     applog::event(&format!("restore_single_backup: restored {path}"));
@@ -1489,20 +1320,18 @@ async fn restore_backups(app: tauri::AppHandle) -> Result<String, String> {
     let cooked = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
         .unwrap_or_else(|_| PathBuf::from(&config.game_dir));
 
-    let count = upk::swapper::restore_all(&cooked.to_string_lossy())
-        .map_err(|e| e.to_string())?;
-
     let _ = upk::tagame_swapper::restore_tagame_upk(&cooked);
 
+    let count = load_swaps(&app).len();
     save_swaps(&app, &[]);
-    record_swap_history(&app, "restore_all", &[], "restored all swapped packages");
+    record_swap_history(&app, "restore_all", &[], "restored all active swaps");
 
     let mut state = load_integrity(&app);
     state.swap_packages.clear();
     state.swap_fingerprints.clear();
     let _ = save_integrity(&app, &state);
 
-    applog::event(&format!("restore_backups: restored {count} packages"));
+    applog::event(&format!("restore_backups: restored {count} swaps"));
     Ok(format!("Restored {} item(s) to default", count))
 }
 
@@ -1522,29 +1351,10 @@ async fn reswap_all(app: tauri::AppHandle) -> Result<String, String> {
     let cooked = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
         .unwrap_or_else(|_| PathBuf::from(&config.game_dir));
 
-    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
-    let items_json = fs::read_to_string(config_dir.join("items.json"))
-        .unwrap_or_else(|_| include_str!("../../resources/items.json").to_string());
-    let opts = build_swap_opts(cooked.clone(), items_json);
-
-    let mut success_count = 0;
-    let mut errors = Vec::new();
-
-    for s in &swaps {
-        let oid_str = s.owned_id.to_string();
-        let wid_str = s.wanted_id.to_string();
-        match run_swap_caught(&oid_str, &wid_str, s.paint_id, &opts) {
-            Ok(_) => success_count += 1,
-            Err(e) => errors.push(format!("{}: {e}", s.owned_name)),
-        }
-    }
-
-    if success_count == 0 && !errors.is_empty() {
-        return Err(format!("Failed to re-apply swaps: {}", errors.join("; ")));
-    }
-
-    Ok(format!("Re-applied {} swap(s). Restart Rocket League to see them.", success_count))
+    sync_all_swaps_to_tagame(&app, &cooked, &swaps).await?;
+    Ok(format!("Synchronized {} active swap(s)", swaps.len()))
 }
+
 
 #[tauri::command]
 fn copy_to_clipboard(text: String) -> Result<(), String> {
@@ -1590,44 +1400,6 @@ fn open_external_url(url: String) {
     #[cfg(not(target_os = "windows"))]
     {
         let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
-    }
-}
-
-#[tauri::command]
-async fn repair_engine_refs(app: tauri::AppHandle) -> Result<String, String> {
-    let config = get_config(app.clone()).await?;
-    if config.game_dir.is_empty() {
-        return Err("Game directory not set".to_string());
-    }
-    let game_dir = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
-        .unwrap_or_else(|_| PathBuf::from(&config.game_dir));
-    let cooked = game_dir.clone();
-
-    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<String, String> {
-        let engine_path = cooked.join("Engine.upk");
-        let tagame_path = cooked.join("TAGame.upk");
-        let (eng, _) = upk::parser::parse_prefix(&fs::read(&engine_path).map_err(|e| format!("read Engine.upk: {e}"))?)
-            .map_err(|e| format!("parse Engine.upk: {e}"))?;
-        let mut tag = fs::read(&tagame_path).map_err(|e| format!("read TAGame.upk: {e}"))?;
-        let (sum, _) = upk::parser::parse_prefix(&tag).map_err(|e| format!("parse TAGame.upk: {e}"))?;
-        if sum.engine_version == eng.engine_version && sum.cooker_version == eng.cooker_version {
-            return Ok("TAGame.upk already matches Engine.upk — nothing to do.".into());
-        }
-        let old = (sum.engine_version, sum.cooker_version);
-        let changed = upk::swapper::patch_engine_versions_in_prefix(&mut tag, &sum, eng.engine_version, eng.cooker_version);
-        if !changed {
-            return Err("could not patch TAGame.upk version fields".into());
-        }
-        fs::write(&tagame_path, &tag).map_err(|e| format!("write TAGame.upk: {e}"))?;
-        Ok(format!("patched TAGame.upk engine/cooker version {:?} -> {:?}", old, (eng.engine_version, eng.cooker_version)))
-    }));
-    match res {
-        Ok(Ok(msg)) => {
-            applog::event(&format!("repair_engine_refs: {msg}"));
-            Ok(msg)
-        }
-        Ok(Err(e)) => Err(e),
-        Err(_) => Err("Engine reference repair failed unexpectedly.".into()),
     }
 }
 
@@ -1690,7 +1462,6 @@ async fn sync_palette_psynet_config(app: tauri::AppHandle) -> Result<(), String>
 async fn apply_tagame_swaps(
     app: tauri::AppHandle,
     swaps: Vec<upk::TagameSwapItem>,
-    custom_avatar: Option<upk::CustomAvatarConfig>,
 ) -> Result<upk::TagameSwapperStatus, String> {
     let config = get_config(app.clone()).await?;
     if config.game_dir.is_empty() {
@@ -1705,15 +1476,13 @@ async fn apply_tagame_swaps(
     let status = upk::tagame_swapper::apply_tagame_modifications(
         &cooked,
         &swaps,
-        custom_avatar.as_ref(),
         keys_txt,
         keys_map_json,
     ).map_err(|e| e.to_string())?;
 
     applog::event(&format!(
-        "tagame_swapper: applied {} swaps and avatar={}",
-        swaps.len(),
-        custom_avatar.as_ref().map(|a| a.enabled).unwrap_or(false)
+        "tagame_swapper: applied {} swaps",
+        swaps.len()
     ));
     Ok(status)
 }
@@ -1727,10 +1496,12 @@ async fn restore_tagame_swaps(app: tauri::AppHandle) -> Result<upk::TagameSwappe
     let cooked = upk::tagame_swapper::resolve_cooked_dir(Path::new(&config.game_dir))
         .map_err(|e| e.to_string())?;
 
+    let _ = upk::write_swaps_ini(&cooked, &[], false);
+    let _ = upk::write_decals_ini(&cooked, &upk::DecalsIniConfig { enabled: false, ..Default::default() });
     let status = upk::tagame_swapper::restore_tagame_upk(&cooked)
         .map_err(|e| e.to_string())?;
 
-    applog::event("tagame_swapper: restored TAGame.upk to default");
+    applog::event("tagame_swapper: restored TAGame.upk and updated swaps.ini & decals.ini (Enabled=false)");
     Ok(status)
 }
 
@@ -1756,52 +1527,510 @@ async fn get_tagame_swapper_status(app: tauri::AppHandle) -> Result<upk::TagameS
 
     Ok(upk::TagameSwapperStatus {
         applied: false,
-        avatar_applied: false,
         backup_present,
         tagame_path,
         active_swaps: Vec::new(),
-        custom_avatar: None,
         message: "Ready".to_string(),
     })
 }
 
 #[tauri::command]
-async fn apply_custom_avatar(
+async fn get_detected_car_body(app: tauri::AppHandle) -> Result<upk::DetectedCarInfo, String> {
+    let swaps = load_swaps(&app);
+    Ok(upk::decal_compiler::detect_active_car(&swaps))
+}
+
+#[tauri::command]
+async fn get_custom_decal_config(app: tauri::AppHandle) -> Result<upk::CustomDecalConfig, String> {
+    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let path = config_dir.join("custom_decal.json");
+    if path.is_file() {
+        let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        serde_json::from_str::<upk::CustomDecalConfig>(&text).map_err(|e| e.to_string())
+    } else {
+        let swaps = load_swaps(&app);
+        let car = upk::decal_compiler::detect_active_car(&swaps);
+        Ok(upk::CustomDecalConfig {
+            enabled: false,
+            decal_name: None,
+            car_id: Some(car.car_id),
+            car_name: Some(car.car_name),
+            auto_detect: true,
+            diffuse_path: None,
+            skin_path: None,
+            roughness_path: None,
+            metallic_path: None,
+            normal_path: None,
+            preview_base64: None,
+        })
+    }
+}
+
+#[tauri::command]
+async fn save_custom_decal_config(app: tauri::AppHandle, config: upk::CustomDecalConfig) -> Result<(), String> {
+    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    fs::create_dir_all(&config_dir).map_err(|e| e.to_string())?;
+    let path = config_dir.join("custom_decal.json");
+    let json = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
+    fs::write(&path, json).map_err(|e| e.to_string())?;
+    applog::event(&format!("custom_decal: saved config (enabled={}, car={:?})", config.enabled, config.car_name));
+    Ok(())
+}
+
+#[tauri::command]
+async fn import_decal_json_path(app: tauri::AppHandle, json_file_path: String) -> Result<upk::ParsedDecalPackage, String> {
+    let p = Path::new(&json_file_path);
+    if !p.is_file() {
+        return Err(format!("File does not exist: {json_file_path}"));
+    }
+    let parent = p.parent();
+    let content = fs::read_to_string(p).map_err(|e| format!("Failed to read decal JSON: {e}"))?;
+    let parsed = upk::decal_compiler::parse_decal_json(&content, parent)?;
+
+    let (data_dir, _) = get_catalog_dirs(&app);
+    let decal_cache = data_dir.join("cache").join("decals");
+    fs::create_dir_all(&decal_cache).map_err(|e| e.to_string())?;
+
+    let mut diffuse_dds_path = None;
+    let mut skin_dds_path = None;
+
+    if let Some(ref d_path) = parsed.diffuse_path {
+        if let Ok(bytes) = fs::read(d_path) {
+            if let Ok(img) = image::load_from_memory(&bytes) {
+                let dds = upk::decal_compiler::encode_to_dxt5_dds(&img.to_rgba8());
+                let out_dds = decal_cache.join(format!("{}_diffuse.dds", parsed.package_name));
+                if fs::write(&out_dds, &dds).is_ok() {
+                    diffuse_dds_path = Some(out_dds.to_string_lossy().into_owned());
+                }
+            }
+        }
+    }
+
+    if let Some(ref s_path) = parsed.skin_path {
+        if let Ok(bytes) = fs::read(s_path) {
+            if let Ok(img) = image::load_from_memory(&bytes) {
+                let dds = upk::decal_compiler::encode_to_dxt5_dds(&img.to_rgba8());
+                let out_dds = decal_cache.join(format!("{}_skin.dds", parsed.package_name));
+                if fs::write(&out_dds, &dds).is_ok() {
+                    skin_dds_path = Some(out_dds.to_string_lossy().into_owned());
+                }
+            }
+        }
+    }
+
+    let cfg = upk::CustomDecalConfig {
+        enabled: true,
+        decal_name: Some(parsed.decal_name.clone()),
+        car_id: Some(parsed.car_id),
+        car_name: Some(parsed.car_name.clone()),
+        auto_detect: false,
+        diffuse_path: diffuse_dds_path.or_else(|| parsed.diffuse_path.clone()),
+        skin_path: skin_dds_path.or_else(|| parsed.skin_path.clone()),
+        roughness_path: None,
+        metallic_path: None,
+        normal_path: parsed.normal_path.clone(),
+        preview_base64: parsed.preview_base64.clone(),
+    };
+    save_custom_decal_config(app.clone(), cfg).await?;
+
+    applog::event(&format!("custom_decal: imported package '{}' for car {}", parsed.decal_name, parsed.car_name));
+    Ok(parsed)
+}
+
+#[tauri::command]
+async fn apply_custom_decal(
     app: tauri::AppHandle,
-    avatar_asset_path: String,
-    raw_image_path: Option<String>,
-) -> Result<upk::TagameSwapperStatus, String> {
+    diffuse_base64: Option<String>,
+    skin_base64: Option<String>,
+    roughness_base64: Option<String>,
+    metallic_base64: Option<String>,
+    _normal_base64: Option<String>,
+) -> Result<String, String> {
+    let config = get_config(app.clone()).await?;
+    if config.game_dir.is_empty() {
+        return Err("Game directory not set".into());
+    }
+
+    let swaps = load_swaps(&app);
+    let detected_car = upk::decal_compiler::detect_active_car(&swaps);
+
+    let (data_dir, _) = get_catalog_dirs(&app);
+    let decal_cache = data_dir.join("cache").join("decals");
+    fs::create_dir_all(&decal_cache).map_err(|e| e.to_string())?;
+
+    let mut preview_b64 = None;
+    let mut diff_path = None;
+    let mut s_path = None;
+
+    if let Some(ref diff_b64) = diffuse_base64 {
+        let clean = if let Some(idx) = diff_b64.find(',') { &diff_b64[idx + 1..] } else { diff_b64 };
+        let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, clean.trim())
+            .map_err(|e| format!("Diffuse decode error: {e}"))?;
+        let img = image::load_from_memory(&bytes).map_err(|e| format!("Failed to load diffuse image: {e}"))?;
+        let rgba = img.to_rgba8();
+        let dds = upk::decal_compiler::encode_to_dxt5_dds(&rgba);
+        let out_dds = decal_cache.join(format!("{}_diffuse.dds", detected_car.package_name));
+        fs::write(&out_dds, &dds).map_err(|e| e.to_string())?;
+        diff_path = Some(out_dds.to_string_lossy().into_owned());
+        preview_b64 = Some(format!("data:image/png;base64,{}", clean.trim()));
+    }
+
+    if let Some(ref skin_b64) = skin_base64 {
+        let clean = if let Some(idx) = skin_b64.find(',') { &skin_b64[idx + 1..] } else { skin_b64 };
+        let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, clean.trim())
+            .map_err(|e| format!("Skin decode error: {e}"))?;
+        let img = image::load_from_memory(&bytes).map_err(|e| format!("Failed to load skin image: {e}"))?;
+        let rgba = img.to_rgba8();
+        let dds = upk::decal_compiler::encode_to_dxt5_dds(&rgba);
+        let out_dds = decal_cache.join(format!("{}_skin.dds", detected_car.package_name));
+        fs::write(&out_dds, &dds).map_err(|e| e.to_string())?;
+        s_path = Some(out_dds.to_string_lossy().into_owned());
+        if preview_b64.is_none() {
+            preview_b64 = Some(format!("data:image/png;base64,{}", clean.trim()));
+        }
+    }
+
+    let r_bytes = roughness_base64.and_then(|b| {
+        let clean = if let Some(idx) = b.find(',') { &b[idx + 1..] } else { &b };
+        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, clean.trim()).ok()
+    });
+    let m_bytes = metallic_base64.and_then(|b| {
+        let clean = if let Some(idx) = b.find(',') { &b[idx + 1..] } else { &b };
+        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, clean.trim()).ok()
+    });
+
+    if r_bytes.is_some() || m_bytes.is_some() {
+        let packed_mask = upk::decal_compiler::pack_metallic_roughness_mask(
+            r_bytes.as_deref(),
+            m_bytes.as_deref(),
+            2048,
+            2048,
+        )?;
+        let mask_dds = upk::decal_compiler::encode_to_dxt5_dds(&packed_mask);
+        let out_mask = decal_cache.join(format!("{}_mask.dds", detected_car.package_name));
+        fs::write(&out_mask, &mask_dds).map_err(|e| e.to_string())?;
+    }
+
+    let decal_cfg = upk::CustomDecalConfig {
+        enabled: true,
+        decal_name: Some("Custom Decal".to_string()),
+        car_id: Some(detected_car.car_id),
+        car_name: Some(detected_car.car_name.clone()),
+        auto_detect: true,
+        diffuse_path: diff_path,
+        skin_path: s_path,
+        roughness_path: None,
+        metallic_path: None,
+        normal_path: None,
+        preview_base64: preview_b64,
+    };
+    save_custom_decal_config(app.clone(), decal_cfg).await?;
+
+    applog::event(&format!("custom_decal: compiled and configured custom decal for {}", detected_car.car_name));
+    Ok(format!("Custom decal compiled and applied for {}", detected_car.car_name))
+}
+
+#[tauri::command]
+async fn import_decal_zip_path(app: tauri::AppHandle, zip_file_path: String) -> Result<upk::ParsedDecalPackage, String> {
+    let p = Path::new(&zip_file_path);
+    if !p.is_file() {
+        return Err(format!("File does not exist: {zip_file_path}"));
+    }
+    let (data_dir, _) = get_catalog_dirs(&app);
+    let extract_dir = data_dir.join("cache").join("decals").join(format!("pkg_{}", presets::utc_filename_stamp()));
+    let bytes = fs::read(p).map_err(|e| format!("Failed to read ZIP file: {e}"))?;
+    let parsed = upk::decal_compiler::extract_and_parse_decal_zip(&bytes, &extract_dir)?;
+
+    let decal_cache = data_dir.join("cache").join("decals");
+    fs::create_dir_all(&decal_cache).map_err(|e| e.to_string())?;
+
+    let mut diffuse_dds_path = None;
+    let mut skin_dds_path = None;
+
+    if let Some(ref d_path) = parsed.diffuse_path {
+        if let Ok(b) = fs::read(d_path) {
+            if let Ok(img) = image::load_from_memory(&b) {
+                let dds = upk::decal_compiler::encode_to_dxt5_dds(&img.to_rgba8());
+                let out_dds = decal_cache.join(format!("{}_diffuse.dds", parsed.package_name));
+                if fs::write(&out_dds, &dds).is_ok() {
+                    diffuse_dds_path = Some(out_dds.to_string_lossy().into_owned());
+                }
+            }
+        }
+    }
+
+    if let Some(ref s_path) = parsed.skin_path {
+        if let Ok(b) = fs::read(s_path) {
+            if let Ok(img) = image::load_from_memory(&b) {
+                let dds = upk::decal_compiler::encode_to_dxt5_dds(&img.to_rgba8());
+                let out_dds = decal_cache.join(format!("{}_skin.dds", parsed.package_name));
+                if fs::write(&out_dds, &dds).is_ok() {
+                    skin_dds_path = Some(out_dds.to_string_lossy().into_owned());
+                }
+            }
+        }
+    }
+
+    let cfg = upk::CustomDecalConfig {
+        enabled: true,
+        decal_name: Some(parsed.decal_name.clone()),
+        car_id: Some(parsed.car_id),
+        car_name: Some(parsed.car_name.clone()),
+        auto_detect: false,
+        diffuse_path: diffuse_dds_path.or_else(|| parsed.diffuse_path.clone()),
+        skin_path: skin_dds_path.or_else(|| parsed.skin_path.clone()),
+        roughness_path: None,
+        metallic_path: None,
+        normal_path: parsed.normal_path.clone(),
+        preview_base64: parsed.preview_base64.clone(),
+    };
+    save_custom_decal_config(app.clone(), cfg).await?;
+
+    applog::event(&format!("custom_decal: imported ZIP package '{}' for car {}", parsed.decal_name, parsed.car_name));
+    Ok(parsed)
+}
+
+#[tauri::command]
+async fn upload_decal_package_bytes(
+    app: tauri::AppHandle,
+    filename: String,
+    base64_data: String,
+) -> Result<upk::ParsedDecalPackage, String> {
+    let raw_bytes = if let Some(idx) = base64_data.find(',') {
+        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &base64_data[idx + 1..])
+            .map_err(|e| format!("Base64 decode error: {e}"))?
+    } else {
+        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &base64_data)
+            .map_err(|e| format!("Base64 decode error: {e}"))?
+    };
+
+    let (data_dir, _) = get_catalog_dirs(&app);
+    let extract_dir = data_dir.join("cache").join("decals").join(format!("pkg_{}", presets::utc_filename_stamp()));
+    fs::create_dir_all(&extract_dir).map_err(|e| e.to_string())?;
+
+    let is_zip = filename.to_lowercase().ends_with(".zip");
+    let parsed = if is_zip {
+        upk::decal_compiler::extract_and_parse_decal_zip(&raw_bytes, &extract_dir)?
+    } else {
+        let json_str = std::str::from_utf8(&raw_bytes).map_err(|e| format!("Invalid JSON text encoding: {e}"))?;
+        upk::decal_compiler::parse_decal_json(json_str, Some(&extract_dir))?
+    };
+
+    let decal_cache = data_dir.join("cache").join("decals");
+    fs::create_dir_all(&decal_cache).map_err(|e| e.to_string())?;
+
+    let mut diffuse_dds_path = None;
+    let mut skin_dds_path = None;
+
+    if let Some(ref d_path) = parsed.diffuse_path {
+        if let Ok(b) = fs::read(d_path) {
+            if let Ok(img) = image::load_from_memory(&b) {
+                let dds = upk::decal_compiler::encode_to_dxt5_dds(&img.to_rgba8());
+                let out_dds = decal_cache.join(format!("{}_diffuse.dds", parsed.package_name));
+                if fs::write(&out_dds, &dds).is_ok() {
+                    diffuse_dds_path = Some(out_dds.to_string_lossy().into_owned());
+                }
+            }
+        }
+    }
+
+    if let Some(ref s_path) = parsed.skin_path {
+        if let Ok(b) = fs::read(s_path) {
+            if let Ok(img) = image::load_from_memory(&b) {
+                let dds = upk::decal_compiler::encode_to_dxt5_dds(&img.to_rgba8());
+                let out_dds = decal_cache.join(format!("{}_skin.dds", parsed.package_name));
+                if fs::write(&out_dds, &dds).is_ok() {
+                    skin_dds_path = Some(out_dds.to_string_lossy().into_owned());
+                }
+            }
+        }
+    }
+
+    let cfg = upk::CustomDecalConfig {
+        enabled: true,
+        decal_name: Some(parsed.decal_name.clone()),
+        car_id: Some(parsed.car_id),
+        car_name: Some(parsed.car_name.clone()),
+        auto_detect: false,
+        diffuse_path: diffuse_dds_path.or_else(|| parsed.diffuse_path.clone()),
+        skin_path: skin_dds_path.or_else(|| parsed.skin_path.clone()),
+        roughness_path: None,
+        metallic_path: None,
+        normal_path: parsed.normal_path.clone(),
+        preview_base64: parsed.preview_base64.clone(),
+    };
+    save_custom_decal_config(app.clone(), cfg).await?;
+
+    applog::event(&format!("custom_decal: uploaded and parsed package '{}' for car {}", parsed.decal_name, parsed.car_name));
+    Ok(parsed)
+}
+
+#[tauri::command]
+async fn swap_custom_decal_to_donor(
+    app: tauri::AppHandle,
+    donor_item_id: i32,
+    decal_name: String,
+    diffuse_base64: Option<String>,
+    skin_base64: Option<String>,
+    roughness_base64: Option<String>,
+    metallic_base64: Option<String>,
+    _normal_base64: Option<String>,
+) -> Result<String, String> {
     let config = get_config(app.clone()).await?;
     if config.game_dir.is_empty() {
         return Err("Game directory not set. Open Settings and select CookedPCConsole folder.".into());
     }
-    let cooked = upk::tagame_swapper::resolve_cooked_dir(Path::new(&config.game_dir))
-        .map_err(|e| e.to_string())?;
+    let cooked = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
+        .unwrap_or_else(|_| PathBuf::from(&config.game_dir));
 
-    let keys_txt = include_str!("../resources/keys.txt");
-    let keys_map_json = include_str!("../resources/keys_map.json");
+    let all_items = get_items(app.clone(), None).await
+        .map_err(|e| format!("Failed to load items database: {e}"))?;
+    let donor = all_items.iter().find(|i| i.id == donor_item_id)
+        .ok_or_else(|| format!("Donor decal ID {donor_item_id} not found"))?;
 
-    let avatar_cfg = upk::CustomAvatarConfig {
-        enabled: true,
-        avatar_asset_path: avatar_asset_path.clone(),
-        raw_image_path,
+    let (data_dir, _) = get_catalog_dirs(&app);
+    let decal_cache = data_dir.join("cache").join("decals");
+    fs::create_dir_all(&decal_cache).map_err(|e| e.to_string())?;
+
+    let mut preview_b64 = None;
+
+    let current_cfg = get_custom_decal_config(app.clone()).await.ok();
+    if diffuse_base64.is_none() && skin_base64.is_none() {
+        if let Some(ref cfg) = current_cfg {
+            if let Some(ref d_path) = cfg.diffuse_path {
+                let donor_diff_dds = decal_cache.join(format!("{}_diffuse.dds", donor.asset_package));
+                let _ = fs::copy(d_path, &donor_diff_dds);
+            }
+            if let Some(ref s_path) = cfg.skin_path {
+                let donor_skin_dds = decal_cache.join(format!("{}_skin.dds", donor.asset_package));
+                let _ = fs::copy(s_path, &donor_skin_dds);
+            }
+            if let Some(ref prev) = cfg.preview_base64 {
+                preview_b64 = Some(prev.clone());
+            }
+        }
+    }
+
+    if let Some(ref diff_b64) = diffuse_base64 {
+        let clean = if let Some(idx) = diff_b64.find(',') { &diff_b64[idx + 1..] } else { diff_b64 };
+        if let Ok(bytes) = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, clean.trim()) {
+            if let Ok(img) = image::load_from_memory(&bytes) {
+                let dds = upk::decal_compiler::encode_to_dxt5_dds(&img.to_rgba8());
+                let out_dds = decal_cache.join(format!("{}_diffuse.dds", donor.asset_package));
+                if fs::write(&out_dds, &dds).is_ok() {
+                    preview_b64 = Some(format!("data:image/png;base64,{}", clean.trim()));
+                }
+            }
+        }
+    }
+
+    if let Some(ref skin_b64) = skin_base64 {
+        let clean = if let Some(idx) = skin_b64.find(',') { &skin_b64[idx + 1..] } else { skin_b64 };
+        if let Ok(bytes) = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, clean.trim()) {
+            if let Ok(img) = image::load_from_memory(&bytes) {
+                let dds = upk::decal_compiler::encode_to_dxt5_dds(&img.to_rgba8());
+                let out_dds = decal_cache.join(format!("{}_skin.dds", donor.asset_package));
+                let _ = fs::write(&out_dds, &dds);
+                if preview_b64.is_none() {
+                    preview_b64 = Some(format!("data:image/png;base64,{}", clean.trim()));
+                }
+            }
+        }
+    }
+
+    let r_bytes = roughness_base64.and_then(|b| {
+        let clean = if let Some(idx) = b.find(',') { &b[idx + 1..] } else { &b };
+        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, clean.trim()).ok()
+    });
+    let m_bytes = metallic_base64.and_then(|b| {
+        let clean = if let Some(idx) = b.find(',') { &b[idx + 1..] } else { &b };
+        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, clean.trim()).ok()
+    });
+
+    if r_bytes.is_some() || m_bytes.is_some() {
+        if let Ok(packed_mask) = upk::decal_compiler::pack_metallic_roughness_mask(
+            r_bytes.as_deref(),
+            m_bytes.as_deref(),
+            2048,
+            2048,
+        ) {
+            let mask_dds = upk::decal_compiler::encode_to_dxt5_dds(&packed_mask);
+            let out_mask = decal_cache.join(format!("{}_mask.dds", donor.asset_package));
+            let _ = fs::write(&out_mask, &mask_dds);
+        }
+    }
+
+    let mut swaps = load_swaps(&app);
+    swaps.retain(|s| s.owned_id != donor_item_id);
+    let new_entry = SwapEntry {
+        owned_id: donor_item_id,
+        wanted_id: 990301,
+        owned_name: donor.product.clone(),
+        wanted_name: decal_name.clone(),
+        paint_id: 0,
+        asset_package: donor.asset_package.clone(),
+        slot: Some("Decal".to_string()),
     };
+    swaps.push(new_entry.clone());
+    save_swaps(&app, &swaps);
 
-    let status = upk::tagame_swapper::apply_tagame_modifications(
-        &cooked,
-        &[],
-        Some(&avatar_cfg),
-        keys_txt,
-        keys_map_json,
-    ).map_err(|e| e.to_string())?;
+    let decal_cfg = upk::CustomDecalConfig {
+        enabled: true,
+        decal_name: Some(decal_name.clone()),
+        car_id: Some(donor.id),
+        car_name: Some(donor.product.clone()),
+        auto_detect: false,
+        diffuse_path: Some(decal_cache.join(format!("{}_diffuse.dds", donor.asset_package)).to_string_lossy().into_owned()),
+        skin_path: Some(decal_cache.join(format!("{}_skin.dds", donor.asset_package)).to_string_lossy().into_owned()),
+        roughness_path: None,
+        metallic_path: None,
+        normal_path: None,
+        preview_base64: preview_b64,
+    };
+    let _ = save_custom_decal_config(app.clone(), decal_cfg.clone()).await;
 
-    applog::event(&format!("custom_avatar: applied avatar path '{avatar_asset_path}'"));
-    Ok(status)
-}
+    // Normalization to <CookedPCConsole>/decals/ and write decals.ini
+    let cooked_decals_dir = cooked.join("decals");
+    let _ = fs::create_dir_all(&cooked_decals_dir);
 
-#[tauri::command]
-async fn restore_custom_avatar(app: tauri::AppHandle) -> Result<upk::TagameSwapperStatus, String> {
-    restore_tagame_swaps(app).await
+    let mut rel_diffuse = String::new();
+    let mut rel_skin = String::new();
+
+    if let Some(ref d_path) = decal_cfg.diffuse_path {
+        let p = Path::new(d_path);
+        if let Some(fname) = p.file_name() {
+            let target = cooked_decals_dir.join(fname);
+            let _ = fs::copy(p, &target);
+            rel_diffuse = format!("decals/{}", fname.to_string_lossy());
+        }
+    }
+
+    if let Some(ref s_path) = decal_cfg.skin_path {
+        let p = Path::new(s_path);
+        if let Some(fname) = p.file_name() {
+            let target = cooked_decals_dir.join(fname);
+            let _ = fs::copy(p, &target);
+            rel_skin = format!("decals/{}", fname.to_string_lossy());
+        }
+    }
+
+    let decals_ini = upk::DecalsIniConfig {
+        enabled: true,
+        decal_name: decal_name.clone(),
+        body_id: donor.id,
+        skin_id: 0,
+        body_diffuse: rel_diffuse,
+        body_skin: rel_skin,
+        chassis_diffuse: String::new(),
+        chassis_masks: String::new(),
+    };
+    let _ = upk::write_decals_ini(&cooked, &decals_ini);
+
+    let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
+    record_swap_history(&app, "custom_decal_swap", std::slice::from_ref(&new_entry), "");
+
+    applog::event(&format!("swap_custom_decal_to_donor: swapped '{}' -> '{}' (wrote decals.ini)", donor.product, decal_name));
+    Ok(format!("Swapped {} with {} successfully! Restart Rocket League to see it.", donor.product, decal_name))
 }
 
 fn user_rl_logs_dir() -> Option<PathBuf> {
@@ -2215,6 +2444,13 @@ pub fn run() {
                 let _ = win.unminimize();
                 let _ = win.show();
                 let _ = win.set_focus();
+
+                use tauri::Emitter;
+                for arg in &argv {
+                    if arg.starts_with("velocityrl://") || arg.contains("velocityrl://") || arg.contains("steam_id=") {
+                        let _ = win.emit("steam-auth-callback", arg.clone());
+                    }
+                }
             }
         }))
         .plugin(
@@ -2244,6 +2480,7 @@ pub fn run() {
         .setup(|app| {
             let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
             let dir = applog::init(app.handle());
+            let (_data_dir, _) = get_catalog_dirs(app.handle());
             psynet::ensure_wininet_revocation_disabled();
             // Clear any stale hosts entries left over from a crash or unclean shutdown.
             // The proxy is not running yet — safe to revert unconditionally.
@@ -2324,6 +2561,21 @@ pub fn run() {
             };
             let _ = psynet::merge_palette_spoof(applied);
 
+            // Verify and synchronize TAGame.ini and TAGame.upk hooks on startup if swaps exist
+            let app_h = app.handle().clone();
+            std::thread::spawn(move || {
+                let swaps = load_swaps(&app_h);
+                if !swaps.is_empty() {
+                    if let Ok(config) = tauri::async_runtime::block_on(get_config(app_h.clone())) {
+                        if !config.game_dir.is_empty() {
+                            if let Ok(cooked) = upk::tagame_swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                                let _ = tauri::async_runtime::block_on(sync_all_swaps_to_tagame(&app_h, &cooked, &swaps));
+                                applog::event("startup: verified and synced active swaps to TAGame.ini and TAGame.upk");
+                            }
+                        }
+                    }
+                }
+            });
 
             applog::event(&format!(
                 "app setup complete; build {} (v{}, hash {}) logs at {}",
@@ -2431,14 +2683,21 @@ pub fn run() {
                 });
             });
 
-            if let Some(icon) = app_handle.default_window_icon() {
+            let tray_icon = app_handle
+                .default_window_icon()
+                .cloned()
+                .or_else(|| {
+                    Some(tauri::include_image!("icons/32x32.png"))
+                });
+
+            if let Some(icon) = tray_icon {
                 if let (Ok(show_item), Ok(quit_item)) = (
                     tauri::menu::MenuItemBuilder::with_id("show", "Show VelocityRL").build(&app_handle),
                     tauri::menu::MenuItemBuilder::with_id("quit", "Exit VelocityRL").build(&app_handle),
                 ) {
                     if let Ok(menu) = tauri::menu::MenuBuilder::new(&app_handle).items(&[&show_item, &quit_item]).build() {
                         let _ = tauri::tray::TrayIconBuilder::new()
-                            .icon(icon.clone())
+                            .icon(icon)
                             .tooltip("VelocityRL")
                             .menu(&menu)
                             .show_menu_on_left_click(false)
@@ -2570,14 +2829,19 @@ pub fn run() {
             copy_to_clipboard,
             force_exit,
             open_external_url,
-            repair_engine_refs,
             reset_tagame_for_verify,
             sync_palette_psynet_config,
             apply_tagame_swaps,
             restore_tagame_swaps,
             get_tagame_swapper_status,
-            apply_custom_avatar,
-            restore_custom_avatar,
+            get_detected_car_body,
+            get_custom_decal_config,
+            save_custom_decal_config,
+            import_decal_json_path,
+            import_decal_zip_path,
+            upload_decal_package_bytes,
+            swap_custom_decal_to_donor,
+            apply_custom_decal,
             features::get_features,
             workshop::workshop_get_auth,
             workshop::workshop_search_maps,

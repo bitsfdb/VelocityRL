@@ -45,6 +45,8 @@ rustls-pemfile = "2.2.0"
 hyper = { version = "1.11.1", features = ["server", "http1"] }
 http-body-util = "0.1.5"
 hyper-util = { version = "0.1.20", features = ["tokio", "server", "service"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winreg = "0.52"
