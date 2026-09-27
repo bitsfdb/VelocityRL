@@ -1049,10 +1049,147 @@ pub fn notify_system_proxy_changed() {
 pub fn notify_system_proxy_changed() {}
 
 #[cfg(windows)]
+#[derive(Default, Serialize, Deserialize)]
+struct NetworkSettingsBackup {
+    proxy_enable: Option<u32>,
+    proxy_server: Option<String>,
+    proxy_override: Option<String>,
+    auto_config_url: Option<String>,
+    cert_revocation_hkcu: Option<u32>,
+    cert_revocation_hkcu_policy: Option<u32>,
+    cert_revocation_hklm: Option<u32>,
+    cert_revocation_hklm_policy: Option<u32>,
+    cert_revocation_wow6432: Option<u32>,
+    security_hklm_only: Option<u32>,
+}
+
+#[cfg(windows)]
+fn network_settings_backup_path() -> Option<PathBuf> {
+    std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .map(|path| path.join("VelocityRL").join("network-settings-backup.json"))
+}
+
+#[cfg(windows)]
+fn internet_settings_key(hive: winreg::HKEY) -> Option<winreg::RegKey> {
+    winreg::RegKey::predef(hive)
+        .open_subkey(r"Software\Microsoft\Windows\CurrentVersion\Internet Settings")
+        .ok()
+}
+
+#[cfg(windows)]
+fn policy_settings_key(hive: winreg::HKEY) -> Option<winreg::RegKey> {
+    winreg::RegKey::predef(hive)
+        .open_subkey(r"SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings")
+        .ok()
+}
+
+#[cfg(windows)]
+fn read_u32(key: Option<&winreg::RegKey>, name: &str) -> Option<u32> {
+    key.and_then(|key| key.get_value(name).ok())
+}
+
+#[cfg(windows)]
+fn read_string(key: Option<&winreg::RegKey>, name: &str) -> Option<String> {
+    key.and_then(|key| key.get_value(name).ok())
+}
+
+#[cfg(windows)]
+fn backup_network_settings() {
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+
+    let Some(path) = network_settings_backup_path() else { return };
+    if path.is_file() {
+        return;
+    }
+
+    let hkcu = internet_settings_key(HKEY_CURRENT_USER);
+    let hklm = internet_settings_key(HKEY_LOCAL_MACHINE);
+    let hkcu_policy = policy_settings_key(HKEY_CURRENT_USER);
+    let hklm_policy = policy_settings_key(HKEY_LOCAL_MACHINE);
+
+    let backup = NetworkSettingsBackup {
+        proxy_enable: read_u32(hkcu.as_ref(), "ProxyEnable"),
+        proxy_server: read_string(hkcu.as_ref(), "ProxyServer"),
+        proxy_override: read_string(hkcu.as_ref(), "ProxyOverride"),
+        auto_config_url: read_string(hkcu.as_ref(), "AutoConfigURL"),
+        cert_revocation_hkcu: read_u32(hkcu.as_ref(), "CertificateRevocation"),
+        cert_revocation_hkcu_policy: read_u32(hkcu_policy.as_ref(), "CertificateRevocation"),
+        cert_revocation_hklm: read_u32(hklm.as_ref(), "CertificateRevocation"),
+        cert_revocation_hklm_policy: read_u32(hklm_policy.as_ref(), "CertificateRevocation"),
+        cert_revocation_wow6432: winreg::RegKey::predef(HKEY_LOCAL_MACHINE)
+            .open_subkey(r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Internet Settings")
+            .ok()
+            .and_then(|key| key.get_value("CertificateRevocation").ok()),
+        security_hklm_only: read_u32(hklm_policy.as_ref(), "Security_HKLM_only"),
+    };
+
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Ok(contents) = serde_json::to_string_pretty(&backup) {
+        let _ = fs::write(path, contents);
+    }
+}
+
+#[cfg(windows)]
+fn restore_u32(hive: winreg::HKEY, subkey: &str, name: &str, value: Option<u32>) {
+    use winreg::RegKey;
+    if let Ok((key, _)) = RegKey::predef(hive).create_subkey(subkey) {
+        match value {
+            Some(value) => { let _ = key.set_value(name, &value); }
+            None => { let _ = key.delete_value(name); }
+        }
+    }
+}
+
+#[cfg(windows)]
+fn restore_string(hive: winreg::HKEY, subkey: &str, name: &str, value: Option<String>) {
+    use winreg::RegKey;
+    if let Ok((key, _)) = RegKey::predef(hive).create_subkey(subkey) {
+        match value {
+            Some(value) => { let _ = key.set_value(name, &value); }
+            None => { let _ = key.delete_value(name); }
+        }
+    }
+}
+
+#[cfg(windows)]
+pub fn restore_network_settings() {
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+
+    let Some(path) = network_settings_backup_path() else { return };
+    let Ok(contents) = fs::read_to_string(&path) else { return };
+    let Ok(backup) = serde_json::from_str::<NetworkSettingsBackup>(&contents) else { return };
+
+    let internet = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings";
+    let policy = r"SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings";
+    let wow6432 = r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Internet Settings";
+
+    restore_u32(HKEY_CURRENT_USER, internet, "ProxyEnable", backup.proxy_enable);
+    restore_string(HKEY_CURRENT_USER, internet, "ProxyServer", backup.proxy_server);
+    restore_string(HKEY_CURRENT_USER, internet, "ProxyOverride", backup.proxy_override);
+    restore_string(HKEY_CURRENT_USER, internet, "AutoConfigURL", backup.auto_config_url);
+    restore_u32(HKEY_CURRENT_USER, internet, "CertificateRevocation", backup.cert_revocation_hkcu);
+    restore_u32(HKEY_CURRENT_USER, policy, "CertificateRevocation", backup.cert_revocation_hkcu_policy);
+    restore_u32(HKEY_LOCAL_MACHINE, internet, "CertificateRevocation", backup.cert_revocation_hklm);
+    restore_u32(HKEY_LOCAL_MACHINE, policy, "CertificateRevocation", backup.cert_revocation_hklm_policy);
+    restore_u32(HKEY_LOCAL_MACHINE, wow6432, "CertificateRevocation", backup.cert_revocation_wow6432);
+    restore_u32(HKEY_LOCAL_MACHINE, policy, "Security_HKLM_only", backup.security_hklm_only);
+
+    let _ = fs::remove_file(path);
+    notify_system_proxy_changed();
+}
+
+#[cfg(not(windows))]
+pub fn restore_network_settings() {}
+
+#[cfg(windows)]
 pub fn set_system_proxy_enabled(enabled: bool) {
     use winreg::enums::*;
     use winreg::RegKey;
 
+    backup_network_settings();
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     if let Ok((key, _)) = hkcu.create_subkey(r"Software\Microsoft\Windows\CurrentVersion\Internet Settings") {
         if enabled {
@@ -1083,6 +1220,7 @@ pub fn clean_system_proxy() {
     use winreg::enums::*;
     use winreg::RegKey;
 
+    backup_network_settings();
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     if let Ok((key, _)) = hkcu.create_subkey(r"Software\Microsoft\Windows\CurrentVersion\Internet Settings") {
         let _ = key.set_value("ProxyEnable", &0u32);
@@ -1102,9 +1240,9 @@ pub fn clean_system_proxy() {}
 
 pub fn kill_proxy_on_exit() {
     crate::applog::event("psynet: exit cleanup — stopping proxy and reverting hosts");
-    set_system_proxy_enabled(false);
     crate::proxy::stop_native_proxy(true);
     let _ = revert_config_hosts();
+    restore_network_settings();
 }
 
 #[cfg(windows)]
@@ -1348,6 +1486,7 @@ pub fn install_ca_and_crl_elevated() {}
 #[cfg(windows)]
 pub fn ensure_wininet_revocation_disabled() {
     use std::os::windows::process::CommandExt;
+    backup_network_settings();
     for hive in &[
         r"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings",
         r"HKCU\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings",
@@ -1369,49 +1508,6 @@ pub fn ensure_wininet_revocation_disabled() {
             ])
             .creation_flags(CREATE_NO_WINDOW)
             .status();
-    }
-
-    let _ = std::process::Command::new("reg")
-        .args([
-            "add",
-            r"HKLM\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings",
-            "/v",
-            "Security_HKLM_only",
-            "/t",
-            "REG_DWORD",
-            "/d",
-            "1",
-            "/f",
-        ])
-        .creation_flags(CREATE_NO_WINDOW)
-        .status();
-
-    if let Ok(output) = std::process::Command::new("reg")
-        .args(["query", "HKU"])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()
-    {
-        let text = String::from_utf8_lossy(&output.stdout);
-        for line in text.lines() {
-            let line = line.trim();
-            if (line.contains("S-1-5-21-") && !line.ends_with("_Classes")) || line.ends_with(".DEFAULT") {
-                let target = format!(r"{line}\Software\Microsoft\Windows\CurrentVersion\Internet Settings");
-                let _ = std::process::Command::new("reg")
-                    .args([
-                        "add",
-                        &target,
-                        "/v",
-                        "CertificateRevocation",
-                        "/t",
-                        "REG_DWORD",
-                        "/d",
-                        "0",
-                        "/f",
-                    ])
-                    .creation_flags(CREATE_NO_WINDOW)
-                    .status();
-            }
-        }
     }
 
     crate::winprobe::refresh_wininet_settings();

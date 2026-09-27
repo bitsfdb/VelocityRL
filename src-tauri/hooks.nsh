@@ -73,25 +73,15 @@ vrl_done_proc:
     nsExec::Exec 'certutil -user -f -addstore CA "$INSTDIR\psynet_proxy\leaf_epic.crt"'
   ${EndIf}
 
-  DetailPrint "Configuring WinINet certificate revocation policy..."
-  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Internet Settings" "CertificateRevocation" 0
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Internet Settings" "CertificateRevocation" 0
-  WriteRegDWORD HKLM "SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings" "CertificateRevocation" 0
-  WriteRegDWORD HKLM "SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings" "Security_HKLM_only" 1
-  WriteRegDWORD HKLM "SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Internet Settings" "CertificateRevocation" 0
-  WriteRegDWORD HKU ".DEFAULT\Software\Microsoft\Windows\CurrentVersion\Internet Settings" "CertificateRevocation" 0
-
-  StrCpy $0 0
-  vrl_loop_users:
-    EnumRegKey $1 HKU "" $0
-    StrCmp $1 "" vrl_done_users
-    IntOp $0 $0 + 1
-    WriteRegDWORD HKU "$1\Software\Microsoft\Windows\CurrentVersion\Internet Settings" "CertificateRevocation" 0
-    Goto vrl_loop_users
-  vrl_done_users:
+  ; The installer no longer modifies the certificate revocation settings directly.
+  DetailPrint "Runtime setup now handles certificate revocation settings with a reversible backup."
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
+  DetailPrint "Restoring original Windows proxy and certificate settings..."
+  nsExec::Exec 'powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Join-Path $env:APPDATA \"VelocityRL\network-settings-backup.json\"; if (Test-Path -LiteralPath $p) { $b = Get-Content -LiteralPath $p -Raw | ConvertFrom-Json; function Restore-Value($key, $name, $type, $value) { if ($null -eq $value) { & reg.exe delete $key /v $name /f | Out-Null } else { & reg.exe add $key /v $name /t $type /d $value /f | Out-Null } }; $internet = \"HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings\"; $hkcuPolicy = \"HKCU\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings\"; $hklmInternet = \"HKLM\Software\Microsoft\Windows\CurrentVersion\Internet Settings\"; $hklmPolicy = \"HKLM\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings\"; $wow6432 = \"HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Internet Settings\"; Restore-Value $internet \"ProxyEnable\" REG_DWORD $b.proxy_enable; Restore-Value $internet \"ProxyServer\" REG_SZ $b.proxy_server; Restore-Value $internet \"ProxyOverride\" REG_SZ $b.proxy_override; Restore-Value $internet \"AutoConfigURL\" REG_SZ $b.auto_config_url; Restore-Value $internet \"CertificateRevocation\" REG_DWORD $b.cert_revocation_hkcu; Restore-Value $hkcuPolicy \"CertificateRevocation\" REG_DWORD $b.cert_revocation_hkcu_policy; Restore-Value $hklmInternet \"CertificateRevocation\" REG_DWORD $b.cert_revocation_hklm; Restore-Value $hklmPolicy \"CertificateRevocation\" REG_DWORD $b.cert_revocation_hklm_policy; Restore-Value $wow6432 \"CertificateRevocation\" REG_DWORD $b.cert_revocation_wow6432; Restore-Value $hklmPolicy \"Security_HKLM_only\" REG_DWORD $b.security_hklm_only; Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue }"'
+  DetailPrint "Removing VelocityRL startup task..."
+  nsExec::Exec 'schtasks /Delete /TN VelocityRL /F'
   DetailPrint "Removing VelocityRL Certificates from Windows Certificate Stores..."
   nsExec::Exec 'powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-ChildItem Cert:\LocalMachine\Root, Cert:\CurrentUser\Root, Cert:\LocalMachine\CA, Cert:\CurrentUser\CA -ErrorAction SilentlyContinue | Where-Object { $_.Subject -like \"*VelocityRL*\" -or $_.Issuer -like \"*VelocityRL*\" -or $_.Subject -like \"*config.psynet.gg*\" -or $_.Subject -like \"*ws.rlpp.psynet.gg*\" } | Remove-Item -Force -ErrorAction SilentlyContinue"'
   ; All known CA thumbprints
@@ -157,9 +147,6 @@ vrl_done_proc:
   nsExec::Exec 'certutil -f -delstore CA 0DBB5FBF9A1E635A2414AE14BAEF375D25755BFB'
   nsExec::Exec 'certutil -user -f -delstore CA 0DBB5FBF9A1E635A2414AE14BAEF375D25755BFB'
 
-  DetailPrint "Disabling Windows system proxy..."
-  WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Internet Settings" "ProxyEnable" 0
-  nsExec::Exec 'powershell -NoProfile -ExecutionPolicy Bypass -Command "Set-ItemProperty -Path \"HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings\" -Name ProxyEnable -Value 0 -ErrorAction SilentlyContinue"'
 
   DetailPrint "Restoring hosts file if redirected..."
   nsExec::Exec 'powershell -NoProfile -ExecutionPolicy Bypass -Command "$h = [System.IO.Path]::Combine($env:SystemRoot, \"System32\drivers\etc\hosts\"); if (Test-Path $h) { (Get-Content $h) | Where-Object { $_ -notmatch \"config\.psynet\.gg\" -and $_ -notmatch \"ws\.rlpp\.psynet\.gg\" -and $_ -notmatch \"api\.rlpp\.psynet\.gg\" } | Set-Content $h }"'

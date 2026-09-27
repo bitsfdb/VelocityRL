@@ -2365,6 +2365,7 @@ pub fn run() {
                             }
                         }
                     }
+                    psynet::restore_network_settings();
                     psynet::clean_system_proxy();
                     let active_cfg = psynet::load_active_spoof_from_disk();
                     if let Some(ref cfg) = active_cfg {
