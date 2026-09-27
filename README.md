@@ -30,9 +30,6 @@ Swap any item in the game with any other item — car bodies, wheels, boosts, de
 ### Name Spoofer
 Change your display name locally in menus, scoreboards, and nametags to any name you want without altering your external account.
 
-### Leaderboard Spoof
-Spoof your ranking, placement, and MMR on the in-game global leaderboards, or automatically synchronize it with your active Fake Ranks and MMR setup.
-
 ### Credit Spoof
 Customize your displayed Item Shop and Tournament credits locally to test or record UI views.
 

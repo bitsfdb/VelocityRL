@@ -83,6 +83,29 @@ function escHtml(str) {
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
+function ensureCustomItems(list) {
+    if (!Array.isArray(list)) return [];
+    if (!list.some(it => it.id === 999901 || (it.Product || it.product || '').toLowerCase() === 'bot banner')) {
+        list.push({
+            id: 999901,
+            ID: 999901,
+            product: 'Bot Banner',
+            Product: 'Bot Banner',
+            Slot: 'Player Banner',
+            slot: 'Player Banner',
+            quality: 'Limited',
+            Quality: 'Limited',
+            image_url: '',
+            asset_package: 'PlayerBanner_Bot',
+            AssetPackage: 'PlayerBanner_Bot',
+            asset_path: 'PlayerBanner_Bot.PlayerBanner_Bot',
+            AssetPath: 'PlayerBanner_Bot.PlayerBanner_Bot',
+            LongLabel: 'Bot Banner (Custom AI Banner)'
+        });
+    }
+    return list;
+}
+
 let ownedItem = null;
 let wantedItem = null;
 let items = [];
@@ -651,7 +674,8 @@ async function init() {
         await invoke('save_config', { config: { ...cfg, language: newLang } }).catch(() => {});
         invoke('get_items', { lang: newLang }).then(fetched => {
             if (fetched) {
-                items = Array.isArray(fetched) ? fetched : (fetched.items || fetched.Items || []);
+                const raw = Array.isArray(fetched) ? fetched : (fetched.items || fetched.Items || []);
+                items = ensureCustomItems(raw);
             }
         }).catch(() => {});
         const toastMsg = newLang === 'es' ? 'Idioma cambiado a Español' :
@@ -855,10 +879,14 @@ async function loadData() {
         }
 
         if (itemsResult) {
-            items = Array.isArray(itemsResult) ? itemsResult : (itemsResult.items || itemsResult.Items || []);
+            const raw = Array.isArray(itemsResult) ? itemsResult : (itemsResult.items || itemsResult.Items || []);
+            items = ensureCustomItems(raw);
         } else {
             invoke('get_items').catch(() => {}).then(fetched => {
-                if (fetched) { items = Array.isArray(fetched) ? fetched : (fetched.items || fetched.Items || []); }
+                if (fetched) {
+                    const raw = Array.isArray(fetched) ? fetched : (fetched.items || fetched.Items || []);
+                    items = ensureCustomItems(raw);
+                }
             });
         }
 
