@@ -438,6 +438,26 @@ async fn parse_items_slice(bytes: Vec<u8>) -> Result<Vec<Item>, String> {
             ItemsResponse::List(items) => items,
         };
         populate_thumbnails(&mut items);
+        if !items.iter().any(|it| it.id == 999901 || it.product.eq_ignore_ascii_case("bot banner")) {
+            items.push(Item {
+                id: 999901,
+                product: "Bot Banner".to_string(),
+                image_url: "".to_string(),
+                asset_package: "PlayerBanner_Bot".to_string(),
+                asset_path: "PlayerBanner_Bot.PlayerBanner_Bot".to_string(),
+                object_name: None,
+                object_class: None,
+                is_multi_asset_package: None,
+                package_item_count: None,
+                compatible_body_id: None,
+                compatible_body_name: None,
+                slot: "Player Banner".to_string(),
+                quality: "Limited".to_string(),
+                paintable: Some(false),
+                attributes: vec![],
+                dlc: "".to_string(),
+            });
+        }
         Ok(items)
     })
     .await
