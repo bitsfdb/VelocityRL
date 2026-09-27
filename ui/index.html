@@ -53,9 +53,14 @@
                         <button class="cat-btn" data-slot="Decal" data-i18n="categories.decals">Decals</button>
                         <button class="cat-btn" data-slot="Wheels" data-i18n="categories.wheels">Wheels</button>
                         <button class="cat-btn" data-slot="Rocket Boost" data-i18n="categories.boosts">Boosts</button>
+                        <button class="cat-btn" data-slot="Trail" data-i18n="categories.trails">Trails</button>
+                        <button class="cat-btn" data-slot="Goal Explosion" data-i18n="categories.explosions">Goal Explosions</button>
+                        <button class="cat-btn" data-slot="Player Banner" data-i18n="categories.banners">Player Banners</button>
+                        <button class="cat-btn" data-slot="Avatar Border" data-i18n="categories.borders">Avatar Borders</button>
                         <button class="cat-btn" data-slot="Antenna" data-i18n="categories.antennas">Antennas</button>
                         <button class="cat-btn" data-slot="Topper" data-i18n="categories.toppers">Toppers</button>
-                        <button class="cat-btn" data-slot="Goal Explosion" data-i18n="categories.explosions">Goal Explosions</button>
+                        <button class="cat-btn" data-slot="Engine Audio" data-i18n="categories.engine_audio">Engine Audio</button>
+                        <button class="cat-btn" data-slot="Paint Finish" data-i18n="categories.paint_finishes">Paint Finishes</button>
                     </div>
 
                     <div class="swapper-grid">
@@ -66,7 +71,6 @@
                                 <div id="owned-results" class="search-flyout"></div>
                             </div>
                             <div id="owned-selected" class="item-selected-view">
-                                <div class="clear-item-btn" id="clear-owned">×</div>
                                 <div class="empty-state">
                                     <p data-i18n="swapper.no_item_selected">No item selected</p>
                                 </div>
@@ -80,38 +84,11 @@
                                 <div id="wanted-results" class="search-flyout"></div>
                             </div>
                             <div id="wanted-selected" class="item-selected-view">
-                                <div class="clear-item-btn" id="clear-wanted">×</div>
                                 <div class="empty-state">
                                     <p data-i18n="swapper.no_item_selected">No item selected</p>
                                 </div>
                             </div>
                         </div>
-                    </div>
-
-                    <div class="spawn-paint-block" id="swap-paint-block">
-                        <div class="spawn-paint-head">
-                            <span class="spawn-paint-label" data-i18n="swapper.paint">Paint</span>
-                            <span id="swap-paint-selected" class="spawn-paint-selected" style="color: var(--muted);" data-i18n="swapper.coming_soon">Coming Soon</span>
-                        </div>
-                        <div id="swap-paint-swatches" class="paint-swatches" role="radiogroup" aria-label="Swap paint color" style="pointer-events: none; opacity: 0.3;">
-                            <button type="button" class="paint-swatch is-active" data-paint="0" aria-label="None" aria-checked="true" disabled></button>
-                            <button type="button" class="paint-swatch" data-paint="1" aria-label="Crimson" aria-checked="false" disabled></button>
-                            <button type="button" class="paint-swatch" data-paint="2" aria-label="Lime" aria-checked="false" disabled></button>
-                            <button type="button" class="paint-swatch" data-paint="3" aria-label="Black" aria-checked="false" disabled></button>
-                            <button type="button" class="paint-swatch" data-paint="4" aria-label="Orange" aria-checked="false" disabled></button>
-                            <button type="button" class="paint-swatch" data-paint="5" aria-label="Sky Blue" aria-checked="false" disabled></button>
-                            <button type="button" class="paint-swatch" data-paint="6" aria-label="Cobalt" aria-checked="false" disabled></button>
-                            <button type="button" class="paint-swatch" data-paint="7" aria-label="Saffron" aria-checked="false" disabled></button>
-                            <button type="button" class="paint-swatch" data-paint="8" aria-label="Grey" aria-checked="false" disabled></button>
-                            <button type="button" class="paint-swatch" data-paint="9" aria-label="Pink" aria-checked="false" disabled></button>
-                            <button type="button" class="paint-swatch" data-paint="10" aria-label="Forest Green" aria-checked="false" disabled></button>
-                            <button type="button" class="paint-swatch" data-paint="11" aria-label="Purple" aria-checked="false" disabled></button>
-                            <button type="button" class="paint-swatch" data-paint="12" aria-label="Titanium White" aria-checked="false" disabled></button>
-                        </div>
-                        <select id="swap-paint" class="spawn-paint-select" aria-hidden="true" tabindex="-1" disabled>
-                            <option value="0">None</option>
-                        </select>
-                        <p id="swap-paint-hint" class="field-hint" style="display:block; color: var(--accent-red, #e05);" data-i18n="swapper.paint_hint">Unavailable — paint swaps cause items to become invisible in-game. Coming in a later update.</p>
                     </div>
 
                     <div class="swapper-controls">
@@ -122,7 +99,7 @@
 
                 <div id="restore-pane" class="subtab-pane">
                     <h2 class="section-title" data-i18n="restore.title">Restore / Revert</h2>
-                    <p class="section-desc" data-i18n="restore.desc">Revert individual files or restore everything from backups.</p>
+                    <p class="section-desc" data-i18n="restore.desc">Revert individual files or restore everything from clean backups.</p>
                     <div class="restoration-grid">
                         <div id="backup-container" class="backup-list">
                             <div class="backup-empty" data-i18n="restore.scanning">Scanning for backups...</div>
@@ -227,17 +204,21 @@
                                 <div class="title-tags-content">
                                     <p class="title-tags-hint" data-i18n="titles.variables_hint">The following tags can be used in your custom text:</p>
                                     <div class="title-tags-grid">
-                                        <span class="title-tag-badge" onclick="insertTitleTag('{legend}')"><code>{legend}</code> — <span data-i18n="titles.var_legend">Legend Icon / Suffix</span></span>
-                                        <span class="title-tag-badge" onclick="insertTitleTag('{grandchampion}')"><code>{grandchampion}</code> — <span data-i18n="titles.var_gc">Grand Champion Icon</span></span>
-                                        <span class="title-tag-badge" onclick="insertTitleTag('{champion}')"><code>{champion}</code> — <span data-i18n="titles.var_champ">Champion Icon</span></span>
-                                        <span class="title-tag-badge" onclick="insertTitleTag('{diamond}')"><code>{diamond}</code> — <span data-i18n="titles.var_diamond">Diamond Icon</span></span>
-                                        <span class="title-tag-badge" onclick="insertTitleTag('{flag_us}')"><code>{flag_us}</code> — <span data-i18n="titles.var_flag_us">USA Flag</span></span>
-                                        <span class="title-tag-badge" onclick="insertTitleTag('{flag_nl}')"><code>{flag_nl}</code> — <span data-i18n="titles.var_flag_nl">Netherlands Flag</span></span>
-                                        <span class="title-tag-badge" onclick="insertTitleTag('{flag_de}')"><code>{flag_de}</code> — <span data-i18n="titles.var_flag_de">Germany Flag</span></span>
-                                        <span class="title-tag-badge" onclick="insertTitleTag('{flag_fr}')"><code>{flag_fr}</code> — <span data-i18n="titles.var_flag_fr">France Flag</span></span>
-                                        <span class="title-tag-badge" onclick="insertTitleTag('{flag_es}')"><code>{flag_es}</code> — <span data-i18n="titles.var_flag_es">Spain Flag</span></span>
-                                        <span class="title-tag-badge" onclick="insertTitleTag('{flag_br}')"><code>{flag_br}</code> — <span data-i18n="titles.var_flag_br">Brazil Flag</span></span>
-                                        <span class="title-tag-badge" onclick="insertTitleTag('{flag_gb}')"><code>{flag_gb}</code> — <span data-i18n="titles.var_flag_gb">UK Flag</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{legend}')"><img class="tag-badge-icon" src="ranks/tier-22.png" width="15" height="15" alt="SSL"><code>{legend}</code><span class="tag-badge-label" data-i18n="titles.var_legend">SSL</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{grandchampion}')"><img class="tag-badge-icon" src="ranks/tier-19.png" width="15" height="15" alt="GC"><code>{grandchampion}</code><span class="tag-badge-label" data-i18n="titles.var_gc">Grand Champ</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{champion}')"><img class="tag-badge-icon" src="ranks/tier-16.png" width="15" height="15" alt="Champ"><code>{champion}</code><span class="tag-badge-label" data-i18n="titles.var_champ">Champion</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{diamond}')"><img class="tag-badge-icon" src="ranks/tier-13.png" width="15" height="15" alt="Diamond"><code>{diamond}</code><span class="tag-badge-label" data-i18n="titles.var_diamond">Diamond</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{platinum}')"><img class="tag-badge-icon" src="ranks/tier-10.png" width="15" height="15" alt="Platinum"><code>{platinum}</code><span class="tag-badge-label">Platinum</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{gold}')"><img class="tag-badge-icon" src="ranks/tier-7.png" width="15" height="15" alt="Gold"><code>{gold}</code><span class="tag-badge-label">Gold</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{silver}')"><img class="tag-badge-icon" src="ranks/tier-4.png" width="15" height="15" alt="Silver"><code>{silver}</code><span class="tag-badge-label">Silver</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{bronze}')"><img class="tag-badge-icon" src="ranks/tier-1.png" width="15" height="15" alt="Bronze"><code>{bronze}</code><span class="tag-badge-label">Bronze</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{flag_us}')"><img class="tag-badge-icon" src="flags/flag_us.png" width="16" height="16" alt="US"><code>{flag_us}</code><span class="tag-badge-label" data-i18n="titles.var_flag_us">USA</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{flag_nl}')"><img class="tag-badge-icon" src="flags/flag_nl.png" width="16" height="16" alt="NL"><code>{flag_nl}</code><span class="tag-badge-label" data-i18n="titles.var_flag_nl">Netherlands</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{flag_de}')"><img class="tag-badge-icon" src="flags/flag_de.png" width="16" height="16" alt="DE"><code>{flag_de}</code><span class="tag-badge-label" data-i18n="titles.var_flag_de">Germany</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{flag_fr}')"><img class="tag-badge-icon" src="flags/flag_fr.png" width="16" height="16" alt="FR"><code>{flag_fr}</code><span class="tag-badge-label" data-i18n="titles.var_flag_fr">France</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{flag_es}')"><img class="tag-badge-icon" src="flags/flag_es.png" width="16" height="16" alt="ES"><code>{flag_es}</code><span class="tag-badge-label" data-i18n="titles.var_flag_es">Spain</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{flag_br}')"><img class="tag-badge-icon" src="flags/flag_br.png" width="16" height="16" alt="BR"><code>{flag_br}</code><span class="tag-badge-label" data-i18n="titles.var_flag_br">Brazil</span></span>
+                                        <span class="title-tag-badge" onclick="insertTitleTag('{flag_gb}')"><img class="tag-badge-icon" src="flags/flag_gb.png" width="16" height="16" alt="UK"><code>{flag_gb}</code><span class="tag-badge-label" data-i18n="titles.var_flag_gb">UK</span></span>
                                     </div>
                                 </div>
                             </details>
@@ -305,13 +286,11 @@
                 <div class="subtab-strip" role="tablist">
                     <button type="button" class="subtab-btn active" data-subtab="custom-names-pane" data-i18n="custom.subtab_names">Names</button>
                     <button type="button" class="subtab-btn" data-subtab="custom-credits-pane" data-i18n="custom.subtab_credits">Credits</button>
-                    <button type="button" class="subtab-btn" data-subtab="custom-leaderboard-pane" data-i18n="custom.subtab_leaderboard">Leaderboard</button>
-                    <button type="button" class="subtab-btn" data-subtab="custom-avatar-pane" data-i18n="custom.subtab_avatar">Avatar (PFP)</button>
                 </div>
 
                 <div id="custom-names-pane" class="subtab-pane active">
                     <h2 class="section-title" data-i18n="custom.names_title">Names</h2>
-                    <p class="section-desc" data-i18n="custom.names_desc">Change your display name locally in menus, scoreboards, and nametags.</p>
+                    <p class="section-desc" data-i18n="custom.names_desc">Changes your display name.</p>
 
                     <div id="name-spoof-steam-banner" class="tracker-borderless-banner" style="display:none;margin-bottom:12px;background:rgba(88,101,242,0.1);border-color:rgba(88,101,242,0.3);">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0; color:#5865f2;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
@@ -331,7 +310,7 @@
                                 </span>
                                 <span class="switch-copy">
                                     <span class="switch-title" data-i18n="custom.name_spoof_title">Name spoofing</span>
-                                    <span class="switch-hint" data-i18n="custom.name_spoof_desc">Changes your in-game display name</span>
+                                    <span class="switch-hint" data-i18n="custom.name_spoof_desc">Changes your display name.</span>
                                 </span>
                             </label>
                         </div>
@@ -387,119 +366,6 @@
 
                         <div class="swapper-controls">
                             <button id="credit-spoof-save-btn" class="action-btn" type="button" data-i18n="custom.save_credits">Save credits</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="custom-leaderboard-pane" class="subtab-pane">
-                    <h2 class="section-title" data-i18n="custom.leaderboard_title">Leaderboard</h2>
-                    <p class="section-desc" data-i18n="custom.leaderboard_desc">Spoof your placement and ranking on the global in-game leaderboards.</p>
-
-                    <div class="card spoof-card">
-                        <div class="settings-group">
-                            <label class="switch-row" for="leaderboard-spoof-enabled">
-                                <input type="checkbox" id="leaderboard-spoof-enabled" class="switch-input" role="switch">
-                                <span class="switch-ui" aria-hidden="true">
-                                    <span class="switch-track"><span class="switch-thumb"></span></span>
-                                    <span class="switch-state">
-                                        <span class="switch-state-on">On</span>
-                                        <span class="switch-state-off">Off</span>
-                                    </span>
-                                </span>
-                                <span class="switch-copy">
-                                    <span class="switch-title" data-i18n="custom.leaderboard_spoof_title">Leaderboard spoofing</span>
-                                    <span class="switch-hint" data-i18n="custom.leaderboard_spoof_desc">Injects your position into in-game leaderboard queries</span>
-                                </span>
-                            </label>
-                        </div>
-
-                        <div class="settings-group">
-                            <label class="switch-row" for="leaderboard-spoof-sync">
-                                <input type="checkbox" id="leaderboard-spoof-sync" class="switch-input" role="switch" checked>
-                                <span class="switch-ui" aria-hidden="true">
-                                    <span class="switch-track"><span class="switch-thumb"></span></span>
-                                    <span class="switch-state">
-                                        <span class="switch-state-on">On</span>
-                                        <span class="switch-state-off">Off</span>
-                                    </span>
-                                </span>
-                                <span class="switch-copy">
-                                    <span class="switch-title" data-i18n="custom.leaderboard_sync_title">Sync with Fake Ranks &amp; MMR</span>
-                                    <span class="switch-hint" data-i18n="custom.leaderboard_sync_desc">Automatically calculate placement from your active Fake Ranks setup</span>
-                                </span>
-                            </label>
-                        </div>
-
-                        <div id="leaderboard-custom-fields" style="display:none;">
-                            <div class="settings-group">
-                                <label for="leaderboard-spoof-rank" data-i18n="custom.leaderboard_rank">Custom Rank / Placement</label>
-                                <input type="number" id="leaderboard-spoof-rank" placeholder="1" min="1" max="1000000" autocomplete="off">
-                            </div>
-
-                            <div class="settings-group">
-                                <label for="leaderboard-spoof-mmr" data-i18n="custom.leaderboard_mmr">Custom Leaderboard MMR</label>
-                                <input type="number" id="leaderboard-spoof-mmr" placeholder="2150" min="0" max="9999" autocomplete="off">
-                            </div>
-                        </div>
-
-                        <div class="swapper-controls">
-                            <button id="leaderboard-spoof-save-btn" class="action-btn" type="button" data-i18n="custom.save_leaderboard">Save leaderboard</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="custom-avatar-pane" class="subtab-pane">
-                    <h2 class="section-title" data-i18n="custom.avatar_title">Custom Profile Picture (PFP)</h2>
-                    <p class="section-desc" data-i18n="custom.avatar_desc">Inject a custom avatar for your local player in scoreboards, main menus, and banners.</p>
-
-                    <div class="card spoof-card">
-                        <div class="settings-group">
-                            <label class="switch-row" for="avatar-spoof-enabled">
-                                <input type="checkbox" id="avatar-spoof-enabled" class="switch-input" role="switch">
-                                <span class="switch-ui" aria-hidden="true">
-                                    <span class="switch-track"><span class="switch-thumb"></span></span>
-                                    <span class="switch-state">
-                                        <span class="switch-state-on">On</span>
-                                        <span class="switch-state-off">Off</span>
-                                    </span>
-                                </span>
-                                <span class="switch-copy">
-                                    <span class="switch-title" data-i18n="custom.avatar_enable_title">Custom Avatar</span>
-                                    <span class="switch-hint" data-i18n="custom.avatar_enable_desc">Sets your custom local profile picture</span>
-                                </span>
-                            </label>
-                        </div>
-
-                        <div class="settings-group">
-                            <label for="avatar-asset-path" data-i18n="custom.avatar_asset_path">Avatar UPK Asset Path</label>
-                            <input type="text" id="avatar-asset-path" data-i18n-placeholder="custom.avatar_asset_placeholder" placeholder="MyAvatar.AvatarTex (or CookedPCConsole UPK texture)" autocomplete="off" spellcheck="false" value="MyAvatar.AvatarTex">
-                            <span class="field-hint" data-i18n="custom.avatar_asset_hint">Path inside CookedPCConsole UPK files or custom avatar package.</span>
-                        </div>
-
-                        <div class="settings-group">
-                            <label for="avatar-image-file" data-i18n="custom.avatar_image_file">Custom Image / PNG (Optional)</label>
-                            <div style="display:flex;gap:8px;align-items:center;">
-                                <input type="text" id="avatar-image-path" placeholder="C:\path\to\avatar.png" readonly style="flex:1;">
-                                <button type="button" id="avatar-browse-btn" class="action-btn action-btn-secondary" style="padding:6px 14px;" data-i18n="custom.browse">Browse</button>
-                            </div>
-                        </div>
-
-                        <div class="titles-preview-block" style="margin-top:14px;">
-                            <h3 class="titles-preview-heading" data-i18n="custom.avatar_preview">Avatar Preview</h3>
-                            <div style="display:flex;align-items:center;gap:16px;padding:12px;background:rgba(0,0,0,0.25);border-radius:8px;border:1px solid var(--border);">
-                                <div id="avatar-preview-box" style="width:64px;height:64px;border-radius:8px;border:2px solid var(--accent-blue);overflow:hidden;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--muted);">
-                                    👤
-                                </div>
-                                <div>
-                                    <strong id="avatar-preview-name" style="font-size:14px;color:var(--text);">Local Player</strong>
-                                    <p id="avatar-preview-status" style="font-size:12px;color:var(--muted);margin-top:2px;" data-i18n="custom.avatar_status_ready">Ready to apply avatar</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="swapper-controls" style="margin-top:14px;display:flex;gap:10px;">
-                            <button id="avatar-apply-btn" class="action-btn" type="button" data-i18n="custom.apply_avatar">Apply Custom Avatar</button>
-                            <button id="avatar-restore-btn" class="action-btn action-btn-secondary" type="button" data-i18n="custom.restore_avatar">Restore Default</button>
                         </div>
                     </div>
                 </div>
@@ -885,6 +751,7 @@
                         <option value="it">Italiano</option>
                         <option value="nl">Nederlands</option>
                         <option value="tr">Türkçe</option>
+                        <option value="ru">Русский</option>
                     </select>
                 </div>
             </div>
@@ -911,6 +778,22 @@
                     <span class="switch-copy">
                         <span class="switch-title" data-i18n="settings.startup_title">Start VelocityRL on startup</span>
                         <span class="switch-hint" data-i18n="settings.startup_desc">Automatically starts VelocityRL in background on login</span>
+                    </span>
+                </label>
+            </div>
+            <div class="settings-group" style="margin-top:10px;">
+                <label class="switch-row" for="minimize-to-tray">
+                    <input type="checkbox" id="minimize-to-tray" class="switch-input" role="switch">
+                    <span class="switch-ui" aria-hidden="true">
+                        <span class="switch-track"><span class="switch-thumb"></span></span>
+                        <span class="switch-state">
+                            <span class="switch-state-on">On</span>
+                            <span class="switch-state-off">Off</span>
+                        </span>
+                    </span>
+                    <span class="switch-copy">
+                        <span class="switch-title" data-i18n="settings.minimize_tray_title">Minimize to system tray</span>
+                        <span class="switch-hint" data-i18n="settings.minimize_tray_desc">Keep VelocityRL running in background when closed</span>
                     </span>
                 </label>
             </div>

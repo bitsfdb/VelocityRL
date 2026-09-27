@@ -1,0 +1,100 @@
+[
+  {
+    "id": 1,
+    "name": "Crimson",
+    "abbr": "C",
+    "slug": "Crimson",
+    "hex": "#D4212B"
+  },
+  {
+    "id": 2,
+    "name": "Lime",
+    "abbr": "L",
+    "slug": "Lime",
+    "hex": "#A7E600"
+  },
+  {
+    "id": 3,
+    "name": "Black",
+    "abbr": "B",
+    "slug": "Black",
+    "hex": "#1E1E1E"
+  },
+  {
+    "id": 4,
+    "name": "Orange",
+    "abbr": "O",
+    "slug": "Orange",
+    "hex": "#FF7400"
+  },
+  {
+    "id": 5,
+    "name": "Sky Blue",
+    "abbr": "SB",
+    "slug": "SkyBlue",
+    "hex": "#00B4FF"
+  },
+  {
+    "id": 6,
+    "name": "Cobalt",
+    "abbr": "K",
+    "slug": "Cobalt",
+    "hex": "#1F45FC"
+  },
+  {
+    "id": 7,
+    "name": "Saffron",
+    "abbr": "Y",
+    "slug": "Saffron",
+    "hex": "#FFF117"
+  },
+  {
+    "id": 8,
+    "name": "Grey",
+    "abbr": "G",
+    "slug": "Grey",
+    "hex": "#8A8A8A"
+  },
+  {
+    "id": 9,
+    "name": "Pink",
+    "abbr": "P",
+    "slug": "Pink",
+    "hex": "#FF6EB4"
+  },
+  {
+    "id": 10,
+    "name": "Forest Green",
+    "abbr": "FG",
+    "slug": "ForestGreen",
+    "hex": "#2E8B57"
+  },
+  {
+    "id": 11,
+    "name": "Purple",
+    "abbr": "V",
+    "slug": "Purple",
+    "hex": "#800080"
+  },
+  {
+    "id": 12,
+    "name": "Titanium White",
+    "abbr": "TW",
+    "slug": "TitaniumWhite",
+    "hex": "#F8F8FF"
+  },
+  {
+    "id": 13,
+    "name": "Gold",
+    "abbr": "GD",
+    "slug": "Gold",
+    "hex": "#FFD700"
+  },
+  {
+    "id": 14,
+    "name": "Rose Gold",
+    "abbr": "RG",
+    "slug": "RoseGold",
+    "hex": "#B76E79"
+  }
+]

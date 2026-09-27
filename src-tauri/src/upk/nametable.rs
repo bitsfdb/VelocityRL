@@ -176,11 +176,11 @@ pub fn apply_header_renames(
     }
 
     let orig_len = header.len();
-    let mut cur = header;
-    let mut cur_import = import_off;
-    let mut cur_export = export_off;
-    let mut cur_depends = depends_off;
-    let mut cur_base_depends = base_depends_offset as i64;
+    let cur = header;
+    let cur_import = import_off;
+    let cur_export = export_off;
+    let cur_depends = depends_off;
+    let cur_base_depends = base_depends_offset as i64;
 
     let mut effective_pairs = pairs.to_vec();
     if let Ok(slots) = parse_name_slots(&cur, 0, name_count) {
@@ -235,90 +235,66 @@ pub fn apply_header_renames(
         }
     }
 
-    for (old_str, new_str) in &effective_pairs {
-        let slots = parse_name_slots(&cur, 0, name_count)?;
-        let rename_idxs: Vec<usize> = slots.iter().enumerate()
-            .filter(|(_, s)| s.name.eq_ignore_ascii_case(old_str))
-            .map(|(i, _)| i)
-            .collect();
-        if rename_idxs.is_empty() { continue; }
-
-        for &idx in &rename_idxs {
-            if slots[idx].fstr_len_raw < 0 {
-                return Err(format!("Name '{}' uses UTF-16; rename not supported.", old_str));
-            }
-
-            if cur_import > cur.len()
-                || cur_export > cur.len()
-                || cur_depends > cur.len()
-                || cur_import > cur_export
-                || cur_export > cur_depends
-            {
-                return Err("header table offsets OOB during rename rebuild".into());
-            }
-            let old_name_table = &cur[..cur_import];
-            let import_table = cur[cur_import..cur_export].to_vec();
-            let mut export_table = cur[cur_export..cur_depends].to_vec();
-            let mut beyond = cur[cur_depends..].to_vec();
-
-            let mut new_name_table: Vec<u8> = Vec::new();
-            let mut pos = 0usize;
-            let mut entry_i = 0usize;
-            while pos < old_name_table.len() {
-                if pos + 4 > old_name_table.len() {
-                    break;
-                }
-                let Ok(flen) = i32_at(old_name_table, pos) else {
-                    break;
-                };
-                let cb = if flen > 0 {
-                    flen as usize
-                } else if flen < 0 {
-                    (-flen as usize).saturating_mul(2)
-                } else {
-                    0
-                };
-                let end = match pos.checked_add(4).and_then(|p| p.checked_add(cb)).and_then(|p| p.checked_add(8)) {
-                    Some(e) => e,
-                    None => break,
-                };
-                if end > old_name_table.len() {
-                    break;
-                }
-                let Ok(flags) = u64_at(old_name_table, end - 8) else {
-                    break;
-                };
-                if entry_i == idx {
-                    new_name_table.extend_from_slice(&serialize_name_entry(new_str, flags));
-                } else {
-                    new_name_table.extend_from_slice(&old_name_table[pos..end]);
-                }
-                pos = end;
-                entry_i += 1;
-            }
-
-            let delta = new_name_table.len() as i64 - old_name_table.len() as i64;
-            if delta != 0 {
-                patch_export_serial_offsets(&mut export_table, cur_base_depends, delta);
-                patch_chunk_table_uncompressed_offsets(&mut beyond, cur_base_depends, delta);
-                cur_base_depends += delta;
-            }
-
-            let mut rebuilt = Vec::with_capacity(cur.len() + delta.unsigned_abs() as usize);
-            rebuilt.extend_from_slice(&new_name_table);
-            rebuilt.extend_from_slice(&import_table);
-            rebuilt.extend_from_slice(&export_table);
-            rebuilt.extend_from_slice(&beyond);
-
-            cur_import = (cur_import as i64 + delta) as usize;
-            cur_export = (cur_export as i64 + delta) as usize;
-            cur_depends = (cur_depends as i64 + delta) as usize;
-            cur = rebuilt;
-        }
+    if cur_import > cur.len()
+        || cur_export > cur.len()
+        || cur_depends > cur.len()
+        || cur_import > cur_export
+        || cur_export > cur_depends
+    {
+        return Err("header table offsets OOB during rename rebuild".into());
     }
 
-    let delta = cur.len() as i64 - orig_len as i64;
-    Ok((cur, delta))
+    let slots = parse_name_slots(&cur, 0, name_count)?;
+    let old_name_table = &cur[..cur_import];
+    let import_table = &cur[cur_import..cur_export];
+    let mut export_table = cur[cur_export..cur_depends].to_vec();
+    let mut beyond = cur[cur_depends..].to_vec();
+
+    let mut new_name_table: Vec<u8> = Vec::new();
+    let mut pos = 0usize;
+    let mut entry_i = 0usize;
+
+    while pos < old_name_table.len() && entry_i < slots.len() {
+        let slot = &slots[entry_i];
+        let Ok(flen) = i32_at(old_name_table, pos) else { break; };
+        let cb = if flen > 0 {
+            flen as usize
+        } else if flen < 0 {
+            (-flen as usize).saturating_mul(2)
+        } else {
+            0
+        };
+        let end = match pos.checked_add(4).and_then(|p| p.checked_add(cb)).and_then(|p| p.checked_add(8)) {
+            Some(e) => e,
+            None => break,
+        };
+        if end > old_name_table.len() { break; }
+        let Ok(flags) = u64_at(old_name_table, end - 8) else { break; };
+
+        // Check if this slot should be renamed
+        if let Some((_, new_str)) = effective_pairs.iter().find(|(old_str, _)| slot.name.eq_ignore_ascii_case(old_str)) {
+            new_name_table.extend_from_slice(&serialize_name_entry(new_str, flags));
+        } else {
+            new_name_table.extend_from_slice(&old_name_table[pos..end]);
+        }
+        pos = end;
+        entry_i += 1;
+    }
+
+    let net_delta = new_name_table.len() as i64 - old_name_table.len() as i64;
+    if net_delta != 0 {
+        patch_export_serial_offsets(&mut export_table, cur_base_depends, net_delta);
+        patch_chunk_table_uncompressed_offsets(&mut beyond, cur_base_depends, net_delta);
+    }
+
+    let mut rebuilt = Vec::with_capacity(new_name_table.len() + import_table.len() + export_table.len() + beyond.len());
+    rebuilt.extend_from_slice(&new_name_table);
+    rebuilt.extend_from_slice(import_table);
+    rebuilt.extend_from_slice(&export_table);
+    rebuilt.extend_from_slice(&beyond);
+
+    let delta = rebuilt.len() as i64 - orig_len as i64;
+    Ok((rebuilt, delta))
 }
 
 pub fn apply_name_pairs_inplace(

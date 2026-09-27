@@ -117,7 +117,7 @@ function t(key, fallback = '') {
 }
 
 async function setAppLanguage(lang) {
-    const supported = ['en', 'es', 'fr', 'de', 'pt', 'it', 'nl', 'tr'];
+    const supported = ['en', 'es', 'fr', 'de', 'pt', 'it', 'nl', 'tr', 'ru'];
     if (!lang || !supported.includes(lang)) {
         lang = 'en';
     }
@@ -383,11 +383,34 @@ function getQualityBgClass(q) {
     return map[clean] || 'bg-common';
 }
 
+const PAINT_NAMES = {
+    0: 'None', 1: 'Crimson', 2: 'Lime', 3: 'Black', 4: 'Orange', 5: 'Sky Blue',
+    6: 'Cobalt', 7: 'Saffron', 8: 'Grey', 9: 'Pink', 10: 'Forest Green',
+    11: 'Purple', 12: 'Titanium White', 13: 'Burnt Sienna', 14: 'Gold',
+    15: 'Rose Gold', 16: 'White Gold', 17: 'Onyx', 18: 'Platinum',
+};
+
+const PAINT_SWATCH_COLORS = {
+    0: 'linear-gradient(135deg, #333 45%, #777 45%, #777 55%, #333 55%)',
+    1: '#DC143C', 2: '#32CD32', 3: '#0a0a0a', 4: '#FF8C00', 5: '#87CEEB',
+    6: '#0047AB', 7: '#F4C430', 8: '#808080', 9: '#FF69B4', 10: '#228B22',
+    11: '#800080', 12: '#F5F5F5', 13: '#8B4513', 14: '#FFD700',
+    15: '#B76E79', 16: '#D4AF37', 17: '#353839', 18: '#E5E4E2'
+};
+
+function paintLabel(id) {
+    return PAINT_NAMES[id] || PAINT_NAMES[String(id)] || `Paint ${id}`;
+}
+
+let ownedPaintId = '0';
+let wantedPaintId = '0';
+
 function emptyStateHtml() {
     return '<div class="empty-state"><p>No item selected</p></div>';
 }
 
 function renderSelectedItem(container, item, onClear) {
+    const isTarget = container.id === 'wanted-selected';
     const pName = item.Product || item.product || 'Unknown';
     const pQuality = item.Quality || item.quality || 'Common';
     const pSlot = item.Slot || item.slot || '';
@@ -397,8 +420,33 @@ function renderSelectedItem(container, item, onClear) {
     const decalBody = getItemDecalBody(item);
     const decalBadge = decalBody ? `<span class="quality-badge" style="background:rgba(91,140,255,0.18);color:#93c5fd;border:1px solid rgba(91,140,255,0.35);">${escHtml(decalBody)} Decal</span>` : '';
 
+    const currentPaintId = Number((isTarget ? wantedPaintId : ownedPaintId) || 0);
+    const currentPaintName = currentPaintId > 0 ? paintLabel(currentPaintId) : 'Paint';
+    const isPaintable = itemIsPaintable(item);
+
+    const paintMenuHtml = isPaintable ? `
+        <div class="card-paint-wrap" id="card-paint-${container.id}">
+            <button type="button" class="card-paint-btn" title="Choose Paint Color" aria-label="Choose Paint">
+                <span class="paint-dot" style="background:${PAINT_SWATCH_COLORS[currentPaintId] || '#666'}"></span>
+                <span class="paint-label">${escHtml(currentPaintName)}</span>
+                <svg class="paint-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+            </button>
+            <div class="card-paint-dropdown">
+                ${Object.entries(PAINT_NAMES).map(([pid, pname]) => `
+                    <button type="button" class="card-paint-option${Number(pid) === currentPaintId ? ' is-selected' : ''}" data-paint="${pid}">
+                        <span class="opt-swatch" style="background:${PAINT_SWATCH_COLORS[pid] || '#666'}"></span>
+                        <span class="opt-name">${escHtml(pname)}</span>
+                        ${Number(pid) === currentPaintId ? `<svg class="opt-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>` : ''}
+                    </button>
+                `).join('')}
+            </div>
+        </div>
+    ` : '';
+
     container.innerHTML = `
-        <div class="clear-item-btn">×</div>
+        ${paintMenuHtml}
         ${pImg ? `<img src="${escHtml(pImg)}" class="selected-img" />` : ''}
         <h2>${escHtml(pName)}</h2>
         <div style="display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;margin:4px 0;">
@@ -407,7 +455,44 @@ function renderSelectedItem(container, item, onClear) {
         </div>
         <p class="item-slot-label">${escHtml(pSlot)}${decalBody ? ` (${escHtml(decalBody)})` : ''}${pId != null ? ` · <span style="color:#5b8cff">ID ${escHtml(String(pId))}</span>` : ''}</p>
     `;
-    container.querySelector('.clear-item-btn').addEventListener('click', onClear);
+
+    const paintWrap = container.querySelector('.card-paint-wrap');
+    if (paintWrap) {
+        const toggleBtn = paintWrap.querySelector('.card-paint-btn');
+        toggleBtn?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const wasOpen = paintWrap.classList.contains('is-open');
+            document.querySelectorAll('.card-paint-wrap.is-open').forEach(el => el.classList.remove('is-open'));
+            if (!wasOpen) paintWrap.classList.add('is-open');
+        });
+        paintWrap.querySelectorAll('.card-paint-option').forEach(opt => {
+            opt.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const pid = opt.dataset.paint;
+                if (isTarget) {
+                    wantedPaintId = pid;
+                } else {
+                    ownedPaintId = pid;
+                }
+                const dot = paintWrap.querySelector('.paint-dot');
+                const label = paintWrap.querySelector('.paint-label');
+                if (dot) dot.style.background = PAINT_SWATCH_COLORS[pid] || '#666';
+                if (label) label.textContent = pid === '0' ? 'Paints' : paintLabel(pid);
+                paintWrap.querySelectorAll('.card-paint-option').forEach(o => {
+                    const sel = o.dataset.paint === pid;
+                    o.classList.toggle('is-selected', sel);
+                    let check = o.querySelector('.opt-check');
+                    if (sel && !check) {
+                        o.insertAdjacentHTML('beforeend', '<svg class="opt-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>');
+                    } else if (!sel && check) {
+                        check.remove();
+                    }
+                });
+                paintWrap.classList.remove('is-open');
+            });
+        });
+    }
+
     container.classList.add('selected');
 }
 
@@ -511,10 +596,15 @@ async function init() {
     };
     document.getElementById('settings-btn').onclick = async () => {
         if (isAppLoading()) return;
-        const cfg = await invoke('get_config').catch(() => ({ game_dir: '', language: 'en' }));
+        const cfg = await invoke('get_config').catch(() => ({ game_dir: '', language: 'en', minimize_to_tray: false }));
         document.getElementById('game-dir').value = cfg.game_dir || '';
         const langSelect = document.getElementById('app-language');
         if (langSelect) langSelect.value = cfg.language || currentLanguage || 'en';
+        const minTrayToggle = document.getElementById('minimize-to-tray');
+        if (minTrayToggle) {
+            minTrayToggle.checked = !!cfg.minimize_to_tray;
+            syncNameSpoofSwitchAria(minTrayToggle);
+        }
         document.getElementById('settings-modal').classList.add('active');
     };
     const versionBtn = document.getElementById('version-btn');
@@ -571,6 +661,7 @@ async function init() {
             newLang === 'it' ? 'Lingua cambiata in Italiano' :
             newLang === 'nl' ? 'Taal gewijzigd naar Nederlands' :
             newLang === 'tr' ? 'Dil Türkçe olarak ayarlandı' :
+            newLang === 'ru' ? 'Язык изменён на Русский' :
             'Language set to English';
         showToast(toastMsg, 'success');
     });
@@ -839,19 +930,28 @@ async function loadData() {
 
 function clearOwned() {
     ownedItem = null;
+    ownedPaintId = '0';
     const container = document.getElementById('owned-selected');
-    container.innerHTML = emptyStateHtml();
-    container.classList.remove('selected');
-    document.getElementById('owned-search').value = '';
+    if (container) {
+        container.innerHTML = emptyStateHtml();
+        container.classList.remove('selected');
+    }
+    const oSearch = document.getElementById('owned-search');
+    if (oSearch) oSearch.value = '';
     validateSwapInputs();
 }
 
 function clearWanted() {
     wantedItem = null;
+    wantedPaintId = '0';
     const container = document.getElementById('wanted-selected');
-    container.innerHTML = emptyStateHtml();
-    container.classList.remove('selected');
-    document.getElementById('wanted-search').value = '';
+    if (container) {
+        container.innerHTML = emptyStateHtml();
+        container.classList.remove('selected');
+    }
+    const searchInput = document.getElementById('wanted-search');
+    if (searchInput) searchInput.value = '';
+    setGlobalPaint('0');
     validateSwapInputs();
 }
 
@@ -1435,8 +1535,9 @@ function wirePresetsUI() {
                 if (ownedItem && wantedItem) {
                     const ownedId = Number(ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id);
                     const wantedId = Number(wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id);
-                    let paintId = Number(document.getElementById('swap-paint')?.value || 0);
-                    if (!itemIsPaintable(wantedItem)) paintId = 0;
+                    const activePaintId = (wantedPaintId && wantedPaintId !== '0') ? wantedPaintId : ((ownedPaintId && ownedPaintId !== '0') ? ownedPaintId : '0');
+                    let paintId = Number(activePaintId || 0);
+                    if (!itemIsPaintable(wantedItem) && !itemIsPaintable(ownedItem)) paintId = 0;
                     const oName = ownedItem.Product || ownedItem.product || '';
                     const wName = wantedItem.Product || wantedItem.product || '';
                     const pkg = ownedItem.AssetPackage || ownedItem.asset_package || '';
@@ -1531,20 +1632,29 @@ function wirePresetsUI() {
 async function refreshBackups() {
     if (!backupContainer) return;
     wireReswapButton();
-    backupContainer.innerHTML = '<div class="backup-empty">Scanning for backups...</div>';
+    const countLabel = document.getElementById('restore-count-label');
+    const restoreAllBtn = document.getElementById('restore-btn');
+    const reswapBtn = document.getElementById('reswap-btn');
+
+    backupContainer.innerHTML = '<div class="backup-empty"><div class="loading-spinner" style="width:20px;height:20px;margin:0 auto 8px;"></div>Scanning active modifications…</div>';
     try {
         const backups = await invoke('get_backups');
 
         try {
             const swaps = await invoke('get_swaps');
-            const reswapBtn = document.getElementById('reswap-btn');
             if (reswapBtn) reswapBtn.disabled = (!swaps || swaps.length === 0);
         } catch { }
+
+        if (restoreAllBtn) restoreAllBtn.disabled = (!backups || backups.length === 0);
+        if (countLabel) {
+            countLabel.textContent = `${backups.length} Active Modification${backups.length === 1 ? '' : 's'}`;
+        }
 
         if (backups.length === 0) {
             backupContainer.innerHTML = '<div class="backup-empty">No active modifications detected. Your files are clean.</div>';
             return;
         }
+
         backupContainer.innerHTML = '';
         backups.forEach((file, i) => {
             const div = document.createElement('div');
@@ -1552,42 +1662,60 @@ async function refreshBackups() {
             let pImg = file.image_url || '';
             const fileName = file.path.split(/[/\\]/).pop();
             const cleanName = fileName.toLowerCase().replace('.bak', '').replace('.upk', '');
-            let matched = items && items.length > 0 ? items.find(i => {
-                const dbPkg = (i.asset_package || '').toLowerCase().replace('.upk', '');
+            let matched = items && items.length > 0 ? items.find(it => {
+                const dbPkg = (it.asset_package || '').toLowerCase().replace('.upk', '');
                 if (!dbPkg || dbPkg === 'none') return false;
                 return dbPkg === cleanName || (dbPkg.length > 4 && (cleanName.includes(dbPkg) || dbPkg.includes(cleanName)));
             }) : null;
             if (!matched && file.swap_from && items && items.length > 0) {
-                matched = items.find(i => (i.product || i.Product || '') === file.swap_from);
+                matched = items.find(it => (it.product || it.Product || '') === file.swap_from);
             }
             if (matched && matched.image_url && !pImg) {
                 pImg = matched.image_url;
             }
-            const decalBody = matched ? getItemDecalBody(matched) : (cleanName.includes('skin_') ? getItemDecalBody({ AssetPackage: cleanName, Product: file.name, Slot: 'Decal' }) : '');
-            const decalBadge = decalBody ? `<span style="font-size:10px;padding:2px 6px;background:rgba(91,140,255,0.18);color:#93c5fd;border-radius:4px;font-weight:600;margin-left:6px;border:1px solid rgba(91,140,255,0.3);">${escHtml(decalBody)} Decal</span>` : '';
 
-            const swapLabel = file.swap_from && file.swap_to
-                ? `${escHtml(file.swap_from)} is now ${escHtml(file.swap_to)}`
-                : '';
-            const renderThumbnailHtml = (src) => src
-                ? `<img src="${escHtml(src)}" class="flyout-img" style="width: 44px; height: 44px; border-radius: 6px; object-fit: contain; background: rgba(0,0,0,0.2);" onerror="this.style.display='none'" />`
-                : '';
+            const targetName = file.swap_to || file.name || cleanName;
+            const fromName = file.swap_from || file.name || cleanName;
+            const paintName = file.paint_name || '';
+            const targetImg = file.swap_to_image || pImg;
+
+            const renderThumb = (src, title) => src
+                ? `<img src="${escHtml(src)}" class="backup-thumb" alt="${escHtml(title || '')}" onerror="this.style.display='none'" />`
+                : `<div class="backup-thumb backup-thumb-placeholder"></div>`;
+
             div.innerHTML = `
-                <div style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0;">
-                    ${renderThumbnailHtml(pImg)}
-                    ${file.swap_to_image ? renderThumbnailHtml(file.swap_to_image) : ''}
-                    <div style="min-width:0;">
-                        <div class="backup-name" style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;">
-                            <span>${escHtml(file.name)}</span>
-                            ${decalBadge}
+                <div class="backup-card-flow">
+                    <div class="backup-col">
+                        <span class="backup-col-name" title="${escHtml(fromName)}">${escHtml(fromName)}</span>
+                        <div class="backup-col-thumb-wrap">
+                            ${renderThumb(pImg, fromName)}
                         </div>
-                        ${swapLabel ? `<div class="backup-date" style="color:var(--accent-blue);">${swapLabel}</div>` : `<div class="backup-date">Modified Product</div>`}
+                        <span class="backup-col-paint">Default</span>
+                    </div>
+
+                    <div class="backup-arrow-divider">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                            <polyline points="12 5 19 12 12 19"></polyline>
+                        </svg>
+                    </div>
+
+                    <div class="backup-col">
+                        <span class="backup-col-name" title="${escHtml(targetName)}">${escHtml(targetName)}</span>
+                        <div class="backup-col-thumb-wrap">
+                            ${renderThumb(targetImg, targetName)}
+                        </div>
+                        <span class="backup-col-paint ${paintName ? 'is-painted' : ''}">${escHtml(paintName || 'Default')}</span>
                     </div>
                 </div>
-                <div class="restore-mini-btn" title="Restore this file" data-restore-index="${i}" style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:6px;background:var(--bg-secondary);border:1px solid var(--border);cursor:pointer;color:var(--text);font-size:12px;white-space:nowrap;flex-shrink:0;">
-                    ${RESTORE_SVG}
+                <button type="button" class="restore-mini-btn" title="Restore this file">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="1 4 1 10 7 10"/>
+                        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                    </svg>
                     <span>Restore</span>
-                </div>`;
+                </button>`;
+
             div.querySelector('.restore-mini-btn').onclick = (e) => {
                 e.stopPropagation();
                 restoreSingle(file.path);
@@ -1718,13 +1846,11 @@ function normSlot(s) { return String(s || '').toLowerCase().replace(/[\s_-]+/g, 
 const UNPAINTABLE_SLOTS = new Set([
     'playeranthem', 'anthem',
     'playertitle', 'title',
-    'crate', 'blueprint', 'currency',
+    'crate', 'blueprint', 'currency', 'drop',
     'engineaudio',
-    'paintfinish',
-    'avatarborder', 'avatar',
 ]);
 
-const PAINT_HINT_UNPAINTABLE = "Unavailable — paint swaps cause items to become invisible in-game. Coming in a later update.";
+const PAINT_HINT_UNPAINTABLE = "Unavailable for this item type.";
 
 function coercePaintableFlag(value) {
     if (value == null || value === '') return null;
@@ -1762,30 +1888,9 @@ function attrValue(entry) {
 
 function itemIsPaintable(item) {
     if (!item) return false;
-
-    const explicitKeys = ['paintable', 'Paintable', 'paints', 'Paints'];
-    for (const k of explicitKeys) {
-        if (item[k] !== undefined && item[k] !== null && item[k] !== '') {
-            const flag = coercePaintableFlag(item[k]);
-            if (flag !== null) return flag;
-        }
-    }
-    const paintField = item.paint ?? item.Paint;
-    if (typeof paintField === 'boolean' || typeof paintField === 'number' || Array.isArray(paintField)) {
-        const flag = coercePaintableFlag(paintField);
-        if (flag !== null) return flag;
-    }
-
-    const attrs = itemAttrEntries(item);
-    for (const entry of attrs) {
-        const k = attrKey(entry);
-        if (k === 'paintable' || k === 'painted' || k === 'paint') {
-            const flag = coercePaintableFlag(attrValue(entry));
-            if (flag !== null) return flag;
-        }
-    }
-
-    return false;
+    const slot = normSlot(item.Slot || item.slot || item.Type || item.type);
+    if (UNPAINTABLE_SLOTS.has(slot)) return false;
+    return true;
 }
 
 function findItemByProductId(productId) {
@@ -1819,6 +1924,10 @@ function setPaintBlockEnabled(opts) {
         block.classList.toggle('is-disabled', !enabled);
         block.setAttribute('aria-disabled', enabled ? 'false' : 'true');
     }
+    if (wrap) {
+        wrap.style.pointerEvents = enabled ? 'auto' : 'none';
+        wrap.style.opacity = enabled ? '1' : '0.4';
+    }
     wrap?.querySelectorAll('.paint-swatch').forEach((btn) => {
         btn.disabled = !enabled;
         btn.tabIndex = enabled ? 0 : -1;
@@ -1826,7 +1935,7 @@ function setPaintBlockEnabled(opts) {
     if (!enabled) {
         resetPaintToNone(swatchId, selectId, selectedLabelId);
         if (hint) {
-            hint.textContent = PAINT_HINT_UNPAINTABLE;
+            hint.textContent = 'Select a target item to apply a paint color.';
             hint.hidden = false;
         }
         return;
@@ -1842,9 +1951,8 @@ function setPaintBlockEnabled(opts) {
 }
 
 function syncSwapPaintUi() {
-    const slot = wantedItem ? normSlot(wantedItem.Slot || wantedItem.slot) : '';
-    const isPaintableSlot = ['body', 'wheel', 'wheels', 'boost', 'topper', 'antenna', 'explosions', 'explosion'].includes(slot);
-    const enabled = wantedItem ? (itemIsPaintable(wantedItem) || isPaintableSlot) : false;
+    if (!document.getElementById('swap-paint-block')) return;
+    const enabled = wantedItem ? itemIsPaintable(wantedItem) : false;
     setPaintBlockEnabled({
         blockId: 'swap-paint-block',
         swatchId: 'swap-paint-swatches',
@@ -1945,8 +2053,9 @@ async function handleApply() {
         interval = setInterval(() => { if (p < 85) p += 5; showProgress(true, p); }, 400);
         const ownedId = (ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id).toString();
         const wantedId = (wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id).toString();
-        let paintId = Number(document.getElementById('swap-paint')?.value || 0);
-        if (!itemIsPaintable(wantedItem)) paintId = 0;
+        const activePaintId = (wantedPaintId && wantedPaintId !== '0') ? wantedPaintId : ((ownedPaintId && ownedPaintId !== '0') ? ownedPaintId : '0');
+        let paintId = Number(activePaintId || 0);
+        if (!itemIsPaintable(wantedItem) && !itemIsPaintable(ownedItem)) paintId = 0;
         const swapResult = await invoke('apply_swap', { ownedId, wantedId, paintId });
         clearInterval(interval);
         interval = null;
@@ -2044,7 +2153,9 @@ async function handleSaveSettings() {
     const existing = await invoke('get_config').catch(() => ({}));
     const langSelect = document.getElementById('app-language');
     const selectedLang = langSelect ? langSelect.value : (existing.language || currentLanguage || 'en');
-    const savedDir = await invoke('save_config', { config: { ...existing, game_dir: input.value.trim(), language: selectedLang } })
+    const minTrayToggle = document.getElementById('minimize-to-tray');
+    const minimizeToTray = minTrayToggle ? minTrayToggle.checked : (existing.minimize_to_tray || false);
+    const savedDir = await invoke('save_config', { config: { ...existing, game_dir: input.value.trim(), language: selectedLang, minimize_to_tray: minimizeToTray } })
         .catch(e => { console.warn('Save config failed:', e); return input.value.trim(); });
     if (savedDir) input.value = savedDir;
     await setAppLanguage(selectedLang);
@@ -2055,10 +2166,15 @@ async function handleSaveSettings() {
 }
 
 async function handleCancelSettings() {
-    const existing = await invoke('get_config').catch(() => ({ game_dir: '', language: 'en' }));
+    const existing = await invoke('get_config').catch(() => ({ game_dir: '', language: 'en', minimize_to_tray: false }));
     document.getElementById('game-dir').value = existing.game_dir || '';
     const langSelect = document.getElementById('app-language');
     if (langSelect) langSelect.value = existing.language || currentLanguage || 'en';
+    const minTrayToggle = document.getElementById('minimize-to-tray');
+    if (minTrayToggle) {
+        minTrayToggle.checked = !!existing.minimize_to_tray;
+        syncNameSpoofSwitchAria(minTrayToggle);
+    }
     document.getElementById('settings-modal').classList.remove('active');
     document.getElementById('install-chooser').style.display = 'none';
 }
@@ -3171,12 +3287,6 @@ function syncNameSpoofSwitchAria(el) {
     el.setAttribute('aria-checked', el.checked ? 'true' : 'false');
 }
 
-const PAINT_NAMES = {
-    0: 'None', 1: 'Crimson', 2: 'Lime', 3: 'Black', 4: 'Orange', 5: 'Sky Blue',
-    6: 'Cobalt', 7: 'Saffron', 8: 'Grey', 9: 'Pink', 10: 'Forest Green',
-    11: 'Purple', 12: 'Titanium White',
-};
-
 const RANK_ICON_CDN = 'https://trackercdn.com/cdn/tracker.gg/rocket-league/ranks/';
 const RANK_PLAYLISTS = [
     { id: '10', label: 'Ranked Duel 1v1' },
@@ -4215,13 +4325,10 @@ let avatarTabReady = false;
 
 function initAvatarTab() {
     const enabledEl = document.getElementById('avatar-spoof-enabled');
-    const assetPathEl = document.getElementById('avatar-asset-path');
     const imagePathEl = document.getElementById('avatar-image-path');
     const browseBtn = document.getElementById('avatar-browse-btn');
     const applyBtn = document.getElementById('avatar-apply-btn');
     const restoreBtn = document.getElementById('avatar-restore-btn');
-    const statusEl = document.getElementById('avatar-preview-status');
-    const previewBox = document.getElementById('avatar-preview-box');
     if (!enabledEl || !applyBtn) return;
 
     let saved = {};
@@ -4229,33 +4336,26 @@ function initAvatarTab() {
     const av = saved.custom_avatar || {};
     enabledEl.checked = !!av.enabled;
     syncNameSpoofSwitchAria(enabledEl);
-    if (assetPathEl) assetPathEl.value = av.avatar_asset_path || 'MyAvatar.AvatarTex';
     if (imagePathEl) imagePathEl.value = av.raw_image_path || '';
-
-    const updatePreview = () => {
-        if (imagePathEl?.value) {
-            previewBox.innerHTML = `<img src="tauri://localhost/${encodeURIComponent(imagePathEl.value)}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML='👤'">`;
-        } else {
-            previewBox.innerHTML = '👤';
-        }
-    };
-    updatePreview();
 
     if (avatarTabReady) return;
     avatarTabReady = true;
 
     enabledEl.addEventListener('change', () => syncNameSpoofSwitchAria(enabledEl));
 
-    browseBtn?.addEventListener('click', async () => {
+    browseBtn?.addEventListener('click', () => {
         try {
             const input = document.createElement('input');
             input.type = 'file';
-            input.accept = 'image/png,image/jpeg,image/webp';
+            input.accept = 'image/png';
             input.onchange = (e) => {
                 const file = e.target.files?.[0];
                 if (file) {
                     if (imagePathEl) imagePathEl.value = file.name;
-                    updatePreview();
+                    if (!enabledEl.checked) {
+                        enabledEl.checked = true;
+                        syncNameSpoofSwitchAria(enabledEl);
+                    }
                 }
             };
             input.click();
@@ -4265,22 +4365,23 @@ function initAvatarTab() {
     applyBtn.onclick = async () => {
         if (isAppLoading()) return;
         const enabled = !!enabledEl.checked;
-        const avatar_asset_path = (assetPathEl?.value || 'MyAvatar.AvatarTex').trim();
-        const raw_image_path = imagePathEl?.value ? imagePathEl.value.trim() : null;
-        const custom_avatar = { enabled, avatar_asset_path, raw_image_path };
+        const raw_image_path = imagePathEl?.value ? imagePathEl.value.trim() : '';
+        if (enabled && !raw_image_path) {
+            showToast('Please select a PNG image for your avatar.', 'error');
+            return;
+        }
+        const avatar_asset_path = 'MyAvatar.AvatarTex';
+        const custom_avatar = { enabled, avatar_asset_path, raw_image_path: raw_image_path || null };
 
         try {
             localStorage.setItem(CUSTOM_AVATAR_KEY, JSON.stringify({ custom_avatar }));
-            if (statusEl) statusEl.textContent = 'Applying custom avatar...';
-            const res = await invoke('apply_custom_avatar', {
+            await invoke('apply_custom_avatar', {
                 avatarAssetPath: avatar_asset_path,
-                rawImagePath: raw_image_path,
+                rawImagePath: raw_image_path || null,
             });
-            flashButtonLabel(applyBtn, 'Applied');
-            if (statusEl) statusEl.textContent = res.avatar_applied ? 'Active (in-game)' : 'Avatar configured';
-            showToast('Custom Avatar applied. Restart Rocket League to see your PFP in-game!', 'success');
+            flashButtonLabel(applyBtn, enabled ? 'Applied' : 'Saved (off)');
+            showToast(enabled ? 'Custom Avatar applied! Restart Rocket League to see your PFP.' : 'Custom Avatar disabled.', 'success');
         } catch (e) {
-            if (statusEl) statusEl.textContent = 'Error applying avatar';
             showToast(String(e), 'error');
         }
     };
@@ -4288,15 +4389,15 @@ function initAvatarTab() {
     restoreBtn?.addEventListener('click', async () => {
         if (isAppLoading()) return;
         try {
-            if (statusEl) statusEl.textContent = 'Restoring TAGame.upk default...';
             await invoke('restore_custom_avatar');
             flashButtonLabel(restoreBtn, 'Restored');
             if (enabledEl) {
                 enabledEl.checked = false;
                 syncNameSpoofSwitchAria(enabledEl);
             }
-            if (statusEl) statusEl.textContent = 'Restored to default';
-            showToast('TAGame.upk restored from backup.', 'success');
+            if (imagePathEl) imagePathEl.value = '';
+            localStorage.removeItem(CUSTOM_AVATAR_KEY);
+            showToast('Profile picture restored to default.', 'success');
         } catch (e) {
             showToast(String(e), 'error');
         }
@@ -4307,7 +4408,6 @@ function initCustomizationTab() {
     initNamesTab();
     initCreditsTab();
     initLeaderboardTab();
-    initAvatarTab();
     if (customizationTabReady) return;
     customizationTabReady = true;
 }
@@ -4666,9 +4766,7 @@ function initMiscTab() {
     });
 }
 
-function paintLabel(id) {
-    return PAINT_NAMES[id] || PAINT_NAMES[String(id)] || `Paint ${id}`;
-}
+let setGlobalPaint = (id) => {};
 
 function wirePaintSwatches(swatchId, selectId, selectedLabelId) {
     const wrap = document.getElementById(swatchId);
@@ -4683,7 +4781,7 @@ function wirePaintSwatches(swatchId, selectId, selectedLabelId) {
         )).join('');
     }
 
-    const setPaint = (id) => {
+    setGlobalPaint = (id) => {
         const sid = String(id);
         wrap.querySelectorAll('.paint-swatch').forEach((btn) => {
             const on = btn.dataset.paint === sid;
@@ -4692,12 +4790,30 @@ function wirePaintSwatches(swatchId, selectId, selectedLabelId) {
         });
         if (select) select.value = sid;
         if (selectedEl) selectedEl.textContent = paintLabel(sid);
+
+        const targetWrap = document.getElementById('card-paint-wanted-selected');
+        if (targetWrap) {
+            const dot = targetWrap.querySelector('.paint-dot');
+            const label = targetWrap.querySelector('.paint-label');
+            if (dot) dot.style.background = PAINT_SWATCH_COLORS[sid] || '#666';
+            if (label) label.textContent = sid === '0' ? 'Paint' : paintLabel(sid);
+            targetWrap.querySelectorAll('.card-paint-option').forEach(opt => {
+                const isSel = opt.dataset.paint === sid;
+                opt.classList.toggle('is-selected', isSel);
+                let check = opt.querySelector('.opt-check');
+                if (isSel && !check) {
+                    opt.insertAdjacentHTML('beforeend', '<svg class="opt-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>');
+                } else if (!isSel && check) {
+                    check.remove();
+                }
+            });
+        }
     };
 
     wrap.querySelectorAll('.paint-swatch').forEach((btn) => {
         btn.addEventListener('click', () => {
             if (btn.disabled || wrap.closest('.spawn-paint-block')?.classList.contains('is-disabled')) return;
-            setPaint(btn.dataset.paint);
+            setGlobalPaint(btn.dataset.paint);
         });
     });
     select?.addEventListener('change', () => {
@@ -4705,10 +4821,16 @@ function wirePaintSwatches(swatchId, selectId, selectedLabelId) {
             select.value = '0';
             return;
         }
-        setPaint(select.value);
+        setGlobalPaint(select.value);
     });
-    setPaint(select?.value || '0');
+    setGlobalPaint(select?.value || '0');
 }
+
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.card-paint-wrap')) {
+        document.querySelectorAll('.card-paint-wrap.is-open').forEach(el => el.classList.remove('is-open'));
+    }
+});
 
 async function initTitlesTab() {
     if (!titlesTabReady) {
@@ -4855,13 +4977,13 @@ function flagImgHtml(cc) {
     const code = String(cc || '').toLowerCase();
     if (!APPLE_FLAG_PNG.has(code)) return '';
     const alt = flagEmoji(code);
-    const src = `${API_BASE}/thumbnails/flags/flag_${code}.png`;
+    const src = `flags/flag_${code}.png`;
     return `<img class="title-flag" src="${src}" alt="${alt}" title="${code.toUpperCase()}" width="18" height="18" draggable="false" loading="lazy">`;
 }
 
 function rankImgHtml(tier, label) {
-    const src = `https://trackercdn.com/cdn/tracker.gg/rocket-league/ranks/s15rank${tier}.png`;
-    return `<img class="title-rank-icon" src="${src}" alt="${label}" title="${label}" width="20" height="20" style="vertical-align: middle; margin: 0 3px; display: inline-block;" draggable="false" loading="lazy">`;
+    const src = `ranks/tier-${tier}.png`;
+    return `<img class="title-rank-icon" src="${src}" alt="${label}" title="${label}" width="20" height="20" style="vertical-align: middle; margin: 0 3px; display: inline-block;" draggable="false" loading="lazy" onerror="this.onerror=null;this.src='${rankIconUrl(tier)}';">`;
 }
 
 function formatTitleText(text) {
