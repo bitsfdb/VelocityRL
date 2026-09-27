@@ -134,7 +134,8 @@
         "leaderboard_sync_desc": "Berechnet deine Platzierung automatisch aus deinem aktiven Fake-Ranks-Setup",
         "leaderboard_rank": "Eigener Rang / Platzierung",
         "leaderboard_mmr": "Eigene Bestenlisten-MMR",
-        "save_leaderboard": "Bestenliste speichern"
+        "save_leaderboard": "Bestenliste speichern",
+        "subtab_avatar": "Custom Profile Pictures (PFP)"
     },
     "ranks": {
         "title": "Fake Ranks",

@@ -124,7 +124,8 @@
         "credit_spoof_desc": "Définit vos crédits affichés en jeu",
         "item_shop_credits": "Crédits de Boutique",
         "tournament_credits": "Crédits de Tournoi",
-        "save_credits": "Enregistrer les crédits"
+        "save_credits": "Enregistrer les crédits",
+        "subtab_avatar": "Custom Profile Pictures (PFP)"
     },
     "ranks": {
         "title": "Faux Rangs",

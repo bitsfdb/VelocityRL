@@ -4409,7 +4409,7 @@ function initAvatarTab() {
                 rawImagePath: raw_image_path || null,
             });
             flashButtonLabel(applyBtn, enabled ? 'Applied' : 'Saved (off)');
-            showToast(enabled ? 'Custom Avatar applied! Restart Rocket League to see your PFP.' : 'Custom Avatar disabled.', 'success');
+            showToast(enabled ? 'Custom Profile Picture applied! Restart Rocket League to see your PFP.' : 'Custom Profile Picture disabled.', 'success');
         } catch (e) {
             showToast(String(e), 'error');
         }

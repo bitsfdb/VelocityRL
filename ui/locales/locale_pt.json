@@ -122,7 +122,8 @@
         "credit_spoof_desc": "Define seus créditos exibidos no jogo",
         "item_shop_credits": "Créditos da Loja",
         "tournament_credits": "Créditos de Torneio",
-        "save_credits": "Salvar créditos"
+        "save_credits": "Salvar créditos",
+        "subtab_avatar": "Custom Profile Pictures (PFP)"
     },
     "ranks": {
         "title": "Ranks Falsos",
