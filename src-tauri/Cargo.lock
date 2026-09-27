@@ -5264,6 +5264,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "image",
+ "libc",
  "log",
  "rand 0.8.6",
  "reqwest",

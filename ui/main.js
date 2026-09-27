@@ -4124,18 +4124,10 @@ function initNamesTab() {
             const nameCard = document.getElementById('name-spoof-card');
             if (steamBanner) steamBanner.style.display = isSteam ? 'flex' : 'none';
             if (enabledEl) {
-                if (isSteam) {
-                    enabledEl.checked = false;
-                    enabledEl.disabled = true;
-                    if (displayEl) displayEl.disabled = true;
-                    if (saveBtn) saveBtn.disabled = true;
-                    if (nameCard) nameCard.style.opacity = '0.5';
-                } else {
-                    enabledEl.disabled = false;
-                    if (displayEl) displayEl.disabled = false;
-                    if (saveBtn) saveBtn.disabled = false;
-                    if (nameCard) nameCard.style.opacity = '1';
-                }
+                enabledEl.disabled = false;
+                if (displayEl) displayEl.disabled = false;
+                if (saveBtn) saveBtn.disabled = false;
+                if (nameCard) nameCard.style.opacity = '1';
                 syncNameSpoofSwitchAria(enabledEl);
             }
         } catch {}

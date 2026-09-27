@@ -8,7 +8,7 @@ mod applog;
 mod integrity;
 mod jobobject;
 mod presets;
-mod psynet;
+pub mod psynet;
 pub mod upk;
 pub mod workshop;
 pub mod tracker;
@@ -734,77 +734,109 @@ async fn get_config(app: tauri::AppHandle) -> Result<Config, String> {
     }
 }
 
+#[cfg(windows)]
 const STARTUP_TASK_NAME: &str = "VelocityRL";
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+#[cfg(windows)]
 fn scheduled_task_exists() -> bool {
-    if !cfg!(windows) {
-        return false;
-    }
     let mut cmd = std::process::Command::new("schtasks");
     cmd.args(["/Query", "/TN", STARTUP_TASK_NAME])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
+    use std::os::windows::process::CommandExt;
+    cmd.creation_flags(CREATE_NO_WINDOW);
     let out = cmd.status();
     matches!(out, Ok(s) if s.success())
 }
 
 #[tauri::command]
 async fn get_launch_on_startup() -> Result<bool, String> {
-    Ok(scheduled_task_exists())
+    #[cfg(windows)]
+    {
+        Ok(scheduled_task_exists())
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let desktop = std::path::Path::new(&home).join(".config/autostart/velocityrl.desktop");
+        Ok(desktop.exists())
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        Ok(false)
+    }
 }
 
 #[tauri::command]
 async fn set_launch_on_startup(enable: bool) -> Result<(), String> {
-    if !cfg!(windows) {
-        return Err("Startup task is only supported on Windows".into());
+    #[cfg(windows)]
+    {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        if enable {
+            let mut cmd = std::process::Command::new("schtasks");
+            cmd.args([
+                "/Create",
+                "/TN", STARTUP_TASK_NAME,
+                "/TR", &format!("\"{}\"", exe.display()),
+                "/SC", "ONLOGON",
+                "/RL", "HIGHEST",
+                "/F",
+            ]);
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                cmd.creation_flags(CREATE_NO_WINDOW);
+            }
+            let out = cmd.output().map_err(|e| e.to_string())?;
+            if !out.status.success() {
+                return Err(format!(
+                    "Could not create startup task: {}",
+                    String::from_utf8_lossy(&out.stderr).trim()
+                ));
+            }
+        } else if scheduled_task_exists() {
+            let mut cmd = std::process::Command::new("schtasks");
+            cmd.args(["/Delete", "/TN", STARTUP_TASK_NAME, "/F"]);
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                cmd.creation_flags(CREATE_NO_WINDOW);
+            }
+            let out = cmd.output().map_err(|e| e.to_string())?;
+            if !out.status.success() {
+                return Err(format!(
+                    "Could not remove startup task: {}",
+                    String::from_utf8_lossy(&out.stderr).trim()
+                ));
+            }
+        }
+        Ok(())
     }
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    if enable {
-        let mut cmd = std::process::Command::new("schtasks");
-        cmd.args([
-            "/Create",
-            "/TN", STARTUP_TASK_NAME,
-            "/TR", &format!("\"{}\"", exe.display()),
-            "/SC", "ONLOGON",
-            "/RL", "HIGHEST",
-            "/F",
-        ]);
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            cmd.creation_flags(CREATE_NO_WINDOW);
+    #[cfg(target_os = "linux")]
+    {
+        let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+        let autostart_dir = std::path::Path::new(&home).join(".config/autostart");
+        let desktop_file = autostart_dir.join("velocityrl.desktop");
+
+        if enable {
+            let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+            let _ = std::fs::create_dir_all(&autostart_dir);
+            let content = format!(
+                "[Desktop Entry]\nType=Application\nName=VelocityRL\nExec=\"{}\"\nHidden=false\nNoDisplay=false\nX-GNOME-Autostart-enabled=true\n",
+                exe.display()
+            );
+            std::fs::write(&desktop_file, content).map_err(|e| e.to_string())?;
+        } else if desktop_file.exists() {
+            let _ = std::fs::remove_file(&desktop_file);
         }
-        let out = cmd.output().map_err(|e| e.to_string())?;
-        if !out.status.success() {
-            return Err(format!(
-                "Could not create startup task: {}",
-                String::from_utf8_lossy(&out.stderr).trim()
-            ));
-        }
-    } else if scheduled_task_exists() {
-        let mut cmd = std::process::Command::new("schtasks");
-        cmd.args(["/Delete", "/TN", STARTUP_TASK_NAME, "/F"]);
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            cmd.creation_flags(CREATE_NO_WINDOW);
-        }
-        let out = cmd.output().map_err(|e| e.to_string())?;
-        if !out.status.success() {
-            return Err(format!(
-                "Could not remove startup task: {}",
-                String::from_utf8_lossy(&out.stderr).trim()
-            ));
-        }
+        Ok(())
     }
-    Ok(())
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        Err("Startup configuration not supported on this platform".into())
+    }
 }
 
 fn normalize_game_dir(game_dir: &str) -> String {
@@ -1069,8 +1101,6 @@ pub(crate) async fn sync_all_swaps_to_tagame(
     cooked: &Path,
     swaps: &[SwapEntry],
 ) -> Result<(), String> {
-    let _ = upk::write_swaps_ini(cooked, swaps, !swaps.is_empty());
-
     if swaps.is_empty() {
         let _ = upk::tagame_swapper::restore_tagame_upk(cooked);
         return Ok(());
@@ -1496,12 +1526,10 @@ async fn restore_tagame_swaps(app: tauri::AppHandle) -> Result<upk::TagameSwappe
     let cooked = upk::tagame_swapper::resolve_cooked_dir(Path::new(&config.game_dir))
         .map_err(|e| e.to_string())?;
 
-    let _ = upk::write_swaps_ini(&cooked, &[], false);
-    let _ = upk::write_decals_ini(&cooked, &upk::DecalsIniConfig { enabled: false, ..Default::default() });
     let status = upk::tagame_swapper::restore_tagame_upk(&cooked)
         .map_err(|e| e.to_string())?;
 
-    applog::event("tagame_swapper: restored TAGame.upk and updated swaps.ini & decals.ini (Enabled=false)");
+    applog::event("tagame_swapper: restored TAGame.upk");
     Ok(status)
 }
 
@@ -2014,26 +2042,14 @@ async fn swap_custom_decal_to_donor(
         }
     }
 
-    let decals_ini = upk::DecalsIniConfig {
-        enabled: true,
-        decal_name: decal_name.clone(),
-        body_id: donor.id,
-        skin_id: 0,
-        body_diffuse: rel_diffuse,
-        body_skin: rel_skin,
-        chassis_diffuse: String::new(),
-        chassis_masks: String::new(),
-    };
-    let _ = upk::write_decals_ini(&cooked, &decals_ini);
-
     let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
     record_swap_history(&app, "custom_decal_swap", std::slice::from_ref(&new_entry), "");
 
-    applog::event(&format!("swap_custom_decal_to_donor: swapped '{}' -> '{}' (wrote decals.ini)", donor.product, decal_name));
+    applog::event(&format!("swap_custom_decal_to_donor: swapped '{}' -> '{}'", donor.product, decal_name));
     Ok(format!("Swapped {} with {} successfully! Restart Rocket League to see it.", donor.product, decal_name))
 }
 
-fn user_rl_logs_dir() -> Option<PathBuf> {
+pub fn user_rl_logs_dir() -> Option<PathBuf> {
     #[cfg(windows)]
     {
         let profile = std::env::var("USERPROFILE").ok()?;
@@ -2047,6 +2063,37 @@ fn user_rl_logs_dir() -> Option<PathBuf> {
         for c in &candidates {
             if c.exists() {
                 return Some(c.clone());
+            }
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let home = std::env::var("HOME").ok()?;
+        let home_path = Path::new(&home);
+        let prefixes = [
+            home_path.join("Games/Heroic/Prefixes/Rocket League/drive_c"),
+            home_path.join("Games/Heroic/Prefixes/default/Rocket League/drive_c"),
+            home_path.join("Games/Heroic/Prefixes/rocketleague/drive_c"),
+            home_path.join("Games/Heroic/Prefixes/rocketleague/pfx/drive_c"),
+            home_path.join(".var/app/com.heroicgameslauncher.hgl/Prefixes/Rocket League/drive_c"),
+            home_path.join(".local/share/Steam/steamapps/compatdata/252950/pfx/drive_c"),
+            home_path.join(".steam/steam/steamapps/compatdata/252950/pfx/drive_c"),
+            home_path.join(".steam/root/steamapps/compatdata/252950/pfx/drive_c"),
+            home_path.join(".var/app/com.valvesoftware.Steam/data/Steam/steamapps/compatdata/252950/pfx/drive_c"),
+            home_path.join("Games/rocketleague/drive_c"),
+            home_path.join("Games/rocket-league/drive_c"),
+            home_path.join("Games/epic-games-store/drive_c"),
+            home_path.join(".wine/drive_c"),
+        ];
+        for pfx in &prefixes {
+            let users_dir = pfx.join("users");
+            if let Ok(entries) = std::fs::read_dir(&users_dir) {
+                for u in entries.flatten() {
+                    let log_cand = u.path().join("Documents/My Games/Rocket League/TAGame/Logs");
+                    if log_cand.exists() {
+                        return Some(log_cand);
+                    }
+                }
             }
         }
     }
@@ -2313,6 +2360,74 @@ async fn detect_game_dir() -> Result<Vec<DetectedInstall>, String> {
         }
     }
 
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(home) = std::env::var("HOME") {
+            let home_path = std::path::Path::new(&home);
+
+            let steam_roots = [
+                home_path.join(".local/share/Steam"),
+                home_path.join(".steam/steam"),
+                home_path.join(".steam/root"),
+                home_path.join(".var/app/com.valvesoftware.Steam/data/Steam"),
+            ];
+
+            let mut library_paths = Vec::new();
+            for sr in &steam_roots {
+                library_paths.push(sr.join("steamapps"));
+                let vdf_path = sr.join("steamapps/libraryfolders.vdf");
+                if let Ok(vdf) = std::fs::read_to_string(&vdf_path) {
+                    for line in vdf.lines() {
+                        let trimmed = line.trim();
+                        if trimmed.starts_with("\"path\"") {
+                            if let Some(p) = trimmed.split('"').nth(3) {
+                                library_paths.push(std::path::PathBuf::from(p).join("steamapps"));
+                            }
+                        }
+                    }
+                }
+            }
+
+            for sa in &library_paths {
+                let cooked = sa.join("common/rocketleague/TAGame/CookedPCConsole");
+                if cooked.join("TAGame.upk").exists() {
+                    add_unique(&mut results, "Steam", cooked.to_string_lossy().into_owned());
+                }
+            }
+
+            let heroic_cands = [
+                home_path.join("Games/Heroic/rocketleague/TAGame/CookedPCConsole"),
+                home_path.join("Games/rocketleague/TAGame/CookedPCConsole"),
+                home_path.join(".var/app/com.heroicgameslauncher.hgl/Games/rocketleague/TAGame/CookedPCConsole"),
+            ];
+            for cand in &heroic_cands {
+                if cand.join("TAGame.upk").exists() {
+                    add_unique(&mut results, "Heroic Games Launcher", cand.to_string_lossy().into_owned());
+                }
+            }
+
+            let lutris_cands = [
+                home_path.join("Games/rocketleague/drive_c/Program Files/Epic Games/rocketleague/TAGame/CookedPCConsole"),
+                home_path.join("Games/epic-games-store/drive_c/Program Files/Epic Games/rocketleague/TAGame/CookedPCConsole"),
+            ];
+            for cand in &lutris_cands {
+                if cand.join("TAGame.upk").exists() {
+                    add_unique(&mut results, "Lutris (Epic Games)", cand.to_string_lossy().into_owned());
+                }
+            }
+
+            let bottles_dir = home_path.join(".var/app/com.usebottles.bottles/data/bottles/bottles");
+            if let Ok(entries) = std::fs::read_dir(&bottles_dir) {
+                for entry in entries.flatten() {
+                    let cand = entry.path().join("drive_c/Program Files/Epic Games/rocketleague/TAGame/CookedPCConsole");
+                    if cand.join("TAGame.upk").exists() {
+                        add_unique(&mut results, "Bottles", cand.to_string_lossy().into_owned());
+                    }
+                }
+            }
+        }
+    }
+
     Ok(results)
 }
 
@@ -2432,6 +2547,12 @@ fn create_main_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    {
+        if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        }
+    }
 
     jobobject::init_job_object();
 
@@ -2482,8 +2603,7 @@ pub fn run() {
             let dir = applog::init(app.handle());
             let (_data_dir, _) = get_catalog_dirs(app.handle());
             psynet::ensure_wininet_revocation_disabled();
-            // Clear any stale hosts entries left over from a crash or unclean shutdown.
-            // The proxy is not running yet — safe to revert unconditionally.
+            #[cfg(windows)]
             let _ = psynet::revert_config_hosts();
             // Install CA and CRL to the user certificate store immediately (non-blocking, no UAC).
             psynet::install_user_ca_direct();
@@ -2496,6 +2616,7 @@ pub fn run() {
                 "startup: system CA installed={ca_ok_at_startup} hosts={}",
                 psynet::config_hosts_complete_pub()
             ));
+            #[cfg(windows)]
             if !ca_ok_at_startup {
                 applog::event("startup: system CA missing — triggering background install");
                 std::thread::spawn(|| {
@@ -2600,12 +2721,13 @@ pub fn run() {
                         applog::event("psynet: proxy already running at boot");
                         return;
                     }
-                    #[cfg(windows)]
                     if let Some(pid) = crate::winprobe::loopback_443_owner() {
                         if pid != std::process::id() {
                             let name = crate::winprobe::process_name(pid).unwrap_or_else(|| "unknown".to_string());
                             if name.eq_ignore_ascii_case("velocity-rl.exe")
                                 || name.eq_ignore_ascii_case("velocityrl.exe")
+                                || name.eq_ignore_ascii_case("velocity-rl")
+                                || name.eq_ignore_ascii_case("velocityrl")
                                 || name.eq_ignore_ascii_case("psynet_proxy.exe")
                                 || name.eq_ignore_ascii_case("mitmproxy.exe")
                             {
@@ -2887,5 +3009,13 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             applog::on_run_event(app_handle, &event);
+            match event {
+                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
+                    crate::proxy::stop_native_proxy(true);
+                    psynet::set_system_proxy_enabled(false);
+                    let _ = psynet::revert_config_hosts();
+                }
+                _ => {}
+            }
         });
 }

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
+#[allow(unused_imports)]
 use std::process::Command;
 use std::sync::Mutex;
 use tauri::{Manager, State};
@@ -720,7 +721,7 @@ fn write_spoof(dir: &Path, payload: &SpoofPayload) -> Result<PathBuf, String> {
         }
         if let Some(ns) = &payload.name_spoof {
             let mut ns_map = serde_json::Map::new();
-            let effective_enabled = ns.enabled && !payload.is_steam;
+            let effective_enabled = ns.enabled;
             ns_map.insert("enabled".into(), serde_json::json!(effective_enabled));
             ns_map.insert("display_name".into(), serde_json::json!(ns.display_name.trim()));
 
@@ -902,21 +903,15 @@ fn write_spoof(dir: &Path, payload: &SpoofPayload) -> Result<PathBuf, String> {
 }
 
 
-#[cfg(windows)]
-const RL_PROCESS_NAMES: [&str; 3] = [
+const RL_PROCESS_NAMES: [&str; 4] = [
     "rocketleague.exe",
     "rocketleague_eac.exe",
     "rocketleague_eos.exe",
+    "rocketleague",
 ];
 
-#[cfg(windows)]
 pub fn rocket_league_process() -> Option<(String, u32)> {
     crate::winprobe::find_process_any(&RL_PROCESS_NAMES).map(|(pid, name)| (name, pid))
-}
-
-#[cfg(not(windows))]
-pub fn rocket_league_process() -> Option<(String, u32)> {
-    None
 }
 
 pub fn rocket_league_lock_holder() -> Option<String> {
@@ -927,18 +922,50 @@ fn rocket_league_running() -> bool {
     rocket_league_process().is_some()
 }
 
-fn windows_hosts_path() -> PathBuf {
-    let root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
-    PathBuf::from(root)
-        .join("System32")
-        .join("drivers")
-        .join("etc")
-        .join("hosts")
+fn hosts_path() -> PathBuf {
+    #[cfg(windows)]
+    {
+        let root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
+        PathBuf::from(root)
+            .join("System32")
+            .join("drivers")
+            .join("etc")
+            .join("hosts")
+    }
+    #[cfg(not(windows))]
+    {
+        PathBuf::from("/etc/hosts")
+    }
 }
 
 const CONFIG_HOST_PAIRS: &[(&str, &str)] = &[
     ("127.0.0.1", "config.psynet.gg"),
+    ("127.0.0.1", "api.epicgames.dev"),
+    ("127.0.0.1", "api.rlpp.psynet.gg"),
+    ("127.0.0.1", "ws.rlpp.psynet.gg"),
 ];
+
+const HOSTS_MANAGED_MARKERS: &[&str] = &[
+    "config.psynet.gg",
+    "api.rlpp.psynet.gg",
+    "ws.rlpp.psynet.gg",
+    "api.epicgames.dev",
+];
+
+fn hosts_line_is_managed(line: &str) -> bool {
+    HOSTS_MANAGED_MARKERS.iter().any(|m| line.contains(m))
+}
+
+fn append_missing_host_pairs(text: &mut String, newline: &str) {
+    for (ip, host) in CONFIG_HOST_PAIRS {
+        if !hosts_has_pair(text, ip, host) {
+            text.push_str(ip);
+            text.push(' ');
+            text.push_str(host);
+            text.push_str(newline);
+        }
+    }
+}
 
 fn hosts_has_pair(text: &str, ip: &str, host: &str) -> bool {
     let ip_l = ip.to_ascii_lowercase();
@@ -958,44 +985,29 @@ fn hosts_has_pair(text: &str, ip: &str, host: &str) -> bool {
 }
 
 fn config_hosts_complete() -> bool {
-    #[cfg(windows)]
-    {
-        let Ok(bytes) = fs::read(windows_hosts_path()) else {
-            return false;
-        };
-        let text = String::from_utf8_lossy(&bytes);
-        CONFIG_HOST_PAIRS
-            .iter()
-            .all(|(ip, host)| hosts_has_pair(&text, ip, host))
-    }
-    #[cfg(not(windows))]
-    {
-        true
-    }
+    let Ok(bytes) = fs::read(hosts_path()) else {
+        return false;
+    };
+    let text = String::from_utf8_lossy(&bytes);
+    CONFIG_HOST_PAIRS
+        .iter()
+        .all(|(ip, host)| hosts_has_pair(&text, ip, host))
 }
 
 fn psynet_hosts_redirected() -> bool {
-    #[cfg(windows)]
-    {
-        let Ok(bytes) = fs::read(windows_hosts_path()) else {
-            return false;
-        };
-        let text = String::from_utf8_lossy(&bytes);
-        CONFIG_HOST_PAIRS
-            .iter()
-            .any(|(ip, host)| hosts_has_pair(&text, ip, host))
-            || text.contains("api.rlpp.psynet.gg")
-            || text.contains("ws.rlpp.psynet.gg")
-    }
-    #[cfg(not(windows))]
-    {
-        false
-    }
+    let Ok(bytes) = fs::read(hosts_path()) else {
+        return false;
+    };
+    let text = String::from_utf8_lossy(&bytes);
+    CONFIG_HOST_PAIRS
+        .iter()
+        .any(|(ip, host)| hosts_has_pair(&text, ip, host))
+        || text.contains("api.rlpp.psynet.gg")
+        || text.contains("ws.rlpp.psynet.gg")
 }
 
 static HOSTS_ENSURE: Mutex<()> = Mutex::new(());
 
-#[cfg(windows)]
 fn loopback443_status() -> (bool, Option<String>) {
     if crate::proxy::is_proxy_running() {
         return (true, Some("VelocityRL".to_string()));
@@ -1006,11 +1018,6 @@ fn loopback443_status() -> (bool, Option<String>) {
     } else {
         (false, None)
     }
-}
-
-#[cfg(not(windows))]
-fn loopback443_status() -> (bool, Option<String>) {
-    (crate::proxy::is_proxy_running(), Some("VelocityRL".to_string()))
 }
 
 #[cfg(windows)]
@@ -1046,6 +1053,7 @@ pub fn notify_system_proxy_changed() {
 }
 
 #[cfg(not(windows))]
+#[allow(dead_code)]
 pub fn notify_system_proxy_changed() {}
 
 #[cfg(windows)]
@@ -1078,6 +1086,14 @@ pub fn set_system_proxy_enabled(enabled: bool) {
     notify_system_proxy_changed();
 }
 
+#[cfg(target_os = "linux")]
+pub fn set_system_proxy_enabled(enabled: bool) {
+    update_linux_wine_proxies(enabled);
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+pub fn set_system_proxy_enabled(_enabled: bool) {}
+
 #[cfg(windows)]
 pub fn clean_system_proxy() {
     use winreg::enums::*;
@@ -1094,11 +1110,228 @@ pub fn clean_system_proxy() {
     notify_system_proxy_changed();
 }
 
-#[cfg(not(windows))]
-pub fn set_system_proxy_enabled(_enabled: bool) {}
+#[cfg(target_os = "linux")]
+pub fn clean_system_proxy() {
+    update_linux_wine_proxies(false);
+}
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn clean_system_proxy() {}
+
+#[cfg(target_os = "linux")]
+fn update_linux_wine_proxies(enabled: bool) {
+    let regs = find_candidate_wine_user_regs();
+    if regs.is_empty() {
+        return;
+    }
+    for reg_path in regs {
+        if let Err(e) = sync_wine_user_reg(&reg_path, enabled) {
+            crate::applog::event(&format!(
+                "psynet: failed to sync Wine user.reg proxy ({}): {e}",
+                reg_path.display()
+            ));
+        } else {
+            crate::applog::event(&format!(
+                "psynet: synced Wine user.reg proxy (enabled={enabled}) -> {}",
+                reg_path.display()
+            ));
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn collect_wine_prefix_user_regs<F>(v: &serde_json::Value, cands: &mut Vec<PathBuf>, add_if_exists: &F)
+where
+    F: Fn(&mut Vec<PathBuf>, PathBuf),
+{
+    if let Some(p) = v.get("winePrefix").and_then(|p| p.as_str()) {
+        add_if_exists(cands, PathBuf::from(p).join("user.reg"));
+        add_if_exists(cands, PathBuf::from(p).join("pfx/user.reg"));
+    }
+    if let Some(obj) = v.as_object() {
+        for val in obj.values() {
+            if let Some(p) = val.get("winePrefix").and_then(|p| p.as_str()) {
+                add_if_exists(cands, PathBuf::from(p).join("user.reg"));
+                add_if_exists(cands, PathBuf::from(p).join("pfx/user.reg"));
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn find_candidate_wine_user_regs() -> Vec<PathBuf> {
+    let mut cands = Vec::new();
+    let add_if_exists = |list: &mut Vec<PathBuf>, p: PathBuf| {
+        if p.is_file() && !list.contains(&p) {
+            list.push(p);
+        }
+    };
+
+    if let Ok(wp) = std::env::var("WINEPREFIX") {
+        add_if_exists(&mut cands, PathBuf::from(wp).join("user.reg"));
+    }
+
+    let mut homes = Vec::new();
+    if let Ok(home) = std::env::var("HOME") {
+        let p = PathBuf::from(home);
+        if !homes.contains(&p) {
+            homes.push(p);
+        }
+    }
+    if let Ok(sudo_user) = std::env::var("SUDO_USER") {
+        let u = sudo_user.trim();
+        if !u.is_empty() && u != "root" {
+            let p = PathBuf::from("/home").join(u);
+            if !homes.contains(&p) {
+                homes.push(p);
+            }
+        }
+    }
+
+    for h in &homes {
+        // Heroic Launcher prefixes
+        add_if_exists(&mut cands, h.join("Games/Heroic/Prefixes/Rocket League/user.reg"));
+        add_if_exists(&mut cands, h.join("Games/Heroic/Prefixes/default/Rocket League/user.reg"));
+        add_if_exists(&mut cands, h.join(".var/app/com.heroicgameslauncher.hgl/config/heroic/Prefixes/Rocket League/user.reg"));
+        add_if_exists(&mut cands, h.join(".var/app/com.heroicgameslauncher.hgl/Prefixes/Rocket League/user.reg"));
+
+        // Heroic GamesConfig winePrefix (any install path)
+        for cfg_dir in &[
+            h.join(".config/heroic/GamesConfig"),
+            h.join(".var/app/com.heroicgameslauncher.hgl/config/heroic/GamesConfig"),
+        ] {
+            if let Ok(entries) = std::fs::read_dir(cfg_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                        continue;
+                    }
+                    let Ok(raw) = fs::read_to_string(&path) else {
+                        continue;
+                    };
+                    let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else {
+                        continue;
+                    };
+                    collect_wine_prefix_user_regs(&v, &mut cands, &add_if_exists);
+                }
+            }
+        }
+
+        // Lutris prefixes
+        add_if_exists(&mut cands, h.join("Games/rocket-league/user.reg"));
+        add_if_exists(&mut cands, h.join("Games/rocketleague/user.reg"));
+
+        // Default Wine
+        add_if_exists(&mut cands, h.join(".wine/user.reg"));
+
+        // Steam Proton prefixes (app 252950)
+        let steam_roots = [
+            h.join(".local/share/Steam"),
+            h.join(".steam/steam"),
+            h.join(".steam/root"),
+            h.join(".var/app/com.valvesoftware.Steam/data/Steam"),
+        ];
+        for sr in &steam_roots {
+            add_if_exists(&mut cands, sr.join("steamapps/compatdata/252950/pfx/user.reg"));
+            let vdf = sr.join("steamapps/libraryfolders.vdf");
+            if let Ok(content) = std::fs::read_to_string(&vdf) {
+                for line in content.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with("\"path\"") {
+                        if let Some(p) = trimmed.split('"').nth(3) {
+                            add_if_exists(&mut cands, PathBuf::from(p).join("steamapps/compatdata/252950/pfx/user.reg"));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Bottles
+        for bottles_dir in &[
+            h.join(".local/share/bottles/bottles"),
+            h.join(".var/app/com.usebottles.bottles/data/bottles/bottles"),
+        ] {
+            if let Ok(entries) = std::fs::read_dir(bottles_dir) {
+                for entry in entries.flatten() {
+                    add_if_exists(&mut cands, entry.path().join("user.reg"));
+                }
+            }
+        }
+    }
+
+    cands
+}
+
+#[cfg(target_os = "linux")]
+fn sync_wine_user_reg(path: &Path, enabled: bool) -> Result<(), std::io::Error> {
+    let content = fs::read_to_string(path)?;
+    let target_header = "[Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Internet Settings]";
+    let proxy_port = crate::proxy::SYSTEM_PROXY_PORT;
+
+    let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+    let mut header_idx = None;
+
+    for (i, line) in lines.iter().enumerate() {
+        if line.starts_with(target_header) {
+            header_idx = Some(i);
+            break;
+        }
+    }
+
+    let proxy_lines = if enabled {
+        vec![
+            "\"ProxyEnable\"=dword:00000001".to_string(),
+            format!("\"ProxyServer\"=\"127.0.0.1:{proxy_port}\""),
+            "\"ProxyOverride\"=\"<local>;*epicgames.com;*.epicgames.com;*ol.epicgames.com;*.ol.epicgames.com;*unrealengine.com;*.unrealengine.com;*hcaptcha.com;*arkoselabs.com;*epicgames.org\"".to_string(),
+        ]
+    } else {
+        vec!["\"ProxyEnable\"=dword:00000000".to_string()]
+    };
+
+    if let Some(h_idx) = header_idx {
+        let mut section_end = lines.len();
+        for i in (h_idx + 1)..lines.len() {
+            if lines[i].starts_with('[') {
+                section_end = i;
+                break;
+            }
+        }
+
+        let mut new_section = Vec::new();
+        for i in (h_idx + 1)..section_end {
+            let l = &lines[i];
+            if !l.starts_with("\"ProxyEnable\"=")
+                && !l.starts_with("\"ProxyServer\"=")
+                && !l.starts_with("\"ProxyOverride\"=")
+                && !l.starts_with("\"AutoConfigURL\"=")
+            {
+                new_section.push(l.clone());
+            }
+        }
+        for pl in proxy_lines {
+            new_section.push(pl);
+        }
+
+        let mut updated = Vec::with_capacity(lines.len() + 4);
+        updated.extend_from_slice(&lines[..=h_idx]);
+        updated.extend(new_section);
+        updated.extend_from_slice(&lines[section_end..]);
+        lines = updated;
+    } else {
+        lines.push(String::new());
+        lines.push(target_header.to_string());
+        lines.extend(proxy_lines);
+    }
+
+    let mut output = lines.join("\n");
+    output.push('\n');
+
+    let tmp_path = path.with_extension("reg.tmp");
+    fs::write(&tmp_path, output)?;
+    fs::rename(&tmp_path, path)?;
+
+    Ok(())
+}
 
 pub fn kill_proxy_on_exit() {
     crate::applog::event("psynet: exit cleanup — stopping proxy and reverting hosts");
@@ -1186,6 +1419,7 @@ fn run_elevated_script(script_text: &str) -> Result<(), String> {
 }
 
 #[cfg(not(windows))]
+#[allow(dead_code)]
 fn run_elevated_script(_script_text: &str) -> Result<(), String> {
     Err("PsyNet proxy is Windows-only for now.".into())
 }
@@ -1283,20 +1517,89 @@ pub fn is_ca_installed() -> bool {
     is_system_ca_installed()
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub fn is_ca_installed() -> bool {
+    for p in &[
+        "/etc/ca-certificates/trust-source/anchors/velocityrl_ca.crt",
+        "/usr/local/share/ca-certificates/velocityrl_ca.crt",
+        "/etc/pki/ca-trust/source/anchors/velocityrl_ca.crt",
+    ] {
+        if std::path::Path::new(p).exists() {
+            return true;
+        }
+    }
+    for bundle in &[
+        "/etc/ssl/certs/ca-certificates.crt",
+        "/etc/ca-certificates/extracted/tls-ca-bundle.pem",
+        "/etc/pki/tls/certs/ca-bundle.crt",
+    ] {
+        if let Ok(c) = fs::read_to_string(bundle) {
+            if c.contains("VelocityRL") {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn is_ca_installed() -> bool {
     true
 }
 
 /// Public wrapper so lib.rs startup check can log hosts state without re-exporting internals.
 pub fn config_hosts_complete_pub() -> bool {
-    #[cfg(windows)]
-    {
-        config_hosts_complete()
+    config_hosts_complete()
+}
+
+#[cfg(target_os = "linux")]
+#[allow(dead_code)]
+pub fn install_ca_linux() -> Result<(), String> {
+    let ca_bytes = crate::proxy::ca_cert_bytes();
+    let pid = std::process::id();
+    let tmp = std::env::temp_dir().join(format!("velocityrl_ca_{pid}.crt"));
+    if let Err(e) = fs::write(&tmp, ca_bytes) {
+        return Err(format!("Failed to write temp CA: {e}"));
     }
-    #[cfg(not(windows))]
-    {
-        true
+
+    let arch_dir = std::path::Path::new("/etc/ca-certificates/trust-source/anchors");
+    let debian_dir = std::path::Path::new("/usr/local/share/ca-certificates");
+    let fedora_dir = std::path::Path::new("/etc/pki/ca-trust/source/anchors");
+
+    let script = if arch_dir.exists() {
+        format!(
+            "cp '{}' /etc/ca-certificates/trust-source/anchors/velocityrl_ca.crt && update-ca-trust",
+            tmp.display()
+        )
+    } else if debian_dir.exists() {
+        format!(
+            "cp '{}' /usr/local/share/ca-certificates/velocityrl_ca.crt && update-ca-certificates",
+            tmp.display()
+        )
+    } else if fedora_dir.exists() {
+        format!(
+            "cp '{}' /etc/pki/ca-trust/source/anchors/velocityrl_ca.crt && update-ca-trust",
+            tmp.display()
+        )
+    } else {
+        format!("trust anchor '{}'", tmp.display())
+    };
+    let full_script = format!(
+        "{script}; sysctl -w net.ipv4.ip_unprivileged_port_start=80 2>/dev/null; echo 'net.ipv4.ip_unprivileged_port_start = 80' > /etc/sysctl.d/50-velocityrl.conf 2>/dev/null"
+    );
+
+    let ok = if crate::winprobe::is_elevated() {
+        std::process::Command::new("sh").args(["-c", &full_script]).status().map(|s| s.success()).unwrap_or(false)
+    } else {
+        std::process::Command::new("pkexec").args(["sh", "-c", &full_script]).status().map(|s| s.success()).unwrap_or(false)
+    };
+
+    let _ = fs::remove_file(&tmp);
+    if ok {
+        crate::applog::event("psynet: CA certificate installed to Linux system trust store");
+        Ok(())
+    } else {
+        Err("Failed to install VelocityRL CA certificate to system store.".into())
     }
 }
 
@@ -1342,7 +1645,15 @@ try {{
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+#[allow(dead_code)]
+pub fn install_ca_and_crl_elevated() {
+    if !is_ca_installed() {
+        let _ = install_ca_linux();
+    }
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn install_ca_and_crl_elevated() {}
 
 #[cfg(windows)]
@@ -1426,6 +1737,7 @@ pub fn ensure_hklm_revocation_disabled() {
 pub fn ensure_wininet_revocation_disabled() {}
 
 #[cfg(not(windows))]
+#[allow(dead_code)]
 pub fn ensure_hklm_revocation_disabled() {}
 
 
@@ -1519,11 +1831,65 @@ pub fn install_ca_direct(target_thumb: &str) -> Result<(), String> {
     }
 }
 
+#[cfg(target_os = "linux")]
+#[allow(dead_code)]
+pub fn write_config_hosts_direct() -> Result<(), String> {
+    let p = hosts_path();
+    let content = match fs::read_to_string(&p) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => {
+            return Err(format!("Failed to read /etc/hosts: {e}"));
+        }
+    };
+
+    let lines: Vec<&str> = content
+        .lines()
+        .filter(|line| !hosts_line_is_managed(line) && !line.contains("::1"))
+        .collect();
+
+    let mut new_text = lines.join("\n");
+    if !new_text.is_empty() && !new_text.ends_with('\n') {
+        new_text.push('\n');
+    }
+    append_missing_host_pairs(&mut new_text, "\n");
+
+    if fs::write(&p, new_text.as_bytes()).is_ok() {
+        crate::applog::event("psynet: /etc/hosts updated directly");
+        let _ = crate::winprobe::flush_dns_cache();
+        return Ok(());
+    }
+
+    let pid = std::process::id();
+    let tmp = std::env::temp_dir().join(format!("vrl_hosts_{pid}"));
+    let _ = fs::write(&tmp, new_text.as_bytes());
+    let cmd = format!(
+        "cp '{}' /etc/hosts && rm -f '{}'; sysctl -w net.ipv4.ip_unprivileged_port_start=80 2>/dev/null; echo 'net.ipv4.ip_unprivileged_port_start = 80' > /etc/sysctl.d/50-velocityrl.conf 2>/dev/null",
+        tmp.display(),
+        tmp.display()
+    );
+
+    let ok = if crate::winprobe::is_elevated() {
+        std::process::Command::new("sh").args(["-c", &cmd]).status().map(|s| s.success()).unwrap_or(false)
+    } else {
+        std::process::Command::new("pkexec").args(["sh", "-c", &cmd]).status().map(|s| s.success()).unwrap_or(false)
+    };
+    let _ = fs::remove_file(&tmp);
+
+    if ok {
+        crate::applog::event("psynet: /etc/hosts updated via pkexec/root");
+        let _ = crate::winprobe::flush_dns_cache();
+        return Ok(());
+    }
+
+    Err("Could not update /etc/hosts. Run: echo -e '127.0.0.1 config.psynet.gg\\n127.0.0.1 api.epicgames.dev' | sudo tee -a /etc/hosts".into())
+}
+
 #[cfg(windows)]
 pub fn write_config_hosts_direct() -> Result<(), String> {
     use std::os::windows::process::CommandExt;
 
-    let p = windows_hosts_path();
+    let p = hosts_path();
     if let Some(parent) = p.parent() {
         let _ = fs::create_dir_all(parent);
     }
@@ -1550,22 +1916,19 @@ pub fn write_config_hosts_direct() -> Result<(), String> {
 
     let lines: Vec<&str> = content
         .lines()
-        .filter(|line| {
-            !line.contains("api.rlpp.psynet.gg")
-                && !line.contains("ws.rlpp.psynet.gg")
-                && !line.contains("::1")
-        })
-        .collect();
+            .filter(|line| {
+                !line.contains("api.rlpp.psynet.gg")
+                    && !line.contains("ws.rlpp.psynet.gg")
+                    && !line.contains("::1")
+            })
+            .collect();
 
     let mut new_text = lines.join("\r\n");
     if !new_text.is_empty() && !new_text.ends_with("\r\n") {
         new_text.push_str("\r\n");
     }
 
-    let has_ipv4 = hosts_has_pair(&new_text, "127.0.0.1", "config.psynet.gg");
-    if !has_ipv4 {
-        new_text.push_str("127.0.0.1 config.psynet.gg\r\n");
-    }
+    append_missing_host_pairs(&mut new_text, "\r\n");
 
     let mut last_err = None;
     for attempt in 1..=4 {
@@ -1678,15 +2041,52 @@ pub fn install_user_ca_direct() {
 }
 
 #[cfg(not(windows))]
-fn is_ca_installed() -> bool {
-    true
-}
-
-#[cfg(not(windows))]
 pub fn install_user_ca_direct() {}
 
 pub fn revert_config_hosts() -> Result<(), String> {
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        let p = hosts_path();
+        let Ok(content) = fs::read_to_string(&p) else {
+            return Ok(());
+        };
+        if !content.contains("config.psynet.gg")
+            && !content.contains("rlpp.psynet.gg")
+            && !content.contains("api.epicgames.dev")
+        {
+            return Ok(());
+        }
+        let cleaned: Vec<&str> = content
+            .lines()
+            .filter(|line| !hosts_line_is_managed(line))
+            .collect();
+        let mut new_text = cleaned.join("\n");
+        new_text.push('\n');
+
+        if fs::write(&p, new_text.as_bytes()).is_ok() {
+            crate::applog::event("psynet: /etc/hosts reverted directly");
+            let _ = crate::winprobe::flush_dns_cache();
+            return Ok(());
+        }
+
+        if crate::winprobe::is_elevated() {
+            let pid = std::process::id();
+            let tmp = std::env::temp_dir().join(format!("vrl_hosts_revert_{pid}"));
+            let _ = fs::write(&tmp, new_text.as_bytes());
+            let cmd = format!("cp '{}' /etc/hosts && rm -f '{}'", tmp.display(), tmp.display());
+            let ok = std::process::Command::new("sh").args(["-c", &cmd]).status().map(|s| s.success()).unwrap_or(false);
+            let _ = fs::remove_file(&tmp);
+            if ok {
+                crate::applog::event("psynet: /etc/hosts reverted via root");
+                let _ = crate::winprobe::flush_dns_cache();
+                return Ok(());
+            }
+        }
+
+        crate::applog::event("psynet: /etc/hosts requires root to revert; run 'sudo ./velocity-rl --recover' to reset");
+        Ok(())
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         return Ok(());
     }
@@ -1695,7 +2095,7 @@ pub fn revert_config_hosts() -> Result<(), String> {
         if is_process_elevated() {
             clean_ca_from_pem_bundles();
             if psynet_hosts_redirected() {
-                let p = windows_hosts_path();
+                let p = hosts_path();
                 if let Ok(mut perms) = fs::metadata(&p).map(|m| m.permissions()) {
                     if perms.readonly() {
                         perms.set_readonly(false);
@@ -1705,7 +2105,7 @@ pub fn revert_config_hosts() -> Result<(), String> {
                 if let Ok(content) = fs::read_to_string(&p) {
                     let cleaned: Vec<&str> = content
                         .lines()
-                        .filter(|line| !line.contains("config.psynet.gg") && !line.contains("ws.rlpp.psynet.gg") && !line.contains("api.rlpp.psynet.gg"))
+                        .filter(|line| !hosts_line_is_managed(line))
                         .collect();
                     let mut new_text = cleaned.join("\r\n");
                     new_text.push_str("\r\n");
@@ -1725,7 +2125,7 @@ $hostsPath = Join-Path $env:SystemRoot "System32\drivers\etc\hosts"
 if (Test-Path -LiteralPath $hostsPath) {
     try { (Get-Item -LiteralPath $hostsPath).IsReadOnly = $false } catch {}
     $lines = Get-Content -LiteralPath $hostsPath
-    $clean = $lines | Where-Object { $_ -notmatch 'config\.psynet\.gg' -and $_ -notmatch 'ws\.rlpp\.psynet\.gg' -and $_ -notmatch 'api\.rlpp\.psynet\.gg' }
+    $clean = $lines | Where-Object { $_ -notmatch 'config\.psynet\.gg' -and $_ -notmatch 'ws\.rlpp\.psynet\.gg' -and $_ -notmatch 'api\.rlpp\.psynet\.gg' -and $_ -notmatch 'api\.epicgames\.dev' }
     [System.IO.File]::WriteAllLines($hostsPath, $clean)
     ipconfig /flushdns | Out-Null
 }
@@ -1755,8 +2155,99 @@ pub fn ensure_config_hosts() -> Result<bool, String> {
     ensure_config_hosts_inner()
 }
 
+#[cfg(target_os = "linux")]
+static LINUX_ELEVATION_ATTEMPTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(target_os = "linux")]
+pub fn setup_linux_system(need_ca: bool, need_hosts: bool) -> Result<(), String> {
+    if !need_ca && !need_hosts {
+        return Ok(());
+    }
+
+    if LINUX_ELEVATION_ATTEMPTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        crate::applog::event("psynet: skipping repeated elevation prompt on Linux. If hosts/CA are missing, run: sudo ./velocity-rl");
+        return Ok(());
+    }
+
+    let mut parts: Vec<String> = Vec::new();
+
+    // 1. Unprivileged port start
+    parts.push("sysctl -w net.ipv4.ip_unprivileged_port_start=80 2>/dev/null; echo 'net.ipv4.ip_unprivileged_port_start = 80' > /etc/sysctl.d/50-velocityrl.conf 2>/dev/null".into());
+
+    // 2. CA certificate
+    let pid = std::process::id();
+    let tmp_ca = std::env::temp_dir().join(format!("velocityrl_ca_{pid}.crt"));
+    if need_ca {
+        let ca_bytes = crate::proxy::ca_cert_bytes();
+        if let Ok(()) = fs::write(&tmp_ca, ca_bytes) {
+            let arch_dir = std::path::Path::new("/etc/ca-certificates/trust-source/anchors");
+            let debian_dir = std::path::Path::new("/usr/local/share/ca-certificates");
+            let fedora_dir = std::path::Path::new("/etc/pki/ca-trust/source/anchors");
+
+            if arch_dir.exists() {
+                parts.push(format!("cp '{}' /etc/ca-certificates/trust-source/anchors/velocityrl_ca.crt && update-ca-trust", tmp_ca.display()));
+            } else if debian_dir.exists() {
+                parts.push(format!("cp '{}' /usr/local/share/ca-certificates/velocityrl_ca.crt && update-ca-certificates", tmp_ca.display()));
+            } else if fedora_dir.exists() {
+                parts.push(format!("cp '{}' /etc/pki/ca-trust/source/anchors/velocityrl_ca.crt && update-ca-trust", tmp_ca.display()));
+            } else {
+                parts.push(format!("trust anchor '{}'", tmp_ca.display()));
+            }
+        }
+    }
+
+    // 3. /etc/hosts
+    let tmp_hosts = std::env::temp_dir().join(format!("vrl_hosts_{pid}"));
+    if need_hosts {
+        let p = hosts_path();
+        let content = fs::read_to_string(&p).unwrap_or_default();
+        let lines: Vec<&str> = content.lines().filter(|line| !hosts_line_is_managed(line)).collect();
+        let mut new_text = lines.join("\n");
+        if !new_text.is_empty() && !new_text.ends_with('\n') {
+            new_text.push('\n');
+        }
+        append_missing_host_pairs(&mut new_text, "\n");
+        if let Ok(()) = fs::write(&tmp_hosts, new_text.as_bytes()) {
+            parts.push(format!("cp '{}' /etc/hosts", tmp_hosts.display()));
+        }
+    }
+
+    let unified_script = parts.join(" && ");
+    crate::applog::event("psynet: running unified Linux setup via pkexec/root");
+
+    let ok = if crate::winprobe::is_elevated() {
+        std::process::Command::new("sh").args(["-c", &unified_script]).status().map(|s| s.success()).unwrap_or(false)
+    } else {
+        std::process::Command::new("pkexec").args(["sh", "-c", &unified_script]).status().map(|s| s.success()).unwrap_or(false)
+    };
+
+    let _ = fs::remove_file(&tmp_ca);
+    let _ = fs::remove_file(&tmp_hosts);
+
+    if ok {
+        crate::applog::event("psynet: Linux system setup completed successfully");
+        let _ = crate::winprobe::flush_dns_cache();
+        Ok(())
+    } else {
+        crate::applog::event("psynet: elevation was cancelled or failed. You can run 'sudo ./velocity-rl' manually.");
+        Ok(())
+    }
+}
+
 fn ensure_config_hosts_inner() -> Result<bool, String> {
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        let hosts_ok = config_hosts_complete();
+        let ca_ok = is_ca_installed();
+        if hosts_ok && ca_ok {
+            crate::applog::event("psynet: config hosts & CA already present on Linux");
+            return Ok(true);
+        }
+        crate::applog::event(&format!("psynet: Linux hosts_ok={hosts_ok} ca_ok={ca_ok} — attempting one-time setup"));
+        let _ = setup_linux_system(!ca_ok, !hosts_ok);
+        Ok(config_hosts_complete())
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         return Ok(true);
     }
@@ -1866,7 +2357,8 @@ try {{
         $raw = ($raw -split "`r?`n" | Where-Object {{ $_ -notmatch '::1\s+config\.psynet\.gg' }}) -join "`r`n"
         [System.IO.File]::WriteAllText($hostsPath, $raw)
         foreach ($pair in @(
-            @{{ Ip = "127.0.0.1"; Host = "config.psynet.gg" }}
+            @{{ Ip = "127.0.0.1"; Host = "config.psynet.gg" }},
+            @{{ Ip = "127.0.0.1"; Host = "api.epicgames.dev" }}
         )) {{
             $pat = [regex]::Escape($pair.Ip) + "\s+" + [regex]::Escape($pair.Host)
             if ($raw -notmatch $pat) {{
@@ -1963,6 +2455,12 @@ pub async fn save_psynet_spoof(
     let path = write_spoof(&dir, &payload)?;
     if let Some(ns) = &payload.name_spoof {
         set_system_proxy_enabled(ns.enabled);
+        if let Some(pid) = &ns.player_id {
+            let clean = crate::proxy::normalize_player_id(pid);
+            if !clean.is_empty() && !clean.contains("temp") {
+                crate::proxy::set_learned_player_id(&clean);
+            }
+        }
     }
     crate::proxy::set_spoof_config(payload).await;
     let _ = state;
@@ -1983,116 +2481,102 @@ pub struct LearnedIdentity {
 #[tauri::command]
 pub async fn get_learned_identity() -> Result<LearnedIdentity, String> {
     Ok(LearnedIdentity {
-        player_id: crate::proxy::get_learned_player_id(),
+        player_id: crate::proxy::get_learned_player_id().map(|id| crate::proxy::normalize_player_id(&id)),
         real_name: crate::proxy::get_learned_real_name(),
     })
 }
 
 pub async fn verify_config_psynet_live() -> ConfigPsynetHealth {
-    #[cfg(not(windows))]
-    {
-        ConfigPsynetHealth {
-            ok: true,
-            dns_resolved_to_loopback: true,
-            tls_cert_trusted: true,
-            proxy_responding: true,
-            upstream_psynet_reachable: true,
-            details: "Non-windows platform".to_string(),
+    use std::net::ToSocketAddrs;
+
+    // 1. Check DNS resolution of config.psynet.gg
+    let dns_resolved_to_loopback = match ("config.psynet.gg", 443).to_socket_addrs() {
+        Ok(addrs) => addrs.into_iter().any(|a| a.ip().is_loopback()),
+        Err(_) => false,
+    };
+
+    // 2. Check if proxy is listening on loopback 443 with TLS
+    let insecure_client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .no_proxy()
+        .resolve("config.psynet.gg", "127.0.0.1:443".parse().unwrap())
+        .timeout(std::time::Duration::from_millis(1500))
+        .build()
+        .ok();
+
+    let mut proxy_responding = false;
+    if let Some(client) = insecure_client {
+        if let Ok(resp) = client.get("https://config.psynet.gg/health").send().await {
+            if resp.status().is_success() {
+                proxy_responding = true;
+            }
         }
     }
-    #[cfg(windows)]
-    {
-        use std::net::ToSocketAddrs;
 
-        // 1. Check DNS resolution of config.psynet.gg
-        let dns_resolved_to_loopback = match ("config.psynet.gg", 443).to_socket_addrs() {
-            Ok(addrs) => addrs.into_iter().any(|a| a.ip().is_loopback()),
-            Err(_) => false,
-        };
-
-        // 2. Check if proxy is listening on loopback 443 with TLS
-        let insecure_client = reqwest::Client::builder()
-            .danger_accept_invalid_certs(true)
+    // 3. Check OS native TLS trust (without danger_accept_invalid_certs)
+    let mut tls_cert_trusted = false;
+    if proxy_responding {
+        let native_client = reqwest::Client::builder()
             .no_proxy()
             .resolve("config.psynet.gg", "127.0.0.1:443".parse().unwrap())
-            .timeout(std::time::Duration::from_millis(1500))
+            .timeout(std::time::Duration::from_millis(2000))
             .build()
             .ok();
 
-        let mut proxy_responding = false;
-        if let Some(client) = insecure_client {
+        if let Some(client) = native_client {
             if let Ok(resp) = client.get("https://config.psynet.gg/health").send().await {
                 if resp.status().is_success() {
-                    proxy_responding = true;
+                    tls_cert_trusted = true;
                 }
             }
         }
+    }
 
-        // 3. Check Windows OS native TLS trust (without danger_accept_invalid_certs)
-        let mut tls_cert_trusted = false;
-        if proxy_responding {
-            let native_client = reqwest::Client::builder()
-                .no_proxy()
-                .resolve("config.psynet.gg", "127.0.0.1:443".parse().unwrap())
-                .timeout(std::time::Duration::from_millis(2000))
-                .build()
-                .ok();
+    // 4. Check upstream PsyNet connectivity
+    let upstream_client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .no_proxy()
+        .resolve("config.psynet.gg", "34.160.180.65:443".parse().unwrap())
+        .timeout(std::time::Duration::from_millis(2500))
+        .build()
+        .ok();
 
-            if let Some(client) = native_client {
-                if let Ok(resp) = client.get("https://config.psynet.gg/health").send().await {
-                    if resp.status().is_success() {
-                        tls_cert_trusted = true;
-                    }
-                }
-            }
+    let mut upstream_psynet_reachable = false;
+    if let Some(client) = upstream_client {
+        if let Ok(resp) = client.get("https://config.psynet.gg/").send().await {
+            upstream_psynet_reachable = resp.status().as_u16() < 500;
         }
+    }
 
-        // 4. Check upstream PsyNet connectivity
-        let upstream_client = reqwest::Client::builder()
-            .danger_accept_invalid_certs(true)
-            .no_proxy()
-            .resolve("config.psynet.gg", "34.160.180.65:443".parse().unwrap())
-            .timeout(std::time::Duration::from_millis(2500))
-            .build()
-            .ok();
-
-        let mut upstream_psynet_reachable = false;
-        if let Some(client) = upstream_client {
-            if let Ok(resp) = client.get("https://config.psynet.gg/").send().await {
-                upstream_psynet_reachable = resp.status().as_u16() < 500;
-            }
-        }
-
-        // 5. Build summary
-        let ok = dns_resolved_to_loopback && proxy_responding && tls_cert_trusted;
-        let details = if ok {
-            if upstream_psynet_reachable {
-                "config.psynet.gg OK".to_string()
-            } else {
-                "config.psynet.gg working locally, but upstream PsyNet is unreachable (check internet connection)".to_string()
-            }
-        } else if !proxy_responding {
-            "Proxy is not responding on 127.0.0.1:443".to_string()
-        } else if !dns_resolved_to_loopback {
-            ANTI_VIRUS_EXCLUSION_MSG.to_string()
-        } else if !tls_cert_trusted {
-            "VelocityRL root CA is not trusted by Windows. Rocket League will reject connection.".to_string()
+    // 5. Build summary
+    let ok = dns_resolved_to_loopback && proxy_responding && tls_cert_trusted;
+    let details = if ok {
+        if upstream_psynet_reachable {
+            "config.psynet.gg OK".to_string()
         } else {
-            "config.psynet.gg check failed".to_string()
-        };
-
-        crate::applog::event(&format!(
-            "psynet: config.psynet.gg check: ok={ok} dns={dns_resolved_to_loopback} tls={tls_cert_trusted} proxy={proxy_responding} upstream={upstream_psynet_reachable} details='{details}'"
-        ));
-
-        ConfigPsynetHealth {
-            ok,
-            dns_resolved_to_loopback,
-            tls_cert_trusted,
-            proxy_responding,
-            upstream_psynet_reachable,
-            details,
+            "config.psynet.gg working locally, but upstream PsyNet is unreachable (check internet connection)".to_string()
         }
+    } else if !proxy_responding {
+        "Proxy is not responding on 127.0.0.1:443".to_string()
+    } else if !dns_resolved_to_loopback {
+        ANTI_VIRUS_EXCLUSION_MSG.to_string()
+    } else if !tls_cert_trusted {
+        "VelocityRL root CA is not trusted by system. Rocket League will reject connection.".to_string()
+    } else {
+        "config.psynet.gg check failed".to_string()
+    };
+
+    crate::applog::event(&format!(
+        "psynet: config.psynet.gg check: ok={ok} dns={dns_resolved_to_loopback} tls={tls_cert_trusted} proxy={proxy_responding} upstream={upstream_psynet_reachable} details='{details}'"
+    ));
+
+    ConfigPsynetHealth {
+        ok,
+        dns_resolved_to_loopback,
+        tls_cert_trusted,
+        proxy_responding,
+        upstream_psynet_reachable,
+        details,
     }
 }
 
@@ -2145,12 +2629,13 @@ pub async fn start_psynet_proxy(
 
     // Bind :443 BEFORE rewriting hosts. If listen fails, never leave
     // config.psynet.gg → loopback (that presents as RL/EOS online failure).
-    #[cfg(windows)]
     if let Some(pid) = crate::winprobe::loopback_443_owner() {
         if pid != std::process::id() {
             let name = crate::winprobe::process_name(pid).unwrap_or_else(|| "unknown".to_string());
             let is_stale_self = name.eq_ignore_ascii_case("velocity-rl.exe")
                 || name.eq_ignore_ascii_case("velocityrl.exe")
+                || name.eq_ignore_ascii_case("velocity-rl")
+                || name.eq_ignore_ascii_case("velocityrl")
                 || name.eq_ignore_ascii_case("psynet_proxy.exe")
                 || name.eq_ignore_ascii_case("mitmproxy.exe");
 
@@ -2231,47 +2716,95 @@ pub async fn start_psynet_proxy(
 
 #[tauri::command]
 pub fn clear_rocket_league_cache() -> Result<usize, String> {
-    #[cfg(not(windows))]
-    {
-        Ok(0)
+    if rocket_league_process().is_some() {
+        crate::applog::event("cache: Rocket League is running — skipping cache wipe to avoid file locks");
+        return Ok(0);
     }
+    let mut cache_dir_opt: Option<PathBuf> = None;
     #[cfg(windows)]
+    if let Ok(profile) = std::env::var("USERPROFILE") {
+        cache_dir_opt = Some(std::path::PathBuf::from(profile)
+            .join("Documents")
+            .join("My Games")
+            .join("Rocket League")
+            .join("TAGame")
+            .join("Cache"));
+    }
+    #[cfg(target_os = "linux")]
     {
-        if rocket_league_process().is_some() {
-            crate::applog::event("cache: Rocket League is running — skipping cache wipe to avoid file locks");
-            return Ok(0);
+        let mut homes = Vec::new();
+        if let Ok(home) = std::env::var("HOME") {
+            homes.push(PathBuf::from(home));
         }
-        if let Ok(profile) = std::env::var("USERPROFILE") {
-            let cache_dir = std::path::PathBuf::from(profile)
-                .join("Documents")
-                .join("My Games")
-                .join("Rocket League")
-                .join("TAGame")
-                .join("Cache");
-            if cache_dir.is_dir() {
-                if let Ok(entries) = std::fs::read_dir(&cache_dir) {
-                    let mut deleted = 0;
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        let res = if path.is_dir() {
-                            std::fs::remove_dir_all(&path)
-                        } else {
-                            std::fs::remove_file(&path)
-                        };
-                        if res.is_ok() {
-                            deleted += 1;
-                        }
-                    }
-                    crate::applog::event(&format!(
-                        "cache: cleared {deleted} item(s) from Rocket League Cache ({})",
-                        cache_dir.display()
-                    ));
-                    return Ok(deleted);
+        if let Ok(sudo_user) = std::env::var("SUDO_USER") {
+            let u = sudo_user.trim();
+            if !u.is_empty() && u != "root" {
+                let p = PathBuf::from("/home").join(u);
+                if !homes.contains(&p) {
+                    homes.push(p);
                 }
             }
         }
-        Ok(0)
+        for home_path in &homes {
+            let prefixes = [
+                home_path.join(".local/share/Steam/steamapps/compatdata/252950/pfx/drive_c"),
+                home_path.join(".steam/steam/steamapps/compatdata/252950/pfx/drive_c"),
+                home_path.join(".steam/root/steamapps/compatdata/252950/pfx/drive_c"),
+                home_path.join(".var/app/com.valvesoftware.Steam/data/Steam/steamapps/compatdata/252950/pfx/drive_c"),
+                home_path.join("Games/Heroic/Prefixes/Rocket League/drive_c"),
+                home_path.join("Games/Heroic/Prefixes/default/Rocket League/drive_c"),
+                home_path.join("Games/Heroic/Prefixes/rocketleague/drive_c"),
+                home_path.join("Games/Heroic/Prefixes/rocketleague/pfx/drive_c"),
+                home_path.join(".var/app/com.heroicgameslauncher.hgl/Prefixes/Rocket League/drive_c"),
+                home_path.join("Games/rocketleague/drive_c"),
+                home_path.join("Games/rocket-league/drive_c"),
+                home_path.join("Games/epic-games-store/drive_c"),
+                home_path.join(".wine/drive_c"),
+            ];
+            for pfx in &prefixes {
+                let users_dir = pfx.join("users");
+                if let Ok(entries) = std::fs::read_dir(&users_dir) {
+                    for u in entries.flatten() {
+                        let cand = u.path().join("Documents/My Games/Rocket League/TAGame/Cache");
+                        if cand.is_dir() {
+                            cache_dir_opt = Some(cand);
+                            break;
+                        }
+                    }
+                }
+                if cache_dir_opt.is_some() {
+                    break;
+                }
+            }
+            if cache_dir_opt.is_some() {
+                break;
+            }
+        }
     }
+    if let Some(cache_dir) = cache_dir_opt {
+        if cache_dir.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(&cache_dir) {
+                let mut deleted = 0;
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    let res = if path.is_dir() {
+                        std::fs::remove_dir_all(&path)
+                    } else {
+                        std::fs::remove_file(&path)
+                    };
+                    if res.is_ok() {
+                        deleted += 1;
+                    }
+                }
+                crate::applog::event(&format!(
+                    "cache: cleared {deleted} item(s) from Rocket League Cache ({})",
+                    cache_dir.display()
+                ));
+                return Ok(deleted);
+            }
+        }
+    }
+    Ok(0)
 }
 
 #[tauri::command]

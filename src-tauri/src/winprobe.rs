@@ -143,7 +143,41 @@ pub fn process_path(pid: u32) -> Option<std::path::PathBuf> {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub fn process_path(pid: u32) -> Option<std::path::PathBuf> {
+    if pid == 0 {
+        return None;
+    }
+    if let Ok(cmdline) = std::fs::read(format!("/proc/{pid}/cmdline")) {
+        for part in cmdline.split(|&b| b == 0) {
+            let s = String::from_utf8_lossy(part);
+            let s_lower = s.to_lowercase();
+            if s_lower.ends_with(".exe") || s_lower.contains("rocketleague") {
+                if s.starts_with(r"Z:\") || s.starts_with(r"z:\") {
+                    let linux_path = s[2..].replace('\\', "/");
+                    let p = std::path::PathBuf::from(linux_path);
+                    if p.exists() {
+                        return Some(p);
+                    }
+                } else if s.starts_with('/') {
+                    let p = std::path::PathBuf::from(s.into_owned());
+                    if p.exists() {
+                        return Some(p);
+                    }
+                }
+            }
+        }
+    }
+    if let Ok(link) = std::fs::read_link(format!("/proc/{pid}/exe")) {
+        let name = link.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        if !name.contains("wine") && !name.contains("proton") {
+            return Some(link);
+        }
+    }
+    None
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn process_path(_pid: u32) -> Option<std::path::PathBuf> {
     None
 }
@@ -174,7 +208,21 @@ pub fn terminate_process(pid: u32) -> bool {
     true
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub fn terminate_process(pid: u32) -> bool {
+    if pid == 0 || pid == std::process::id() {
+        return false;
+    }
+    unsafe {
+        if libc::kill(pid as i32, libc::SIGTERM) == 0 {
+            let _ = libc::kill(pid as i32, libc::SIGKILL);
+            return true;
+        }
+    }
+    false
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn terminate_process(_pid: u32) -> bool {
     false
 }
@@ -337,17 +385,79 @@ pub fn loopback_443_owner() -> Option<u32> {
     candidates.into_iter().next()
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub fn process_name(pid: u32) -> Option<String> {
+    if pid == 0 {
+        return None;
+    }
+    let comm = std::fs::read_to_string(format!("/proc/{pid}/comm"))
+        .ok()
+        .map(|s| s.trim().to_string());
+
+    if let Some(ref c) = comm {
+        let c_lower = c.to_lowercase();
+        if c_lower.starts_with("wine") || c_lower == "wineserver" || c_lower.starts_with("proton") {
+            if let Ok(cmdline) = std::fs::read(format!("/proc/{pid}/cmdline")) {
+                for part in cmdline.split(|&b| b == 0) {
+                    let s = String::from_utf8_lossy(part);
+                    let s_lower = s.to_lowercase();
+                    if s_lower.ends_with(".exe") {
+                        let filename = s.rsplit(['/', '\\']).next().unwrap_or(&s);
+                        return Some(filename.to_string());
+                    }
+                }
+            }
+        }
+    }
+    comm
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn process_name(_pid: u32) -> Option<String> {
     None
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub fn find_process_any(names: &[&str]) -> Option<(u32, String)> {
+    let wanted: Vec<String> = names.iter().map(|n| n.to_ascii_lowercase()).collect();
+    let proc_dir = std::fs::read_dir("/proc").ok()?;
+    for entry in proc_dir.flatten() {
+        let Ok(file_name) = entry.file_name().into_string() else {
+            continue;
+        };
+        let Ok(pid) = file_name.parse::<u32>() else {
+            continue;
+        };
+        if let Some(name) = process_name(pid) {
+            let lower = name.to_ascii_lowercase();
+            if wanted.iter().any(|w| lower == *w || lower.contains(w) || w.contains(&lower)) {
+                return Some((pid, name));
+            }
+        }
+        if let Ok(cmdline) = std::fs::read(format!("/proc/{pid}/cmdline")) {
+            let cmdline_str = String::from_utf8_lossy(&cmdline).to_ascii_lowercase();
+            for w in &wanted {
+                if cmdline_str.contains(w.as_str()) {
+                    let name = process_name(pid).unwrap_or_else(|| w.clone());
+                    return Some((pid, name));
+                }
+            }
+        }
+    }
+    None
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn find_process_any(_names: &[&str]) -> Option<(u32, String)> {
     None
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub fn is_elevated() -> bool {
+    unsafe { libc::geteuid() == 0 }
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn is_elevated() -> bool {
     false
 }
@@ -361,12 +471,83 @@ pub fn flush_dns_cache() -> bool {
     unsafe { DnsFlushResolverCache() != 0 }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub fn loopback_443_owner() -> Option<u32> {
+    let mut inodes: Vec<u64> = Vec::new();
+    for file in &["/proc/net/tcp", "/proc/net/tcp6"] {
+        if let Ok(content) = std::fs::read_to_string(file) {
+            for line in content.lines().skip(1) {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() < 10 {
+                    continue;
+                }
+                let local_addr = parts[1];
+                let state = parts[3];
+                if state == "0A" && local_addr.ends_with(":01BB") {
+                    if let Ok(inode) = parts[9].parse::<u64>() {
+                        inodes.push(inode);
+                    }
+                }
+            }
+        }
+    }
+    if inodes.is_empty() {
+        return None;
+    }
+
+    let proc_dir = std::fs::read_dir("/proc").ok()?;
+    for entry in proc_dir.flatten() {
+        let Ok(file_name) = entry.file_name().into_string() else {
+            continue;
+        };
+        let Ok(pid) = file_name.parse::<u32>() else {
+            continue;
+        };
+        let fd_dir = match std::fs::read_dir(format!("/proc/{pid}/fd")) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+        for fd in fd_dir.flatten() {
+            if let Ok(target) = std::fs::read_link(fd.path()) {
+                let s = target.to_string_lossy();
+                for &inode in &inodes {
+                    let pat = format!("socket:[{inode}]");
+                    if s == pat {
+                        return Some(pid);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn loopback_443_owner() -> Option<u32> {
     None
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+pub fn flush_dns_cache() -> bool {
+    let _ = std::process::Command::new("resolvectl")
+        .arg("flush-caches")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    let _ = std::process::Command::new("systemd-resolve")
+        .arg("--flush-caches")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    let _ = std::process::Command::new("nscd")
+        .args(["-i", "hosts"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    true
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn flush_dns_cache() -> bool {
     true
 }

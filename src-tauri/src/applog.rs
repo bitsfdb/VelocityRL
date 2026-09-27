@@ -443,9 +443,14 @@ pub fn open_log_folder(app: AppHandle) -> Result<(), String> {
             .map_err(|e| format!("Failed to open log folder: {e}"))?;
         Ok(())
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
     {
-        let _ = open::that(&dir);
+        let _ = std::process::Command::new("open").arg(&dir).spawn();
+        Ok(())
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(&dir).spawn();
         Ok(())
     }
 }
