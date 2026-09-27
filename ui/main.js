@@ -1782,7 +1782,8 @@ function setupSearch(input, resultsDiv, selectionHandler) {
             const invalidTypes = ['series', 'crate', 'currency', 'premium', 'unknown'];
             if (invalidTypes.includes(normSlot(pSlot))) return false;
 
-            const matchesTerm = term.length < 2 || pName.includes(term) || pAsset.includes(term);
+            const pLong = (item.LongLabel || item.long_label || '').toLowerCase();
+            const matchesTerm = term.length < 2 || pName.includes(term) || pAsset.includes(term) || pLong.includes(term) || (term.trim() === 'ai' && (pName.includes('bot') || pAsset.includes('bot')));
             const matchesCat = lockCategory === 'All' || normSlot(pSlot) === normSlot(lockCategory);
             return matchesTerm && matchesCat;
         }).slice(0, 50);
