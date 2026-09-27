@@ -1413,7 +1413,7 @@ pub fn swap_asset(
 
     if backup_path.exists() {
         crate::applog::event(&format!(
-            "swap: existing backup found at {}, restoring pristine source before swap",
+            "swap: restoring backup from {} before swap",
             backup_path.display()
         ));
         let _ = std::fs::copy(&backup_path, &target_path);
