@@ -1141,7 +1141,6 @@ pub(crate) async fn sync_all_swaps_to_tagame(
 
         let product_id = match s.wanted_id {
             999902 => 2526,
-            12968 => 32, // (Alpha Reward) Gold Rush
             _ => s.wanted_id,
         };
 
