@@ -6,16 +6,20 @@ The all-in-one customization app for Rocket League. Swap items, show off ranks, 
 ![Release](https://img.shields.io/github/v/release/bitsfdb/velocityrl?style=for-the-badge&color=e0e0e0&labelColor=111111)
 ![Platform](https://img.shields.io/badge/Platform-Windows-111111?style=for-the-badge&logo=windows&logoColor=00d9ff)
 
-## A Thank you to the following users:
+## A Thank you to the following users & translators:
 
-| Role | Member |
-|------|--------|
+| Role / Language | Contributor / Member |
+|-----------------|----------------------|
 | Committers & Approvers | [@bitsfdb](https://github.com/bitsfdb), [@oypi](https://github.com/oypi) |
-| Spanish Translator | [@oypi](https://github.com/oypi) |
-| Portuguese Translator | [killot.](https://discord.com/users/786719947036164127) |
-| Italian Translator | [doktor_fdr](https://discord.com/users/930479487953539082) |
-| Dutch Translator | [kweizii](https://discord.com/users/1030728163615064097) |
-| Turkish Translator | [Deniz](https://discord.com/users/521513972646543413) |
+| Spanish (`es` / Español) | [@oypi](https://github.com/oypi) |
+| Portuguese (`pt` / Português) | [killot.](https://discord.com/users/786719947036164127) |
+| Italian (`it` / Italiano) | [doktor_fdr](https://discord.com/users/930479487953539082) |
+| Dutch (`nl` / Nederlands) | [kweizii](https://discord.com/users/1030728163615064097) |
+| Turkish (`tr` / Türkçe) | [Deniz](https://discord.com/users/521513972646543413) |
+| Russian (`ru` / Русский) | [individualist.](https://discord.com/users/659669003278614558) |
+| German (`de` / Deutsch) | [@bitsfdb](https://github.com/bitsfdb) & Community |
+| French (`fr` / Français) | [@bitsfdb](https://github.com/bitsfdb) & Community |
+| English (`en`) | VelocityRL Core |
 
 
 ## Features
@@ -25,6 +29,18 @@ Swap any item in the game with any other item — car bodies, wheels, boosts, de
 
 - **Presets** — save your swaps as named loadouts and switch between them anytime. Roll a full random car with one button. Share presets with friends using a short code, or import theirs.
 - **Restore** — put any single item back to normal, or wipe everything at once. Game update broke your swaps? One click re-applies your whole setup. Every swap is logged, so you always know what changed.
+
+### Name Spoofer
+Change your display name locally in menus, scoreboards, and nametags to any name you want without altering your external account.
+
+### Leaderboard Spoof
+Spoof your ranking, placement, and MMR on the in-game global leaderboards, or automatically synchronize it with your active Fake Ranks and MMR setup.
+
+### Credit Spoof
+Customize your displayed Item Shop and Tournament credits locally to test or record UI views.
+
+### Custom Avatar (PFP)
+Inject your own custom profile picture for your local player in scoreboards, main menus, winner screens, and party lobbies.
 
 ### Live Match Tracker
 A clean overlay while you play — live score, your stats, and your MMR change after every match. Position it wherever you want, and it never touches your game.
@@ -46,6 +62,18 @@ Unlock the full color palette for your car — way more colors than the default 
 
 ### Season Logo & Menu Text
 Customize the season logo and the text on the bottom of the main menu.
+
+### Supported Languages
+VelocityRL supports 9 languages with full localization:
+- **English** (`en`)
+- **Türkçe** (`tr`)
+- **Русский** (`ru`)
+- **Español** (`es`)
+- **Português** (`pt`)
+- **Italiano** (`it`)
+- **Nederlands** (`nl`)
+- **Deutsch** (`de`)
+- **Français** (`fr`)
 
 ## Installation
 

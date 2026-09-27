@@ -1338,9 +1338,8 @@ async fn handle_forward_intercepted_request(
         return handle_forward_websocket(req, &upstream_host, upstream_port).await;
     }
     let method = req.method().clone();
-    let uri = req.uri();
-    let path = uri.path();
-    let query = uri.query().map(|q| format!("?{q}")).unwrap_or_default();
+    let path = req.uri().path().to_string();
+    let query = req.uri().query().map(|q| format!("?{q}")).unwrap_or_default();
     let url = format!("https://{upstream_host}:{upstream_port}{path}{query}");
 
     let headers = req.headers().clone();
@@ -1452,6 +1451,27 @@ async fn handle_forward_intercepted_request(
                         ));
                         final_body = serialized;
                     }
+                }
+            }
+        }
+
+        if let Some(cs) = spoof_cfg.as_ref().and_then(|c| c.credit_spoof.as_ref()).filter(|c| c.enabled) {
+            let path_lower = path.to_ascii_lowercase();
+            let is_wallet = path_lower.contains("wallet")
+                || path_lower.contains("tournament")
+                || path_lower.contains("currencies")
+                || path_lower.contains("shops")
+                || find_bytes(&final_body, b"\"Currencies\"").is_some()
+                || find_bytes(&final_body, b"TournamentCredit").is_some()
+                || find_bytes(&final_body, b"TournamentPoint").is_some();
+            if is_wallet {
+                let (new_body, did_patch) = patch_player_wallet_json(&final_body, cs);
+                if did_patch {
+                    crate::applog::event(&format!(
+                        "forward proxy: patched wallet credits -> {} / tourney {} in response from {}",
+                        cs.amount, cs.tournament_amount, upstream_host
+                    ));
+                    final_body = new_body;
                 }
             }
         }
@@ -1789,7 +1809,15 @@ async fn handle_broker_request(
             None => get_spoof_config().await,
         };
         if let Some(cfg) = &cfg_opt {
-            if path_lower.contains("getplayerwallet") {
+            let is_wallet_rpc = path_lower.contains("getplayerwallet")
+                || path_lower.contains("wallet")
+                || path_lower.contains("tournament")
+                || path_lower.contains("currencies")
+                || path_lower.contains("shops")
+                || find_bytes(&out_body, b"\"Currencies\"").is_some()
+                || find_bytes(&out_body, b"TournamentCredit").is_some()
+                || find_bytes(&out_body, b"TournamentPoint").is_some();
+            if is_wallet_rpc {
                 if let Some(cs) = &cfg.credit_spoof {
                     if cs.enabled {
                         let (new_body, did_patch) = patch_player_wallet_json(&out_body, cs);
@@ -1797,8 +1825,8 @@ async fn handle_broker_request(
                             out_body = new_body;
                             patched = true;
                             crate::applog::event(&format!(
-                                "broker: patched wallet credits in RPC response -> {}",
-                                cs.amount
+                                "broker: patched wallet credits in RPC response -> credits: {}, tourney: {}",
+                                cs.amount, cs.tournament_amount
                             ));
                         }
                     }
@@ -2208,7 +2236,12 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
 
     let is_wallet = svc.contains("shops/getplayerwallet")
         || svc.contains("getplayerwallet")
-        || (find_bytes(body_part, b"\"Currencies\"").is_some() && find_bytes(body_part, b"\"IsTradable\"").is_some());
+        || svc.contains("wallet")
+        || svc.contains("tournament")
+        || svc.contains("currencies")
+        || (find_bytes(body_part, b"\"Currencies\"").is_some() && find_bytes(body_part, b"\"IsTradable\"").is_some())
+        || find_bytes(body_part, b"TournamentCredit").is_some()
+        || find_bytes(body_part, b"TournamentPoint").is_some();
 
     if is_wallet {
         if let Some(cs) = &cfg.credit_spoof {
@@ -2218,8 +2251,9 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
                     current_body = new_body;
                     any_changed = true;
                     crate::applog::event(&format!(
-                        "proxy: patched wallet credits -> {} ({} -> {} bytes)",
+                        "proxy: patched wallet credits -> {} / tourney {} ({} -> {} bytes)",
                         cs.amount,
+                        cs.tournament_amount,
                         frame.len(),
                         current_body.len()
                     ));
@@ -2228,9 +2262,8 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         }
     }
 
-    let is_leaderboard = svc.contains("getleaderboard")
-        || svc.contains("leaderboard")
-        || is_leaderboard_body(body_part);
+    // Leaderboard spoofing disabled per user request
+    let is_leaderboard = false;
 
     if is_leaderboard {
         let (new_body, changed) = patch_leaderboard_json(&current_body, &cfg);
@@ -2361,12 +2394,20 @@ fn resign_ws_headers(headers: &[u8], body: &[u8]) -> Vec<u8> {
     replace_ws_header_value(headers, key_to_replace, &sig)
 }
 
+#[allow(dead_code)]
 fn is_leaderboard_body(body: &[u8]) -> bool {
     let trim = body.trim_ascii();
     find_bytes(trim, b"\"LeaderboardID\"").is_some()
         || find_bytes(trim, b"\"LeaderboardRows\"").is_some()
-        || (find_bytes(trim, b"\"Rows\"").is_some() && (find_bytes(trim, b"\"Rank\"").is_some() || find_bytes(trim, b"\"Value\"").is_some()))
-        || (find_bytes(trim, b"\"Entries\"").is_some() && (find_bytes(trim, b"\"Rank\"").is_some() || find_bytes(trim, b"\"Value\"").is_some()))
+        || find_bytes(trim, b"\"Leaderboard\"").is_some()
+        || find_bytes(trim, b"\"Leaderboards\"").is_some()
+        || find_bytes(trim, b"\"TopPlayers\"").is_some()
+        || find_bytes(trim, b"\"Platforms\"").is_some()
+        || find_bytes(trim, b"\"bHasSkill\"").is_some()
+        || find_bytes(trim, b"\"bHasValue\"").is_some()
+        || (find_bytes(trim, b"\"Rows\"").is_some() && (find_bytes(trim, b"\"Rank\"").is_some() || find_bytes(trim, b"\"Value\"").is_some() || find_bytes(trim, b"\"Rating\"").is_some()))
+        || (find_bytes(trim, b"\"Entries\"").is_some() && (find_bytes(trim, b"\"Rank\"").is_some() || find_bytes(trim, b"\"Value\"").is_some() || find_bytes(trim, b"\"Rating\"").is_some()))
+        || (find_bytes(trim, b"\"Players\"").is_some() && (find_bytes(trim, b"\"MMR\"").is_some() || find_bytes(trim, b"\"Value\"").is_some()))
 }
 
 fn patch_leaderboard_json(
@@ -2387,11 +2428,13 @@ fn patch_leaderboard_json(
 
     let result_obj = if let Some(r) = root.get_mut("Result") {
         r
+    } else if let Some(d) = root.get_mut("Data") {
+        d
     } else {
         &mut root
     };
 
-    let mut pl = 0;
+    let mut pl = 11; // Default to Doubles 2v2
     if let Some(id_str) = result_obj.get("LeaderboardID").and_then(|v| v.as_str()) {
         let num_str = id_str.trim_start_matches("Skill").trim_start_matches("skill");
         if let Ok(n) = num_str.parse::<i32>() {
@@ -2407,20 +2450,19 @@ fn patch_leaderboard_json(
         }
     }
 
-    let mut target_display_mmr = 3000.0;
+    let mut target_display_mmr = 2150.0;
     let mut target_tier = 22; // Supersonic Legend default
     let mut custom_rank: Option<i64> = None;
     let mut found_override = false;
 
     if let Some(lb) = lb_spoof_opt {
+        found_override = true;
         if let Some(cr) = lb.custom_rank {
             custom_rank = Some(cr as i64);
-            found_override = true;
         }
         if !lb.sync_from_fake_ranks {
             if let Some(cm) = lb.custom_mmr {
                 target_display_mmr = cm as f64;
-                found_override = true;
             }
         }
     }
@@ -2444,43 +2486,65 @@ fn patch_leaderboard_json(
     }
 
     let target_mu = mu_from_display(target_display_mmr);
+    let disp_int = target_display_mmr.round() as i64;
 
     // Calculate auto rank if custom rank is not explicitly set
     let assigned_rank = if let Some(cr) = custom_rank {
         cr
     } else {
-        // Inspect Rows/Entries in leaderboard to find where target_display_mmr ranks
-        let rows_opt = result_obj.get("Rows").and_then(|r| r.as_array())
-            .or_else(|| result_obj.get("Entries").and_then(|r| r.as_array()))
-            .or_else(|| result_obj.get("LeaderboardRows").and_then(|r| r.as_array()));
+        // Inspect Platforms, Players, or Rows in leaderboard to find where target ranks
+        let mut computed_rank = 1;
+        let mut found_slot = false;
 
-        if let Some(rows) = rows_opt {
-            let mut computed_rank = 1;
-            let mut found_slot = false;
-            for (i, row) in rows.iter().enumerate() {
-                let row_val = row.get("Value").and_then(|v| v.as_f64())
-                    .or_else(|| row.get("Rating").and_then(|v| v.as_f64()))
-                    .or_else(|| row.get("Score").and_then(|v| v.as_f64()))
-                    .or_else(|| {
-                        row.get("MMR").and_then(|v| v.as_f64()).map(|m| {
-                            if m < 250.0 { m * 20.0 + 100.0 } else { m }
-                        })
-                    })
+        let players_opt = result_obj.get("Platforms")
+            .and_then(|p| p.as_array())
+            .and_then(|p_arr| p_arr.first())
+            .and_then(|p0| p0.get("Players").and_then(|pl| pl.as_array()))
+            .or_else(|| result_obj.get("Players").and_then(|pl| pl.as_array()));
+
+        if let Some(players) = players_opt {
+            for (i, p) in players.iter().enumerate() {
+                let p_mmr = p.get("MMR").and_then(|v| v.as_f64())
+                    .or_else(|| p.get("Value").and_then(|v| v.as_f64()))
                     .unwrap_or(0.0);
-
-                if target_display_mmr >= row_val {
+                if target_mu >= p_mmr || target_display_mmr >= p_mmr {
                     computed_rank = (i + 1) as i64;
                     found_slot = true;
                     break;
                 }
             }
             if !found_slot {
-                computed_rank = (rows.len() + 1) as i64;
+                computed_rank = (players.len() + 1) as i64;
             }
             computed_rank
         } else {
-            // GetLeaderboardValue single-player response
-            if target_display_mmr >= 1900.0 || target_tier >= 22 {
+            let rows_opt = result_obj.get("Rows").and_then(|r| r.as_array())
+                .or_else(|| result_obj.get("Entries").and_then(|r| r.as_array()))
+                .or_else(|| result_obj.get("LeaderboardRows").and_then(|r| r.as_array()));
+
+            if let Some(rows) = rows_opt {
+                for (i, row) in rows.iter().enumerate() {
+                    let row_val = row.get("Value").and_then(|v| v.as_f64())
+                        .or_else(|| row.get("Rating").and_then(|v| v.as_f64()))
+                        .or_else(|| row.get("Score").and_then(|v| v.as_f64()))
+                        .or_else(|| {
+                            row.get("MMR").and_then(|v| v.as_f64()).map(|m| {
+                                if m < 250.0 { m * 20.0 + 100.0 } else { m }
+                            })
+                        })
+                        .unwrap_or(0.0);
+
+                    if target_display_mmr >= row_val {
+                        computed_rank = (i + 1) as i64;
+                        found_slot = true;
+                        break;
+                    }
+                }
+                if !found_slot {
+                    computed_rank = (rows.len() + 1) as i64;
+                }
+                computed_rank
+            } else if target_display_mmr >= 1900.0 || target_tier >= 22 {
                 1
             } else if target_display_mmr >= 1500.0 {
                 50
@@ -2490,31 +2554,6 @@ fn patch_leaderboard_json(
         }
     };
 
-    // Patch top-level / Result fields
-    result_obj["MMR"] = serde_json::json!(target_mu);
-    result_obj["Value"] = serde_json::json!(target_tier);
-    result_obj["bHasSkill"] = serde_json::json!(true);
-    result_obj["Rank"] = serde_json::json!(assigned_rank);
-    result_obj["UserRank"] = serde_json::json!(assigned_rank);
-    result_obj["RankValue"] = serde_json::json!(assigned_rank);
-    result_obj["Position"] = serde_json::json!(assigned_rank);
-    result_obj["UserPosition"] = serde_json::json!(assigned_rank);
-    let mut changed = true;
-
-    // Patch user row if present (UserRow, PlayerRow, SelfRow, UserEntry)
-    for key in &["UserRow", "PlayerRow", "SelfRow", "UserEntry"] {
-        if let Some(user_row) = result_obj.get_mut(*key).and_then(|v| v.as_object_mut()) {
-            user_row.insert("Rank".into(), serde_json::json!(assigned_rank));
-            user_row.insert("UserRank".into(), serde_json::json!(assigned_rank));
-            user_row.insert("Value".into(), serde_json::json!(target_display_mmr.round() as i64));
-            user_row.insert("Tier".into(), serde_json::json!(target_tier));
-            user_row.insert("MMR".into(), serde_json::json!(target_mu));
-            user_row.insert("bHasSkill".into(), serde_json::json!(true));
-            changed = true;
-        }
-    }
-
-    // Build user row object
     let player_name = cfg.name_spoof.as_ref()
         .map(|n| n.display_name.trim().to_string())
         .filter(|s| !s.is_empty())
@@ -2526,39 +2565,199 @@ fn patch_leaderboard_json(
         cfg.name_spoof.as_ref().and_then(|ns| ns.player_id.as_deref())
     });
     let user_pid_str = target_pid.unwrap_or("Epic|local_user|0").to_string();
-
-    let user_row_obj = serde_json::json!({
-        "PlayerID": user_pid_str,
-        "PlayerName": player_name,
-        "Rank": assigned_rank,
-        "UserRank": assigned_rank,
-        "Value": target_display_mmr.round() as i64,
-        "Tier": target_tier,
-        "MMR": target_mu,
-        "bHasSkill": true
-    });
-
-    // Check if user is in Rows / Entries array and update/insert their entry
     let clean_pid = user_pid_str.trim_start_matches("Epic|").trim_start_matches("Steam|").trim_start_matches("Xbox|").trim_start_matches("PS4|").trim_end_matches("|0");
-    for key in &["Rows", "Entries", "LeaderboardRows"] {
+
+    let mut changed = false;
+
+    // 1. Official Skills/GetSkillLeaderboard v1 & Stats/GetStatLeaderboard v1 schema (Platforms -> Players)
+    let platforms_key = if result_obj.get("Platforms").is_some() {
+        Some("Platforms")
+    } else if result_obj.get("platforms").is_some() {
+        Some("platforms")
+    } else {
+        None
+    };
+
+    if let Some(key) = platforms_key {
+        if let Some(platforms_arr) = result_obj.get_mut(key).and_then(|p| p.as_array_mut()) {
+            for plat in platforms_arr.iter_mut() {
+                let players_key = if plat.get("Players").is_some() {
+                    Some("Players")
+                } else if plat.get("players").is_some() {
+                    Some("players")
+                } else {
+                    None
+                };
+
+                if let Some(pkey) = players_key {
+                    if let Some(players) = plat.get_mut(pkey).and_then(|pl| pl.as_array_mut()) {
+                        players.retain(|p| {
+                            let r_pid = p.get("PlayerID").or_else(|| p.get("playerID")).and_then(|v| v.as_str()).unwrap_or("");
+                            if clean_pid != "local_user" && !clean_pid.is_empty() && (r_pid.contains(clean_pid) || clean_pid.contains(r_pid)) {
+                                return false;
+                            }
+                            let r_name = p.get("PlayerName").or_else(|| p.get("playerName")).and_then(|v| v.as_str()).unwrap_or("");
+                            if !player_name.is_empty() && player_name != "You" && r_name.eq_ignore_ascii_case(&player_name) {
+                                return false;
+                            }
+                            true
+                        });
+
+                        let skill_player_obj = serde_json::json!({
+                            "PlayerID": user_pid_str,
+                            "PlayerName": player_name,
+                            "MMR": target_mu,
+                            "Value": target_tier
+                        });
+
+                        let insert_idx = ((assigned_rank - 1).max(0) as usize).min(players.len());
+                        players.insert(insert_idx, skill_player_obj);
+                        if players.len() > 100 {
+                            players.truncate(100);
+                        }
+                        changed = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Direct Players array (e.g. Stats/GetStatLeaderboardRankForUsers or flat list)
+    let players_key = if result_obj.get("Players").is_some() {
+        Some("Players")
+    } else if result_obj.get("players").is_some() {
+        Some("players")
+    } else {
+        None
+    };
+
+    if let Some(pkey) = players_key {
+        if let Some(players_arr) = result_obj.get_mut(pkey).and_then(|pl| pl.as_array_mut()) {
+            players_arr.retain(|p| {
+                let r_pid = p.get("PlayerID").or_else(|| p.get("playerID")).and_then(|v| v.as_str()).unwrap_or("");
+                if clean_pid != "local_user" && !clean_pid.is_empty() && (r_pid.contains(clean_pid) || clean_pid.contains(r_pid)) {
+                    return false;
+                }
+                let r_name = p.get("PlayerName").or_else(|| p.get("playerName")).and_then(|v| v.as_str()).unwrap_or("");
+                if !player_name.is_empty() && player_name != "You" && r_name.eq_ignore_ascii_case(&player_name) {
+                    return false;
+                }
+                true
+            });
+
+            let player_obj = serde_json::json!({
+                "PlayerID": user_pid_str,
+                "PlayerName": player_name,
+                "MMR": target_mu,
+                "Value": target_tier
+            });
+
+            let insert_idx = ((assigned_rank - 1).max(0) as usize).min(players_arr.len());
+            players_arr.insert(insert_idx, player_obj);
+            if players_arr.len() > 100 {
+                players_arr.truncate(100);
+            }
+            changed = true;
+        }
+    }
+
+    let has_platforms = platforms_key.is_some();
+
+    // 3. Official Skills/GetSkillLeaderboardValueForUser v1 & Stats/GetStatLeaderboardValueForUser v1 (single user value queries or legacy format)
+    if !has_platforms {
+        let is_skill_lb = result_obj.get("LeaderboardID").and_then(|v| v.as_str()).map(|s| s.starts_with("Skill") || s.starts_with("skill")).unwrap_or(true) || result_obj.get("bHasSkill").is_some();
+        if is_skill_lb {
+            result_obj["bHasSkill"] = serde_json::json!(true);
+            result_obj["MMR"] = serde_json::json!(target_mu);
+            result_obj["Value"] = serde_json::json!(target_tier);
+            result_obj["Tier"] = serde_json::json!(target_tier);
+        } else {
+            result_obj["bHasValue"] = serde_json::json!(true);
+            result_obj["Value"] = serde_json::json!(disp_int);
+        }
+
+        result_obj["Rank"] = serde_json::json!(assigned_rank);
+        result_obj["UserRank"] = serde_json::json!(assigned_rank);
+        result_obj["Position"] = serde_json::json!(assigned_rank);
+        result_obj["UserPosition"] = serde_json::json!(assigned_rank);
+        changed = true;
+    }
+
+    // 4. Rows / Entries array (legacy or custom format)
+    for key in &["Rows", "rows", "Entries", "entries", "LeaderboardRows", "leaderboardRows"] {
         if let Some(rows_arr) = result_obj.get_mut(*key).and_then(|r| r.as_array_mut()) {
             if !rows_arr.is_empty() {
-                // Remove existing user entry if already in the list
                 rows_arr.retain(|row| {
-                    let r_pid = row.get("PlayerID").and_then(|v| v.as_str()).unwrap_or("");
-                    !(r_pid.contains(clean_pid) || clean_pid.contains(r_pid))
+                    let r_pid = row.get("PlayerID").or_else(|| row.get("playerID")).and_then(|v| v.as_str()).unwrap_or("");
+                    if clean_pid != "local_user" && !clean_pid.is_empty() && (r_pid.contains(clean_pid) || clean_pid.contains(r_pid)) {
+                        return false;
+                    }
+                    let r_name = row.get("PlayerName").or_else(|| row.get("playerName")).or_else(|| row.get("UserName")).or_else(|| row.get("userName")).and_then(|v| v.as_str()).unwrap_or("");
+                    if !player_name.is_empty() && player_name != "You" && r_name.eq_ignore_ascii_case(&player_name) {
+                        return false;
+                    }
+                    true
                 });
 
-                // Insert user at computed rank position (e.g. index 0 for Rank 1)
-                let insert_idx = ((assigned_rank - 1).max(0) as usize).min(rows_arr.len());
-                rows_arr.insert(insert_idx, user_row_obj.clone());
+                let user_row_obj = serde_json::json!({
+                    "PlayerID": user_pid_str,
+                    "playerID": user_pid_str,
+                    "PlayerName": player_name,
+                    "playerName": player_name,
+                    "UserName": player_name,
+                    "userName": player_name,
+                    "Name": player_name,
+                    "name": player_name,
+                    "Rank": assigned_rank,
+                    "rank": assigned_rank,
+                    "UserRank": assigned_rank,
+                    "userRank": assigned_rank,
+                    "Value": disp_int,
+                    "value": disp_int,
+                    "Rating": disp_int,
+                    "rating": disp_int,
+                    "Score": disp_int,
+                    "score": disp_int,
+                    "Tier": target_tier,
+                    "tier": target_tier,
+                    "Division": 3,
+                    "division": 3,
+                    "MMR": target_mu,
+                    "mmr": target_mu,
+                    "MatchesPlayed": 100,
+                    "matchesPlayed": 100,
+                    "bHasSkill": true
+                });
 
-                // Re-index ranks for the rows so they are monotonically ordered 1, 2, 3...
+                let insert_idx = ((assigned_rank - 1).max(0) as usize).min(rows_arr.len());
+                rows_arr.insert(insert_idx, user_row_obj);
+
+                if rows_arr.len() > 100 {
+                    rows_arr.truncate(100);
+                }
+
                 for (idx, row) in rows_arr.iter_mut().enumerate() {
-                    row["Rank"] = serde_json::json!((idx + 1) as i64);
+                    let r_num = (idx + 1) as i64;
+                    row["Rank"] = serde_json::json!(r_num);
+                    if row.get("rank").is_some() {
+                        row["rank"] = serde_json::json!(r_num);
+                    }
                 }
                 changed = true;
             }
+        }
+    }
+
+    // 5. UserRow / userRow (legacy user-specific row object)
+    for ukey in &["UserRow", "userRow", "UserEntry", "userEntry"] {
+        if let Some(user_row) = result_obj.get_mut(*ukey).and_then(|u| u.as_object_mut()) {
+            user_row.insert("PlayerID".to_string(), serde_json::json!(user_pid_str));
+            user_row.insert("PlayerName".to_string(), serde_json::json!(player_name));
+            user_row.insert("Rank".to_string(), serde_json::json!(assigned_rank));
+            user_row.insert("Value".to_string(), serde_json::json!(disp_int));
+            user_row.insert("Tier".to_string(), serde_json::json!(target_tier));
+            user_row.insert("MMR".to_string(), serde_json::json!(target_mu));
+            changed = true;
         }
     }
 
@@ -2644,71 +2843,189 @@ fn patch_player_wallet_json(
         Err(_) => return (body.to_vec(), false),
     };
 
-    let result_obj = if let Some(r) = root.get_mut("Result") {
-        r
-    } else {
-        &mut root
-    };
+    fn patch_currency_object(
+        curr: &mut serde_json::Value,
+        credit_spoof: &crate::psynet::CreditSpoofPayload,
+    ) -> (bool, Option<i64>) {
+        let mut modified = false;
+        let mut identified_id: Option<i64> = None;
 
-    let mut changed = false;
-    if let Some(currencies) = result_obj.get_mut("Currencies").and_then(|c| c.as_array_mut()) {
-        let mut found_credits = false;
-        let mut found_tournament = false;
-        for curr in currencies.iter_mut() {
-            if let Some(id) = curr.get("ID").and_then(|v| v.as_i64()) {
-                if id == 13 {
-                    curr["Amount"] = serde_json::json!(credit_spoof.amount);
-                    found_credits = true;
-                    changed = true;
-                } else if id == 15 || id == 14 {
-                    curr["Amount"] = serde_json::json!(credit_spoof.tournament_amount);
-                    found_tournament = true;
-                    changed = true;
+        let id_val = curr.get("ID")
+            .or_else(|| curr.get("CurrencyID"))
+            .or_else(|| curr.get("CurrencyId"))
+            .or_else(|| curr.get("Id"))
+            .or_else(|| curr.get("id"))
+            .or_else(|| curr.get("currencyId"))
+            .or_else(|| curr.get("Currency"));
+
+        if let Some(v) = id_val {
+            if let Some(num) = v.as_i64() {
+                identified_id = Some(num);
+            } else if let Some(s) = v.as_str() {
+                identified_id = s.parse::<i64>().ok();
+            }
+        }
+
+        let name_str = curr.get("Name")
+            .or_else(|| curr.get("CurrencyType"))
+            .or_else(|| curr.get("Type"))
+            .or_else(|| curr.get("Slug"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+
+        let is_tourney = identified_id.map(|id| (14..=40).contains(&id)).unwrap_or(false)
+            || name_str.contains("tournament")
+            || name_str.contains("tourney");
+
+        let is_shop_credits = identified_id.map(|id| id == 13).unwrap_or(false)
+            || (!is_tourney && (name_str.contains("credit") || name_str.contains("shop")));
+
+        let target_amount = if is_tourney {
+            Some(credit_spoof.tournament_amount)
+        } else if is_shop_credits {
+            Some(credit_spoof.amount)
+        } else {
+            None
+        };
+
+        if let Some(amt) = target_amount {
+            let mut amt_set = false;
+            for key in &["Amount", "amount", "Count", "count", "Value", "value"] {
+                if curr.get(*key).is_some() {
+                    curr[*key] = serde_json::json!(amt);
+                    modified = true;
+                    amt_set = true;
                 }
             }
-        }
-        if !found_credits {
-            currencies.push(serde_json::json!({
-                "ID": 13,
-                "Amount": credit_spoof.amount,
-                "ExpirationTime": null,
-                "UpdatedTimestamp": 1700000000,
-                "IsTradable": true,
-                "TradeHold": null
-            }));
-            changed = true;
-        }
-        if !found_tournament {
-            currencies.push(serde_json::json!({
-                "ID": 15,
-                "Amount": credit_spoof.tournament_amount,
-                "ExpirationTime": null,
-                "UpdatedTimestamp": 1700000000,
-                "IsTradable": false,
-                "TradeHold": null
-            }));
-            changed = true;
-        }
-    } else if result_obj.is_object() {
-        result_obj["Currencies"] = serde_json::json!([
-            {
-                "ID": 13,
-                "Amount": credit_spoof.amount,
-                "ExpirationTime": null,
-                "UpdatedTimestamp": 1700000000,
-                "IsTradable": true,
-                "TradeHold": null
-            },
-            {
-                "ID": 15,
-                "Amount": credit_spoof.tournament_amount,
-                "ExpirationTime": null,
-                "UpdatedTimestamp": 1700000000,
-                "IsTradable": false,
-                "TradeHold": null
+            if !amt_set {
+                curr["Amount"] = serde_json::json!(amt);
+                modified = true;
             }
-        ]);
-        changed = true;
+        }
+
+        (modified, identified_id)
+    }
+
+    fn patch_currency_array(
+        arr: &mut Vec<serde_json::Value>,
+        credit_spoof: &crate::psynet::CreditSpoofPayload,
+    ) -> bool {
+        let mut local_changed = false;
+        let mut present_ids = std::collections::HashSet::new();
+
+        for curr in arr.iter_mut() {
+            let (m, id_opt) = patch_currency_object(curr, credit_spoof);
+            if m {
+                local_changed = true;
+            }
+            if let Some(id) = id_opt {
+                present_ids.insert(id);
+            }
+        }
+
+        if !present_ids.contains(&13) {
+            arr.push(serde_json::json!({
+                "ID": 13,
+                "Amount": credit_spoof.amount,
+                "ExpirationTime": null,
+                "UpdatedTimestamp": 1700000000,
+                "IsTradable": true,
+                "TradeHold": null
+            }));
+            local_changed = true;
+        }
+
+        for tourney_id in 14..=26 {
+            if !present_ids.contains(&tourney_id) {
+                arr.push(serde_json::json!({
+                    "ID": tourney_id,
+                    "Amount": credit_spoof.tournament_amount,
+                    "ExpirationTime": null,
+                    "UpdatedTimestamp": 1700000000,
+                    "IsTradable": false,
+                    "TradeHold": null
+                }));
+                local_changed = true;
+            }
+        }
+
+        local_changed
+    }
+
+    fn traverse_and_patch(
+        val: &mut serde_json::Value,
+        credit_spoof: &crate::psynet::CreditSpoofPayload,
+    ) -> bool {
+        let mut modded = false;
+        match val {
+            serde_json::Value::Object(map) => {
+                if let Some(currencies_val) = map.get_mut("Currencies") {
+                    if let Some(arr) = currencies_val.as_array_mut() {
+                        if patch_currency_array(arr, credit_spoof) {
+                            modded = true;
+                        }
+                    } else if let Some(cur_map) = currencies_val.as_object_mut() {
+                        cur_map.insert("13".to_string(), serde_json::json!(credit_spoof.amount));
+                        for tid in 14..=26 {
+                            cur_map.insert(tid.to_string(), serde_json::json!(credit_spoof.tournament_amount));
+                        }
+                        modded = true;
+                    }
+                }
+
+                for (k, v) in map.iter_mut() {
+                    let k_lower = k.to_ascii_lowercase();
+                    if k_lower == "tournamentcredits"
+                        || k_lower == "tournamentpoints"
+                        || k_lower == "tournamentcreditsamount"
+                        || k_lower == "tournamentcredit"
+                    {
+                        if v.is_number() || v.is_string() {
+                            *v = serde_json::json!(credit_spoof.tournament_amount);
+                            modded = true;
+                        }
+                    } else if k_lower == "credits" || k_lower == "creditsamount" || k_lower == "itemshopcredits" {
+                        if v.is_number() {
+                            *v = serde_json::json!(credit_spoof.amount);
+                            modded = true;
+                        }
+                    } else if v.is_object() || v.is_array() {
+                        if traverse_and_patch(v, credit_spoof) {
+                            modded = true;
+                        }
+                    }
+                }
+            }
+            serde_json::Value::Array(arr) => {
+                let looks_like_currencies = arr.iter().any(|item| {
+                    item.get("ID").is_some() || item.get("CurrencyID").is_some() || item.get("IsTradable").is_some()
+                });
+                if looks_like_currencies {
+                    if patch_currency_array(arr, credit_spoof) {
+                        modded = true;
+                    }
+                } else {
+                    for item in arr.iter_mut() {
+                        if traverse_and_patch(item, credit_spoof) {
+                            modded = true;
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        modded
+    }
+
+    let mut changed = traverse_and_patch(&mut root, credit_spoof);
+    if !changed {
+        if let Some(obj) = root.as_object_mut() {
+            let mut list = Vec::new();
+            patch_currency_array(&mut list, credit_spoof);
+            obj.insert("Currencies".to_string(), serde_json::Value::Array(list));
+            changed = true;
+        }
     }
 
     if !changed {
@@ -4273,6 +4590,7 @@ mod tests {
         assert_eq!(val["Result"]["Rank"], 1);
         assert_eq!(val["Result"]["UserRank"], 1);
         assert_eq!(val["Result"]["Value"], 22);
+        assert_eq!(val["Result"]["Tier"], 22);
         assert_eq!(val["Result"]["MMR"], 145.0);
     }
 
@@ -4305,6 +4623,56 @@ mod tests {
         assert_eq!(val["Result"]["Rows"][0]["Rank"], 1);
         assert_eq!(val["Result"]["Rows"][0]["Value"], 3000);
         assert_eq!(val["Result"]["Rows"][1]["Rank"], 2);
+    }
+
+    #[test]
+    fn test_patch_official_skill_leaderboard_platforms() {
+        let body = br#"{"Result":{"LeaderboardID":"Skill10","Platforms":[{"Platform":"Epic","Players":[{"PlayerID":"Epic|top1|0","PlayerName":"top1","MMR":81.86,"Value":22}]}]}}"#;
+        let mut cfg = crate::psynet::SpoofPayload::default();
+        cfg.name_spoof = Some(crate::psynet::NameSpoofPayload {
+            display_name: "You".to_string(),
+            ..Default::default()
+        });
+        cfg.leaderboard_spoof = Some(crate::psynet::LeaderboardSpoofPayload {
+            enabled: true,
+            sync_from_fake_ranks: false,
+            custom_rank: Some(1),
+            custom_mmr: Some(3000),
+        });
+
+        let (patched, changed) = patch_leaderboard_json(body, &cfg);
+        assert!(changed);
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        assert_eq!(val["Result"]["Platforms"][0]["Players"][0]["PlayerName"], "You");
+        assert_eq!(val["Result"]["Platforms"][0]["Players"][0]["Value"], 22);
+        assert_eq!(val["Result"]["Platforms"][0]["Players"][0]["MMR"], 145.0);
+    }
+
+    #[test]
+    fn test_patch_player_wallet_credits_and_tournaments() {
+        let body = br#"{"Result":{"Currencies":[{"ID":13,"Amount":250,"IsTradable":true},{"ID":15,"Amount":100,"IsTradable":false}]}}"#;
+        let cs = crate::psynet::CreditSpoofPayload {
+            enabled: true,
+            amount: 999999,
+            tournament_amount: 500000,
+        };
+        let (patched, changed) = patch_player_wallet_json(body, &cs);
+        assert!(changed);
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        let currencies = val["Result"]["Currencies"].as_array().unwrap();
+        
+        let c13 = currencies.iter().find(|c| c["ID"] == 13).unwrap();
+        assert_eq!(c13["Amount"], 999999);
+
+        let c15 = currencies.iter().find(|c| c["ID"] == 15).unwrap();
+        assert_eq!(c15["Amount"], 500000);
+
+        // Ensure season variants 14..=26 were injected
+        for tid in 14..=26 {
+            let c = currencies.iter().find(|c| c["ID"] == tid);
+            assert!(c.is_some(), "Currency ID {tid} must be present for season compatibility");
+            assert_eq!(c.unwrap()["Amount"], 500000);
+        }
     }
 }
 

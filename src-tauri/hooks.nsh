@@ -1,3 +1,34 @@
+!macro NSIS_HOOK_PREINSTALL
+  DetailPrint "Checking for running VelocityRL processes..."
+  nsExec::ExecToStack 'cmd /c "tasklist /FI \"IMAGENAME eq VelocityRL.exe\" /NH | findstr /I /C:\"VelocityRL.exe\""'
+  Pop $0
+  Pop $1
+  ${If} $0 == 0
+    MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "VelocityRL is currently running. Click OK to close it and continue installation, or Cancel to abort." IDOK vrl_kill_proc IDCANCEL vrl_abort_install
+  ${EndIf}
+
+  nsExec::ExecToStack 'cmd /c "tasklist /FI \"IMAGENAME eq velocity-rl.exe\" /NH | findstr /I /C:\"velocity-rl.exe\""'
+  Pop $0
+  Pop $1
+  ${If} $0 == 0
+    MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "VelocityRL is currently running. Click OK to close it and continue installation, or Cancel to abort." IDOK vrl_kill_proc IDCANCEL vrl_abort_install
+    Goto vrl_done_proc
+  ${EndIf}
+  Goto vrl_done_proc
+
+vrl_kill_proc:
+  DetailPrint "Stopping running VelocityRL processes..."
+  nsExec::Exec 'taskkill /F /IM velocity-rl.exe /T'
+  nsExec::Exec 'taskkill /F /IM VelocityRL.exe /T'
+  Sleep 1000
+  Goto vrl_done_proc
+
+vrl_abort_install:
+  Abort
+
+vrl_done_proc:
+!macroend
+
 !macro NSIS_HOOK_POSTINSTALL
   DetailPrint "Cleaning up legacy VelocityRL certificates..."
   nsExec::Exec 'certutil -f -delstore Root 38A28A81A89A71CA078369073BD2F0597422983C'

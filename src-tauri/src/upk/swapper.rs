@@ -2,7 +2,7 @@ use crate::upk::{crypto, nametable, parser};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-pub const PAINT_NAMES: [&str; 13] = [
+pub const PAINT_NAMES: [&str; 19] = [
     "None",
     "Crimson",
     "Lime",
@@ -16,6 +16,12 @@ pub const PAINT_NAMES: [&str; 13] = [
     "Forest Green",
     "Purple",
     "Titanium White",
+    "Burnt Sienna",
+    "Gold",
+    "Rose Gold",
+    "White Gold",
+    "Onyx",
+    "Platinum",
 ];
 
 const MAX_UPK_BYTES: u64 = 256 * 1024 * 1024;
@@ -121,7 +127,7 @@ pub fn paint_label(id: i32) -> &'static str {
 }
 
 pub fn paint_slugs(id: i32) -> Vec<String> {
-    if !(1..=12).contains(&id) {
+    if !(1..=18).contains(&id) {
         return Vec::new();
     }
     let name = paint_label(id);
@@ -138,18 +144,29 @@ pub fn paint_slugs(id: i32) -> Vec<String> {
     match id {
         1 => slugs.push("C".into()),
         2 => slugs.push("L".into()),
-        3 => slugs.push("B".into()),
+        3 => {
+            slugs.push("B".into());
+            slugs.push("K".into());
+            slugs.push("BLK".into());
+        }
         4 => slugs.push("O".into()),
         5 => {
             slugs.push("S".into());
             slugs.push("SB".into());
             slugs.push("Sky_Blue".into());
         }
-        6 => slugs.push("K".into()),
-        7 => slugs.push("Y".into()),
+        6 => {
+            slugs.push("CB".into());
+            slugs.push("BL".into());
+        }
+        7 => {
+            slugs.push("Y".into());
+            slugs.push("SAF".into());
+        }
         8 => {
             slugs.push("G".into());
             slugs.push("Gray".into());
+            slugs.push("GRY".into());
         }
         9 => slugs.push("P".into()),
         10 => {
@@ -157,11 +174,29 @@ pub fn paint_slugs(id: i32) -> Vec<String> {
             slugs.push("FG".into());
             slugs.push("Forest_Green".into());
         }
-        11 => slugs.push("V".into()),
+        11 => {
+            slugs.push("V".into());
+            slugs.push("PUR".into());
+        }
         12 => {
             slugs.push("TW".into());
             slugs.push("Titanium_White".into());
+            slugs.push("White".into());
+            slugs.push("W".into());
         }
+        13 => {
+            slugs.push("BS".into());
+            slugs.push("Burnt_Sienna".into());
+            slugs.push("BurntSienna".into());
+        }
+        14 => {
+            slugs.push("GD".into());
+            slugs.push("Gold".into());
+        }
+        15 => slugs.push("RoseGold".into()),
+        16 => slugs.push("WhiteGold".into()),
+        17 => slugs.push("Onyx".into()),
+        18 => slugs.push("Platinum".into()),
         _ => {}
     }
     slugs
@@ -353,29 +388,143 @@ fn to_pascal_case(s: &str) -> String {
         .join("_")
 }
 
+pub fn generate_paint_remap_pairs(base: &str, paint_id: i32) -> Vec<(String, String)> {
+    let mut pairs = Vec::new();
+    if !(1..=18).contains(&paint_id) {
+        return pairs;
+    }
+    let target_slugs = paint_slugs(paint_id);
+    let target_slug = match target_slugs.first() {
+        Some(s) => s.as_str(),
+        None => return pairs,
+    };
+
+    let mut bases = Vec::new();
+    bases.push(base.to_string());
+    let pascal_base = to_pascal_case(base);
+    if !bases.contains(&pascal_base) {
+        bases.push(pascal_base);
+    }
+
+    // Strip common slot prefixes: body_, skin_, wheel_, hat_, boost_, antenna_, goalexplosion_, trails_
+    for prefix in &["body_", "Body_", "skin_", "Skin_", "wheel_", "Wheel_", "hat_", "Hat_", "boost_", "Boost_"] {
+        if let Some(stripped) = base.strip_prefix(prefix) {
+            if !stripped.is_empty() {
+                let s = stripped.to_string();
+                let sp = to_pascal_case(&s);
+                if !bases.contains(&s) { bases.push(s); }
+                if !bases.contains(&sp) { bases.push(sp); }
+            }
+        }
+    }
+
+    let defaults = ["Default", "None", "default", "none", "Orig", "orig", "Base", "base"];
+    let chassis_subparts = ["Chassis", "chassis", "Body", "body", "MAT", "mat", "Chassis_MAT", "Chassis_Mat"];
+
+    for b in &bases {
+        for def in &defaults {
+            add_pair(&mut pairs, format!("{b}_{def}"), format!("{b}_{target_slug}"));
+            add_pair(&mut pairs, format!("MIC_{b}_{def}"), format!("MIC_{b}_{target_slug}"));
+            add_pair(&mut pairs, format!("MAT_{b}_{def}"), format!("MAT_{b}_{target_slug}"));
+            for ch in &chassis_subparts {
+                add_pair(&mut pairs, format!("{b}_{ch}_{def}"), format!("{b}_{ch}_{target_slug}"));
+                add_pair(&mut pairs, format!("MIC_{b}_{ch}_{def}"), format!("MIC_{b}_{ch}_{target_slug}"));
+                add_pair(&mut pairs, format!("{ch}_{b}_{def}"), format!("{ch}_{b}_{target_slug}"));
+                add_pair(&mut pairs, format!("MIC_{ch}_{b}_{def}"), format!("MIC_{ch}_{b}_{target_slug}"));
+                add_pair(&mut pairs, format!("MAT_{ch}_{b}_{def}"), format!("MAT_{ch}_{b}_{target_slug}"));
+            }
+        }
+
+        for ch in &chassis_subparts {
+            add_pair(&mut pairs, format!("{b}_{ch}"), format!("{b}_{ch}_{target_slug}"));
+            add_pair(&mut pairs, format!("MIC_{b}_{ch}"), format!("MIC_{b}_{ch}_{target_slug}"));
+            add_pair(&mut pairs, format!("MAT_{b}_{ch}"), format!("MAT_{b}_{ch}_{target_slug}"));
+            add_pair(&mut pairs, format!("{b}_{ch}_Painted"), format!("{b}_{ch}_{target_slug}"));
+            add_pair(&mut pairs, format!("MIC_{b}_{ch}_Painted"), format!("MIC_{b}_{ch}_{target_slug}"));
+            add_pair(&mut pairs, format!("{b}_{ch}_P"), format!("{b}_{ch}_{target_slug}"));
+            add_pair(&mut pairs, format!("MIC_{b}_{ch}_P"), format!("MIC_{b}_{ch}_{target_slug}"));
+
+            add_pair(&mut pairs, format!("{ch}_{b}"), format!("{ch}_{b}_{target_slug}"));
+            add_pair(&mut pairs, format!("MIC_{ch}_{b}"), format!("MIC_{ch}_{b}_{target_slug}"));
+            add_pair(&mut pairs, format!("MAT_{ch}_{b}"), format!("MAT_{ch}_{b}_{target_slug}"));
+            add_pair(&mut pairs, format!("{ch}_{b}_Painted"), format!("{ch}_{b}_{target_slug}"));
+            add_pair(&mut pairs, format!("MIC_{ch}_{b}_Painted"), format!("MIC_{ch}_{b}_{target_slug}"));
+            add_pair(&mut pairs, format!("{ch}_{b}_P"), format!("{ch}_{b}_{target_slug}"));
+            add_pair(&mut pairs, format!("MIC_{ch}_{b}_P"), format!("MIC_{ch}_{b}_{target_slug}"));
+
+            // Remap unpainted chassis directly to painted MIC (e.g. MIC_Chassis_Grain -> MIC_body_grain_Black / MIC_Chassis_Grain_Black)
+            add_pair(&mut pairs, format!("MIC_{ch}_{b}"), format!("MIC_{b}_{target_slug}"));
+            add_pair(&mut pairs, format!("MAT_{ch}_{b}"), format!("MIC_{b}_{target_slug}"));
+            add_pair(&mut pairs, format!("MIC_{ch}_{b}"), format!("MIC_Body_{b}_{target_slug}"));
+            add_pair(&mut pairs, format!("MAT_{ch}_{b}"), format!("MIC_Body_{b}_{target_slug}"));
+            add_pair(&mut pairs, format!("MIC_{ch}_{b}"), format!("MIC_body_{b}_{target_slug}"));
+            add_pair(&mut pairs, format!("MAT_{ch}_{b}"), format!("MIC_body_{b}_{target_slug}"));
+        }
+
+        // Shared chassis fallbacks (e.g. MIC_Chassis_Grain used across multiple bodies)
+        add_pair(&mut pairs, "MIC_Chassis_Grain".to_string(), format!("MIC_{b}_{target_slug}"));
+        add_pair(&mut pairs, "MAT_Chassis_Grain".to_string(), format!("MIC_{b}_{target_slug}"));
+        add_pair(&mut pairs, "MIC_Chassis_Grain".to_string(), format!("MIC_Body_{b}_{target_slug}"));
+        add_pair(&mut pairs, "MIC_Chassis_Grain".to_string(), format!("MIC_body_{b}_{target_slug}"));
+        add_pair(&mut pairs, "MIC_Chassis_Grain".to_string(), format!("MIC_Chassis_Grain_{target_slug}"));
+        add_pair(&mut pairs, "MAT_Chassis_Grain".to_string(), format!("MAT_Chassis_Grain_{target_slug}"));
+
+        add_pair(&mut pairs, format!("MIC_{b}"), format!("MIC_{b}_{target_slug}"));
+        add_pair(&mut pairs, format!("MAT_{b}"), format!("MAT_{b}_{target_slug}"));
+        add_pair(&mut pairs, format!("MIC_Body_{b}"), format!("MIC_Body_{b}_{target_slug}"));
+        add_pair(&mut pairs, format!("MIC_body_{b}"), format!("MIC_body_{b}_{target_slug}"));
+        add_pair(&mut pairs, format!("MIC_WHEEL_{b}"), format!("MIC_WHEEL_{b}_{target_slug}"));
+        add_pair(&mut pairs, format!("MIC_BODY_{b}"), format!("MIC_BODY_{b}_{target_slug}"));
+        add_pair(&mut pairs, format!("{b}_Painted"), format!("{b}_{target_slug}"));
+        add_pair(&mut pairs, format!("{b}_P"), format!("{b}_{target_slug}"));
+
+        for src_pid in 1..=18 {
+            if src_pid == paint_id {
+                continue;
+            }
+            for src_slug in paint_slugs(src_pid) {
+                add_pair(&mut pairs, format!("{b}_{src_slug}"), format!("{b}_{target_slug}"));
+                add_pair(&mut pairs, format!("MIC_{b}_{src_slug}"), format!("MIC_{b}_{target_slug}"));
+                add_pair(&mut pairs, format!("MIC_Body_{b}_{src_slug}"), format!("MIC_Body_{b}_{target_slug}"));
+                add_pair(&mut pairs, format!("MIC_body_{b}_{src_slug}"), format!("MIC_body_{b}_{target_slug}"));
+                add_pair(&mut pairs, format!("MIC_WHEEL_{b}_{src_slug}"), format!("MIC_WHEEL_{b}_{target_slug}"));
+                for ch in &chassis_subparts {
+                    add_pair(&mut pairs, format!("{b}_{ch}_{src_slug}"), format!("{b}_{ch}_{target_slug}"));
+                    add_pair(&mut pairs, format!("MIC_{b}_{ch}_{src_slug}"), format!("MIC_{b}_{ch}_{target_slug}"));
+                    add_pair(&mut pairs, format!("{ch}_{b}_{src_slug}"), format!("{ch}_{b}_{target_slug}"));
+                    add_pair(&mut pairs, format!("MIC_{ch}_{b}_{src_slug}"), format!("MIC_{ch}_{b}_{target_slug}"));
+                }
+            }
+        }
+    }
+
+    pairs
+}
+
+fn get_item_object_name(item: &Item) -> String {
+    if let Some(ref obj) = item.object_name {
+        let trimmed = obj.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+    if let Some(last) = item.asset_path.split('.').filter(|s| !s.is_empty()).last() {
+        let trimmed = last.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+    package_base(&file_stem(&item.asset_package)).to_string()
+}
+
 fn infer_name_pairs(target: &Item, donor: &Item) -> Vec<(String, String)> {
     let donor_stem = file_stem(&donor.asset_package);
     let target_stem = file_stem(&target.asset_package);
     let donor_base = package_base(&donor_stem);
     let target_base = package_base(&target_stem);
 
-    let mut donor_path_synthesized = donor.asset_path.clone();
-    if donor_path_synthesized.is_empty() && !donor_base.is_empty() {
-        donor_path_synthesized = format!("{donor_base}.{donor_base}");
-    }
-    let mut target_path_synthesized = target.asset_path.clone();
-    if target_path_synthesized.is_empty() && !target_base.is_empty() {
-        target_path_synthesized = format!("{target_base}.{target_base}");
-    }
-
-    let donor_parts: Vec<&str> = donor_path_synthesized
-        .split('.')
-        .filter(|s| !s.is_empty())
-        .collect();
-    let target_parts: Vec<&str> = target_path_synthesized
-        .split('.')
-        .filter(|s| !s.is_empty())
-        .collect();
+    let donor_obj = get_item_object_name(donor);
+    let target_obj = get_item_object_name(target);
 
     let mut pairs: Vec<(String, String)> = Vec::new();
 
@@ -385,75 +534,76 @@ fn infer_name_pairs(target: &Item, donor: &Item) -> Vec<(String, String)> {
 
     if is_intra_package {
         // Intra-package swapping: donor and target share the same UPK container.
-        // Move target object -> target object_Orig, then map donor object -> target object.
-        if !donor_parts.is_empty() && !target_parts.is_empty() {
-            let donor_obj = donor_parts.last().unwrap().to_string();
-            let target_obj = target_parts.last().unwrap().to_string();
-            if !donor_obj.eq_ignore_ascii_case(&target_obj) {
-                // 1. Move target object to a backup slot so references don't conflict
-                add_pair(&mut pairs, target_obj.clone(), format!("{target_obj}_Orig"));
-                add_pair(&mut pairs, format!("{target_obj}_TA"), format!("{target_obj}_Orig_TA"));
-                add_pair(&mut pairs, format!("{target_obj}_archetype"), format!("{target_obj}_Orig_archetype"));
+        if !donor_obj.eq_ignore_ascii_case(&target_obj) {
+            // 1. Move target object to a backup slot so references don't conflict
+            add_pair(&mut pairs, target_obj.clone(), format!("{target_obj}_Orig"));
+            add_pair(&mut pairs, format!("{target_obj}_TA"), format!("{target_obj}_Orig_TA"));
+            add_pair(&mut pairs, format!("{target_obj}_archetype"), format!("{target_obj}_Orig_archetype"));
+            add_pair(&mut pairs, format!("MIC_{target_obj}"), format!("MIC_{target_obj}_Orig"));
 
-                // 2. Map donor object to target object
-                add_pair(&mut pairs, donor_obj.clone(), target_obj.clone());
-                add_pair(&mut pairs, format!("{donor_obj}_TA"), format!("{target_obj}_TA"));
-                add_pair(&mut pairs, format!("{donor_obj}_archetype"), format!("{target_obj}_archetype"));
-            }
+            // 2. Map donor object to target object
+            add_pair(&mut pairs, donor_obj.clone(), target_obj.clone());
+            add_pair(&mut pairs, format!("{donor_obj}_TA"), format!("{target_obj}_TA"));
+            add_pair(&mut pairs, format!("{donor_obj}_archetype"), format!("{target_obj}_archetype"));
+            add_pair(&mut pairs, format!("MIC_{donor_obj}"), format!("MIC_{target_obj}"));
         }
         return pairs;
     }
 
-    if !donor_parts.is_empty() && !target_parts.is_empty() {
-        let donor_obj = donor_parts.last().unwrap().to_string();
-        let target_obj = target_parts.last().unwrap().to_string();
-        add_pair(&mut pairs, donor_obj.clone(), target_obj.clone());
-        add_pair(&mut pairs, format!("{donor_obj}_TA"), format!("{target_obj}_TA"));
-        add_pair(&mut pairs, format!("{donor_obj}_archetype"), format!("{target_obj}_archetype"));
+    // Cross-package swapping:
+    // 1. Map the specific donor export object to target export object
+    add_pair(&mut pairs, donor_obj.clone(), target_obj.clone());
+    add_pair(&mut pairs, format!("{donor_obj}_TA"), format!("{target_obj}_TA"));
+    add_pair(&mut pairs, format!("{donor_obj}_archetype"), format!("{target_obj}_archetype"));
+    add_pair(&mut pairs, format!("MIC_{donor_obj}"), format!("MIC_{target_obj}"));
+    add_pair(&mut pairs, format!("MIC_WHEEL_{donor_obj}"), format!("MIC_WHEEL_{target_obj}"));
 
-        add_pair(&mut pairs, donor_parts[0].to_string(), target_parts[0].to_string());
-    }
+    let donor_obj_pascal = to_pascal_case(&donor_obj);
+    let target_obj_pascal = to_pascal_case(&target_obj);
+    add_pair(&mut pairs, donor_obj_pascal.clone(), target_obj_pascal.clone());
+    add_pair(&mut pairs, format!("{donor_obj_pascal}_TA"), format!("{target_obj_pascal}_TA"));
+    add_pair(&mut pairs, format!("{donor_obj_pascal}_archetype"), format!("{target_obj_pascal}_archetype"));
+    add_pair(&mut pairs, format!("MIC_{donor_obj_pascal}"), format!("MIC_{target_obj_pascal}"));
 
-    let len = donor_parts.len().min(target_parts.len());
-    for i in 0..len {
-        add_pair(
-            &mut pairs,
-            donor_parts[i].to_string(),
-            target_parts[i].to_string(),
-        );
-    }
-
+    // 2. Handle package-level remapping and multi-asset sibling isolation
     if !donor_base.is_empty() && !target_base.is_empty() {
         let donor_pascal = to_pascal_case(donor_base);
         let target_pascal = to_pascal_case(target_base);
 
-        // 1. Base package names (unadorned)
-        add_pair(&mut pairs, donor_base.to_string(), target_base.to_string());
-        add_pair(&mut pairs, donor_base.to_string(), target_pascal.clone());
-        add_pair(&mut pairs, donor_pascal.clone(), target_base.to_string());
-        add_pair(&mut pairs, donor_pascal.clone(), target_pascal.clone());
+        let is_donor_multi_asset = donor.is_multi_asset_package.unwrap_or(false)
+            || !donor_obj.eq_ignore_ascii_case(donor_base);
 
-        // 2. Package file companions (_SF and _sf)
+        if is_donor_multi_asset {
+            // Sibling isolation: Move the default container object (e.g. Show-Cal "skin_strokes")
+            // to an inactive slot so it won't be matched when the game looks for target_obj.
+            if !donor_base.eq_ignore_ascii_case(&donor_obj) {
+                add_pair(&mut pairs, donor_base.to_string(), format!("{donor_base}_Sibling"));
+                add_pair(&mut pairs, donor_pascal.clone(), format!("{donor_pascal}_Sibling"));
+                add_pair(&mut pairs, format!("MIC_{donor_base}"), format!("MIC_{donor_base}_Sibling"));
+            }
+        } else {
+            // Standard single-asset package: map base package names
+            add_pair(&mut pairs, donor_base.to_string(), target_base.to_string());
+            add_pair(&mut pairs, donor_base.to_string(), target_pascal.clone());
+            add_pair(&mut pairs, donor_pascal.clone(), target_base.to_string());
+            add_pair(&mut pairs, donor_pascal.clone(), target_pascal.clone());
+            add_pair(&mut pairs, format!("{donor_base}_TA"), format!("{target_pascal}_TA"));
+            add_pair(&mut pairs, format!("{donor_pascal}_TA"), format!("{target_pascal}_TA"));
+            add_pair(&mut pairs, format!("{donor_base}_archetype"), format!("{target_pascal}_archetype"));
+            add_pair(&mut pairs, format!("{donor_pascal}_archetype"), format!("{target_pascal}_archetype"));
+            add_pair(&mut pairs, format!("MIC_{donor_base}"), format!("MIC_{target_base}"));
+            add_pair(&mut pairs, format!("MIC_{donor_pascal}"), format!("MIC_{target_pascal}"));
+            add_pair(&mut pairs, format!("MIC_WHEEL_{donor_base}"), format!("MIC_WHEEL_{target_base}"));
+            add_pair(&mut pairs, format!("MIC_WHEEL_{donor_pascal}"), format!("MIC_WHEEL_{target_pascal}"));
+        }
+
+        // Package companions (_SF, _sf, _Thumbnail, _SM)
         add_pair(&mut pairs, format!("{donor_base}_SF"), format!("{target_base}_SF"));
         add_pair(&mut pairs, format!("{donor_base}_sf"), format!("{target_base}_sf"));
         add_pair(&mut pairs, format!("{donor_pascal}_SF"), format!("{target_pascal}_SF"));
         add_pair(&mut pairs, format!("{donor_pascal}_sf"), format!("{target_pascal}_sf"));
-
-        // 3. Thumbnails (_Thumbnail)
         add_pair(&mut pairs, format!("{donor_base}_Thumbnail"), format!("{target_base}_Thumbnail"));
         add_pair(&mut pairs, format!("{donor_pascal}_Thumbnail"), format!("{target_pascal}_Thumbnail"));
-
-        // 4. Material instances and archetypes
-        add_pair(&mut pairs, format!("{donor_base}_TA"), format!("{target_pascal}_TA"));
-        add_pair(&mut pairs, format!("{donor_pascal}_TA"), format!("{target_pascal}_TA"));
-        add_pair(&mut pairs, format!("{donor_base}_archetype"), format!("{target_pascal}_archetype"));
-        add_pair(&mut pairs, format!("{donor_pascal}_archetype"), format!("{target_pascal}_archetype"));
-        add_pair(&mut pairs, format!("MIC_{donor_base}"), format!("MIC_{target_base}"));
-        add_pair(&mut pairs, format!("MIC_{donor_pascal}"), format!("MIC_{target_pascal}"));
-        add_pair(&mut pairs, format!("MIC_WHEEL_{donor_base}"), format!("MIC_WHEEL_{target_base}"));
-        add_pair(&mut pairs, format!("MIC_WHEEL_{donor_pascal}"), format!("MIC_WHEEL_{target_pascal}"));
-
-        // 5. StaticMesh companions
         add_pair(&mut pairs, format!("{donor_base}_SM"), format!("{target_base}_SM"));
         add_pair(&mut pairs, format!("{donor_pascal}_SM"), format!("{target_pascal}_SM"));
     }
@@ -461,12 +611,19 @@ fn infer_name_pairs(target: &Item, donor: &Item) -> Vec<(String, String)> {
 }
 
 fn extend_paint_name_pairs(pairs: &mut Vec<(String, String)>, paint_id: i32) {
+    if paint_id <= 0 {
+        return;
+    }
     let base = pairs.clone();
     for (old, new) in &base {
         add_pair(pairs, format!("{old}_Painted"), format!("{new}_Painted"));
         add_pair(pairs, format!("{old}_P"), format!("{new}_P"));
-        for slug in paint_slugs(paint_id.max(0)) {
+        for slug in paint_slugs(paint_id) {
             add_pair(pairs, format!("{old}_{slug}"), format!("{new}_{slug}"));
+            add_pair(pairs, format!("{old}_Default"), format!("{new}_{slug}"));
+            add_pair(pairs, format!("{old}_None"), format!("{new}_{slug}"));
+            add_pair(pairs, format!("MIC_{old}_{slug}"), format!("MIC_{new}_{slug}"));
+            add_pair(pairs, format!("MIC_{old}_Default"), format!("MIC_{new}_{slug}"));
         }
     }
 }
@@ -853,13 +1010,15 @@ fn write_swap_atomically(target: &Path, backup: &Path, data: &[u8]) -> Result<()
             explain_io(&e)
         )));
     }
-    if let Err(e) = std::fs::copy(target, backup) {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(SwapError::Msg(format!(
-            "Failed to create backup at {}: {}",
-            backup.display(),
-            explain_io(&e)
-        )));
+    if !backup.exists() {
+        if let Err(e) = std::fs::copy(target, backup) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(SwapError::Msg(format!(
+                "Failed to create backup at {}: {}",
+                backup.display(),
+                explain_io(&e)
+            )));
+        }
     }
 
     if let Err(e) = replace_file_atomic(&tmp, target) {
@@ -873,6 +1032,296 @@ fn write_swap_atomically(target: &Path, backup: &Path, data: &[u8]) -> Result<()
     Ok(())
 }
 
+fn process_and_write_upk_swap(
+    donor_path: &Path,
+    target_path: &Path,
+    backup_path: &Path,
+    pairs: &[(String, String)],
+    target_pkg_name: &str,
+    donor_pkg_name: &str,
+    keys_map: &std::collections::HashMap<String, [u8; 32]>,
+    all_keys: &[[u8; 32]],
+    is_companion: bool,
+) -> Result<usize, SwapError> {
+    let donor_file = read_upk(donor_path)?;
+    let (donor_summary, donor_meta) = parser::parse_prefix(&donor_file)
+        .map_err(|e| SwapError::Msg(format!("parse donor {}: {e}", donor_path.display())))?;
+
+    if donor_summary.name_count < 0 || donor_summary.name_count > MAX_NAME_COUNT {
+        return Err(SwapError::Msg(format!(
+            "donor name_count {} is implausible",
+            donor_summary.name_count
+        )));
+    }
+    if donor_summary.name_offset < 0 {
+        return Err(SwapError::Msg("donor name_offset is negative".into()));
+    }
+
+    let name_offset = donor_summary.name_offset as usize;
+    let enc_size = donor_summary
+        .total_header_size
+        .checked_sub(donor_meta.garbage_size)
+        .and_then(|v| v.checked_sub(donor_summary.name_offset))
+        .ok_or_else(|| SwapError::Msg("donor encrypted-block size underflow".into()))?;
+    if enc_size <= 0 {
+        return Err(SwapError::Msg("donor encrypted block is empty".into()));
+    }
+    let enc_size = enc_size as usize;
+    let enc_size_aligned = (enc_size + 15) & !15;
+    if name_offset
+        .checked_add(enc_size_aligned)
+        .map(|end| end > donor_file.len())
+        .unwrap_or(true)
+    {
+        return Err(SwapError::Msg("donor encrypted block OOB".into()));
+    }
+    let enc_block = &donor_file[name_offset..name_offset + enc_size_aligned];
+
+    let donor_stem = file_stem(donor_pkg_name).to_lowercase();
+    let donor_stem_no_sf = package_base(&donor_stem).to_string();
+    let map_key = keys_map
+        .get(&donor_stem)
+        .or_else(|| keys_map.get(&donor_stem_no_sf))
+        .copied();
+
+    let donor_key = map_key
+        .and_then(|k| {
+            crypto::find_valid_key_relaxed(enc_block, donor_meta.compressed_chunks_offset, &[k])
+        })
+        .or_else(|| {
+            crypto::find_valid_key(
+                enc_block,
+                donor_summary.depends_offset,
+                donor_meta.compressed_chunks_offset,
+                all_keys,
+            )
+        })
+        .ok_or_else(|| {
+            SwapError::Msg(format!(
+                "No decryption key for {}. [keys={} enc_block_len={}]",
+                donor_pkg_name,
+                all_keys.len() + map_key.is_some() as usize,
+                enc_block.len(),
+            ))
+        })?;
+
+    let header_plain = crypto::decrypt_ecb(&donor_key, enc_block);
+
+    let import_off = calc_relative_offset(
+        donor_summary.import_offset,
+        donor_summary.name_offset,
+        "import_offset",
+    )?;
+    let export_off = calc_relative_offset(
+        donor_summary.export_offset,
+        donor_summary.name_offset,
+        "export_offset",
+    )?;
+    let depends_off = calc_relative_offset(
+        donor_summary.depends_offset,
+        donor_summary.name_offset,
+        "depends_offset",
+    )?;
+    if import_off > export_off || export_off > depends_off {
+        return Err(SwapError::Msg(
+            "donor header table offsets are not in name < import < export < depends order".into(),
+        ));
+    }
+    if depends_off > header_plain.len() {
+        return Err(SwapError::Msg("donor header tables overrun decrypted block".into()));
+    }
+
+    let (mut new_header_plain, header_delta) = if !pairs.is_empty() {
+        nametable::apply_header_renames(
+            header_plain,
+            import_off,
+            export_off,
+            depends_off,
+            donor_summary.depends_offset,
+            donor_summary.name_count,
+            pairs,
+        )
+        .map_err(|e| {
+            if e.contains("already references") {
+                SwapError::Collision(e)
+            } else {
+                SwapError::Msg(e)
+            }
+        })?
+    } else {
+        (header_plain, 0)
+    };
+
+    if !is_companion {
+        let target_stem = file_stem(target_pkg_name);
+        let target_base = package_base(&target_stem);
+        let target_pascal = to_pascal_case(target_base);
+        let orig_donor_stem = file_stem(donor_pkg_name);
+        let orig_donor_base = package_base(&orig_donor_stem);
+        let has_target = name_table_has(&new_header_plain, donor_summary.name_count, &target_stem)
+            || (!target_base.is_empty() && (
+                name_table_has(&new_header_plain, donor_summary.name_count, target_base)
+                || name_table_has(&new_header_plain, donor_summary.name_count, &target_pascal)
+            ));
+
+        if !target_stem.is_empty()
+            && !orig_donor_stem.eq_ignore_ascii_case(&target_stem)
+            && !orig_donor_base.eq_ignore_ascii_case(target_base)
+            && !has_target
+        {
+            return Err(SwapError::Msg(format!(
+                "Could not remap package names ('{orig_donor_stem}' → '{target_stem}'). Swap aborted so the game will not crash."
+            )));
+        }
+    }
+
+    let pkg_stem = file_stem(target_pkg_name).to_lowercase();
+    let no_sf = package_base(&pkg_stem).to_string();
+    let output_key = keys_map
+        .get(&pkg_stem)
+        .or_else(|| keys_map.get(&no_sf))
+        .copied()
+        .or_else(|| {
+            read_upk(target_path).ok().and_then(|tfile| {
+                let (ts, tm) = parser::parse_prefix(&tfile).ok()?;
+                if ts.name_offset < 0 {
+                    return None;
+                }
+                let tn = ts.name_offset as usize;
+                let te = ts
+                    .total_header_size
+                    .checked_sub(tm.garbage_size)
+                    .and_then(|v| v.checked_sub(ts.name_offset))?;
+                if te <= 0 {
+                    return None;
+                }
+                let te_al = (te as usize + 15) & !15;
+                if tn.checked_add(te_al).map(|end| end <= tfile.len())? {
+                    let enc = &tfile[tn..tn + te_al];
+                    crypto::find_valid_key(
+                        enc,
+                        ts.depends_offset,
+                        tm.compressed_chunks_offset,
+                        all_keys,
+                    )
+                    .or_else(|| {
+                        crypto::find_valid_key_relaxed(
+                            enc,
+                            tm.compressed_chunks_offset,
+                            all_keys,
+                        )
+                    })
+                } else {
+                    None
+                }
+            })
+        })
+        .or_else(|| {
+            if pkg_stem == donor_stem || no_sf == donor_stem_no_sf {
+                Some(donor_key)
+            } else {
+                None
+            }
+        })
+        .ok_or_else(|| {
+            SwapError::Msg(format!(
+                "No encryption key found for target package '{}'. Swap aborted to prevent corrupting game files.",
+                target_pkg_name
+            ))
+        })?;
+
+    let raw_enc_aligned = (new_header_plain.len() + 15) & !15;
+    let new_enc_size_aligned = if raw_enc_aligned <= enc_size_aligned {
+        enc_size_aligned
+    } else {
+        raw_enc_aligned
+    };
+    let size_growth = new_enc_size_aligned as i64 - enc_size_aligned as i64;
+
+    if size_growth > donor_meta.garbage_size as i64 {
+        return Err(SwapError::Msg(format!(
+            "Header grew by {} bytes but only {} bytes of padding available.",
+            size_growth, donor_meta.garbage_size
+        )));
+    }
+
+    new_header_plain.resize(new_enc_size_aligned, 0u8);
+    let new_enc_block = crypto::encrypt_ecb(&output_key, &new_header_plain);
+
+    let mut output = donor_file;
+    let old_enc_end = name_offset + enc_size_aligned;
+    let new_enc_end = name_offset + new_enc_size_aligned;
+    if old_enc_end > output.len() {
+        return Err(SwapError::Msg("donor encrypted block OOB during splice".into()));
+    }
+    output.splice(name_offset..old_enc_end, new_enc_block.iter().copied());
+
+    if size_growth > 0 {
+        let gap_start = new_enc_end;
+        let trim = size_growth as usize;
+        if gap_start
+            .checked_add(trim)
+            .map(|end| end > output.len())
+            .unwrap_or(true)
+        {
+            return Err(SwapError::Msg(
+                "Not enough gap bytes to absorb header growth.".into(),
+            ));
+        }
+        output.drain(gap_start..gap_start + trim);
+    } else if size_growth < 0 {
+        let pad_len = (-size_growth) as usize;
+        let gap_start = new_enc_end;
+        output.splice(gap_start..gap_start, std::iter::repeat(0u8).take(pad_len));
+    }
+
+    if header_delta != 0 || size_growth != 0 {
+        let offsets = parser::find_summary_offsets(&output)
+            .map_err(|e| SwapError::Msg(format!("find_summary_offsets: {e}")))?;
+        if header_delta != 0 {
+            patch_i32_le(
+                &mut output,
+                offsets.total_header_size_offset,
+                donor_summary.total_header_size + header_delta as i32,
+            );
+            patch_i32_le(
+                &mut output,
+                offsets.import_offset_offset,
+                donor_summary.import_offset + header_delta as i32,
+            );
+            patch_i32_le(
+                &mut output,
+                offsets.export_offset_offset,
+                donor_summary.export_offset + header_delta as i32,
+            );
+            patch_i32_le(
+                &mut output,
+                offsets.depends_offset_offset,
+                donor_summary.depends_offset + header_delta as i32,
+            );
+            if donor_summary.import_export_guids_offset > 0 {
+                patch_i32_le(
+                    &mut output,
+                    offsets.import_export_guids_offset_offset,
+                    donor_summary.import_export_guids_offset + header_delta as i32,
+                );
+            }
+        }
+        let meta_off = donor_meta.meta_file_offset;
+        if size_growth != 0 && meta_off + 8 <= output.len() {
+            let new_garbage = donor_meta.garbage_size - size_growth as i32;
+            patch_i32_le(&mut output, meta_off, new_garbage);
+        }
+        if header_delta != 0 && meta_off + 8 <= output.len() {
+            let new_chunks_off = donor_meta.compressed_chunks_offset + header_delta as i32;
+            patch_i32_le(&mut output, meta_off + 4, new_chunks_off);
+        }
+    }
+
+    write_swap_atomically(target_path, backup_path, &output)?;
+    Ok(output.len())
+}
+
 pub fn swap_asset(
     target_id: &str,
     donor_id: &str,
@@ -880,9 +1329,9 @@ pub fn swap_asset(
     opts: &SwapOptions,
 ) -> Result<String, SwapError> {
     dump_engine_info(&opts.game_dir);
-    if !(0..=12).contains(&paint_id) {
+    if !(0..=18).contains(&paint_id) {
         return Err(SwapError::Msg(format!(
-            "invalid paint id {paint_id} (use 0 for None, or 1–12)"
+            "invalid paint id {paint_id} (use 0 for None, or 1–18)"
         )));
     }
 
@@ -964,85 +1413,14 @@ pub fn swap_asset(
 
     if backup_path.exists() {
         crate::applog::event(&format!(
-            "swap: blocked by existing backup {}",
+            "swap: existing backup found at {}, restoring pristine source before swap",
             backup_path.display()
         ));
-        return Err(SwapError::AlreadySwapped(format!(
-            "{} is already swapped — open the Restore tab and click Restore on it first, then swap again.",
-            if target.product.is_empty() {
-                target.asset_package.as_str()
-            } else {
-                target.product.as_str()
-            }
-        )));
+        let _ = std::fs::copy(&backup_path, &target_path);
     }
 
     let all_keys = crypto::load_keys(&opts.keys_txt);
     let keys_map = crypto::load_keys_map(&opts.keys_map_json);
-
-    let donor_file = read_upk(&donor_path)?;
-    let (donor_summary, donor_meta) = parser::parse_prefix(&donor_file)
-        .map_err(|e| SwapError::Msg(format!("parse donor: {e}")))?;
-
-    if donor_summary.name_count < 0 || donor_summary.name_count > MAX_NAME_COUNT {
-        return Err(SwapError::Msg(format!(
-            "donor name_count {} is implausible",
-            donor_summary.name_count
-        )));
-    }
-    if donor_summary.name_offset < 0 {
-        return Err(SwapError::Msg("donor name_offset is negative".into()));
-    }
-
-    let name_offset = donor_summary.name_offset as usize;
-    let enc_size = donor_summary
-        .total_header_size
-        .checked_sub(donor_meta.garbage_size)
-        .and_then(|v| v.checked_sub(donor_summary.name_offset))
-        .ok_or_else(|| SwapError::Msg("donor encrypted-block size underflow".into()))?;
-    if enc_size <= 0 {
-        return Err(SwapError::Msg("donor encrypted block is empty".into()));
-    }
-    let enc_size = enc_size as usize;
-    let enc_size_aligned = (enc_size + 15) & !15;
-    if name_offset
-        .checked_add(enc_size_aligned)
-        .map(|end| end > donor_file.len())
-        .unwrap_or(true)
-    {
-        return Err(SwapError::Msg("donor encrypted block OOB".into()));
-    }
-    let enc_block = &donor_file[name_offset..name_offset + enc_size_aligned];
-
-    let donor_stem = file_stem(&donor.asset_package).to_lowercase();
-    let donor_stem_no_sf = package_base(&donor_stem).to_string();
-    let map_key = keys_map
-        .get(&donor_stem)
-        .or_else(|| keys_map.get(&donor_stem_no_sf))
-        .copied();
-
-    let donor_key = map_key
-        .and_then(|k| {
-            crypto::find_valid_key_relaxed(enc_block, donor_meta.compressed_chunks_offset, &[k])
-        })
-        .or_else(|| {
-            crypto::find_valid_key(
-                enc_block,
-                donor_summary.depends_offset,
-                donor_meta.compressed_chunks_offset,
-                &all_keys,
-            )
-        })
-        .ok_or_else(|| {
-            SwapError::Msg(format!(
-                "No decryption key for {}. [keys={} enc_block_len={}]",
-                donor.asset_package,
-                all_keys.len() + map_key.is_some() as usize,
-                enc_block.len(),
-            ))
-        })?;
-
-    let header_plain = crypto::decrypt_ecb(&donor_key, enc_block);
 
     let orig_donor = find_item_by_id(&items, did)
         .cloned()
@@ -1053,8 +1431,22 @@ pub fn swap_asset(
             add_pair(&mut pairs, p.0, p.1);
         }
     }
-    let _base_pair_count = pairs.len();
-    extend_paint_name_pairs(&mut pairs, paint_id);
+
+    if paint_id > 0 {
+        extend_paint_name_pairs(&mut pairs, paint_id);
+        let donor_stem = file_stem(&donor.asset_package);
+        let donor_base = package_base(&donor_stem);
+        let target_stem = file_stem(&target.asset_package);
+        let target_base = package_base(&target_stem);
+        for p in generate_paint_remap_pairs(donor_base, paint_id) {
+            add_pair(&mut pairs, p.0, p.1);
+        }
+        if !target_base.eq_ignore_ascii_case(donor_base) {
+            for p in generate_paint_remap_pairs(target_base, paint_id) {
+                add_pair(&mut pairs, p.0, p.1);
+            }
+        }
+    }
 
     if pairs.is_empty() {
         return Err(SwapError::Msg(
@@ -1062,213 +1454,52 @@ pub fn swap_asset(
         ));
     }
 
-    let import_off = calc_relative_offset(
-        donor_summary.import_offset,
-        donor_summary.name_offset,
-        "import_offset",
-    )?;
-    let export_off = calc_relative_offset(
-        donor_summary.export_offset,
-        donor_summary.name_offset,
-        "export_offset",
-    )?;
-    let depends_off = calc_relative_offset(
-        donor_summary.depends_offset,
-        donor_summary.name_offset,
-        "depends_offset",
-    )?;
-    if import_off > export_off || export_off > depends_off {
-        return Err(SwapError::Msg(
-            "donor header table offsets are not in name < import < export < depends order".into(),
-        ));
-    }
-    if depends_off > header_plain.len() {
-        return Err(SwapError::Msg("donor header tables overrun decrypted block".into()));
-    }
-
-    let (mut new_header_plain, header_delta) = nametable::apply_header_renames(
-        header_plain,
-        import_off,
-        export_off,
-        depends_off,
-        donor_summary.depends_offset,
-        donor_summary.name_count,
+    let bytes_written = process_and_write_upk_swap(
+        &donor_path,
+        &target_path,
+        &backup_path,
         &pairs,
-    )
-    .map_err(|e| {
-        if e.contains("already references") {
-            SwapError::Collision(e)
-        } else {
-            SwapError::Msg(e)
-        }
-    })?;
+        &target.asset_package,
+        &donor.asset_package,
+        &keys_map,
+        &all_keys,
+        false,
+    )?;
 
+    // Swap companion thumbnail UPK if available
     let target_stem = file_stem(&target.asset_package);
     let target_base = package_base(&target_stem);
-    let target_pascal = to_pascal_case(target_base);
-    let orig_donor_stem = file_stem(&orig_donor.asset_package);
-    let orig_donor_base = package_base(&orig_donor_stem);
-    let has_target = name_table_has(&new_header_plain, donor_summary.name_count, &target_stem)
-        || (!target_base.is_empty() && (
-            name_table_has(&new_header_plain, donor_summary.name_count, target_base)
-            || name_table_has(&new_header_plain, donor_summary.name_count, &target_pascal)
-        ));
+    let donor_stem = file_stem(&donor.asset_package);
+    let donor_base = package_base(&donor_stem);
 
-    if !target_stem.is_empty()
-        && !orig_donor_stem.eq_ignore_ascii_case(&target_stem)
-        && !orig_donor_base.eq_ignore_ascii_case(target_base)
-        && !has_target
-    {
-        return Err(SwapError::Msg(format!(
-            "Could not remap package names ('{orig_donor_stem}' → '{target_stem}'). Swap aborted so the game will not crash."
-        )));
-    }
+    let target_thumb_cand = format!("{target_base}_T_SF.upk");
+    let donor_thumb_cand = format!("{donor_base}_T_SF.upk");
 
-    let pkg_stem = file_stem(&target.asset_package).to_lowercase();
-    let no_sf = package_base(&pkg_stem).to_string();
-    let output_key = keys_map
-        .get(&pkg_stem)
-        .or_else(|| keys_map.get(&no_sf))
-        .copied()
-        .or_else(|| {
-            read_upk(&target_path).ok().and_then(|tfile| {
-                let (ts, tm) = parser::parse_prefix(&tfile).ok()?;
-                if ts.name_offset < 0 {
-                    return None;
-                }
-                let tn = ts.name_offset as usize;
-                let te = ts
-                    .total_header_size
-                    .checked_sub(tm.garbage_size)
-                    .and_then(|v| v.checked_sub(ts.name_offset))?;
-                if te <= 0 {
-                    return None;
-                }
-                let te_al = (te as usize + 15) & !15;
-                if tn.checked_add(te_al).map(|end| end <= tfile.len())? {
-                    let enc = &tfile[tn..tn + te_al];
-                    crypto::find_valid_key(
-                        enc,
-                        ts.depends_offset,
-                        tm.compressed_chunks_offset,
-                        &all_keys,
-                    )
-                    .or_else(|| {
-                        crypto::find_valid_key_relaxed(
-                            enc,
-                            tm.compressed_chunks_offset,
-                            &all_keys,
-                        )
-                    })
-                } else {
-                    None
-                }
-            })
-        })
-        .or_else(|| {
-            if pkg_stem == donor_stem || no_sf == donor_stem_no_sf {
-                Some(donor_key)
-            } else {
-                None
-            }
-        })
-        .ok_or_else(|| {
-            SwapError::Msg(format!(
-                "No encryption key found for target package '{}'. Swap aborted to prevent corrupting game files.",
-                target.asset_package
-            ))
-        })?;
-
-    let raw_enc_aligned = (new_header_plain.len() + 15) & !15;
-    let new_enc_size_aligned = if raw_enc_aligned <= enc_size_aligned {
-        enc_size_aligned
-    } else {
-        raw_enc_aligned
-    };
-    let size_growth = new_enc_size_aligned as i64 - enc_size_aligned as i64;
-
-    if size_growth > donor_meta.garbage_size as i64 {
-        return Err(SwapError::Msg(format!(
-            "Header grew by {} bytes but only {} bytes of padding available.",
-            size_growth, donor_meta.garbage_size
-        )));
-    }
-
-    new_header_plain.resize(new_enc_size_aligned, 0u8);
-    let new_enc_block = crypto::encrypt_ecb(&output_key, &new_header_plain);
-
-    let mut output = donor_file;
-    let old_enc_end = name_offset + enc_size_aligned;
-    let new_enc_end = name_offset + new_enc_size_aligned;
-    if old_enc_end > output.len() {
-        return Err(SwapError::Msg("donor encrypted block OOB during splice".into()));
-    }
-    output.splice(name_offset..old_enc_end, new_enc_block.iter().copied());
-
-    if size_growth > 0 {
-        let gap_start = new_enc_end;
-        let trim = size_growth as usize;
-        if gap_start
-            .checked_add(trim)
-            .map(|end| end > output.len())
-            .unwrap_or(true)
-        {
-            return Err(SwapError::Msg(
-                "Not enough gap bytes to absorb header growth.".into(),
-            ));
-        }
-        output.drain(gap_start..gap_start + trim);
-    } else if size_growth < 0 {
-        let pad_len = (-size_growth) as usize;
-        let gap_start = new_enc_end;
-        output.splice(gap_start..gap_start, std::iter::repeat(0u8).take(pad_len));
-    }
-
-    if header_delta != 0 || size_growth != 0 {
-        let offsets = parser::find_summary_offsets(&output)
-            .map_err(|e| SwapError::Msg(format!("find_summary_offsets: {e}")))?;
-        if header_delta != 0 {
-            patch_i32_le(
-                &mut output,
-                offsets.import_offset_offset,
-                donor_summary.import_offset + header_delta as i32,
-            );
-            patch_i32_le(
-                &mut output,
-                offsets.export_offset_offset,
-                donor_summary.export_offset + header_delta as i32,
-            );
-            patch_i32_le(
-                &mut output,
-                offsets.depends_offset_offset,
-                donor_summary.depends_offset + header_delta as i32,
-            );
-            patch_i32_le(
-                &mut output,
-                offsets.import_export_guids_offset_offset,
-                donor_summary.depends_offset + header_delta as i32,
+    if let (Some((t_thumb_path, t_thumb_pkg)), Some((d_thumb_path, d_thumb_pkg))) = (
+        resolve_package_path(&opts.game_dir, &target_thumb_cand),
+        resolve_package_path(&opts.game_dir, &donor_thumb_cand),
+    ) {
+        let t_thumb_bak = t_thumb_path.with_file_name(format!("{}.bak", t_thumb_path.file_name().unwrap_or_default().to_string_lossy()));
+        if !t_thumb_bak.exists() {
+            let _ = process_and_write_upk_swap(
+                &d_thumb_path,
+                &t_thumb_path,
+                &t_thumb_bak,
+                &pairs,
+                &t_thumb_pkg,
+                &d_thumb_pkg,
+                &keys_map,
+                &all_keys,
+                true,
             );
         }
-        let meta_off = donor_meta.meta_file_offset;
-        if size_growth != 0 && meta_off + 8 <= output.len() {
-            let new_garbage = donor_meta.garbage_size - size_growth as i32;
-            patch_i32_le(&mut output, meta_off, new_garbage);
-        }
-        if header_delta != 0 && meta_off + 8 <= output.len() {
-            let new_chunks_off = donor_meta.compressed_chunks_offset + header_delta as i32;
-            patch_i32_le(&mut output, meta_off + 4, new_chunks_off);
-        }
     }
-
-    write_swap_atomically(&target_path, &backup_path, &output)?;
 
     let paint_note = if paint_id > 0 {
         if used_painted_file {
             format!(" Paint: {paint_name} (dedicated UPK).")
         } else {
-            format!(
-                " Paint: {paint_name} materials remapped — in-game color still follows the paint on the item you equip."
-            )
+            format!(" Paint: {paint_name} materials remapped.")
         }
     } else {
         String::new()
@@ -1276,7 +1507,7 @@ pub fn swap_asset(
 
     Ok(format!(
         "Swap complete: {} bytes written. Backup saved to: {}.{}",
-        output.len(),
+        bytes_written,
         backup_path.display(),
         paint_note
     ))
@@ -1331,6 +1562,17 @@ pub fn restore_single(path: &str) -> Result<(), SwapError> {
             explain_io(&e)
         ))
     })?;
+
+    // Also check for companion thumbnail backup:
+    let orig_stem = file_stem(&orig.to_string_lossy());
+    let orig_base = package_base(&orig_stem);
+    let thumb_bak = orig.with_file_name(format!("{orig_base}_T_SF.upk.bak"));
+    let thumb_orig = orig.with_file_name(format!("{orig_base}_T_SF.upk"));
+    if thumb_bak.is_file() {
+        let _ = std::fs::copy(&thumb_bak, &thumb_orig);
+        let _ = std::fs::remove_file(&thumb_bak);
+    }
+
     Ok(())
 }
 
@@ -1413,7 +1655,7 @@ mod tests {
     #[test]
     fn paint_slugs_cover_standard_ids() {
         assert!(paint_slugs(0).is_empty());
-        assert!(paint_slugs(13).is_empty());
+        assert!(paint_slugs(19).is_empty());
         let crimson = paint_slugs(1);
         assert!(crimson.iter().any(|s| s == "Crimson"));
         assert!(crimson.iter().any(|s| s == "P1"));
@@ -1577,5 +1819,92 @@ mod tests {
         assert_eq!(heatwave.is_multi_asset_package, Some(false));
         assert_eq!(heatwave.package_item_count, Some(1));
         assert_eq!(heatwave.object_name.as_deref(), Some("skin_heatwave"));
+    }
+
+    #[test]
+    fn test_paint_remap_pairs_generation() {
+        let pairs = generate_paint_remap_pairs("Body_Octane", 12);
+        assert!(!pairs.is_empty());
+        // Unpainted to Titanium White
+        assert!(pairs.iter().any(|(o, n)| o == "Body_Octane_Default" && n == "Body_Octane_TitaniumWhite"));
+        assert!(pairs.iter().any(|(o, n)| o == "MIC_Body_Octane" && n == "MIC_Body_Octane_TitaniumWhite"));
+        assert!(pairs.iter().any(|(o, n)| o == "Body_Octane_Painted" && n == "Body_Octane_TitaniumWhite"));
+        // Crimson (1) to Titanium White (12)
+        assert!(pairs.iter().any(|(o, n)| o == "Body_Octane_Crimson" && n == "Body_Octane_TitaniumWhite"));
+        assert!(pairs.iter().any(|(o, n)| o == "MIC_Body_Octane_Crimson" && n == "MIC_Body_Octane_TitaniumWhite"));
+        // Black (3) to Titanium White (12)
+        assert!(pairs.iter().any(|(o, n)| o == "Body_Octane_Black" && n == "Body_Octane_TitaniumWhite"));
+    }
+
+    #[test]
+    fn test_paint_remap_all_eighteen_colors() {
+        for pid in 1..=18 {
+            let pairs = generate_paint_remap_pairs("Wheel_Dieci", pid);
+            assert!(!pairs.is_empty());
+            let target_slug = paint_slugs(pid).into_iter().next().unwrap();
+            assert!(pairs.iter().any(|(o, n)| o == "Wheel_Dieci_Default" && n == &format!("Wheel_Dieci_{target_slug}")));
+        }
+    }
+
+    #[test]
+    fn test_shodo_multi_asset_disambiguation() {
+        let heatwave = Item {
+            id: 500,
+            product: "Heatwave".into(),
+            slot: "Decal".into(),
+            asset_package: "skin_heatwave_sf.upk".into(),
+            asset_path: "skin_heatwave_sf.skin_heatwave".into(),
+            object_name: Some("skin_heatwave".into()),
+            object_class: Some("MaterialInstanceConstant".into()),
+            is_multi_asset_package: Some(false),
+            package_item_count: Some(1),
+            compatible_body_id: None,
+            compatible_body_name: None,
+        };
+        let shodo = Item {
+            id: 9441,
+            product: "Shodo".into(),
+            slot: "Decal".into(),
+            asset_package: "skin_strokes.upk".into(),
+            asset_path: "skin_strokes.skin_strokes_manga".into(),
+            object_name: Some("skin_strokes_manga".into()),
+            object_class: Some("MaterialInstanceConstant".into()),
+            is_multi_asset_package: Some(true),
+            package_item_count: Some(2),
+            compatible_body_id: None,
+            compatible_body_name: None,
+        };
+        let show_cal = Item {
+            id: 9136,
+            product: "Show-Cal".into(),
+            slot: "Decal".into(),
+            asset_package: "skin_strokes.upk".into(),
+            asset_path: "skin_strokes.skin_strokes".into(),
+            object_name: Some("skin_strokes".into()),
+            object_class: Some("MaterialInstanceConstant".into()),
+            is_multi_asset_package: Some(true),
+            package_item_count: Some(2),
+            compatible_body_id: None,
+            compatible_body_name: None,
+        };
+
+        // 1. Swap Heatwave -> Shodo:
+        // Must map skin_strokes_manga -> skin_heatwave
+        // Must isolate skin_strokes -> skin_strokes_Sibling
+        // Must NOT map skin_strokes -> skin_heatwave
+        let pairs_shodo = infer_name_pairs(&heatwave, &shodo);
+        assert!(pairs_shodo.iter().any(|(o, n)| o == "skin_strokes_manga" && n == "skin_heatwave"));
+        assert!(pairs_shodo.iter().any(|(o, n)| o == "skin_strokes" && n == "skin_strokes_Sibling"));
+        assert!(!pairs_shodo.iter().any(|(o, n)| o == "skin_strokes" && n == "skin_heatwave"));
+
+        // 2. Swap Heatwave -> Show-Cal:
+        // Must map skin_strokes -> skin_heatwave
+        let pairs_showcal = infer_name_pairs(&heatwave, &show_cal);
+        assert!(pairs_showcal.iter().any(|(o, n)| o == "skin_strokes" && n == "skin_heatwave"));
+
+        // 3. Intra-package swap Show-Cal -> Shodo:
+        let pairs_intra = infer_name_pairs(&show_cal, &shodo);
+        assert!(pairs_intra.iter().any(|(o, n)| o == "skin_strokes" && n == "skin_strokes_Orig"));
+        assert!(pairs_intra.iter().any(|(o, n)| o == "skin_strokes_manga" && n == "skin_strokes"));
     }
 }

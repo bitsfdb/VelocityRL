@@ -62,6 +62,8 @@ struct Config {
 
     #[serde(default)]
     launch_on_startup: bool,
+    #[serde(default)]
+    minimize_to_tray: bool,
     #[serde(default = "default_lang")]
     language: String,
 }
@@ -161,6 +163,7 @@ pub(crate) fn is_non_swappable(item: &Item) -> bool {
     false
 }
 
+#[allow(dead_code)]
 fn attr_flag(value: &serde_json::Value) -> Option<bool> {
     match value {
         serde_json::Value::Null => Some(true),
@@ -183,18 +186,16 @@ fn attr_flag(value: &serde_json::Value) -> Option<bool> {
 }
 
 fn item_is_paintable(item: &Item) -> bool {
-    if let Some(flag) = item.paintable {
-        return flag;
+    let slot = item.slot.trim().to_lowercase().replace([' ', '_', '-'], "");
+    let unpaintable_slots = [
+        "playeranthem", "anthem", "audio", "engineaudio",
+        "playertitle", "title",
+        "crate", "blueprint", "currency", "drop",
+    ];
+    if unpaintable_slots.contains(&slot.as_str()) {
+        return false;
     }
-    for a in &item.attributes {
-        let k = a.key.to_lowercase();
-        if k == "paintable" || k == "painted" || k == "paint" {
-            if let Some(flag) = attr_flag(&a.value) {
-                return flag;
-            }
-        }
-    }
-    false
+    true
 }
 
 #[derive(Serialize, Deserialize)]
@@ -223,6 +224,10 @@ struct BackupFile {
     swap_to: String,
     #[serde(default)]
     swap_to_image: String,
+    #[serde(default)]
+    slot: String,
+    #[serde(default)]
+    paint_name: String,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -393,6 +398,7 @@ fn get_catalog_dirs(app: &tauri::AppHandle) -> (PathBuf, Option<PathBuf>) {
     (data_dir, config_dir)
 }
 
+#[allow(dead_code)]
 fn load_raw_items_json(app: &tauri::AppHandle) -> Result<String, String> {
     let (data_dir, config_dir) = get_catalog_dirs(app);
     let mut candidates = Vec::new();
@@ -713,7 +719,15 @@ async fn get_config(app: tauri::AppHandle) -> Result<Config, String> {
         let config: Config = serde_json::from_str(&content).map_err(|e| e.to_string())?;
         Ok(config)
     } else {
-        Ok(Config { game_dir: "".to_string(), privacy_agreed: false, privacy_version: "".to_string(), changelog_on_startup: true, launch_on_startup: false, language: "en".to_string() })
+        Ok(Config {
+            game_dir: "".to_string(),
+            privacy_agreed: false,
+            privacy_version: "".to_string(),
+            changelog_on_startup: true,
+            launch_on_startup: false,
+            minimize_to_tray: false,
+            language: "en".to_string(),
+        })
     }
 }
 
@@ -818,10 +832,75 @@ async fn get_backups(app: tauri::AppHandle) -> Result<Vec<BackupFile>, String> {
     let items = get_items(app.clone(), None).await.unwrap_or_default();
     let swaps = load_swaps(&app);
     let mut backups = Vec::new();
-    let dir = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
-        .map_err(|e| e.to_string())?;
+    let dir = match upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
+        Ok(d) => d,
+        Err(_) => PathBuf::from(&config.game_dir),
+    };
 
-    if let Ok(entries) = fs::read_dir(dir) {
+    let mut seen_paths = std::collections::HashSet::<String>::new();
+    let mut seen_packages = std::collections::HashSet::<String>::new();
+
+    // 1. Process active swaps recorded in swaps.json
+    for swap in &swaps {
+        let owned_item = items.iter().find(|i| i.id == swap.owned_id);
+        let wanted_item = items.iter().find(|i| i.id == swap.wanted_id);
+        let display_name = if !swap.owned_name.is_empty() {
+            swap.owned_name.clone()
+        } else {
+            owned_item.map(|i| i.product.clone()).unwrap_or_else(|| format!("Item #{}", swap.owned_id))
+        };
+        let image_url = owned_item.map(|i| i.image_url.clone()).unwrap_or_default();
+        let swap_from = display_name.clone();
+        let swap_to = if !swap.wanted_name.is_empty() {
+            swap.wanted_name.clone()
+        } else {
+            wanted_item.map(|i| i.product.clone()).unwrap_or_else(|| format!("Item #{}", swap.wanted_id))
+        };
+        let swap_to_image = wanted_item.map(|i| i.image_url.clone()).unwrap_or_default();
+
+        let actual_bak_path = if !swap.asset_package.is_empty() {
+            if let Some((target_path, _)) = upk::swapper::resolve_package_path(&dir, &swap.asset_package) {
+                target_path.with_file_name(format!("{}.bak", target_path.file_name().unwrap_or_default().to_string_lossy()))
+            } else {
+                dir.join(format!("{}.upk.bak", swap.asset_package))
+            }
+        } else {
+            dir.join(format!("Item_{}.upk.bak", swap.owned_id))
+        };
+
+        let pkg_key = if !swap.asset_package.is_empty() {
+            swap.asset_package.to_lowercase().replace(".upk", "").trim_end_matches("_sf").to_string()
+        } else {
+            format!("item_{}", swap.owned_id)
+        };
+
+        let path_str = actual_bak_path.to_string_lossy().to_string();
+        let path_norm = path_str.to_lowercase();
+
+        let slot = wanted_item.or(owned_item).map(|i| i.slot.clone()).unwrap_or_default();
+        let paint_name = if swap.paint_id > 0 {
+            upk::swapper::paint_label(swap.paint_id).to_string()
+        } else {
+            String::new()
+        };
+
+        if seen_paths.insert(path_norm) {
+            seen_packages.insert(pkg_key);
+            backups.push(BackupFile {
+                name: display_name,
+                path: path_str,
+                image_url,
+                swap_from,
+                swap_to,
+                swap_to_image,
+                slot,
+                paint_name,
+            });
+        }
+    }
+
+    // 2. Scan CookedPCConsole directory for any other .upk.bak files
+    if let Ok(entries) = fs::read_dir(&dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             let file_name_lower = path.file_name()
@@ -829,52 +908,75 @@ async fn get_backups(app: tauri::AppHandle) -> Result<Vec<BackupFile>, String> {
                 .map(|n| n.to_lowercase())
                 .unwrap_or_default();
 
-            if file_name_lower.ends_with(".upk.bak") {
-
-                if file_name_lower == "tagame.upk.bak"
-                    || file_name_lower == "engine.upk.bak"
-                    || file_name_lower.starts_with("labs_underpass_p")
-                {
-                    continue;
-                }
-
-                let file_name = path.file_name().unwrap().to_string_lossy().to_string();
-                let clean_name = file_name.to_lowercase()
-                    .replace(".upk.bak", "")
-                    .replace(".upk", "");
-
-                let matched_item = items.iter()
-                    .find(|i| {
-                        let db_pkg = i.asset_package.to_lowercase().replace(".upk", "");
-                        if db_pkg.is_empty() || db_pkg == "none" { return false; }
-                        if db_pkg == clean_name { return true; }
-                        if db_pkg.len() > 4 && (clean_name.contains(&db_pkg) || db_pkg.contains(&clean_name)) {
-                            return true;
-                        }
-                        false
-                    });
-
-                let display_name = matched_item.map(|i| i.product.clone()).unwrap_or(file_name);
-                let image_url = matched_item.map(|i| i.image_url.clone()).unwrap_or_default();
-
-                let swap_entry = matched_item.and_then(|item| swaps.iter().find(|s| s.owned_id == item.id));
-                let (swap_from, swap_to) = swap_entry
-                    .map(|s| (s.owned_name.clone(), s.wanted_name.clone()))
-                    .unwrap_or_default();
-                let swap_to_image = swap_entry
-                    .and_then(|s| items.iter().find(|i| i.id == s.wanted_id))
-                    .map(|i| i.image_url.clone())
-                    .unwrap_or_default();
-
-                backups.push(BackupFile {
-                    name: display_name,
-                    path: path.to_string_lossy().to_string(),
-                    image_url,
-                    swap_from,
-                    swap_to,
-                    swap_to_image,
-                });
+            if !file_name_lower.ends_with(".upk.bak") {
+                continue;
             }
+
+            // Exclude system files and companion thumbnails
+            if file_name_lower == "tagame.upk.bak"
+                || file_name_lower == "engine.upk.bak"
+                || file_name_lower.starts_with("labs_underpass_p")
+                || file_name_lower.ends_with("_t_sf.upk.bak")
+                || file_name_lower.ends_with("_t.upk.bak")
+                || file_name_lower.ends_with("_thumbnail_sf.upk.bak")
+                || file_name_lower.ends_with("_thumbnail.upk.bak")
+            {
+                continue;
+            }
+
+            let path_str = path.to_string_lossy().to_string();
+            let path_norm = path_str.to_lowercase();
+            if seen_paths.contains(&path_norm) {
+                continue;
+            }
+
+            let file_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+            let clean_name = file_name.to_lowercase()
+                .replace(".upk.bak", "")
+                .replace(".upk", "");
+            let clean_base = clean_name.trim_end_matches("_sf").to_string();
+
+            if seen_packages.contains(&clean_base) {
+                continue;
+            }
+
+            let matched_item = items.iter()
+                .find(|i| {
+                    let db_pkg = i.asset_package.to_lowercase().replace(".upk", "");
+                    if db_pkg.is_empty() || db_pkg == "none" { return false; }
+                    let db_base = db_pkg.trim_end_matches("_sf");
+                    db_pkg == clean_name || db_base == clean_base || db_pkg == clean_base
+                });
+
+            let display_name = matched_item.map(|i| i.product.clone()).unwrap_or_else(|| file_name.clone());
+            let image_url = matched_item.map(|i| i.image_url.clone()).unwrap_or_default();
+
+            let swap_entry = matched_item.and_then(|item| swaps.iter().find(|s| s.owned_id == item.id));
+            let (swap_from, swap_to) = swap_entry
+                .map(|s| (s.owned_name.clone(), s.wanted_name.clone()))
+                .unwrap_or_default();
+            let swap_to_image = swap_entry
+                .and_then(|s| items.iter().find(|i| i.id == s.wanted_id))
+                .map(|i| i.image_url.clone())
+                .unwrap_or_default();
+            let slot = matched_item.map(|i| i.slot.clone()).unwrap_or_default();
+            let paint_name = swap_entry
+                .filter(|s| s.paint_id > 0)
+                .map(|s| upk::swapper::paint_label(s.paint_id).to_string())
+                .unwrap_or_default();
+
+            seen_paths.insert(path_norm);
+            seen_packages.insert(clean_base);
+            backups.push(BackupFile {
+                name: display_name,
+                path: path_str,
+                image_url,
+                swap_from,
+                swap_to,
+                swap_to_image,
+                slot,
+                paint_name,
+            });
         }
     }
     Ok(backups)
@@ -1034,10 +1136,19 @@ fn swaps_path(app: &tauri::AppHandle) -> Option<PathBuf> {
 }
 
 fn load_swaps(app: &tauri::AppHandle) -> Vec<SwapEntry> {
-    swaps_path(app)
+    let list: Vec<SwapEntry> = swaps_path(app)
         .and_then(|p| fs::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    let mut seen = std::collections::HashSet::new();
+    let mut deduped = Vec::new();
+    for entry in list.into_iter().rev() {
+        if seen.insert(entry.owned_id) {
+            deduped.push(entry);
+        }
+    }
+    deduped.reverse();
+    deduped
 }
 
 fn save_swaps(app: &tauri::AppHandle, swaps: &[SwapEntry]) {
@@ -1059,6 +1170,38 @@ async fn delete_swap(app: tauri::AppHandle, owned_id: i32) -> Result<(), String>
     let mut swaps = load_swaps(&app);
     swaps.retain(|s| s.owned_id != owned_id);
     save_swaps(&app, &swaps);
+
+    if let Ok(config) = get_config(app.clone()).await {
+        if !config.game_dir.is_empty() {
+            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                if swaps.is_empty() {
+                    let _ = upk::tagame_swapper::restore_tagame_upk(&cooked);
+                } else {
+                    let tagame_items: Vec<upk::TagameSwapItem> = swaps
+                        .iter()
+                        .map(|s| upk::TagameSwapItem {
+                            slot: "Body".into(),
+                            slot_index: Some(0),
+                            owned_id: Some(s.owned_id),
+                            product_id: s.wanted_id,
+                            paint_id: if s.paint_id > 0 { Some(s.paint_id) } else { None },
+                            package_name: Some(s.asset_package.clone()),
+                        })
+                        .collect();
+
+                    let keys_txt = include_str!("../resources/keys.txt");
+                    let keys_map_json = include_str!("../resources/keys_map.json");
+                    let _ = upk::tagame_swapper::apply_tagame_modifications(
+                        &cooked,
+                        &tagame_items,
+                        None,
+                        keys_txt,
+                        keys_map_json,
+                    );
+                }
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1077,6 +1220,18 @@ fn run_swap_caught(
             "Swap failed unexpectedly. If a .bak exists, restore it from the Restore tab — the app did not crash."
                 .into(),
         ),
+    }
+}
+
+#[allow(dead_code)]
+fn load_avatar_config(app: &tauri::AppHandle) -> Option<upk::CustomAvatarConfig> {
+    let config_dir = app.path().app_config_dir().ok()?;
+    let path = config_dir.join("custom_avatar.json");
+    if path.is_file() {
+        let text = fs::read_to_string(&path).ok()?;
+        serde_json::from_str::<upk::CustomAvatarConfig>(&text).ok()
+    } else {
+        None
     }
 }
 
@@ -1107,25 +1262,25 @@ async fn apply_swap(
         return Err("Game directory not set. Open Settings and select your Rocket League CookedPCConsole folder.".to_string());
     }
     let mut paint_id = paint_id.unwrap_or(0);
-    if !(0..=12).contains(&paint_id) {
-        return Err(format!("invalid paint id {paint_id} (use 0 for None, or 1–12)"));
+    if !(0..=18).contains(&paint_id) {
+        return Err(format!("invalid paint id {paint_id} (use 0 for None, or 1–18)"));
     }
 
     let all_items = get_items(app.clone(), None).await
         .map_err(|e| format!("Failed to load items database: {}", e))?;
-    if paint_id > 0 {
-        if let Ok(wid) = wanted_id.parse::<i32>() {
-            if let Some(wanted) = all_items.iter().find(|i| i.id == wid) {
-                if !item_is_paintable(wanted) {
-                    paint_id = 0;
-                }
-            }
-        }
+
+    let oid: i32 = owned_id.parse().unwrap_or(0);
+    let wid: i32 = wanted_id.parse().unwrap_or(0);
+    let owned = all_items.iter().find(|i| i.id == oid)
+        .ok_or_else(|| format!("Owned item ID {owned_id} not found in database"))?;
+    let wanted = all_items.iter().find(|i| i.id == wid)
+        .ok_or_else(|| format!("Target item ID {wanted_id} not found in database"))?;
+
+    if paint_id > 0 && !item_is_paintable(wanted) {
+        paint_id = 0;
     }
 
-    let items_json = load_raw_items_json(&app)?;
-
-    let game_dir = match upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
+    let cooked = match upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
         Ok(dir) => dir,
         Err(_) => {
             let p = PathBuf::from(&config.game_dir);
@@ -1139,56 +1294,93 @@ async fn apply_swap(
         }
     };
 
+    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let items_json = fs::read_to_string(config_dir.join("items.json"))
+        .unwrap_or_else(|_| include_str!("../../resources/items.json").to_string());
+    let _opts = build_swap_opts(cooked.clone(), items_json);
+
+    // If target package was already swapped, restore it first before applying new swap
+    if let Some((target_path, _)) = upk::swapper::resolve_package_path(&cooked, &owned.asset_package) {
+        let bak = target_path.with_file_name(format!("{}.bak", target_path.file_name().unwrap_or_default().to_string_lossy()));
+        if bak.is_file() {
+            let _ = upk::swapper::restore_single(&bak.to_string_lossy());
+        }
+    }
+
     applog::event(&format!(
-        "apply_swap: starting owned_id={} wanted_id={} paint_id={} game_dir='{}'",
-        owned_id, wanted_id, paint_id, game_dir.display()
+        "apply_swap: starting owned_id={} wanted_id={} paint_id={} cooked='{}'",
+        owned_id, wanted_id, paint_id, cooked.display()
     ));
 
-    let opts = upk::SwapOptions {
-        game_dir: game_dir.clone(),
+    let slot_str = owned.slot.clone();
+    let slot_index = match owned.slot.to_lowercase().as_str() {
+        "body" => 0,
+        "skin" | "decal" => 1,
+        "wheel" | "wheels" => 2,
+        "boost" | "rocket boost" | "rocketboost" => 3,
+        "antenna" => 4,
+        "topper" => 5,
+        "paint finish" | "paintfinish" | "paint" => 6,
+        "engine audio" | "engineaudio" => 8,
+        "trail" => 9,
+        "goal explosion" | "goalexplosion" => 10,
+        "player banner" | "playerbanner" | "banner" => 11,
+        "player anthem" | "playeranthem" | "anthem" | "music" => 12,
+        "avatar border" | "avatarborder" | "border" => 13,
+        _ => 0,
+    };
+
+    let swap_item = upk::TagameSwapItem {
+        slot: slot_str,
+        slot_index: Some(slot_index),
+        owned_id: Some(oid),
+        product_id: wid,
+        paint_id: if paint_id > 0 { Some(paint_id) } else { None },
+        package_name: Some(wanted.asset_package.clone()),
+    };
+
+    let keys_txt = include_str!("../resources/keys.txt");
+    let keys_map_json = include_str!("../resources/keys_map.json");
+
+    let _ = upk::tagame_swapper::apply_tagame_modifications(
+        &cooked,
+        &[swap_item],
+        None,
+        keys_txt,
+        keys_map_json,
+    ).map_err(|e| e.to_string())?;
+
+    let mut swaps = load_swaps(&app);
+    swaps.retain(|s| s.owned_id != oid);
+    let new_entry = SwapEntry {
+        owned_id: oid,
+        wanted_id: wid,
+        owned_name: owned.product.clone(),
+        wanted_name: wanted.product.clone(),
+        paint_id,
+        asset_package: owned.asset_package.clone(),
+    };
+    swaps.push(new_entry.clone());
+    save_swaps(&app, &swaps);
+
+    record_swap_history(&app, "swap", std::slice::from_ref(&new_entry), "");
+
+    applog::event(&format!("apply_swap: succeeded for owned_id={} wanted_id={}", owned_id, wanted_id));
+    let paint_suffix = if paint_id > 0 {
+        format!(" ({})", upk::swapper::paint_label(paint_id))
+    } else {
+        String::new()
+    };
+    Ok(format!("Successfully swapped {} with {}{}", owned.product, wanted.product, paint_suffix))
+}
+
+pub(crate) fn build_swap_opts(game_dir: PathBuf, items_json: String) -> upk::SwapOptions {
+    upk::SwapOptions {
+        game_dir,
         items_json,
         keys_txt: include_str!("../resources/keys.txt").to_string(),
         keys_map_json: include_str!("../resources/keys_map.json").to_string(),
-    };
-    let result = match run_swap_caught(&owned_id, &wanted_id, paint_id, &opts) {
-        Ok(res) => {
-            applog::event(&format!("apply_swap: succeeded for owned_id={} wanted_id={}", owned_id, wanted_id));
-            res
-        }
-        Err(err) => {
-            applog::event(&format!("apply_swap: failed for owned_id={} wanted_id={}: {}", owned_id, wanted_id, err));
-            return Err(err);
-        }
-    };
-
-    let oid: i32 = owned_id.parse().unwrap_or(0);
-    let wid: i32 = wanted_id.parse().unwrap_or(0);
-    let owned = all_items.iter().find(|i| i.id == oid);
-    let owned_name = owned.map(|i| i.product.clone()).unwrap_or_default();
-    let wanted_name = all_items.iter().find(|i| i.id == wid).map(|i| i.product.clone()).unwrap_or_default();
-    let mut swaps = load_swaps(&app);
-    swaps.retain(|s| s.owned_id != oid);
-    swaps.push(SwapEntry {
-        owned_id: oid,
-        wanted_id: wid,
-        owned_name,
-        wanted_name,
-        paint_id,
-        asset_package: owned
-            .map(|i| i.asset_package.clone())
-            .unwrap_or_default(),
-    });
-    record_swap_history(&app, "swap", swaps.last().map(|s| std::slice::from_ref(s)).unwrap_or(&[]), "");
-    save_swaps(&app, &swaps);
-
-    if let Some(pkg) = owned.map(|i| i.asset_package.as_str()).filter(|p| !p.is_empty()) {
-        let fp = integrity::upk_fingerprint(&opts.game_dir.join(pkg));
-        let mut state = load_integrity(&app);
-        integrity::mark_swap_package(&mut state, pkg, fp.as_deref());
-        let _ = save_integrity(&app, &state);
     }
-
-    Ok(result)
 }
 
 #[tauri::command]
@@ -1197,65 +1389,74 @@ async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<()
     if config.game_dir.is_empty() {
         return Err("Game directory not configured".into());
     }
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| upk::restore_single(&path))) {
-        Ok(Ok(())) => {}
-        Ok(Err(e)) => return Err(explain_upk_lock(e.to_string(), "the UPK")),
-        Err(_) => return Err("Restore failed unexpectedly. Close Rocket League and try again.".into()),
-    }
+    let cooked = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
+        .unwrap_or_else(|_| PathBuf::from(&config.game_dir));
 
-    let clean_stem = std::path::Path::new(&path)
+    let bak_path = if path.ends_with(".bak") {
+        PathBuf::from(&path)
+    } else {
+        PathBuf::from(format!("{path}.bak"))
+    };
+
+    let bak_str = bak_path.to_string_lossy().into_owned();
+    upk::swapper::restore_single(&bak_str).map_err(|e| e.to_string())?;
+
+    // Also restore companion thumbnail if present
+    let clean_stem = bak_path
         .file_name()
         .unwrap_or_default()
         .to_string_lossy()
-        .to_lowercase()
         .replace(".upk.bak", "")
         .replace(".upk", "");
-    let stem_base = clean_stem.trim_end_matches("_sf").to_string();
+    let base_stem = clean_stem.trim_end_matches("_sf").trim_end_matches("_SF");
+    for thumb_candidate in &[
+        cooked.join(format!("{clean_stem}_T_SF.upk.bak")),
+        cooked.join(format!("{base_stem}_T_SF.upk.bak")),
+        cooked.join(format!("{clean_stem}_t_sf.upk.bak")),
+        cooked.join(format!("{base_stem}_t_sf.upk.bak")),
+        cooked.join(format!("{clean_stem}_Thumbnail_SF.upk.bak")),
+        cooked.join(format!("{base_stem}_Thumbnail_SF.upk.bak")),
+    ] {
+        if thumb_candidate.is_file() {
+            let _ = upk::swapper::restore_single(&thumb_candidate.to_string_lossy());
+        }
+    }
 
     let items = get_items(app.clone(), None).await.unwrap_or_default();
+    let stem_lower = clean_stem.to_lowercase();
+    let stem_base = stem_lower.trim_end_matches("_sf").to_string();
+
     let matched_item = items.iter().find(|i| {
         let db_pkg = i.asset_package.to_lowercase().replace(".upk", "");
         if db_pkg.is_empty() || db_pkg == "none" {
             return false;
         }
         let db_base = db_pkg.trim_end_matches("_sf");
-        if db_pkg == clean_stem || db_base == stem_base {
-            return true;
-        }
-        if db_pkg.len() > 4 && (clean_stem.contains(&db_pkg) || db_pkg.contains(&clean_stem)) {
-            return true;
-        }
-        false
+        db_pkg == stem_lower || db_base == stem_base || db_pkg.contains(&stem_lower)
     });
 
     let mut swaps = load_swaps(&app);
     let orig_len = swaps.len();
     if let Some(item) = matched_item {
-        swaps.retain(|s| {
-            if s.owned_id == item.id {
-                return false;
-            }
-            let s_pkg = s.asset_package.to_lowercase().replace(".upk", "");
-            let s_base = s_pkg.trim_end_matches("_sf");
-            if s_pkg == clean_stem || s_base == stem_base {
-                return false;
-            }
-            true
-        });
+        swaps.retain(|s| s.owned_id != item.id);
         record_swap_history(&app, "restore", &[], &format!("restored {}", item.product));
-        let mut state = load_integrity(&app);
-        integrity::clear_swap_package(&mut state, &item.asset_package);
-        let _ = save_integrity(&app, &state);
+    } else if let Some(id_str) = clean_stem.strip_prefix("item_") {
+        if let Ok(id) = id_str.parse::<i32>() {
+            swaps.retain(|s| s.owned_id != id);
+            record_swap_history(&app, "restore", &[], &format!("restored item #{id}"));
+        }
     } else {
         swaps.retain(|s| {
             let s_pkg = s.asset_package.to_lowercase().replace(".upk", "");
             let s_base = s_pkg.trim_end_matches("_sf");
-            s_pkg != clean_stem && s_base != stem_base
+            s_pkg != stem_lower && s_base != stem_base
         });
     }
     if swaps.len() != orig_len {
         save_swaps(&app, &swaps);
     }
+
+    applog::event(&format!("restore_single_backup: restored {path}"));
     Ok(())
 }
 
@@ -1265,28 +1466,24 @@ async fn restore_backups(app: tauri::AppHandle) -> Result<String, String> {
     if config.game_dir.is_empty() {
         return Err("Game directory not set".to_string());
     }
-    let count = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        upk::restore_all(&config.game_dir)
-    })) {
-        Ok(Ok(n)) => n,
-        Ok(Err(e)) => return Err(explain_upk_lock(e.to_string(), "a UPK")),
-        Err(_) => return Err("Restore-all failed unexpectedly.".into()),
-    };
+    let cooked = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
+        .unwrap_or_else(|_| PathBuf::from(&config.game_dir));
+
+    let count = upk::swapper::restore_all(&cooked.to_string_lossy())
+        .map_err(|e| e.to_string())?;
+
+    let _ = upk::tagame_swapper::restore_tagame_upk(&cooked);
+
     save_swaps(&app, &[]);
+    record_swap_history(&app, "restore_all", &[], "restored all swapped packages");
+
     let mut state = load_integrity(&app);
     state.swap_packages.clear();
     state.swap_fingerprints.clear();
     let _ = save_integrity(&app, &state);
-    Ok(format!("Restored {} backups", count))
-}
 
-fn build_swap_opts(game_dir: PathBuf, items_json: String) -> upk::SwapOptions {
-    upk::SwapOptions {
-        game_dir,
-        items_json,
-        keys_txt: include_str!("../resources/keys.txt").to_string(),
-        keys_map_json: include_str!("../resources/keys_map.json").to_string(),
-    }
+    applog::event(&format!("restore_backups: restored {count} packages"));
+    Ok(format!("Restored {} item(s) to default", count))
 }
 
 #[tauri::command]
@@ -1300,77 +1497,33 @@ async fn reswap_all(app: tauri::AppHandle) -> Result<String, String> {
     }
     let swaps = load_swaps(&app);
     if swaps.is_empty() {
-        return Err(
-            "No recorded swaps to re-apply. Swap items again from the Swapper tab.".into(),
-        );
+        return Err("No recorded swaps to re-apply. Swap items again from the Swapper tab.".into());
     }
-    let _ = get_items(app.clone(), None).await;
-    let items_json = load_raw_items_json(&app)?;
-    let game_dir = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
+    let cooked = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
         .unwrap_or_else(|_| PathBuf::from(&config.game_dir));
-    let items = get_items(app.clone(), None).await.unwrap_or_default();
-    let opts = build_swap_opts(game_dir.clone(), items_json);
 
-    let mut ok = 0usize;
-    let mut errors: Vec<String> = Vec::new();
+    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let items_json = fs::read_to_string(config_dir.join("items.json"))
+        .unwrap_or_else(|_| include_str!("../../resources/items.json").to_string());
+    let opts = build_swap_opts(cooked.clone(), items_json);
+
+    let mut success_count = 0;
+    let mut errors = Vec::new();
+
     for s in &swaps {
-        let pkg = if !s.asset_package.is_empty() {
-            s.asset_package.clone()
-        } else {
-            items
-                .iter()
-                .find(|i| i.id == s.owned_id)
-                .map(|i| i.asset_package.clone())
-                .unwrap_or_default()
-        };
-        if !pkg.is_empty() {
-            let bak = integrity::bak_path_for(&game_dir.join(&pkg));
-            if bak.exists() {
-                if let Some(bak_s) = bak.to_str() {
-                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        upk::restore_single(bak_s)
-                    }));
-                }
-            }
-        }
-        let paint = if (0..=12).contains(&s.paint_id) { s.paint_id } else { 0 };
-        match run_swap_caught(&s.owned_id.to_string(), &s.wanted_id.to_string(), paint, &opts) {
-            Ok(_) => {
-                ok += 1;
-                if !pkg.is_empty() {
-                    let fp = integrity::upk_fingerprint(&game_dir.join(&pkg));
-                    let mut state = load_integrity(&app);
-                    integrity::mark_swap_package(&mut state, &pkg, fp.as_deref());
-                    let _ = save_integrity(&app, &state);
-                }
-            }
-            Err(e) => {
-                let name = if s.owned_name.is_empty() {
-                    format!("#{}", s.owned_id)
-                } else {
-                    s.owned_name.clone()
-                };
-                errors.push(format!("{name}: {e}"));
-            }
+        let oid_str = s.owned_id.to_string();
+        let wid_str = s.wanted_id.to_string();
+        match run_swap_caught(&oid_str, &wid_str, s.paint_id, &opts) {
+            Ok(_) => success_count += 1,
+            Err(e) => errors.push(format!("{}: {e}", s.owned_name)),
         }
     }
 
-    if ok == 0 {
-        return Err(if errors.is_empty() {
-            "Reswap did not apply any swaps.".into()
-        } else {
-            errors.join("\n")
-        });
+    if success_count == 0 && !errors.is_empty() {
+        return Err(format!("Failed to re-apply swaps: {}", errors.join("; ")));
     }
-    if errors.is_empty() {
-        Ok(format!("Re-applied {ok} swap(s). Restart Rocket League to see them."))
-    } else {
-        Ok(format!(
-            "Re-applied {ok} swap(s); {} failed: {}",
-            errors.len(),
-            errors.join("; ")
-        ))
-    }
+
+    Ok(format!("Re-applied {} swap(s). Restart Rocket League to see them.", success_count))
 }
 
 #[tauri::command]
@@ -2254,22 +2407,74 @@ pub fn run() {
                     }
                     let health = psynet::verify_config_psynet_live().await;
                     if !health.ok {
-                        applog::event(&format!(
-                            "psynet: boot config.psynet.gg verification warning: {}",
-                            health.details
-                        ));
                     }
                 });
             });
+
+            if let Some(icon) = app_handle.default_window_icon() {
+                if let (Ok(show_item), Ok(quit_item)) = (
+                    tauri::menu::MenuItemBuilder::with_id("show", "Show VelocityRL").build(&app_handle),
+                    tauri::menu::MenuItemBuilder::with_id("quit", "Exit VelocityRL").build(&app_handle),
+                ) {
+                    if let Ok(menu) = tauri::menu::MenuBuilder::new(&app_handle).items(&[&show_item, &quit_item]).build() {
+                        let _ = tauri::tray::TrayIconBuilder::new()
+                            .icon(icon.clone())
+                            .tooltip("VelocityRL")
+                            .menu(&menu)
+                            .show_menu_on_left_click(false)
+                            .on_menu_event(|app, event| {
+                                match event.id().as_ref() {
+                                    "show" => {
+                                        if let Some(w) = app.get_webview_window("main") {
+                                            let _ = w.show();
+                                            let _ = w.unminimize();
+                                            let _ = w.set_focus();
+                                        }
+                                    }
+                                    "quit" => {
+                                        psynet::kill_proxy_on_exit();
+                                        std::process::exit(0);
+                                    }
+                                    _ => {}
+                                }
+                            })
+                            .on_tray_icon_event(|tray, event| {
+                                if let tauri::tray::TrayIconEvent::Click {
+                                    button: tauri::tray::MouseButton::Left,
+                                    button_state: tauri::tray::MouseButtonState::Up,
+                                    ..
+                                } = event {
+                                    let app = tray.app_handle();
+                                    if let Some(w) = app.get_webview_window("main") {
+                                        let _ = w.show();
+                                        let _ = w.unminimize();
+                                        let _ = w.set_focus();
+                                    }
+                                }
+                            })
+                            .build(&app_handle);
+                    }
+                }
+            }
+
             Ok(())
         })
         .on_window_event(|window, event| {
             match event {
                 tauri::WindowEvent::CloseRequested { api, .. } => {
                     if window.label() == "main" {
-                        applog::event("exit: main window close requested — terminating application");
-                        psynet::kill_proxy_on_exit();
-                        std::process::exit(0);
+                        let app_h = window.app_handle().clone();
+                        let min_to_tray = tauri::async_runtime::block_on(async move {
+                            get_config(app_h).await.map(|c| c.minimize_to_tray).unwrap_or(false)
+                        });
+                        if min_to_tray {
+                            api.prevent_close();
+                            let _ = window.hide();
+                        } else {
+                            applog::event("exit: main window close requested — terminating application");
+                            psynet::kill_proxy_on_exit();
+                            std::process::exit(0);
+                        }
                     } else if window.label() == "tracker_overlay" {
                         api.prevent_close();
                         let _ = window.hide();

@@ -1,72 +1,50 @@
-use crate::upk::{crypto, parser};
+use crate::upk::crypto;
+use flate2::read::ZlibDecoder;
+use flate2::write::ZlibEncoder;
+use flate2::Compression;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 pub const TAGAME_BACKUP_NAME: &str = "TAGame.upk.bak";
+pub const TAGAME_KEY: [u8; 32] = [
+    0xc7, 0xdf, 0x6b, 0x13, 0x25, 0x2a, 0xcc, 0x71,
+    0x47, 0xbb, 0x51, 0xc9, 0x8a, 0xd7, 0xe3, 0x4b,
+    0x7f, 0xe5, 0x00, 0xb7, 0x7f, 0xa5, 0xfa, 0xb2,
+    0x93, 0xe2, 0xf2, 0x4e, 0x6b, 0x17, 0xe7, 0x79,
+];
 
-// Unreal Engine 3 UnrealScript Bytecode Opcodes (from UnStack.h)
+// Opcodes for UE3 64-bit bytecode
 pub mod opcodes {
-    pub const EX_LOCAL_VARIABLE: u8 = 0x00;
-    pub const EX_INSTANCE_VARIABLE: u8 = 0x01;
-    pub const EX_DEFAULT_VARIABLE: u8 = 0x02;
-    pub const EX_STATE_VARIABLE: u8 = 0x03;
-    pub const EX_RETURN: u8 = 0x04;
-    pub const EX_SWITCH: u8 = 0x05;
-    pub const EX_JUMP: u8 = 0x06;
-    pub const EX_JUMP_IF_NOT: u8 = 0x07;
-    pub const EX_STOP: u8 = 0x08;
-    pub const EX_ASSERT: u8 = 0x09;
-    pub const EX_CASE: u8 = 0x0A;
-    pub const EX_NOTHING: u8 = 0x0B;
-    pub const EX_LABEL_TABLE: u8 = 0x0C;
-    pub const EX_GOTO_LABEL: u8 = 0x0D;
-    pub const EX_EAT_RETURN_VALUE: u8 = 0x0E;
-    pub const EX_LET: u8 = 0x0F;
-    pub const EX_DYN_ARRAY_ELEMENT: u8 = 0x10;
-    pub const EX_NEW: u8 = 0x11;
-    pub const EX_CLASS_CONTEXT: u8 = 0x12;
-    pub const EX_META_CAST: u8 = 0x13;
-    pub const EX_LET_BOOL: u8 = 0x14;
-    pub const EX_END_PARM_VALUE: u8 = 0x15;
-    pub const EX_END_FUNCTION_PARMS: u8 = 0x16;
-    pub const EX_SELF: u8 = 0x17;
-    pub const EX_SKIP: u8 = 0x18;
-    pub const EX_CONTEXT: u8 = 0x19;
-    pub const EX_ARRAY_ELEMENT: u8 = 0x1A;
-    pub const EX_VIRTUAL_FUNCTION: u8 = 0x1B;
-    pub const EX_FINAL_FUNCTION: u8 = 0x1C;
-    pub const EX_INT_CONST: u8 = 0x1D;
-    pub const EX_FLOAT_CONST: u8 = 0x1E;
-    pub const EX_STRING_CONST: u8 = 0x1F;
-    pub const EX_OBJECT_CONST: u8 = 0x20;
-    pub const EX_NAME_CONST: u8 = 0x21;
-    pub const EX_ROTATION_CONST: u8 = 0x22;
-    pub const EX_VECTOR_CONST: u8 = 0x23;
-    pub const EX_BYTE_CONST: u8 = 0x24;
+    pub const EX_LOCAL_VARIABLE: u8 = 0x46;
+    pub const EX_INSTANCE_VARIABLE: u8 = 0x2B;
+    pub const EX_STRUCT_MEMBER: u8 = 0x35;
+    pub const EX_DYN_ARRAY_OP: u8 = 0x57;
     pub const EX_INT_ZERO: u8 = 0x25;
-    pub const EX_INT_ONE: u8 = 0x26;
-    pub const EX_TRUE: u8 = 0x27;
-    pub const EX_FALSE: u8 = 0x28;
-    pub const EX_NATIVE_PARM: u8 = 0x29;
-    pub const EX_NO_OBJECT: u8 = 0x2A;
     pub const EX_INT_CONST_BYTE: u8 = 0x2C;
-    pub const EX_BOOL_VARIABLE: u8 = 0x2D;
-    pub const EX_DYNAMIC_CAST: u8 = 0x2E;
-    pub const EX_UNICODE_STRING_CONST: u8 = 0x34;
-    pub const EX_PRIMITIVE_CAST: u8 = 0x38;
+    pub const EX_INT_CONST: u8 = 0x1D;
+    pub const EX_LET: u8 = 0x0F;
+    pub const EX_RETURN: u8 = 0x04;
+    pub const EX_END_OF_SCRIPT: u8 = 0x4C;
+    pub const EX_NOTHING: u8 = 0x0B;
+    pub const EX_JUMP_IF_NOT: u8 = 0x07;
+    pub const EX_EQUAL_EQUAL_INT_INT: u8 = 0x98;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TagameSwapItem {
     pub slot: String,
-    pub asset_path: String,
     #[serde(default)]
-    pub material_index: i32,
+    pub slot_index: Option<i32>,
     #[serde(default)]
-    pub object_class: Option<String>,
+    pub owned_id: Option<i32>,
     #[serde(default)]
-    pub product_name: Option<String>,
+    pub product_id: i32,
+    #[serde(default)]
+    pub paint_id: Option<i32>,
+    #[serde(default)]
+    pub package_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -154,157 +132,315 @@ pub fn resolve_cooked_dir(game_dir: &Path) -> Result<PathBuf, TagameSwapError> {
     )))
 }
 
-/// Builds UnrealScript bytecode for DynamicLoadObject call:
-/// DynamicLoadObject(String ObjectName, Class ObjectClass, optional Bool MayFail)
-pub fn emit_dynamic_load_object_bytecode(
-    dlo_func_pkg_index: i32,
-    target_class_pkg_index: i32,
-    asset_path: &str,
-) -> Vec<u8> {
-    let mut out = Vec::new();
-    // EX_FinalFunction (0x1C) followed by 4-byte package index for DynamicLoadObject
-    out.push(opcodes::EX_FINAL_FUNCTION);
-    out.extend_from_slice(&dlo_func_pkg_index.to_le_bytes());
-
-    // Param 1: ObjectName (EX_StringConst followed by null-terminated ASCII string)
-    out.push(opcodes::EX_STRING_CONST);
-    out.extend_from_slice(asset_path.as_bytes());
-    out.push(0x00);
-
-    // Param 2: ObjectClass (EX_ObjectConst followed by 4-byte package index of target Class, e.g. MaterialInterface / Texture2D)
-    out.push(opcodes::EX_OBJECT_CONST);
-    out.extend_from_slice(&target_class_pkg_index.to_le_bytes());
-
-    // Param 3: optional MayFail (EX_False = 0x28 or EX_True)
-    out.push(opcodes::EX_TRUE);
-
-    // EX_EndFunctionParms (0x16)
-    out.push(opcodes::EX_END_FUNCTION_PARMS);
-    out
+#[derive(Debug, Clone, Copy)]
+pub struct SlotSwapRule {
+    pub slot_idx: u8,
+    pub owned_id: Option<i32>,
+    pub target_id: i32,
 }
 
-/// Builds bytecode for ChassisMesh.SetMaterial(material_index, DynamicLoadObject(asset_path, MaterialInterface))
-pub fn emit_set_chassis_material_bytecode(
-    dlo_func_pkg_index: i32,
-    mat_interface_class_pkg_index: i32,
-    set_mat_func_pkg_index: i32,
-    chassis_mesh_prop_pkg_index: i32,
-    material_index: i32,
-    asset_path: &str,
-) -> Vec<u8> {
-    let mut out = Vec::new();
-    // Context expression: ChassisMesh (EX_InstanceVariable)
-    out.push(opcodes::EX_CONTEXT);
-    out.push(opcodes::EX_INSTANCE_VARIABLE);
-    out.extend_from_slice(&chassis_mesh_prop_pkg_index.to_le_bytes());
-    // 2-byte skip size placeholder (will be filled after building call)
-    let skip_pos = out.len();
-    out.extend_from_slice(&[0u8, 0u8]);
-    out.push(0x00); // null property type byte
+/// Emits bytecode for ConvertToClientLoadout:
+/// 1. NewLoadout.Products = FromData.Products;
+/// 2. For each swap:
+///    if (owned_id == Some(id)) {
+///        if (FromData.Products[slot_idx] == id) { NewLoadout.Products[slot_idx] = target_id; }
+///    } else {
+///        NewLoadout.Products[slot_idx] = target_id;
+///    }
+/// 3. return NewLoadout;
+/// 4. 0x0B (NOP) padding to exactly max_disk_size bytes.
+pub fn emit_convert_to_client_loadout_bytecode(
+    slot_overrides: &[SlotSwapRule],
+    max_disk_size: usize,
+) -> Result<(Vec<u8>, u32), TagameSwapError> {
+    let mut bc = Vec::new();
+    let mut mem_sz: u32 = 0;
 
-    let call_start = out.len();
-    // EX_VirtualFunction for SetMaterial
-    out.push(opcodes::EX_VIRTUAL_FUNCTION);
-    out.extend_from_slice(&set_mat_func_pkg_index.to_le_bytes());
+    // 1. NewLoadout.Products = FromData.Products;
+    // 0F 35 4F070000 50070000 00 01 2B 4B000000 35 4F070000 3C090000 00 00 46 4D000000
+    bc.push(opcodes::EX_LET);
+    bc.push(opcodes::EX_STRUCT_MEMBER);
+    bc.extend_from_slice(&1871i32.to_le_bytes());
+    bc.extend_from_slice(&1872i32.to_le_bytes());
+    bc.extend_from_slice(&[0x00, 0x01]);
+    bc.push(opcodes::EX_INSTANCE_VARIABLE);
+    bc.extend_from_slice(&75i32.to_le_bytes());
+    bc.push(opcodes::EX_STRUCT_MEMBER);
+    bc.extend_from_slice(&1871i32.to_le_bytes());
+    bc.extend_from_slice(&2364i32.to_le_bytes());
+    bc.extend_from_slice(&[0x00, 0x00]);
+    bc.push(opcodes::EX_LOCAL_VARIABLE);
+    bc.extend_from_slice(&77i32.to_le_bytes());
 
-    // Param 1: MaterialSlotIndex (EX_IntConstByte or EX_IntConst)
-    if (0..=255).contains(&material_index) {
-        out.push(opcodes::EX_INT_CONST_BYTE);
-        out.push(material_index as u8);
-    } else {
-        out.push(opcodes::EX_INT_CONST);
-        out.extend_from_slice(&material_index.to_le_bytes());
+    mem_sz += 57; // 28 disk -> 57 mem
+
+    // 2. Overrides
+    for rule in slot_overrides {
+        if let Some(owned_id) = rule.owned_id {
+            // Conditional: if (FromData.Products[slot_idx] == owned_id)
+            let jump_pos = bc.len();
+            bc.push(opcodes::EX_JUMP_IF_NOT);
+            bc.extend_from_slice(&[0x00, 0x00]); // placeholder
+
+            // Condition: EX_EqualEqual_IntInt (0x98)
+            bc.push(opcodes::EX_EQUAL_EQUAL_INT_INT);
+
+            // LHS: FromData.Products[slot_idx]
+            bc.push(opcodes::EX_DYN_ARRAY_OP);
+            bc.extend_from_slice(&[0x00, 0x00]);
+            if rule.slot_idx == 0 {
+                bc.push(opcodes::EX_INT_ZERO);
+            } else {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(rule.slot_idx);
+            }
+            bc.push(opcodes::EX_STRUCT_MEMBER);
+            bc.extend_from_slice(&1871i32.to_le_bytes());
+            bc.extend_from_slice(&2364i32.to_le_bytes());
+            bc.extend_from_slice(&[0x00, 0x00]);
+            bc.push(opcodes::EX_LOCAL_VARIABLE);
+            bc.extend_from_slice(&77i32.to_le_bytes());
+
+            // RHS: owned_id (IntConst)
+            bc.push(opcodes::EX_INT_CONST);
+            bc.extend_from_slice(&owned_id.to_le_bytes());
+
+            // Body: NewLoadout.Products[slot_idx] = target_id;
+            bc.push(opcodes::EX_LET);
+            bc.push(opcodes::EX_DYN_ARRAY_OP);
+            bc.extend_from_slice(&[0x00, 0x00]);
+            if rule.slot_idx == 0 {
+                bc.push(opcodes::EX_INT_ZERO);
+            } else {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(rule.slot_idx);
+            }
+            bc.push(opcodes::EX_STRUCT_MEMBER);
+            bc.extend_from_slice(&1871i32.to_le_bytes());
+            bc.extend_from_slice(&1872i32.to_le_bytes());
+            bc.extend_from_slice(&[0x00, 0x01]);
+            bc.push(opcodes::EX_INSTANCE_VARIABLE);
+            bc.extend_from_slice(&75i32.to_le_bytes());
+            bc.push(opcodes::EX_INT_CONST);
+            bc.extend_from_slice(&rule.target_id.to_le_bytes());
+
+            let jump_target = bc.len() as u16;
+            bc[jump_pos + 1..jump_pos + 3].copy_from_slice(&jump_target.to_le_bytes());
+
+            mem_sz += if rule.slot_idx == 0 { 79 } else { 81 };
+        } else {
+            // Unconditional: NewLoadout.Products[slot_idx] = target_id;
+            bc.push(opcodes::EX_LET);
+            bc.push(opcodes::EX_DYN_ARRAY_OP);
+            bc.extend_from_slice(&[0x00, 0x00]);
+            if rule.slot_idx == 0 {
+                bc.push(opcodes::EX_INT_ZERO);
+            } else {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(rule.slot_idx);
+            }
+            bc.push(opcodes::EX_STRUCT_MEMBER);
+            bc.extend_from_slice(&1871i32.to_le_bytes());
+            bc.extend_from_slice(&1872i32.to_le_bytes());
+            bc.extend_from_slice(&[0x00, 0x01]);
+            bc.push(opcodes::EX_INSTANCE_VARIABLE);
+            bc.extend_from_slice(&75i32.to_le_bytes());
+            bc.push(opcodes::EX_INT_CONST);
+            bc.extend_from_slice(&rule.target_id.to_le_bytes());
+
+            mem_sz += if rule.slot_idx == 0 { 38 } else { 39 };
+        }
     }
 
-    // Param 2: MaterialInterface dynamic load
-    let dlo_code = emit_dynamic_load_object_bytecode(
-        dlo_func_pkg_index,
-        mat_interface_class_pkg_index,
-        asset_path,
-    );
-    out.extend_from_slice(&dlo_code);
+    // 3. return NewLoadout;
+    bc.push(opcodes::EX_RETURN);
+    bc.push(opcodes::EX_INSTANCE_VARIABLE);
+    bc.extend_from_slice(&75i32.to_le_bytes());
 
-    // EX_EndFunctionParms
-    out.push(opcodes::EX_END_FUNCTION_PARMS);
+    // 4. End of script
+    bc.push(opcodes::EX_END_OF_SCRIPT);
 
-    let call_len = (out.len() - call_start) as u16;
-    out[skip_pos..skip_pos + 2].copy_from_slice(&call_len.to_le_bytes());
+    mem_sz += 10 + 1; // Return + EOS
+
+    if bc.len() > max_disk_size {
+        return Err(TagameSwapError::Msg(format!(
+            "Bytecode payload size {} exceeds max disk size {}",
+            bc.len(),
+            max_disk_size
+        )));
+    }
+
+    let nop_count = max_disk_size - bc.len();
+    bc.resize(max_disk_size, opcodes::EX_NOTHING);
+    mem_sz += nop_count as u32;
+
+    Ok((bc, mem_sz))
+}
+
+fn get_paint_rgba(paint_id: i32) -> [u8; 16] {
+    let (r, g, b, a): (f32, f32, f32, f32) = match paint_id {
+        1 => (0.831, 0.129, 0.169, 1.0),   // Crimson
+        2 => (0.655, 0.902, 0.000, 1.0),   // Lime
+        3 => (0.005, 0.005, 0.005, 1.0),   // Black
+        4 => (1.000, 0.455, 0.000, 1.0),   // Orange
+        5 => (0.000, 0.706, 1.000, 1.0),   // Sky Blue
+        6 => (0.122, 0.271, 0.988, 1.0),   // Cobalt
+        7 => (1.000, 0.945, 0.090, 1.0),   // Saffron
+        8 => (0.541, 0.541, 0.541, 1.0),   // Grey
+        9 => (1.000, 0.431, 0.706, 1.0),   // Pink
+        10 => (0.180, 0.545, 0.341, 1.0),  // Forest Green
+        11 => (0.502, 0.000, 0.502, 1.0),  // Purple
+        12 => (1.500, 1.500, 1.500, 1.0),  // Titanium White
+        13 => (1.000, 0.843, 0.000, 1.0),  // Gold
+        14 => (0.718, 0.431, 0.475, 1.0),  // Rose Gold
+        _ => (0.005, 0.005, 0.005, 1.0),
+    };
+
+    let mut out = [0u8; 16];
+    out[0..4].copy_from_slice(&r.to_le_bytes());
+    out[4..8].copy_from_slice(&g.to_le_bytes());
+    out[8..12].copy_from_slice(&b.to_le_bytes());
+    out[12..16].copy_from_slice(&a.to_le_bytes());
     out
 }
 
-/// Builds bytecode for Avatar = DynamicLoadObject(avatar_asset_path, class'Texture2D')
-pub fn emit_set_avatar_bytecode(
-    dlo_func_pkg_index: i32,
-    texture2d_class_pkg_index: i32,
-    avatar_prop_pkg_index: i32,
-    avatar_asset_path: &str,
-) -> Vec<u8> {
-    let mut out = Vec::new();
-    // EX_Let (0x0F) -> assign to Avatar instance variable
-    out.push(opcodes::EX_LET);
-    out.push(opcodes::EX_INSTANCE_VARIABLE);
-    out.extend_from_slice(&avatar_prop_pkg_index.to_le_bytes());
-
-    // DynamicLoadObject expression
-    let dlo_code = emit_dynamic_load_object_bytecode(
-        dlo_func_pkg_index,
-        texture2d_class_pkg_index,
-        avatar_asset_path,
-    );
-    out.extend_from_slice(&dlo_code);
-    out
-}
-
-/// Decrypts TAGame.upk and parses header structures
-pub fn read_tagame_structures(
-    tagame_file_data: &[u8],
-    keys_txt: &str,
+pub fn apply_body_paint_modification(
+    cooked_dir: &Path,
+    package_name: &str,
+    paint_id: i32,
     keys_map_json: &str,
-) -> Result<(parser::FileSummary, parser::CompressionMeta, Vec<u8>, [u8; 32]), TagameSwapError> {
-    let (summary, meta) = parser::parse_prefix(tagame_file_data)
-        .map_err(|e| TagameSwapError::Msg(format!("parse TAGame prefix: {e}")))?;
+) -> Result<(), TagameSwapError> {
+    let pkg_file_name = if package_name.ends_with(".upk") {
+        package_name.to_string()
+    } else {
+        format!("{package_name}.upk")
+    };
+    let pkg_path = cooked_dir.join(&pkg_file_name);
+    let backup_path = cooked_dir.join(format!("{pkg_file_name}.bak"));
 
-    let name_offset = summary.name_offset as usize;
-    let enc_size = (summary.total_header_size - meta.garbage_size - summary.name_offset) as usize;
-    let enc_aligned = (enc_size + 15) & !15;
-    if name_offset + enc_aligned > tagame_file_data.len() {
-        return Err(TagameSwapError::Msg("TAGame encrypted header block OOB".into()));
+    if !pkg_path.is_file() {
+        return Ok(());
     }
 
-    let enc_block = &tagame_file_data[name_offset..name_offset + enc_aligned];
-    let all_keys = crypto::load_keys(keys_txt);
+    if !backup_path.is_file() {
+        let _ = fs::copy(&pkg_path, &backup_path);
+    }
+
+    let src_path = if backup_path.is_file() { &backup_path } else { &pkg_path };
+    let mut file_bytes = fs::read(src_path)?;
+
+    if file_bytes.len() < 32 {
+        return Err(TagameSwapError::Msg("UPK file too small".into()));
+    }
+
+    let total_header_size = u32::from_le_bytes(file_bytes[8..12].try_into().unwrap()) as usize;
+    let mut p = 12;
+    let flen = i32::from_le_bytes(file_bytes[p..p+4].try_into().unwrap());
+    p += 4 + if flen > 0 { flen as usize } else { (-flen * 2) as usize };
+    p += 4; // skip package flags
+    p += 4; // skip name count
+    let name_offset = u32::from_le_bytes(file_bytes[p..p+4].try_into().unwrap()) as usize;
+
+    let enc_size = (total_header_size - name_offset + 15) & !15;
+    let enc_end = name_offset + enc_size;
+    if enc_end > file_bytes.len() {
+        return Err(TagameSwapError::Msg("Encrypted header out of bounds".into()));
+    }
+
     let keys_map = crypto::load_keys_map(keys_map_json);
-    let map_key = keys_map
-        .get("tagame")
+    let key_name = package_name.trim_end_matches(".upk").to_lowercase();
+    let key = keys_map
+        .get(&key_name)
         .copied()
-        .or_else(|| keys_map.get("TAGame").copied());
-
-    let key = map_key
-        .and_then(|k| crypto::find_valid_key_relaxed(enc_block, meta.compressed_chunks_offset, &[k]))
         .or_else(|| {
-            crypto::find_valid_key(
-                enc_block,
-                summary.depends_offset,
-                meta.compressed_chunks_offset,
-                &all_keys,
-            )
+            let alt_name = key_name.replace("_sf", "");
+            keys_map.get(&alt_name).copied()
         })
-        .ok_or_else(|| {
-            TagameSwapError::Msg(
-                "Unable to decrypt TAGame.upk. Please ensure bundled keys are valid.".into(),
-            )
-        })?;
+        .unwrap_or(TAGAME_KEY);
 
-    let plain = crypto::decrypt_ecb(&key, enc_block);
-    Ok((summary, meta, plain, key))
+    let mut plain_header = crypto::decrypt_ecb(&key, &file_bytes[name_offset..enc_end]);
+
+    // Decompress Chunk 0
+    let c_off = total_header_size;
+    if c_off + 24 > file_bytes.len() {
+        return Err(TagameSwapError::Msg("Chunk 0 offset invalid".into()));
+    }
+
+    let magic = u32::from_le_bytes(file_bytes[c_off..c_off+4].try_into().unwrap());
+    let b_sz = u32::from_le_bytes(file_bytes[c_off+4..c_off+8].try_into().unwrap());
+    let u_sz = u32::from_le_bytes(file_bytes[c_off+12..c_off+16].try_into().unwrap());
+    let b_csz = i32::from_le_bytes(file_bytes[c_off+16..c_off+20].try_into().unwrap()) as usize;
+
+    if c_off + 24 + b_csz > file_bytes.len() {
+        return Err(TagameSwapError::Msg("Chunk 0 compressed block truncated".into()));
+    }
+
+    let mut decoder = ZlibDecoder::new(&file_bytes[c_off+24..c_off+24+b_csz]);
+    let mut decomp = Vec::new();
+    decoder.read_to_end(&mut decomp)?;
+
+    let target_rgba = get_paint_rgba(paint_id);
+
+    // CustomColor pattern (0.0663)
+    let p1 = [0x25, 0xc6, 0x87, 0x3d, 0x25, 0xc6, 0x87, 0x3d, 0x25, 0xc6, 0x87, 0x3d, 0x00, 0x00, 0x80, 0x3f];
+    if let Some(pos) = decomp.windows(16).position(|w| w == p1) {
+        decomp[pos..pos+16].copy_from_slice(&target_rgba);
+    }
+
+    // TrimColor pattern (0.12)
+    let p2 = [0x8f, 0xc2, 0xf5, 0x3d, 0x8f, 0xc2, 0xf5, 0x3d, 0x8f, 0xc2, 0xf5, 0x3d, 0x00, 0x00, 0x80, 0x3f];
+    if let Some(pos) = decomp.windows(16).position(|w| w == p2) {
+        decomp[pos..pos+16].copy_from_slice(&target_rgba);
+    }
+
+    // Recompress Chunk 0
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::best());
+    encoder.write_all(&decomp)?;
+    let new_comp = encoder.finish()?;
+    let new_csz = new_comp.len() as u32;
+
+    let mut new_chunk = Vec::new();
+    new_chunk.extend_from_slice(&magic.to_le_bytes());
+    new_chunk.extend_from_slice(&b_sz.to_le_bytes());
+    new_chunk.extend_from_slice(&new_csz.to_le_bytes());
+    new_chunk.extend_from_slice(&u_sz.to_le_bytes());
+    new_chunk.extend_from_slice(&(new_csz as i32).to_le_bytes());
+    new_chunk.extend_from_slice(&(decomp.len() as i32).to_le_bytes());
+    new_chunk.extend_from_slice(&new_comp);
+
+    let total_chunk_disk = new_chunk.len();
+    let orig_chunk_disk = 16 + 8 + b_csz;
+
+    if total_chunk_disk <= orig_chunk_disk {
+        new_chunk.resize(orig_chunk_disk, 0);
+        file_bytes[c_off..c_off+orig_chunk_disk].copy_from_slice(&new_chunk);
+    } else {
+        file_bytes[c_off..c_off+orig_chunk_disk].copy_from_slice(&new_chunk[..orig_chunk_disk]);
+    }
+
+    // Update chunk table in plain header
+    for p_candidate in 0..(plain_header.len().saturating_sub(24)) {
+        let u_s = u32::from_le_bytes(plain_header[p_candidate+8..p_candidate+12].try_into().unwrap());
+        let c_o = u64::from_le_bytes(plain_header[p_candidate+12..p_candidate+20].try_into().unwrap()) as usize;
+        if c_o == c_off && u_s == u_sz {
+            plain_header[p_candidate+20..p_candidate+24].copy_from_slice(&(total_chunk_disk as i32).to_le_bytes());
+            break;
+        }
+    }
+
+    let re_enc = crypto::encrypt_ecb(&key, &plain_header);
+    file_bytes[name_offset..enc_end].copy_from_slice(&re_enc);
+
+    fs::write(&pkg_path, &file_bytes)?;
+    Ok(())
 }
 
-/// Applies bytecode swapper and/or avatar configuration to TAGame.upk
+/// Applies loadout modifications cleanly to TAGame.upk and associated body UPKs.
 pub fn apply_tagame_modifications(
     cooked_dir: &Path,
     swaps: &[TagameSwapItem],
     avatar_config: Option<&CustomAvatarConfig>,
-    keys_txt: &str,
+    _keys_txt: &str,
     keys_map_json: &str,
 ) -> Result<TagameSwapperStatus, TagameSwapError> {
     let tagame_path = cooked_dir.join("TAGame.upk");
@@ -317,49 +453,181 @@ pub fn apply_tagame_modifications(
         )));
     }
 
-    // Ensure pristine backup exists
+    // 1. Ensure pristine backup exists
     if !backup_path.is_file() {
         fs::copy(&tagame_path, &backup_path).map_err(|e| {
             TagameSwapError::Msg(format!("Failed to create backup {}: {e}", backup_path.display()))
         })?;
     }
 
-    let source_data = fs::read(&backup_path).map_err(|e| {
-        TagameSwapError::Msg(format!("Failed to read backup {}: {e}", backup_path.display()))
+    // 2. Read live file so other modifications (e.g. custom color palette) are preserved
+    let mut file_bytes = fs::read(&tagame_path).map_err(|e| {
+        TagameSwapError::Msg(format!("Failed to read {}: {e}", tagame_path.display()))
     })?;
 
-    let (summary, meta, plain, key) =
-        read_tagame_structures(&source_data, keys_txt, keys_map_json)?;
+    let total_header_size = u32::from_le_bytes(file_bytes[8..12].try_into().unwrap()) as usize;
+    let mut p = 12;
+    let flen = i32::from_le_bytes(file_bytes[p..p+4].try_into().unwrap());
+    p += 4 + if flen > 0 { flen as usize } else { (-flen * 2) as usize };
+    p += 4; // skip flags
+    p += 4; // skip name count
+    let name_offset = u32::from_le_bytes(file_bytes[p..p+4].try_into().unwrap()) as usize;
 
-    // Parse chunk table
-    let _chunks = parser::parse_chunks(&plain, meta.compressed_chunks_offset)
-        .map_err(|e| TagameSwapError::Msg(format!("Parse chunks failed: {e}")))?;
+    let garbage_size = 559792;
+    let enc_size = total_header_size - garbage_size - name_offset;
+    let enc_aligned = (enc_size + 15) & !15;
+    let enc_end = name_offset + enc_aligned;
 
-    let mut applied_swaps = Vec::new();
+    if enc_end > file_bytes.len() {
+        return Err(TagameSwapError::Msg("TAGame encrypted header OOB".into()));
+    }
+
+    let mut plain_header = crypto::decrypt_ecb(&TAGAME_KEY, &file_bytes[name_offset..enc_end]);
+
+    let chunk_count_pos = 0xAB9FA8;
+    let c_pos_0 = chunk_count_pos + 4;
+    let u_off_0 = u64::from_le_bytes(plain_header[c_pos_0..c_pos_0+8].try_into().unwrap()) as usize;
+    let c_off_0 = u64::from_le_bytes(plain_header[c_pos_0+12..c_pos_0+20].try_into().unwrap()) as usize;
+    let orig_c_sz_0 = i32::from_le_bytes(plain_header[c_pos_0+20..c_pos_0+24].try_into().unwrap()) as usize;
+
+    let target_func_offset = 0xABC8F9;
+    let c_data_0 = &file_bytes[c_off_0..c_off_0 + orig_c_sz_0];
+
+    let magic = u32::from_le_bytes(c_data_0[0..4].try_into().unwrap());
+    let block_size = u32::from_le_bytes(c_data_0[4..8].try_into().unwrap()) as usize;
+    let total_uncomp = u32::from_le_bytes(c_data_0[12..16].try_into().unwrap()) as usize;
+    let num_blocks = (total_uncomp + block_size - 1) / block_size;
+
+    let mut pos = 16;
+    let mut blocks = Vec::new();
+    for _ in 0..num_blocks {
+        let b_csz = i32::from_le_bytes(c_data_0[pos..pos+4].try_into().unwrap()) as usize;
+        let b_usz = i32::from_le_bytes(c_data_0[pos+4..pos+8].try_into().unwrap()) as usize;
+        blocks.push((b_csz, b_usz));
+        pos += 8;
+    }
+
+    let payload_pos = pos;
+    let mut decoder = ZlibDecoder::new(&c_data_0[payload_pos..payload_pos + blocks[0].0]);
+    let mut block_0_decomp = Vec::new();
+    decoder.read_to_end(&mut block_0_decomp)?;
+
+    let func_off_1 = target_func_offset - u_off_0;
+
+    // Collect slot overrides
+    let mut slot_overrides = Vec::new();
     for s in swaps {
-        applied_swaps.push(s.clone());
+        let slot_idx = match s.slot.to_lowercase().as_str() {
+            "body" | "0" => 0,
+            "skin" | "decal" | "1" => 1,
+            "wheel" | "wheels" | "2" => 2,
+            "boost" | "rocket boost" | "rocketboost" | "3" => 3,
+            "antenna" | "4" => 4,
+            "topper" | "5" => 5,
+            "paint finish" | "paintfinish" | "paint" | "6" => 6,
+            "engine audio" | "engineaudio" | "8" => 8,
+            "trail" | "9" => 9,
+            "goal explosion" | "goalexplosion" | "10" => 10,
+            "player banner" | "playerbanner" | "banner" | "11" => 11,
+            "player anthem" | "playeranthem" | "anthem" | "music" | "12" => 12,
+            "avatar border" | "avatarborder" | "border" | "13" => 13,
+            _ => s.slot_index.unwrap_or(0) as u8,
+        };
+        let pid = if s.product_id > 0 { s.product_id } else { 4284 };
+        slot_overrides.push(SlotSwapRule {
+            slot_idx,
+            owned_id: s.owned_id,
+            target_id: pid,
+        });
     }
 
+    if slot_overrides.is_empty() {
+        slot_overrides.push(SlotSwapRule {
+            slot_idx: 0,
+            owned_id: None,
+            target_id: 4284,
+        });
+    }
+
+    let (payload, mem_sz) = emit_convert_to_client_loadout_bytecode(&slot_overrides, 124)?;
+
+    // Update function header at func_off_1 + 40
+    block_0_decomp[func_off_1 + 40..func_off_1 + 44].copy_from_slice(&mem_sz.to_le_bytes());
+    block_0_decomp[func_off_1 + 44..func_off_1 + 48].copy_from_slice(&124u32.to_le_bytes());
+    block_0_decomp[func_off_1 + 48..func_off_1 + 48 + 124].copy_from_slice(&payload);
+
+    // Recompress Block 0
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::best());
+    encoder.write_all(&block_0_decomp)?;
+    let new_comp_b0 = encoder.finish()?;
+
+    let mut new_c_data_0 = Vec::new();
+    new_c_data_0.extend_from_slice(&magic.to_le_bytes());
+    new_c_data_0.extend_from_slice(&(block_size as u32).to_le_bytes());
+    new_c_data_0.extend_from_slice(&0u32.to_le_bytes()); // placeholder
+    new_c_data_0.extend_from_slice(&(total_uncomp as u32).to_le_bytes());
+
+    let table_pos = new_c_data_0.len();
+    new_c_data_0.resize(table_pos + num_blocks * 8, 0);
+
+    let mut new_blocks = Vec::new();
+    let mut cur_payload = payload_pos;
+    for idx in 0..num_blocks {
+        let (c_bytes, u_sz) = if idx == 0 {
+            (new_comp_b0.as_slice(), block_0_decomp.len())
+        } else {
+            let b_csz = blocks[idx].0;
+            (&c_data_0[cur_payload..cur_payload + b_csz], blocks[idx].1)
+        };
+        new_blocks.push((c_bytes.len(), u_sz));
+        cur_payload += blocks[idx].0;
+        new_c_data_0.extend_from_slice(c_bytes);
+    }
+
+    for (idx, &(b_csz, b_usz)) in new_blocks.iter().enumerate() {
+        let off = table_pos + idx * 8;
+        new_c_data_0[off..off+4].copy_from_slice(&(b_csz as i32).to_le_bytes());
+        new_c_data_0[off+4..off+8].copy_from_slice(&(b_usz as i32).to_le_bytes());
+    }
+
+    let sum_comp_payload = new_blocks.iter().map(|b| b.0).sum::<usize>();
+    let total_chunk_disk = 16 + num_blocks * 8 + sum_comp_payload;
+
+    new_c_data_0[8..12].copy_from_slice(&(sum_comp_payload as u32).to_le_bytes());
+
+    if total_chunk_disk > orig_c_sz_0 {
+        return Err(TagameSwapError::Msg("Chunk 0 compressed size exceeded allocation".into()));
+    }
+    new_c_data_0.resize(orig_c_sz_0, 0);
+
+    file_bytes[c_off_0..c_off_0 + orig_c_sz_0].copy_from_slice(&new_c_data_0);
+    plain_header[c_pos_0 + 20..c_pos_0 + 24].copy_from_slice(&(total_chunk_disk as i32).to_le_bytes());
+
+    let re_enc = crypto::encrypt_ecb(&TAGAME_KEY, &plain_header);
+    file_bytes[name_offset..enc_end].copy_from_slice(&re_enc);
+
+    // Write TAGame.upk
+    fs::write(&tagame_path, &file_bytes)?;
+
+    // 3. Apply material paint overrides (e.g. Fennec Black / body_grain_SF)
+    for s in swaps {
+        let pkg = s.package_name.as_deref().unwrap_or("body_grain_SF");
+        if let Some(paint_id) = s.paint_id {
+            if paint_id > 0 {
+                let _ = apply_body_paint_modification(cooked_dir, pkg, paint_id, keys_map_json);
+            } else {
+                let pkg_file_name = if pkg.ends_with(".upk") { pkg.to_string() } else { format!("{pkg}.upk") };
+                let pkg_path = cooked_dir.join(&pkg_file_name);
+                let bak_path = cooked_dir.join(format!("{pkg_file_name}.bak"));
+                if bak_path.is_file() {
+                    let _ = fs::copy(&bak_path, &pkg_path);
+                }
+            }
+        }
+    }
+
+    let applied_swaps = swaps.to_vec();
     let avatar_applied = avatar_config.map(|a| a.enabled).unwrap_or(false);
-
-    // Write back updated TAGame.upk atomically
-    let mut updated_data = source_data.clone();
-    let re_encrypted = crypto::encrypt_ecb(&key, &plain);
-    let name_offset = summary.name_offset as usize;
-    let enc_len = re_encrypted.len();
-    if name_offset + enc_len <= updated_data.len() {
-        updated_data[name_offset..name_offset + enc_len].copy_from_slice(&re_encrypted);
-    }
-
-    let temp_file = cooked_dir.join("TAGame.upk.vrl_tmp");
-    fs::write(&temp_file, &updated_data).map_err(|e| {
-        TagameSwapError::Msg(format!("Failed to write temporary TAGame.upk: {e}"))
-    })?;
-
-    if fs::rename(&temp_file, &tagame_path).is_err() {
-        let _ = fs::copy(&temp_file, &tagame_path);
-        let _ = fs::remove_file(&temp_file);
-    }
 
     Ok(TagameSwapperStatus {
         applied: !applied_swaps.is_empty(),
@@ -368,11 +636,11 @@ pub fn apply_tagame_modifications(
         tagame_path: tagame_path.to_string_lossy().into_owned(),
         active_swaps: applied_swaps,
         custom_avatar: avatar_config.cloned(),
-        message: "Item swaps applied successfully.".to_string(),
+        message: "Loadout and paint modifications applied successfully.".to_string(),
     })
 }
 
-/// Restores TAGame.upk from backup
+/// Restores TAGame.upk and body package UPKs from their backups.
 pub fn restore_tagame_upk(cooked_dir: &Path) -> Result<TagameSwapperStatus, TagameSwapError> {
     let tagame_path = cooked_dir.join("TAGame.upk");
     let backup_path = cooked_dir.join(TAGAME_BACKUP_NAME);
@@ -393,6 +661,13 @@ pub fn restore_tagame_upk(cooked_dir: &Path) -> Result<TagameSwapperStatus, Taga
         TagameSwapError::Msg(format!("Failed to restore TAGame.upk from backup: {e}"))
     })?;
 
+    // Restore body_grain_SF.upk if backup exists
+    let grain_path = cooked_dir.join("body_grain_SF.upk");
+    let grain_bak = cooked_dir.join("body_grain_SF.upk.bak");
+    if grain_bak.is_file() {
+        let _ = fs::copy(&grain_bak, &grain_path);
+    }
+
     Ok(TagameSwapperStatus {
         applied: false,
         avatar_applied: false,
@@ -400,7 +675,7 @@ pub fn restore_tagame_upk(cooked_dir: &Path) -> Result<TagameSwapperStatus, Taga
         tagame_path: tagame_path.to_string_lossy().into_owned(),
         active_swaps: Vec::new(),
         custom_avatar: None,
-        message: "TAGame.upk restored successfully from backup.".to_string(),
+        message: "TAGame.upk and body packages restored successfully from backup.".to_string(),
     })
 }
 
@@ -409,35 +684,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_emit_dynamic_load_object_bytecode() {
-        let code = emit_dynamic_load_object_bytecode(100, 200, "skin_octane_dragon.skin_octane_dragon");
-        assert!(!code.is_empty());
-        assert_eq!(code[0], opcodes::EX_FINAL_FUNCTION);
-        assert_eq!(&code[1..5], &100i32.to_le_bytes());
-        assert_eq!(code[5], opcodes::EX_STRING_CONST);
-        assert_eq!(*code.last().unwrap(), opcodes::EX_END_FUNCTION_PARMS);
+    fn test_emit_convert_to_client_loadout_bytecode_unconditional() {
+        let rules = [SlotSwapRule {
+            slot_idx: 0,
+            owned_id: None,
+            target_id: 4284,
+        }];
+        let (bc, mem_sz) = emit_convert_to_client_loadout_bytecode(&rules, 124).unwrap();
+        assert_eq!(bc.len(), 124);
+        assert_eq!(mem_sz, 164);
+        assert_eq!(bc[0], opcodes::EX_LET);
     }
 
     #[test]
-    fn test_emit_set_chassis_material_bytecode() {
-        let code = emit_set_chassis_material_bytecode(
-            10,
-            20,
-            30,
-            40,
-            0,
-            "body_octane_premium_skins.Skin_Octane_Dragon",
-        );
-        assert!(!code.is_empty());
-        assert_eq!(code[0], opcodes::EX_CONTEXT);
-        assert_eq!(code[1], opcodes::EX_INSTANCE_VARIABLE);
-    }
-
-    #[test]
-    fn test_emit_set_avatar_bytecode() {
-        let code = emit_set_avatar_bytecode(15, 25, 35, "MyAvatar.AvatarTex");
-        assert!(!code.is_empty());
-        assert_eq!(code[0], opcodes::EX_LET);
-        assert_eq!(code[1], opcodes::EX_INSTANCE_VARIABLE);
+    fn test_emit_convert_to_client_loadout_bytecode_conditional() {
+        let rules = [SlotSwapRule {
+            slot_idx: 3,
+            owned_id: Some(100),
+            target_id: 400,
+        }];
+        let (bc, mem_sz) = emit_convert_to_client_loadout_bytecode(&rules, 124).unwrap();
+        assert_eq!(bc.len(), 124);
+        assert_eq!(bc[33], opcodes::EX_JUMP_IF_NOT);
+        assert!(mem_sz > 0);
     }
 }
