@@ -33,8 +33,8 @@ Change your display name locally in menus, scoreboards, and nametags to any name
 ### Credit Spoof
 Customize your displayed Item Shop and Tournament credits locally to test or record UI views.
 
-### Custom Avatar (PFP)
-Inject your own custom profile picture for your local player in scoreboards, main menus, winner screens, and party lobbies.
+### Custom Profile Pictures (PFP)
+Inject your own custom profile picture for your local player in scoreboards, main menus, winner screens, and party lobbies, with support for rendering Steam PFPs.
 
 ### Live Match Tracker
 A clean overlay while you play — live score, your stats, and your MMR change after every match. Position it wherever you want, and it never touches your game.

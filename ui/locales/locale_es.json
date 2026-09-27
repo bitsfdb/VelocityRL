@@ -135,7 +135,8 @@
         "leaderboard_sync_desc": "Calcula automáticamente la posición a partir de tu configuración de rangos falsos activa",
         "leaderboard_rank": "Posición personalizada",
         "leaderboard_mmr": "MMR de clasificación personalizado",
-        "save_leaderboard": "Guardar clasificación"
+        "save_leaderboard": "Guardar clasificación",
+        "subtab_avatar": "Custom Profile Pictures (PFP)"
     },
     "ranks": {
         "title": "Rangos falsos",

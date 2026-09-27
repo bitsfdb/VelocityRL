@@ -122,7 +122,8 @@
         "credit_spoof_desc": "Veranderd je weergegeven credits in het spel.",
         "item_shop_credits": "Item Shop Credits",
         "tournament_credits": "Tournament Credits",
-        "save_credits": "Sla credits op"
+        "save_credits": "Sla credits op",
+        "subtab_avatar": "Custom Profile Pictures (PFP)"
     },
     "ranks": {
         "title": "Neppe Rangen",

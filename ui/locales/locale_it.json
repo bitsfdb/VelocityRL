@@ -122,7 +122,8 @@
         "credit_spoof_desc": "Imposta i tuoi crediti visualizzati in gioco",
         "item_shop_credits": "Crediti Negozio",
         "tournament_credits": "Crediti Torneo",
-        "save_credits": "Salva crediti"
+        "save_credits": "Salva crediti",
+        "subtab_avatar": "Custom Profile Pictures (PFP)"
     },
     "ranks": {
         "title": "Gradi Falsi",
