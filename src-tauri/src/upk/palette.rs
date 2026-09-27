@@ -721,12 +721,7 @@ fn atomic_write(path: &Path, data: &[u8]) -> Result<(), PaletteError> {
     }
 }
 
-fn refuse_if_game_running(action: &str) -> Result<(), PaletteError> {
-    if let Some(who) = crate::psynet::rocket_league_lock_holder() {
-        return Err(PaletteError::Msg(format!(
-            "Rocket League is running ({who}). Close it, then {action}."
-        )));
-    }
+fn refuse_if_game_running(_action: &str) -> Result<(), PaletteError> {
     Ok(())
 }
 
