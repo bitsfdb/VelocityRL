@@ -222,6 +222,8 @@ struct BackupFile {
     #[serde(default)]
     swap_from: String,
     #[serde(default)]
+    swap_from_paint: String,
+    #[serde(default)]
     swap_to: String,
     #[serde(default)]
     swap_to_image: String,
@@ -239,6 +241,10 @@ pub struct SwapEntry {
     pub owned_name:  String,
     #[serde(default)]
     pub wanted_name: String,
+    #[serde(default)]
+    pub owned_paint_id: Option<i32>,
+    #[serde(default)]
+    pub owned_custom_hex: Option<String>,
     #[serde(default)]
     pub paint_id: i32,
     #[serde(default)]
@@ -897,12 +903,21 @@ async fn get_backups(app: tauri::AppHandle) -> Result<Vec<BackupFile>, String> {
             String::new()
         };
 
+        let from_paint_name = if let Some(hex) = swap.owned_custom_hex.as_ref().filter(|h| !h.trim().is_empty()) {
+            hex.clone()
+        } else if let Some(pid) = swap.owned_paint_id.filter(|p| *p > 0) {
+            upk::swapper::paint_label(pid).to_string()
+        } else {
+            String::new()
+        };
+
         if seen_ids.insert(swap.owned_id) {
             backups.push(BackupFile {
                 name: display_name,
                 path: format!("item_{}", swap.owned_id),
                 image_url,
                 swap_from,
+                swap_from_paint: from_paint_name,
                 swap_to,
                 swap_to_image,
                 slot,
@@ -1211,6 +1226,8 @@ async fn apply_swap(
     app: tauri::AppHandle,
     owned_id: String,
     wanted_id: String,
+    owned_paint_id: Option<i32>,
+    owned_custom_hex: Option<String>,
     paint_id: Option<i32>,
     custom_paint_hex: Option<String>,
 ) -> Result<String, String> {
@@ -1267,6 +1284,7 @@ async fn apply_swap(
     };
 
     let clean_hex = custom_paint_hex.filter(|h| !h.trim().is_empty());
+    let clean_owned_hex = owned_custom_hex.filter(|h| !h.trim().is_empty());
 
     applog::event(&format!(
         "apply_swap: starting owned_id={} wanted_id={} paint_id={} custom_hex={:?} cooked='{}'",
@@ -1280,6 +1298,8 @@ async fn apply_swap(
         wanted_id: wid,
         owned_name: owned.product.clone(),
         wanted_name: wanted.product.clone(),
+        owned_paint_id,
+        owned_custom_hex: clean_owned_hex,
         paint_id,
         custom_paint_hex: clean_hex.clone(),
         asset_package: wanted.asset_package.clone(),
