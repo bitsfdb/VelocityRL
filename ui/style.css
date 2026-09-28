@@ -502,26 +502,25 @@ select::-ms-expand { display: none; }
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
+    width: 22px;
+    height: 22px;
     padding: 0;
     border-radius: 4px;
-    border: 1px solid #333338;
-    background: #18181b;
-    color: #a1a1aa;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--muted);
     cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 .card-clear-btn:hover {
-    background: #27272a;
-    color: #f87171;
-    border-color: rgba(248, 113, 113, 0.4);
-    transform: scale(1.04);
+    background: var(--panel-hover);
+    color: var(--text);
+    border-color: #444;
 }
 
 .card-clear-btn:active {
-    transform: scale(0.96);
+    background: var(--panel);
 }
 
 /* Card Sleek Minimal Paint Selector */
