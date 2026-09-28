@@ -1126,6 +1126,11 @@ pub(crate) async fn sync_all_swaps_to_tagame(
     }
 
     let items = get_items(app.clone(), None).await.unwrap_or_default();
+    let items_json = load_raw_items_json(app).unwrap_or_else(|_| {
+        serde_json::to_string(&serde_json::json!({ "Items": &items })).unwrap_or_default()
+    });
+    let opts = build_swap_opts(cooked.to_path_buf(), items_json);
+
     let mut tagame_items = Vec::new();
 
     for s in swaps {
@@ -1155,8 +1160,26 @@ pub(crate) async fn sync_all_swaps_to_tagame(
             product_id,
             paint_id: if s.paint_id > 0 { Some(s.paint_id) } else { None },
             custom_paint_hex: s.custom_paint_hex.clone(),
-            package_name: Some(pkg),
+            package_name: Some(pkg.clone()),
         });
+
+        // Apply UPK paint remap when paint_id > 0
+        if s.paint_id > 0 {
+            let _ = upk::swap_asset(
+                &s.owned_id.to_string(),
+                &s.wanted_id.to_string(),
+                s.paint_id,
+                &opts,
+            );
+        } else if s.owned_id == s.wanted_id {
+            // If reverting to default / unpainted, restore .bak if present
+            if let Some((pkg_path, actual_file_name)) = upk::swapper::resolve_package_path(cooked, &pkg) {
+                let bak_path = cooked.join(format!("{actual_file_name}.bak"));
+                if bak_path.is_file() {
+                    let _ = std::fs::copy(&bak_path, &pkg_path);
+                }
+            }
+        }
     }
 
     let keys_txt = include_str!("../resources/keys.txt");

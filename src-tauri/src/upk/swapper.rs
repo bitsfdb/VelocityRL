@@ -412,7 +412,7 @@ fn to_pascal_case(s: &str) -> String {
 
 pub fn generate_paint_remap_pairs(base: &str, paint_id: i32) -> Vec<(String, String)> {
     let mut pairs = Vec::new();
-    if !(1..=18).contains(&paint_id) {
+    if !(1..=29).contains(&paint_id) {
         return pairs;
     }
     let target_slugs = paint_slugs(paint_id);
@@ -1351,9 +1351,9 @@ pub fn swap_asset(
     opts: &SwapOptions,
 ) -> Result<String, SwapError> {
     dump_engine_info(&opts.game_dir);
-    if !(0..=18).contains(&paint_id) {
+    if !(0..=29).contains(&paint_id) {
         return Err(SwapError::Msg(format!(
-            "invalid paint id {paint_id} (use 0 for None, or 1–18)"
+            "invalid paint id {paint_id} (use 0 for None, or 1–29)"
         )));
     }
 
