@@ -800,7 +800,7 @@ pub fn apply_tagame_modifications(
                 "player banner" | "playerbanner" | "banner" | "11" => 11,
                 "player anthem" | "playeranthem" | "anthem" | "music" | "12" => 12,
                 "avatar border" | "avatarborder" | "border" | "13" => 13,
-                _ => 0,
+                _ => 10, // Default unknown non-matching cosmetics to Goal Explosion (10) instead of Body (0) to avoid mesh corruption
             }
         };
         let pid = if s.product_id > 0 { s.product_id } else { 4284 };
