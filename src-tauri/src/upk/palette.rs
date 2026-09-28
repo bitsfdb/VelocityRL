@@ -167,7 +167,7 @@ pub fn file_fingerprint(path: &Path) -> Result<String, PaletteError> {
     Ok(fingerprint_bytes(&data, name_offset, enc_aligned))
 }
 
-fn parse_names_in_block(plain: &[u8], name_count: i32) -> Result<Vec<String>, PaletteError> {
+pub(crate) fn parse_names_in_block(plain: &[u8], name_count: i32) -> Result<Vec<String>, PaletteError> {
     let mut c = std::io::Cursor::new(plain);
     let mut names = Vec::with_capacity(name_count.max(0) as usize);
     for _ in 0..name_count.max(0) {
