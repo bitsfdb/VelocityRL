@@ -26,7 +26,7 @@ function getItemDecalBody(item) {
     }
     const quality = (item.Quality || item.quality || '').toLowerCase();
     if (quality === 'black market' || quality === 'blackmarket') {
-        return 'Universal';
+        return '';
     }
     const pkg = (item.AssetPackage || item.asset_package || item.internal_name || '').toLowerCase();
     const bodyMap = [
@@ -76,7 +76,7 @@ function getItemDecalBody(item) {
     for (const [key, label] of bodyMap) {
         if (pkg.includes(key)) return label;
     }
-    return 'Universal';
+    return '';
 }
 
 function escHtml(str) {
@@ -1169,7 +1169,7 @@ async function openPresetPreviewModal(preset, { isImport = false, code = null } 
 
     const badgeItems = document.getElementById('preset-badge-items');
     if (badgeItems) {
-        badgeItems.textContent = `${swaps.length} / 100 Items`;
+        badgeItems.textContent = `${swaps.length} / 50 Items`;
         badgeItems.style.display = swaps.length > 0 ? 'inline-flex' : 'none';
     }
     const badgeMaps = document.getElementById('preset-badge-maps');
@@ -1346,18 +1346,40 @@ function renderPresetItemsPage() {
 
     list.innerHTML = itemsToShow.map(s => {
         const slot = normItemSlot(s.slot || 'Item');
-        const paint = s.custom_paint_hex ? renderPaintBadgeHtml(s.custom_paint_hex) : (s.paint_id > 0 ? renderPaintBadgeHtml(s.paint_id) : '');
+        let wantedItemObj = findItemByProductId(s.wanted_id);
+        if (!wantedItemObj && s.wanted_name) {
+            wantedItemObj = Array.isArray(items) ? items.find(it => (it.Product || it.product || '').toLowerCase() === s.wanted_name.toLowerCase()) : null;
+        }
+        let ownedItemObj = findItemByProductId(s.owned_id);
+        if (!ownedItemObj && s.owned_name) {
+            ownedItemObj = Array.isArray(items) ? items.find(it => (it.Product || it.product || '').toLowerCase() === s.owned_name.toLowerCase()) : null;
+        }
+
+        const pImg = wantedItemObj?.image_url || wantedItemObj?.src || ownedItemObj?.image_url || ownedItemObj?.src || '';
+        const targetPaint = s.custom_paint_hex ? renderPaintBadgeHtml(s.custom_paint_hex) : (s.paint_id > 0 ? renderPaintBadgeHtml(s.paint_id) : '');
+
         const decalBody = s.asset_package ? getItemDecalBody({ AssetPackage: s.asset_package, Product: s.owned_name, Slot: 'Decal' }) : (slot === 'Decal' ? getItemDecalBody({ Product: s.owned_name, Slot: 'Decal' }) : '');
-        const decalPill = decalBody ? `<span style="font-size:10px;padding:2px 5px;background:rgba(91,140,255,0.18);color:#93c5fd;border-radius:3px;font-weight:600;margin-left:4px;">${escHtml(decalBody)}</span>` : '';
+        const decalPill = (decalBody && decalBody !== 'Universal') ? `<span style="font-size:10px;padding:2px 5px;background:rgba(91,140,255,0.18);color:#93c5fd;border-radius:3px;font-weight:600;margin-left:4px;">${escHtml(decalBody)}</span>` : '';
+
         return `
-            <div class="preset-item-row">
-                <span class="preset-item-slot">${escHtml(slot)}${decalPill}</span>
-                <div class="preset-item-names">
-                    <span style="color:var(--text);font-weight:500;">${escHtml(s.owned_name)}</span>
-                    <span class="preset-item-arrow">→</span>
-                    <span style="color:var(--accent-blue);font-weight:600;">${escHtml(s.wanted_name)}</span>
+            <div class="preset-item-row" style="display:flex; align-items:center; gap:10px; padding:6px 10px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:6px;">
+                <div class="preset-item-thumb-wrap" style="width:34px; height:34px; border-radius:5px; background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.08); display:flex; align-items:center; justify-content:center; flex-shrink:0; overflow:hidden;">
+                    ${pImg ? `<img src="${escHtml(pImg)}" class="preset-item-thumb" alt="${escHtml(s.wanted_name || slot)}" style="width:100%; height:100%; object-fit:contain;" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />` : ''}
+                    <div class="preset-item-thumb-fallback" style="${pImg ? 'display:none;' : 'display:flex;'}; width:100%; height:100%; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:var(--text-secondary);">
+                        ${escHtml(slot.charAt(0))}
+                    </div>
                 </div>
-                ${paint}
+                <div style="flex:1; min-width:0;">
+                    <div style="display:flex; align-items:center; gap:4px; margin-bottom:2px;">
+                        <span class="preset-item-slot" style="font-size:11px; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.04em;">${escHtml(slot)}${decalPill}</span>
+                    </div>
+                    <div class="preset-item-names" style="display:flex; align-items:center; gap:6px; font-size:13px; flex-wrap:wrap;">
+                        <span style="color:var(--text);font-weight:500;">${escHtml(s.owned_name || 'Stock')}</span>
+                        <span class="preset-item-arrow" style="color:var(--text-secondary); opacity:0.6;">→</span>
+                        <span style="color:var(--accent-blue, #60a5fa);font-weight:600;">${escHtml(s.wanted_name || 'Item')}</span>
+                    </div>
+                </div>
+                ${targetPaint ? `<div style="flex-shrink:0;">${targetPaint}</div>` : ''}
             </div>
         `;
     }).join('');
@@ -2825,10 +2847,16 @@ function setTitleColorForm(tc) {
     const glowHex = document.getElementById('title-glow-hex');
     const colorPick = document.getElementById('title-color-picker');
     const glowPick = document.getElementById('title-glow-picker');
+    const colorRow = document.querySelector('.title-color-row');
     const n = normalizeTitleColor(tc);
     if (enable) {
         enable.checked = !!n;
         syncNameSpoofSwitchAria(enable);
+        if (colorRow) colorRow.classList.toggle('custom-colors-disabled', !enable.checked);
+        if (colorHex) colorHex.disabled = !enable.checked;
+        if (glowHex) glowHex.disabled = !enable.checked;
+        if (colorPick) colorPick.disabled = !enable.checked;
+        if (glowPick) glowPick.disabled = !enable.checked;
     }
     if (n) {
         if (colorHex) colorHex.value = n.color;
@@ -2845,10 +2873,24 @@ function wireTitleColorInputs() {
     const glowHex = document.getElementById('title-glow-hex');
     const colorPick = document.getElementById('title-color-picker');
     const glowPick = document.getElementById('title-glow-picker');
+    const colorRow = document.querySelector('.title-color-row');
     if (!enable || enable.dataset.wired === '1') return;
     enable.dataset.wired = '1';
+
+    const syncDisabled = () => {
+        const on = !!enable.checked;
+        if (colorRow) colorRow.classList.toggle('custom-colors-disabled', !on);
+        if (colorHex) colorHex.disabled = !on;
+        if (glowHex) glowHex.disabled = !on;
+        if (colorPick) colorPick.disabled = !on;
+        if (glowPick) glowPick.disabled = !on;
+    };
+
+    syncDisabled();
+
     enable.addEventListener('change', () => {
         syncNameSpoofSwitchAria(enable);
+        syncDisabled();
         updateTitlePreview();
     });
     const syncPickToHex = (pick, hexEl) => {
@@ -2857,6 +2899,7 @@ function wireTitleColorInputs() {
             if (enable && !enable.checked) {
                 enable.checked = true;
                 syncNameSpoofSwitchAria(enable);
+                syncDisabled();
             }
             updateTitlePreview();
         });
@@ -2868,6 +2911,7 @@ function wireTitleColorInputs() {
             if (n && enable && !enable.checked) {
                 enable.checked = true;
                 syncNameSpoofSwitchAria(enable);
+                syncDisabled();
             }
             updateTitlePreview();
         });
@@ -5700,6 +5744,8 @@ function updateTitlePreview() {
         glow = customTc.glow_color ? `#${customTc.glow_color}` : '';
     } else if (displayPick) {
         ({ color, glow } = titleColors(displayPick));
+    } else if (donorPick) {
+        ({ color, glow } = titleColors(donorPick));
     } else {
         ({ color, glow } = categoryColors(lookCategory()));
     }

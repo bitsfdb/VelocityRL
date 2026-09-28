@@ -1219,6 +1219,12 @@ select::-ms-expand { display: none; }
     grid-column: 1 / -1;
 }
 
+.title-color-row.custom-colors-disabled .settings-group {
+    opacity: 0.42;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
 .title-color-inputs {
     display: flex;
     gap: 8px;
