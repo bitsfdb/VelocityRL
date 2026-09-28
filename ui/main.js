@@ -404,7 +404,7 @@ function getQualityBgClass(q) {
 }
 
 const PAINT_NAMES = {
-    0: 'All Paints (Match Equipped)',
+    0: 'All Paints',
     1: 'Crimson', 2: 'Lime', 3: 'Black', 4: 'Sky Blue', 5: 'Cobalt',
     6: 'Burnt Sienna', 7: 'Forest Green', 8: 'Purple', 9: 'Pink', 10: 'Orange',
     11: 'Grey', 12: 'Titanium White', 13: 'Saffron', 14: 'Gold',
@@ -427,7 +427,7 @@ const PAINT_SWATCH_COLORS = {
 };
 
 function paintLabel(id) {
-    if (Number(id) === 0) return 'All Paints (Match Equipped)';
+    if (Number(id) === 0) return 'All Paints';
     return PAINT_NAMES[id] || PAINT_NAMES[String(id)] || `Paint ${id}`;
 }
 
@@ -455,13 +455,13 @@ function renderSelectedItem(container, item, onClear) {
         else ownedPaintId = '0';
     }
     const currentPaintId = Number((isTarget ? wantedPaintId : ownedPaintId) || 0);
-    const currentPaintName = currentPaintId > 0 ? paintLabel(currentPaintId) : 'All Paints (Match Equipped)';
+    const currentPaintName = currentPaintId > 0 ? paintLabel(currentPaintId) : 'All Paints';
 
     const itemPaintsList = Array.isArray(item.Paints) && item.Paints.length > 0 
         ? item.Paints 
         : (Array.isArray(item.paints) && item.paints.length > 0 ? item.paints : null);
 
-    let displayPaints = [{ id: 0, name: 'All Paints (Match Equipped)' }];
+    let displayPaints = [{ id: 0, name: 'All Paints' }];
     if (itemPaintsList) {
         for (const p of itemPaintsList) {
             const pid = Number(p.id ?? p.ID);
