@@ -1713,10 +1713,10 @@ function wirePresetsUI() {
                 if (ownedItem && wantedItem) {
                     const ownedId = Number(ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id);
                     const wantedId = Number(wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id);
-                    const activePaintId = (wantedPaintId && wantedPaintId !== '0') ? wantedPaintId : ((ownedPaintId && ownedPaintId !== '0') ? ownedPaintId : '0');
+                    const activePaintId = wantedPaintId || '0';
                     let paintId = Number(activePaintId || 0);
-                    const customPaintHex = wantedCustomHex || ownedCustomHex || null;
-                    if (!itemIsPaintable(wantedItem) && !itemIsPaintable(ownedItem)) {
+                    const customPaintHex = wantedCustomHex || null;
+                    if (!itemIsPaintable(wantedItem)) {
                         paintId = 0;
                     }
                     const oName = ownedItem.Product || ownedItem.product || '';
@@ -2228,10 +2228,10 @@ async function handleApply() {
         interval = setInterval(() => { if (p < 85) p += 5; showProgress(true, p); }, 400);
         const ownedId = (ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id).toString();
         const wantedId = (wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id).toString();
-        const activePaintId = (wantedPaintId && wantedPaintId !== '0') ? wantedPaintId : ((ownedPaintId && ownedPaintId !== '0') ? ownedPaintId : '0');
+        const activePaintId = wantedPaintId || '0';
         let paintId = Number(activePaintId || 0);
-        const customPaintHex = wantedCustomHex || ownedCustomHex || null;
-        if (!itemIsPaintable(wantedItem) && !itemIsPaintable(ownedItem)) {
+        const customPaintHex = wantedCustomHex || null;
+        if (!itemIsPaintable(wantedItem)) {
             paintId = 0;
         }
         const swapResult = await invoke('apply_swap', {
