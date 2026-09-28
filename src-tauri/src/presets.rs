@@ -266,13 +266,25 @@ pub async fn apply_preset(app: tauri::AppHandle, id: String) -> Result<Vec<Strin
     let mut applied: Vec<SwapEntry> = Vec::new();
 
     if !preset.swaps.is_empty() {
+        let all_items = crate::get_items(app.clone(), None).await.unwrap_or_default();
+        let items_raw = serde_json::to_string(&all_items).unwrap_or_default();
+        let opts = crate::build_swap_opts(cooked.clone(), items_raw);
+
         for s in &preset.swaps {
+            let swap_res = crate::run_swap_caught(&s.owned_id.to_string(), &s.wanted_id.to_string(), s.paint_id, &opts);
             let paint_str = if s.paint_id > 0 {
                 format!(" ({})", crate::upk::swapper::paint_label(s.paint_id))
             } else {
                 String::new()
             };
-            results.push(format!("OK  {} → {}{}", s.owned_name, s.wanted_name, paint_str));
+            match swap_res {
+                Ok(_) => {
+                    results.push(format!("OK  {} → {}{}", s.owned_name, s.wanted_name, paint_str));
+                }
+                Err(e) => {
+                    results.push(format!("FAIL  {} → {}{}: {}", s.owned_name, s.wanted_name, paint_str, e));
+                }
+            }
             applied.push(s.clone());
         }
 
@@ -799,7 +811,12 @@ pub async fn apply_swap_plan(
     let mut results = Vec::new();
     let mut swaps = crate::load_swaps(&app);
 
+    let all_items = crate::get_items(app.clone(), None).await.unwrap_or_default();
+    let items_raw = serde_json::to_string(&all_items).unwrap_or_default();
+    let opts = crate::build_swap_opts(cooked.clone(), items_raw);
+
     for s in &plan {
+        let _ = crate::run_swap_caught(&s.owned_id.to_string(), &s.wanted_id.to_string(), s.paint_id, &opts);
         swaps.retain(|x| x.owned_id != s.owned_id);
         swaps.push(s.clone());
         let paint_str = if s.paint_id > 0 {
