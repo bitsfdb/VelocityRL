@@ -2604,6 +2604,45 @@ pub fn run() {
             psynet::ensure_wininet_revocation_disabled();
             #[cfg(windows)]
             let _ = psynet::revert_config_hosts();
+            psynet::set_system_proxy_enabled(false);
+
+            // Spawn detached guardian watchdog to guarantee proxy/hosts cleanup even if process is forcefully killed or crashes
+            if let Ok(exe) = std::env::current_exe() {
+                let pid = std::process::id();
+                #[cfg(windows)]
+                {
+                    use std::os::windows::process::CommandExt;
+                    const CREATE_NO_WINDOW: u32 = 0x08000000;
+                    let _ = std::process::Command::new(&exe)
+                        .args(["--watchdog", &pid.to_string()])
+                        .creation_flags(CREATE_NO_WINDOW)
+                        .spawn();
+                }
+                #[cfg(not(windows))]
+                {
+                    let _ = std::process::Command::new(&exe)
+                        .args(["--watchdog", &pid.to_string()])
+                        .spawn();
+                }
+            }
+
+            // Register Ctrl-C handler for terminal/signal interrupts
+            let _ = ctrlc::set_handler(move || {
+                crate::proxy::stop_native_proxy(true);
+                psynet::set_system_proxy_enabled(false);
+                let _ = psynet::revert_config_hosts();
+                std::process::exit(0);
+            });
+
+            // Register panic hook for graceful cleanup
+            let orig_panic_hook = std::panic::take_hook();
+            std::panic::set_hook(Box::new(move |info| {
+                crate::proxy::stop_native_proxy(true);
+                psynet::set_system_proxy_enabled(false);
+                let _ = psynet::revert_config_hosts();
+                orig_panic_hook(info);
+            }));
+
             // Install CA and CRL to the user certificate store immediately (non-blocking, no UAC).
             psynet::install_user_ca_direct();
             // If the system (LocalMachine Root) store is missing the CA, trigger an elevated

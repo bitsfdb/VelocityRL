@@ -938,12 +938,23 @@ fn hosts_path() -> PathBuf {
     }
 }
 
-const CONFIG_HOST_PAIRS: &[(&str, &str)] = &[
-    ("127.0.0.1", "config.psynet.gg"),
-    ("127.0.0.1", "api.epicgames.dev"),
-    ("127.0.0.1", "api.rlpp.psynet.gg"),
-    ("127.0.0.1", "ws.rlpp.psynet.gg"),
-];
+pub fn active_config_host_pairs() -> Vec<(&'static str, &'static str)> {
+    let mut pairs = vec![
+        ("127.0.0.1", "config.psynet.gg"),
+        ("127.0.0.1", "api.rlpp.psynet.gg"),
+        ("127.0.0.1", "ws.rlpp.psynet.gg"),
+    ];
+    let spoof_cfg = load_active_spoof_from_disk();
+    let name_spoof_on = spoof_cfg
+        .as_ref()
+        .and_then(|c| c.name_spoof.as_ref())
+        .map(|n| n.enabled)
+        .unwrap_or(false);
+    if name_spoof_on {
+        pairs.push(("127.0.0.1", "api.epicgames.dev"));
+    }
+    pairs
+}
 
 const HOSTS_MANAGED_MARKERS: &[&str] = &[
     "config.psynet.gg",
@@ -957,7 +968,16 @@ fn hosts_line_is_managed(line: &str) -> bool {
 }
 
 fn append_missing_host_pairs(text: &mut String, newline: &str) {
-    for (ip, host) in CONFIG_HOST_PAIRS {
+    let pairs = active_config_host_pairs();
+    let name_spoof_on = pairs.iter().any(|(_, host)| *host == "api.epicgames.dev");
+    if !name_spoof_on && text.contains("api.epicgames.dev") {
+        let cleaned: Vec<&str> = text.lines().filter(|line| !line.contains("api.epicgames.dev")).collect();
+        *text = cleaned.join(newline);
+        if !text.is_empty() {
+            text.push_str(newline);
+        }
+    }
+    for (ip, host) in pairs {
         if !hosts_has_pair(text, ip, host) {
             text.push_str(ip);
             text.push(' ');
@@ -989,7 +1009,12 @@ fn config_hosts_complete() -> bool {
         return false;
     };
     let text = String::from_utf8_lossy(&bytes);
-    CONFIG_HOST_PAIRS
+    let pairs = active_config_host_pairs();
+    let name_spoof_on = pairs.iter().any(|(_, host)| *host == "api.epicgames.dev");
+    if !name_spoof_on && hosts_has_pair(&text, "127.0.0.1", "api.epicgames.dev") {
+        return false;
+    }
+    pairs
         .iter()
         .all(|(ip, host)| hosts_has_pair(&text, ip, host))
 }
@@ -999,9 +1024,10 @@ fn psynet_hosts_redirected() -> bool {
         return false;
     };
     let text = String::from_utf8_lossy(&bytes);
-    CONFIG_HOST_PAIRS
-        .iter()
-        .any(|(ip, host)| hosts_has_pair(&text, ip, host))
+    hosts_has_pair(&text, "127.0.0.1", "config.psynet.gg")
+        || hosts_has_pair(&text, "127.0.0.1", "api.rlpp.psynet.gg")
+        || hosts_has_pair(&text, "127.0.0.1", "ws.rlpp.psynet.gg")
+        || hosts_has_pair(&text, "127.0.0.1", "api.epicgames.dev")
         || text.contains("api.rlpp.psynet.gg")
         || text.contains("ws.rlpp.psynet.gg")
 }
@@ -2282,6 +2308,21 @@ fn ensure_config_hosts_inner() -> Result<bool, String> {
         let crl_b64 = base64::engine::general_purpose::STANDARD.encode(crate::proxy::ca_crl_bytes());
         let pid = std::process::id();
 
+        let name_spoof_on = {
+            let spoof_cfg = load_active_spoof_from_disk();
+            spoof_cfg
+                .as_ref()
+                .and_then(|c| c.name_spoof.as_ref())
+                .map(|n| n.enabled)
+                .unwrap_or(false)
+        };
+        let filter_epic = if name_spoof_on { "" } else { " -and $_ -notmatch 'api\\.epicgames\\.dev'" };
+        let host_pairs_ps = if name_spoof_on {
+            r#"@{{ Ip = "127.0.0.1"; Host = "config.psynet.gg" }}, @{{ Ip = "127.0.0.1"; Host = "api.epicgames.dev" }}"#
+        } else {
+            r#"@{{ Ip = "127.0.0.1"; Host = "config.psynet.gg" }}"#
+        };
+
         let script_text = format!(
             r##"$ErrorActionPreference = "SilentlyContinue"
 $targetThumb = "{target_thumb}"
@@ -2354,12 +2395,9 @@ try {{
             }}
         }}
         $raw = [System.IO.File]::ReadAllText($hostsPath)
-        $raw = ($raw -split "`r?`n" | Where-Object {{ $_ -notmatch '::1\s+config\.psynet\.gg' }}) -join "`r`n"
+        $raw = ($raw -split "`r?`n" | Where-Object {{ $_ -notmatch '::1\s+config\.psynet\.gg'{filter_epic} }}) -join "`r`n"
         [System.IO.File]::WriteAllText($hostsPath, $raw)
-        foreach ($pair in @(
-            @{{ Ip = "127.0.0.1"; Host = "config.psynet.gg" }},
-            @{{ Ip = "127.0.0.1"; Host = "api.epicgames.dev" }}
-        )) {{
+        foreach ($pair in @({host_pairs_ps})) {{
             $pat = [regex]::Escape($pair.Ip) + "\s+" + [regex]::Escape($pair.Host)
             if ($raw -notmatch $pat) {{
                 Add-HostsLine -Path $hostsPath -Line "$($pair.Ip) $($pair.Host)"
@@ -2453,8 +2491,9 @@ pub async fn save_psynet_spoof(
     let _guard = PROXY_LIFECYCLE.lock().await;
     let dir = config_dir();
     let path = write_spoof(&dir, &payload)?;
+    let name_spoof_on = payload.name_spoof.as_ref().map(|n| n.enabled).unwrap_or(false);
+    set_system_proxy_enabled(name_spoof_on);
     if let Some(ns) = &payload.name_spoof {
-        set_system_proxy_enabled(ns.enabled);
         if let Some(pid) = &ns.player_id {
             let clean = crate::proxy::normalize_player_id(pid);
             if !clean.is_empty() && !clean.contains("temp") {
@@ -2463,6 +2502,10 @@ pub async fn save_psynet_spoof(
         }
     }
     crate::proxy::set_spoof_config(payload).await;
+    if psynet_hosts_redirected() {
+        let _ = ensure_config_hosts();
+        let _ = crate::winprobe::flush_dns_cache();
+    }
     let _ = state;
 
     crate::applog::event(&format!(

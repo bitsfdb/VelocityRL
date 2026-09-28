@@ -523,157 +523,85 @@ select::-ms-expand { display: none; }
     background: var(--panel);
 }
 
-/* Card Sleek Minimal Paint Selector */
-.card-paint-wrap {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    z-index: 25;
-    display: none;
-    align-items: center;
-}
-
-.item-selected-view.selected .card-paint-wrap {
-    display: inline-flex;
-}
-
-.card-paint-btn {
-    display: inline-flex;
+/* Selected Card Inline Paint Chips */
+.card-paint-chips-wrap {
+    margin-top: 10px;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
     align-items: center;
     gap: 6px;
-    height: 24px;
-    padding: 0 8px;
-    border-radius: 4px;
-    border: 1px solid #333338;
-    background: #18181b;
-    color: #e4e4e7;
-    font-family: inherit;
-    font-size: 11px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    user-select: none;
 }
 
-.card-paint-btn .paint-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    border: 1px solid rgba(255, 255, 255, 0.4);
-    display: inline-block;
-}
-
-.card-paint-btn .paint-label {
-    font-size: 11px;
-    font-weight: 500;
-    color: #e4e4e7;
-    white-space: nowrap;
-}
-
-.card-paint-btn .paint-chevron {
-    width: 9px;
-    height: 9px;
-    stroke: #a1a1aa;
-    transition: transform 0.15s ease;
-    margin-left: 1px;
-    flex-shrink: 0;
-}
-
-.card-paint-btn:hover,
-.card-paint-wrap.is-open .card-paint-btn {
-    background: #27272a;
-    border-color: #52525b;
-    color: #ffffff;
-}
-
-.card-paint-wrap.is-open .card-paint-btn .paint-chevron {
-    transform: rotate(180deg);
-    stroke: #ffffff;
-}
-
-.card-paint-dropdown {
-    position: absolute;
-    top: calc(100% + 4px);
-    right: 0;
-    background: #141416;
-    border: 1px solid #2e2e33;
-    border-radius: 6px;
-    padding: 4px;
-    display: none;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 150px;
-    max-height: 220px;
-    overflow-y: auto;
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.75);
-    z-index: 100;
-}
-
-.card-paint-dropdown::-webkit-scrollbar {
-    width: 5px;
-}
-.card-paint-dropdown::-webkit-scrollbar-track {
-    background: transparent;
-}
-.card-paint-dropdown::-webkit-scrollbar-thumb {
-    background: #2e2e33;
-    border-radius: 3px;
-}
-
-.card-paint-wrap.is-open .card-paint-dropdown {
-    display: flex;
-}
-
-.card-paint-option {
+.card-paint-chips-scroll {
     display: flex;
     align-items: center;
-    gap: 7px;
-    padding: 5px 8px;
-    border-radius: 4px;
+    gap: 6px;
+    max-width: 100%;
+    overflow-x: auto;
+    padding: 4px 6px;
+    scrollbar-width: thin;
+    scrollbar-color: #333 transparent;
+}
+
+.card-paint-chips-scroll::-webkit-scrollbar {
+    height: 4px;
+}
+.card-paint-chips-scroll::-webkit-scrollbar-track {
     background: transparent;
-    border: none;
-    color: #a1a1aa;
+}
+.card-paint-chips-scroll::-webkit-scrollbar-thumb {
+    background: #333338;
+    border-radius: 2px;
+}
+
+.paint-chip-pill {
+    background: #ffffff;
     font-family: inherit;
     font-size: 11px;
-    font-weight: 500;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 4px;
+    border: 2px solid transparent;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
     cursor: pointer;
-    text-align: left;
-    transition: all 0.1s ease;
-    width: 100%;
-}
-
-.card-paint-option:hover {
-    background: #222226;
-    color: #ffffff;
-}
-
-.card-paint-option.is-selected {
-    background: rgba(74, 158, 255, 0.12);
-    color: #4a9eff;
-    font-weight: 600;
-}
-
-.card-paint-option .opt-swatch {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    border: 1px solid rgba(255, 255, 255, 0.35);
-    flex-shrink: 0;
-}
-
-.card-paint-option .opt-name {
-    flex: 1;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    transition: transform 0.1s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    user-select: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1.2;
 }
 
-.card-paint-option .opt-check {
-    width: 11px;
-    height: 11px;
-    stroke: #4a9eff;
-    flex-shrink: 0;
+.paint-chip-pill:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.45);
+}
+
+.paint-chip-pill.is-active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), 0 2px 6px rgba(0, 0, 0, 0.5);
+    transform: scale(1.04);
+}
+
+.paint-white-pill {
+    background: #ffffff !important;
+    font-family: inherit !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    padding: 2px 8px !important;
+    border-radius: 4px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    line-height: 1.2 !important;
+    white-space: nowrap !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25) !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
 }
 
 .selected-img {

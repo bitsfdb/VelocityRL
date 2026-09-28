@@ -8,6 +8,15 @@ fn main() {
     return;
   }
 
+  if let Some(idx) = args.iter().position(|a| a == "--watchdog") {
+    if let Some(pid_str) = args.get(idx + 1) {
+      if let Ok(pid) = pid_str.parse::<u32>() {
+        run_watchdog(pid);
+        return;
+      }
+    }
+  }
+
   let is_recover = args.iter().any(|a| {
     a == "--recover"
       || a == "recover"
@@ -477,4 +486,37 @@ fn drop_privileges_to_user() {
     libc::setgid(gid);
     libc::setuid(uid);
   }
+}
+
+#[cfg(windows)]
+fn run_watchdog(target_pid: u32) {
+  const SYNCHRONIZE_ACCESS: u32 = 0x00100000;
+  use windows_sys::Win32::Foundation::CloseHandle;
+  use windows_sys::Win32::System::Threading::{OpenProcess, WaitForSingleObject, INFINITE};
+
+  unsafe {
+    let handle = OpenProcess(SYNCHRONIZE_ACCESS, 0, target_pid);
+    if !handle.is_null() {
+      WaitForSingleObject(handle, INFINITE);
+      CloseHandle(handle);
+    }
+  }
+
+  // Parent process terminated (graceful, crash, or forceful termination).
+  // Immediately clean up all proxy redirections and hosts entries.
+  let _ = app_lib::psynet::revert_config_hosts();
+  app_lib::psynet::set_system_proxy_enabled(false);
+  let _ = std::process::Command::new("ipconfig").arg("/flushdns").status();
+}
+
+#[cfg(not(windows))]
+fn run_watchdog(target_pid: u32) {
+  loop {
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    if unsafe { libc::kill(target_pid as libc::pid_t, 0) } != 0 {
+      break;
+    }
+  }
+  let _ = app_lib::psynet::revert_config_hosts();
+  app_lib::psynet::set_system_proxy_enabled(false);
 }
