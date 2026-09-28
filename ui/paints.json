@@ -1,5 +1,12 @@
 [
   {
+    "id": 0,
+    "name": "None",
+    "abbr": "None",
+    "slug": "None",
+    "hex": "#4B5563"
+  },
+  {
     "id": 1,
     "name": "Crimson",
     "abbr": "C",
@@ -37,7 +44,7 @@
   {
     "id": 6,
     "name": "Cobalt",
-    "abbr": "K",
+    "abbr": "CB",
     "slug": "Cobalt",
     "hex": "#1F45FC"
   },
@@ -85,16 +92,44 @@
   },
   {
     "id": 13,
+    "name": "Burnt Sienna",
+    "abbr": "BS",
+    "slug": "BurntSienna",
+    "hex": "#8B4513"
+  },
+  {
+    "id": 14,
     "name": "Gold",
     "abbr": "GD",
     "slug": "Gold",
     "hex": "#FFD700"
   },
   {
-    "id": 14,
+    "id": 15,
     "name": "Rose Gold",
     "abbr": "RG",
     "slug": "RoseGold",
     "hex": "#B76E79"
+  },
+  {
+    "id": 16,
+    "name": "White Gold",
+    "abbr": "WG",
+    "slug": "WhiteGold",
+    "hex": "#D4AF37"
+  },
+  {
+    "id": 17,
+    "name": "Onyx",
+    "abbr": "OX",
+    "slug": "Onyx",
+    "hex": "#353839"
+  },
+  {
+    "id": 18,
+    "name": "Platinum",
+    "abbr": "PL",
+    "slug": "Platinum",
+    "hex": "#E5E4E2"
   }
 ]
