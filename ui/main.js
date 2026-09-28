@@ -1782,9 +1782,7 @@ function wirePresetsUI() {
                     const ownedId = Number(ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id);
                     const wantedId = Number(wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id);
                     const activeOwnedPaintId = Number(ownedPaintId || 0);
-                    const activeOwnedCustomHex = ownedCustomHex || null;
                     let paintId = itemIsPaintable(wantedItem) ? Number(wantedPaintId || 0) : 0;
-                    const customPaintHex = itemIsPaintable(wantedItem) ? (wantedCustomHex || null) : null;
                     const oName = ownedItem.Product || ownedItem.product || '';
                     const wName = wantedItem.Product || wantedItem.product || '';
                     const pkg = ownedItem.AssetPackage || ownedItem.asset_package || '';
@@ -1795,9 +1793,9 @@ function wirePresetsUI() {
                         owned_name: oName,
                         wanted_name: wName,
                         paint_id: paintId,
-                        custom_paint_hex: customPaintHex || null,
+                        custom_paint_hex: null,
                         owned_paint_id: activeOwnedPaintId > 0 ? activeOwnedPaintId : null,
-                        owned_custom_hex: activeOwnedCustomHex || null,
+                        owned_custom_hex: null,
                         asset_package: pkg,
                     });
                     swapsToSend = list;
@@ -2301,16 +2299,14 @@ async function handleApply() {
         const ownedId = (ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id).toString();
         const wantedId = (wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id).toString();
         const activeOwnedPaintId = Number(ownedPaintId || 0);
-        const activeOwnedCustomHex = ownedCustomHex || null;
         let paintId = itemIsPaintable(wantedItem) ? Number(wantedPaintId || 0) : 0;
-        const customPaintHex = itemIsPaintable(wantedItem) ? (wantedCustomHex || null) : null;
         const swapResult = await invoke('apply_swap', {
             ownedId,
             wantedId,
             ownedPaintId: activeOwnedPaintId > 0 ? activeOwnedPaintId : null,
-            ownedCustomHex: activeOwnedCustomHex || null,
+            ownedCustomHex: null,
             paintId,
-            customPaintHex: customPaintHex || null,
+            customPaintHex: null,
         });
         clearInterval(interval);
         interval = null;
@@ -2318,7 +2314,7 @@ async function handleApply() {
         updateStatus('Swap Complete', false);
         const ownedName = ownedItem?.product || ownedItem?.Product || 'item';
         const wantedName = wantedItem?.product || wantedItem?.Product || 'item';
-        const paintBit = customPaintHex ? ` (${escHtml(customPaintHex.toUpperCase())})` : (paintId > 0 ? ` (${escHtml(paintLabel(paintId))})` : '');
+        const paintBit = paintId > 0 ? ` (${escHtml(paintLabel(paintId))})` : '';
         showToast(`Swapped <strong>${escHtml(ownedName)}</strong> → <strong>${escHtml(wantedName)}</strong>${paintBit}`, 'success');
 
         if (swapResult && swapResult.includes && swapResult.includes('Warnings:')) {
