@@ -54,7 +54,7 @@ pub fn compress_chunk(data: &[u8]) -> io::Result<Vec<u8>> {
     let mut orig_block_sizes: Vec<usize> = Vec::new();
 
     for chunk in data.chunks(DEFAULT_BLOCK_SIZE) {
-        let mut enc = ZlibEncoder::new(Vec::new(), Compression::default());
+        let mut enc = ZlibEncoder::new(Vec::new(), Compression::best());
         enc.write_all(chunk)?;
         let compressed = enc.finish()?;
         orig_block_sizes.push(chunk.len());
