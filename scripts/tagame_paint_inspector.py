@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-TAGame.upk Paint & Bytecode Inspector and Conditional Patcher
-Searches TAGame.upk for paint-related functions (GetPaintID, ProductAttribute_Painted_TA,
-ClientLoadoutData_TA, Car_TA::SetLoadout) and provides conditional paint bytecode injection.
+TAGame.upk Paint & Bytecode Inspector, Slot Dumper, and Conditional Patcher
+Searches TAGame.upk for paint-related functions and dumps authoritative slot enum mappings.
 """
 
 import os
@@ -37,28 +36,6 @@ EX_JUMP_IF_NOT           = 0x07
 EX_EQUAL_EQUAL_INT_INT   = 0x9A
 EX_END_FUNCTION_PARMS    = 0x16
 
-PAINT_NAMES = {
-    0: "None / Default",
-    1: "Crimson",
-    2: "Lime",
-    3: "Black",
-    4: "Sky Blue",
-    5: "Cobalt",
-    6: "Burnt Sienna",
-    7: "Forest Green",
-    8: "Purple",
-    9: "Pink",
-    10: "Orange",
-    11: "Grey",
-    12: "Titanium White",
-    13: "Saffron",
-    14: "Gold",
-    15: "Rose Gold",
-    16: "White Gold",
-    17: "Onyx",
-    18: "Platinum",
-}
-
 def decrypt_ecb(key: bytes, data: bytes) -> bytes:
     try:
         from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -71,10 +48,9 @@ def decrypt_ecb(key: bytes, data: bytes) -> bytes:
 
     try:
         from Crypto.Cipher import AES
-        cipher = AES.new(key, AES.MODE_ECB)
-        return cipher.decrypt(data)
+        return AES.new(key, AES.MODE_ECB).decrypt(data)
     except ImportError:
-        raise RuntimeError("Please install 'cryptography' or 'pycryptodome' (e.g. pip install cryptography)")
+        raise RuntimeError("Please install 'cryptography' (e.g. pip install cryptography)")
 
 def encrypt_ecb(key: bytes, data: bytes) -> bytes:
     try:
@@ -88,10 +64,9 @@ def encrypt_ecb(key: bytes, data: bytes) -> bytes:
 
     try:
         from Crypto.Cipher import AES
-        cipher = AES.new(key, AES.MODE_ECB)
-        return cipher.encrypt(data)
+        return AES.new(key, AES.MODE_ECB).encrypt(data)
     except ImportError:
-        raise RuntimeError("Please install 'cryptography' or 'pycryptodome'")
+        raise RuntimeError("Please install 'cryptography'")
 
 class ExportEntry:
     def __init__(self, idx: int, pos: int, class_idx: int, super_idx: int, outer_idx: int,
@@ -211,6 +186,57 @@ class TAGameInspector:
         pat = pattern.lower()
         return [e for e in self.exports if pat in e.name.lower()]
 
+    def search_names(self, pattern: str) -> List[Tuple[int, str]]:
+        pat = pattern.lower()
+        return [(i, n) for i, n in enumerate(self.names) if pat in n.lower()]
+
+    def dump_slots(self):
+        print("\n=======================================================")
+        print("          TAGAME.UPK AUTHORITATIVE SLOT MAPPING        ")
+        print("=======================================================\n")
+
+        # 1. Search Name Table for Slot patterns
+        slot_names = self.search_names("Slot_")
+        if not slot_names:
+            slot_names = self.search_names("Slot")
+
+        print(f"[+] Found {len(slot_names)} slot-related name entries in Name Table:")
+        for idx, name in slot_names:
+            print(f"  Name #{idx:05d}: {name}")
+
+        # 2. Search for Enum exports
+        enum_exports = [e for e in self.exports if "slot" in e.name.lower() or "eslot" in e.name.lower()]
+        print(f"\n[+] Found {len(enum_exports)} slot-related Export entries:")
+        decomp0 = None
+        for e in enum_exports:
+            print(f"\n  Export #{e.idx:05d}: '{e.name}' (Serial size: {e.serial_size}, Offset: 0x{e.serial_offset:X})")
+            if e.serial_size > 0:
+                ch0 = self.chunks[0]
+                if ch0["uncomp_offset"] <= e.serial_offset < ch0["uncomp_offset"] + ch0["uncomp_size"]:
+                    if decomp0 is None:
+                        decomp0 = self.decompress_chunk(0)
+                    off0 = e.serial_offset - ch0["uncomp_offset"]
+                    payload = decomp0[off0:off0 + e.serial_size]
+                    print(f"    Raw bytes: {payload[:32].hex()}...")
+                    
+                    # Try reading TArray<FName>
+                    # In UE3 UEnum: offset 0 or after standard field header
+                    for probe in range(0, min(len(payload) - 4, 32), 4):
+                        cnt = struct.unpack_from("<i", payload, probe)[0]
+                        if 5 <= cnt <= 30 and probe + 4 + cnt * 8 <= len(payload):
+                            print(f"    [!] Decoded Enum Variant Array (Count = {cnt}):")
+                            for v_idx in range(cnt):
+                                n_idx = struct.unpack_from("<i", payload, probe + 4 + v_idx * 8)[0]
+                                n_str = self.names[n_idx] if 0 <= n_idx < len(self.names) else f"Unknown_{n_idx}"
+                                print(f"      Slot Index {v_idx:02d} (0x{v_idx:02X}) = '{n_str}'")
+                            break
+
+        # 3. Dump ClientLoadoutData struct members
+        cld_exports = [e for e in self.exports if "clientloadoutdata" in e.name.lower()]
+        print(f"\n[+] ClientLoadoutData_TA Struct Exports:")
+        for e in cld_exports:
+            print(f"  Export #{e.idx:05d}: '{e.name}'")
+
     def disassemble_bytecode(self, data: bytes) -> str:
         lines = []
         i = 0
@@ -274,62 +300,16 @@ class TAGameInspector:
         return "\n".join(lines)
 
 
-def emit_conditional_paint_bytecode(product_paint_map: Dict[int, int], original_paint_var_idx: int = 75) -> bytes:
-    """
-    Emits conditional paint bytecode:
-    for (product_id, paint_id) in product_paint_map:
-        if (ProductID == product_id) return paint_id;
-    return OriginalPaint;
-    """
-    bc = bytearray()
-    for pid, paint_id in product_paint_map.items():
-        # JumpIfNot placeholder
-        bc.append(EX_JUMP_IF_NOT)
-        jump_offset_pos = len(bc)
-        bc.extend(b"\x00\x00")
-
-        # EqualEqual_IntInt(ProductID, pid)
-        bc.append(EX_EQUAL_EQUAL_INT_INT)
-        bc.append(EX_INSTANCE_VARIABLE)
-        bc.extend(struct.pack("<i", 1871)) # ProductID property
-        bc.extend(b"\x00\x00\x00\x00")
-        bc.append(EX_INT_CONST)
-        bc.extend(struct.pack("<i", pid))
-        bc.append(EX_END_FUNCTION_PARMS)
-
-        # Body: return paint_id
-        bc.append(EX_RETURN)
-        if paint_id == 0:
-            bc.append(EX_INT_ZERO)
-        elif paint_id < 256:
-            bc.append(EX_INT_CONST_BYTE)
-            bc.append(paint_id)
-        else:
-            bc.append(EX_INT_CONST)
-            bc.extend(struct.pack("<i", paint_id))
-
-        jump_target = len(bc)
-        struct.pack_into("<H", bc, jump_offset_pos, jump_target)
-
-    # Fallback: return OriginalPaint
-    bc.append(EX_RETURN)
-    bc.append(EX_INSTANCE_VARIABLE)
-    bc.extend(struct.pack("<i", original_paint_var_idx))
-    bc.extend(b"\x00\x00\x00\x00")
-    bc.append(EX_END_OF_SCRIPT)
-    return bytes(bc)
-
-
 def main():
-    parser = argparse.ArgumentParser(description="TAGame.upk Paint & Bytecode Inspector")
+    parser = argparse.ArgumentParser(description="TAGame.upk Inspector & Slot Dumper")
     parser.add_argument("tagame_path", nargs="?", default="", help="Path to TAGame.upk")
-    parser.add_argument("--search", "-s", default="Paint", help="Search pattern for exports (e.g. Paint, ConvertToClientLoadout, SetLoadout)")
+    parser.add_argument("--slots", action="store_true", help="Dump all slot enum mappings from TAGame.upk")
+    parser.add_argument("--search", "-s", default="", help="Search pattern for exports")
     parser.add_argument("--decompile", "-d", help="Export name to decompile bytecode for")
     args = parser.parse_args()
 
     tagame_path = args.tagame_path
     if not tagame_path:
-        # Check standard default locations
         candidates = [
             r"E:\games\rocketleague\TAGame\CookedPCConsole\TAGame.upk",
             r"C:\Program Files\Epic Games\rocketleague\TAGame\CookedPCConsole\TAGame.upk",
@@ -342,13 +322,16 @@ def main():
                 break
 
     if not tagame_path or not os.path.isfile(tagame_path):
-        print("Error: Could not locate TAGame.upk. Please specify the path as an argument.")
-        print("Usage: python tagame_paint_inspector.py \"E:\\games\\rocketleague\\TAGame\\CookedPCConsole\\TAGame.upk\"")
+        print("Error: Could not locate TAGame.upk. Please provide the path.")
         sys.exit(1)
 
     print(f"[*] Reading and decrypting header from: {tagame_path}")
     inspector = TAGameInspector(tagame_path)
     print(f"[*] Loaded {len(inspector.names)} Names, {len(inspector.exports)} Exports, {len(inspector.chunks)} Chunks.")
+
+    if args.slots or (not args.search and not args.decompile):
+        inspector.dump_slots()
+        return
 
     if args.decompile:
         matches = [e for e in inspector.exports if e.name.lower() == args.decompile.lower()]
@@ -364,21 +347,12 @@ def main():
         print(inspector.disassemble_bytecode(func_bytes[48:] if len(func_bytes) > 48 else func_bytes))
         return
 
-    print(f"\n[+] Searching exports matching '{args.search}':")
-    results = inspector.search_exports(args.search)
-    print(f"Found {len(results)} matches:")
-    for r in results[:50]:
-        print(f"  #{r.idx:05d} | Offset: 0x{r.serial_offset:08X} | Size: {r.serial_size:05d} | {r.name}")
-
-    if len(results) > 50:
-        print(f"  ... and {len(results) - 50} more.")
-
-    print("\n[+] Demo: Generated Conditional Paint Override Bytecode for Fennec Black (4284 -> 3) & Octane TW (23 -> 12):")
-    demo_bc = emit_conditional_paint_bytecode({4284: 3, 23: 12})
-    print(f"  Bytecode Size: {len(demo_bc)} bytes")
-    print(f"  Hex: {demo_bc.hex()}")
-    print("  Disassembly:")
-    print(inspector.disassemble_bytecode(demo_bc))
+    if args.search:
+        print(f"\n[+] Searching exports matching '{args.search}':")
+        results = inspector.search_exports(args.search)
+        print(f"Found {len(results)} matches:")
+        for r in results[:50]:
+            print(f"  #{r.idx:05d} | Offset: 0x{r.serial_offset:08X} | Size: {r.serial_size:05d} | {r.name}")
 
 if __name__ == "__main__":
     main()
