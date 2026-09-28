@@ -708,6 +708,33 @@ pub fn apply_body_paint_modification(
         }
     }
 
+    // Dynamically patch FName vector parameters (BoostColor, ParticleColor, Tint, CustomColor, etc.)
+    let names = crate::upk::palette::parse_names_in_block(&plain_header, name_count).unwrap_or_default();
+    let color_param_keywords = [
+        "customcolor", "trimcolor", "particlecolor", "boostcolor",
+        "flamecolor", "corecolor", "smokecolor", "beamcolor",
+        "trailcolor", "glowcolor", "sparkcolor", "primarycolor",
+        "secondarycolor", "accentcolor", "color", "tint",
+    ];
+
+    for (name_idx, name_str) in names.iter().enumerate() {
+        let lower = name_str.to_ascii_lowercase();
+        if color_param_keywords.iter().any(|&k| lower == k || lower.ends_with(k)) {
+            let mut fname_bytes = [0u8; 8];
+            fname_bytes[0..4].copy_from_slice(&(name_idx as i32).to_le_bytes());
+
+            let mut search_from = 0;
+            while let Some(rel) = decomp[search_from..].windows(8).position(|w| w == fname_bytes) {
+                let pos = search_from + rel;
+                if pos + 24 <= decomp.len() {
+                    // Struct element format: FName (8 bytes) + FLinearColor (16 bytes)
+                    decomp[pos + 8..pos + 24].copy_from_slice(&target_rgba);
+                }
+                search_from = pos + 8;
+            }
+        }
+    }
+
     // Recompress Chunk 0
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::best());
     encoder.write_all(&decomp)?;
@@ -983,22 +1010,7 @@ pub fn apply_tagame_modifications(
             let slot_idx = if let Some(idx) = s.slot_index {
                 idx as u8
             } else {
-                match s.slot.to_lowercase().as_str() {
-                    "body" | "0" => 0,
-                    "skin" | "decal" | "1" => 1,
-                    "wheel" | "wheels" | "2" => 2,
-                    "boost" | "rocket boost" | "rocketboost" | "3" => 3,
-                    "antenna" | "4" => 4,
-                    "topper" | "5" => 5,
-                    "paint finish" | "paintfinish" | "paint" | "6" => 6,
-                    "engine audio" | "engineaudio" | "8" => 8,
-                    "trail" | "9" => 9,
-                    "goal explosion" | "goalexplosion" | "10" => 10,
-                    "player banner" | "playerbanner" | "banner" | "11" => 11,
-                    "player anthem" | "playeranthem" | "anthem" | "music" | "12" => 12,
-                    "avatar border" | "avatarborder" | "border" | "13" => 13,
-                    _ => 0,
-                }
+                crate::presets::slot_index_from_str(&s.slot) as u8
             };
             let pid = if s.product_id > 0 { s.product_id } else { 4284 };
             slot_overrides.push(SlotSwapRule {

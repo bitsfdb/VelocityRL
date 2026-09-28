@@ -1137,22 +1137,7 @@ pub(crate) async fn sync_all_swaps_to_tagame(
             .or_else(|| wanted_item.map(|i| i.slot.clone()))
             .unwrap_or_else(|| "Body".to_string());
 
-        let slot_index = match slot_str.to_lowercase().as_str() {
-            "body" => 0,
-            "skin" | "decal" => 1,
-            "wheel" | "wheels" => 2,
-            "boost" | "rocket boost" | "rocketboost" => 3,
-            "antenna" => 4,
-            "topper" => 5,
-            "paint finish" | "paintfinish" | "paint" => 6,
-            "engine audio" | "engineaudio" => 8,
-            "trail" => 9,
-            "goal explosion" | "goalexplosion" => 10,
-            "player banner" | "playerbanner" | "banner" => 11,
-            "player anthem" | "playeranthem" | "anthem" | "music" => 12,
-            "avatar border" | "avatarborder" | "border" => 13,
-            _ => 0,
-        };
+        let slot_index = presets::slot_index_from_str(&slot_str) as i32;
 
         let pkg = wanted_item
             .map(|w| w.asset_package.clone())

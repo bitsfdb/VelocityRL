@@ -1371,7 +1371,8 @@ function renderPresetItemsPage() {
         const pImg = wantedItemObj?.image_url || wantedItemObj?.src || ownedItemObj?.image_url || ownedItemObj?.src || '';
         const targetPaint = s.custom_paint_hex ? renderPaintBadgeHtml(s.custom_paint_hex) : (s.paint_id > 0 ? renderPaintBadgeHtml(s.paint_id) : '');
 
-        const decalBody = s.asset_package ? getItemDecalBody({ AssetPackage: s.asset_package, Product: s.owned_name, Slot: 'Decal' }) : (slot === 'Decal' ? getItemDecalBody({ Product: s.owned_name, Slot: 'Decal' }) : '');
+        const isDecalSlot = String(slot || '').toLowerCase().includes('decal');
+        const decalBody = isDecalSlot ? (s.asset_package ? getItemDecalBody({ AssetPackage: s.asset_package, Product: s.owned_name, Slot: 'Decal' }) : getItemDecalBody({ Product: s.owned_name, Slot: 'Decal' })) : '';
         const decalPill = (decalBody && decalBody !== 'Universal') ? `<span style="font-size:10px;padding:2px 5px;background:rgba(91,140,255,0.18);color:#93c5fd;border-radius:3px;font-weight:600;margin-left:4px;">${escHtml(decalBody)}</span>` : '';
 
         return `
