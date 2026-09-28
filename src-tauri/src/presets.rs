@@ -310,49 +310,157 @@ pub async fn apply_preset(app: tauri::AppHandle, id: String) -> Result<Vec<Strin
     Ok(results)
 }
 
-#[derive(Serialize, Deserialize)]
-struct CompactSwap {
-    o: i32,
-    w: i32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    p: Option<i32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    h: Option<String>,
+pub const COSMETIC_SLOTS_COUNT: usize = 14;
+
+pub fn slot_index_from_str(slot: &str) -> usize {
+    match slot.to_lowercase().replace([' ', '_', '-'], "").as_str() {
+        "body" => 0,
+        "skin" | "decal" => 1,
+        "wheel" | "wheels" => 2,
+        "boost" | "rocketboost" => 3,
+        "antenna" => 4,
+        "topper" => 5,
+        "paintfinish" | "paint" => 6,
+        "paintfinishsecondary" | "paintfinishaccent" | "accentpaint" | "paintaccent" => 7,
+        "engineaudio" | "audio" => 8,
+        "trail" => 9,
+        "goalexplosion" | "explosion" => 10,
+        "playerbanner" | "banner" => 11,
+        "playeranthem" | "anthem" | "music" => 12,
+        "avatarborder" | "border" => 13,
+        _ => 0,
+    }
 }
 
-#[derive(Serialize, Deserialize)]
-struct CompactPresetPayload {
-    n: String,
-    s: Vec<CompactSwap>,
+pub fn slot_name_from_index(idx: usize) -> &'static str {
+    match idx {
+        0 => "Body",
+        1 => "Decal",
+        2 => "Wheels",
+        3 => "Boost",
+        4 => "Antenna",
+        5 => "Topper",
+        6 => "Paint Finish",
+        7 => "Paint Finish (Accent)",
+        8 => "Engine Audio",
+        9 => "Trail",
+        10 => "Goal Explosion",
+        11 => "Player Banner",
+        12 => "Player Anthem",
+        13 => "Avatar Border",
+        _ => "Item",
+    }
+}
+
+pub fn default_donor_for_slot(idx: usize) -> (i32, &'static str) {
+    match idx {
+        0 => (23, "Octane"),
+        1 => (0, "Decal"),
+        2 => (376, "OEM"),
+        3 => (63, "Standard"),
+        4 => (16, "Antenna"),
+        5 => (232, "Halo"),
+        6 => (0, "Paint Finish"),
+        7 => (0, "Paint Finish"),
+        8 => (0, "Engine Audio"),
+        9 => (1948, "Classic"),
+        10 => (1903, "Standard"),
+        11 => (0, "Player Banner"),
+        12 => (0, "Player Anthem"),
+        13 => (0, "Avatar Border"),
+        _ => (0, "Item"),
+    }
+}
+
+pub fn encode_14slot_binary(swaps: &[SwapEntry]) -> String {
+    let mut payload = [0u8; 42];
+    for s in swaps {
+        let slot_str = s.slot.as_deref().unwrap_or("Body");
+        let idx = slot_index_from_str(slot_str);
+        if idx < 14 {
+            let item_id = if s.wanted_id > 0 { s.wanted_id as u16 } else { s.owned_id as u16 };
+            let pid = (s.paint_id.max(0).min(255)) as u8;
+            payload[idx * 3] = (item_id & 0xFF) as u8;
+            payload[idx * 3 + 1] = ((item_id >> 8) & 0xFF) as u8;
+            payload[idx * 3 + 2] = pid;
+        }
+    }
+    let hmac_full = sign_preset_payload(&payload);
+    let mut combined = [0u8; 58];
+    combined[..42].copy_from_slice(&payload);
+    combined[42..58].copy_from_slice(&hmac_full[..16]);
+    B64.encode(combined)
+}
+
+fn parse_legacy_v1_code(rest: &str) -> Result<(String, Vec<SwapEntry>, Vec<PresetMapEntry>, Option<String>), String> {
+    let (payload_b64, sig_b64) = rest
+        .split_once('.')
+        .ok_or("Malformed preset code: missing signature.")?;
+    let payload = B64
+        .decode(payload_b64)
+        .map_err(|_| "Malformed preset code: bad payload.")?;
+    let sig = B64
+        .decode(sig_b64)
+        .map_err(|_| "Malformed preset code: bad signature.")?;
+    if sig != sign_preset_payload(&payload) {
+        return Err("Preset code failed verification — it was modified or corrupted.".into());
+    }
+    let val: serde_json::Value =
+        serde_json::from_slice(&payload).map_err(|_| "Malformed preset code payload.")?;
+    let name = val
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Shared preset")
+        .to_string();
+    let swaps: Vec<SwapEntry> = serde_json::from_value(val.get("swaps").cloned().unwrap_or_default())
+        .map_err(|_| "Preset code contains invalid swaps.")?;
+    let maps: Vec<PresetMapEntry> = serde_json::from_value(val.get("maps").cloned().unwrap_or_default())
+        .unwrap_or_default();
+    let active_map_id: Option<String> = val.get("active_map_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+    Ok((name, swaps, maps, active_map_id))
+}
+
+fn parse_zlib_code(rest: &str) -> Result<(String, Vec<SwapEntry>, Vec<PresetMapEntry>, Option<String>), String> {
+    let (payload_b64, sig_b64) = rest
+        .split_once('.')
+        .ok_or("Malformed zlib preset code: missing signature.")?;
+    let comp_bytes = B64.decode(payload_b64).map_err(|_| "Invalid base64 zlib payload")?;
+    let sig = B64.decode(sig_b64).map_err(|_| "Invalid base64 signature")?;
+    if sig != sign_preset_payload(&comp_bytes) {
+        return Err("Preset code signature verification failed.".into());
+    }
+    use flate2::read::ZlibDecoder;
+    use std::io::Read;
+    let mut dec = ZlibDecoder::new(&comp_bytes[..]);
+    let mut decomp = Vec::new();
+    dec.read_to_end(&mut decomp).map_err(|e| format!("Failed to decompress zlib preset: {e}"))?;
+    let val: serde_json::Value = serde_json::from_slice(&decomp).map_err(|e| format!("Invalid JSON: {e}"))?;
+    let name = val.get("name").and_then(|v| v.as_str()).unwrap_or("Shared preset").to_string();
+    let swaps: Vec<SwapEntry> = serde_json::from_value(val.get("swaps").cloned().unwrap_or_default()).unwrap_or_default();
+    let maps: Vec<PresetMapEntry> = serde_json::from_value(val.get("maps").cloned().unwrap_or_default()).unwrap_or_default();
+    let active_map_id = val.get("active_map_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+    Ok((name, swaps, maps, active_map_id))
 }
 
 fn code_for_preset(p: &Preset) -> Result<String, String> {
-    let payload = CompactPresetPayload {
-        n: p.name.clone(),
-        s: p.swaps.iter().map(|s| CompactSwap {
-            o: s.owned_id,
-            w: s.wanted_id,
-            p: if s.paint_id > 0 { Some(s.paint_id) } else { None },
-            h: s.custom_paint_hex.clone().filter(|h| !h.trim().is_empty()),
-        }).collect(),
-    };
-
-    let raw_json = serde_json::to_string(&payload)
-        .map_err(|e| format!("Failed to serialize preset: {e}"))?;
-
-    let mut enc = ZlibEncoder::new(Vec::new(), Compression::best());
-    enc.write_all(raw_json.as_bytes())
-        .map_err(|e| format!("Failed to compress preset: {e}"))?;
-    let comp = enc.finish()
-        .map_err(|e| format!("Failed to finish compression: {e}"))?;
-
-    let sig = sign_preset_payload(&comp);
-    let sig_trunc = &sig[..16.min(sig.len())];
-
-    let mut out = comp;
-    out.extend_from_slice(sig_trunc);
-
-    Ok(B64.encode(&out))
+    if p.maps.is_empty() {
+        Ok(encode_14slot_binary(&p.swaps))
+    } else {
+        let payload = serde_json::json!({
+            "v": 1,
+            "name": p.name,
+            "swaps": p.swaps,
+            "maps": p.maps,
+            "active_map_id": p.active_map_id,
+        })
+        .to_string();
+        let sig = sign_preset_payload(payload.as_bytes());
+        Ok(format!(
+            "1.{}.{}",
+            B64.encode(payload.as_bytes()),
+            B64.encode(sig)
+        ))
+    }
 }
 
 #[tauri::command]
@@ -371,129 +479,50 @@ pub async fn peek_preset_code(code: String) -> Result<Preset, String> {
 fn parse_code(code: &str) -> Result<(String, Vec<SwapEntry>, Vec<PresetMapEntry>, Option<String>), String> {
     let code = code.trim();
 
-    // 1. Legacy version 1 format with "1." prefix
     if let Some(rest) = code.strip_prefix("1.") {
-        let (payload_b64, sig_b64) = rest
-            .split_once('.')
-            .ok_or("Malformed preset code: missing signature.")?;
-        let payload = B64
-            .decode(payload_b64)
-            .map_err(|_| "Malformed preset code: bad payload.")?;
-        let sig = B64
-            .decode(sig_b64)
-            .map_err(|_| "Malformed preset code: bad signature.")?;
-        if sig != sign_preset_payload(&payload) {
-            return Err("Preset code failed verification — it was modified or corrupted.".into());
-        }
-        let val: serde_json::Value =
-            serde_json::from_slice(&payload).map_err(|_| "Malformed preset code payload.")?;
-        let name = val
-            .get("name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Shared preset")
-            .to_string();
-        let swaps: Vec<SwapEntry> = serde_json::from_value(val.get("swaps").cloned().unwrap_or_default())
-            .map_err(|_| "Preset code contains invalid swaps.")?;
-        let maps: Vec<PresetMapEntry> = serde_json::from_value(val.get("maps").cloned().unwrap_or_default())
-            .unwrap_or_default();
-        let active_map_id: Option<String> = val.get("active_map_id").and_then(|v| v.as_str()).map(|s| s.to_string());
-        return Ok((name, swaps, maps, active_map_id));
+        return parse_legacy_v1_code(rest);
     }
 
-    // 2. Binary format with "VRL:" prefix
-    if let Some(vrl_b64) = code.strip_prefix("VRL:") {
-        let data = B64.decode(vrl_b64.as_bytes())
-            .map_err(|_| "Malformed preset code: bad base64 payload.".to_string())?;
-        if data.len() < 8 {
-            return Err("Malformed preset code: payload too short.".into());
-        }
-        let body_len = data.len() - 6;
-        let body = &data[..body_len];
-        let sig = &data[body_len..];
-        let expected_sig = sign_preset_payload(body);
-        if sig != &expected_sig[..6] {
-            return Err("Preset code failed verification — it was modified or corrupted.".into());
-        }
-        let mut p = 0;
-        let name_len = body[p] as usize;
-        p += 1;
-        if p + name_len > body.len() {
-            return Err("Malformed preset code: invalid name header.".into());
-        }
-        let name = String::from_utf8_lossy(&body[p..p + name_len]).to_string();
-        p += name_len;
-        if p >= body.len() {
-            return Err("Malformed preset code: missing swaps count.".into());
-        }
-        let swaps_cnt = body[p] as usize;
-        p += 1;
-        let mut swaps = Vec::new();
-        for _ in 0..swaps_cnt {
-            if p + 6 > body.len() {
-                break;
+    if let Some(rest) = code.strip_prefix("zlib.").or_else(|| code.strip_prefix("z.")) {
+        return parse_zlib_code(rest);
+    }
+
+    let clean = code.strip_prefix("2.").or_else(|| code.strip_prefix("v2.")).unwrap_or(code);
+    if let Ok(raw) = B64.decode(clean) {
+        if raw.len() == 58 {
+            let payload = &raw[..42];
+            let sig = &raw[42..58];
+            let expected = sign_preset_payload(payload);
+            if &expected[..16] != sig {
+                return Err("Preset code failed verification — invalid signature.".into());
             }
-            let o = u16::from_le_bytes(body[p..p + 2].try_into().unwrap()) as i32;
-            let w = u16::from_le_bytes(body[p + 2..p + 4].try_into().unwrap()) as i32;
-            let paint = body[p + 4] as i32;
-            let flags = body[p + 5];
-            p += 6;
-            let mut custom_hex = None;
-            if (flags & 1) != 0 && p + 3 <= body.len() {
-                custom_hex = Some(format!("#{:02X}{:02X}{:02X}", body[p], body[p + 1], body[p + 2]));
-                p += 3;
+
+            let mut swaps = Vec::new();
+            for i in 0..14 {
+                let item_id = u16::from_le_bytes([payload[i * 3], payload[i * 3 + 1]]) as i32;
+                let paint_id = payload[i * 3 + 2] as i32;
+                if item_id > 0 {
+                    let slot_name = slot_name_from_index(i).to_string();
+                    let (donor_id, donor_name) = default_donor_for_slot(i);
+                    let actual_donor_id = if donor_id > 0 { donor_id } else { item_id };
+                    swaps.push(SwapEntry {
+                        owned_id: actual_donor_id,
+                        wanted_id: item_id,
+                        owned_name: donor_name.to_string(),
+                        wanted_name: String::new(),
+                        paint_id,
+                        custom_paint_hex: None,
+                        asset_package: String::new(),
+                        slot: Some(slot_name),
+                    });
+                }
             }
-            swaps.push(SwapEntry {
-                owned_id: o,
-                wanted_id: w,
-                owned_name: String::new(),
-                wanted_name: String::new(),
-                paint_id: paint,
-                custom_paint_hex: custom_hex,
-                asset_package: String::new(),
-                slot: None,
-            });
+
+            return Ok(("Shared Preset".to_string(), swaps, Vec::new(), None));
         }
-        return Ok((name, swaps, Vec::new(), None));
     }
 
-    // 3. Clean prefixless compressed format (starts with eN...)
-    let clean_code = code.strip_prefix("2.").unwrap_or(code);
-    let data = B64.decode(clean_code.as_bytes())
-        .map_err(|_| "Malformed preset code: invalid base64 string.".to_string())?;
-
-    if data.len() < 17 {
-        return Err("Malformed preset code: payload too short.".into());
-    }
-
-    let comp_len = data.len() - 16;
-    let comp_data = &data[..comp_len];
-    let sig = &data[comp_len..];
-
-    let expected_sig = sign_preset_payload(comp_data);
-    if sig != &expected_sig[..16] {
-        return Err("Preset code failed verification — it was modified or corrupted.".into());
-    }
-
-    let mut decoder = ZlibDecoder::new(comp_data);
-    let mut decomp = Vec::new();
-    decoder.read_to_end(&mut decomp)
-        .map_err(|e| format!("Failed to decompress preset: {e}"))?;
-
-    let payload: CompactPresetPayload = serde_json::from_slice(&decomp)
-        .map_err(|e| format!("Malformed preset JSON: {e}"))?;
-
-    let swaps = payload.s.into_iter().map(|cs| SwapEntry {
-        owned_id: cs.o,
-        wanted_id: cs.w,
-        owned_name: String::new(),
-        wanted_name: String::new(),
-        paint_id: cs.p.unwrap_or(0),
-        custom_paint_hex: cs.h,
-        asset_package: String::new(),
-        slot: None,
-    }).collect();
-
-    Ok((payload.n, swaps, Vec::new(), None))
+    Err("Not a valid preset code.".into())
 }
 
 #[tauri::command]
@@ -783,4 +812,90 @@ pub async fn get_swap_history(app: tauri::AppHandle) -> Result<Vec<HistoryEntry>
 pub async fn clear_swap_history(app: tauri::AppHandle) -> Result<(), String> {
     save_history_file(&app, &HistoryFile::default());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_14slot_binary_encode_length_is_exact_78_chars() {
+        let swaps = vec![
+            SwapEntry {
+                owned_id: 23,
+                wanted_id: 4284,
+                owned_name: "Octane".into(),
+                wanted_name: "Fennec".into(),
+                paint_id: 12,
+                custom_paint_hex: None,
+                asset_package: "body_grain".into(),
+                slot: Some("Body".into()),
+            },
+            SwapEntry {
+                owned_id: 376,
+                wanted_id: 1565,
+                owned_name: "OEM".into(),
+                wanted_name: "Cristiano".into(),
+                paint_id: 3,
+                custom_paint_hex: None,
+                asset_package: "wheel_cristiano".into(),
+                slot: Some("Wheels".into()),
+            },
+        ];
+
+        let code = encode_14slot_binary(&swaps);
+        assert_eq!(code.len(), 78, "14-slot binary base64 code must be exactly 78 characters");
+
+        let (name, decoded_swaps, maps, active_map) = parse_code(&code).expect("must parse code");
+        assert_eq!(name, "Shared Preset");
+        assert!(maps.is_empty());
+        assert!(active_map.is_none());
+        assert_eq!(decoded_swaps.len(), 2);
+
+        let body_swap = decoded_swaps.iter().find(|s| s.slot.as_deref() == Some("Body")).expect("body slot");
+        assert_eq!(body_swap.wanted_id, 4284);
+        assert_eq!(body_swap.paint_id, 12);
+
+        let wheel_swap = decoded_swaps.iter().find(|s| s.slot.as_deref() == Some("Wheels")).expect("wheels slot");
+        assert_eq!(wheel_swap.wanted_id, 1565);
+        assert_eq!(wheel_swap.paint_id, 3);
+    }
+
+    #[test]
+    fn test_parse_legacy_v1_json_code() {
+        let preset = Preset {
+            id: "test-id".into(),
+            name: "My Legacy Preset".into(),
+            created_at: "2026-09-28T00:00:00Z".into(),
+            swaps: vec![
+                SwapEntry {
+                    owned_id: 23,
+                    wanted_id: 4284,
+                    owned_name: "Octane".into(),
+                    wanted_name: "Fennec".into(),
+                    paint_id: 3,
+                    custom_paint_hex: None,
+                    asset_package: "body_grain".into(),
+                    slot: Some("Body".into()),
+                },
+            ],
+            maps: vec![],
+            active_map_id: None,
+        };
+
+        let payload = serde_json::json!({
+            "v": 1,
+            "name": preset.name,
+            "swaps": preset.swaps,
+            "maps": preset.maps,
+            "active_map_id": preset.active_map_id,
+        }).to_string();
+        let sig = sign_preset_payload(payload.as_bytes());
+        let legacy_code = format!("1.{}.{}", B64.encode(payload.as_bytes()), B64.encode(sig));
+
+        let (name, swaps, _, _) = parse_code(&legacy_code).expect("must parse legacy code");
+        assert_eq!(name, "My Legacy Preset");
+        assert_eq!(swaps.len(), 1);
+        assert_eq!(swaps[0].wanted_id, 4284);
+    }
 }

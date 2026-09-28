@@ -1293,6 +1293,18 @@ async function openPresetPreviewModal(preset, { isImport = false, code = null } 
                     actionBtn.disabled = false;
                 }
             } else if (!isImport && preset.id) {
+                const safety = await promptPresetApplySafety(preset.name);
+                if (safety === 'cancel') {
+                    actionBtn.disabled = false;
+                    return;
+                }
+                if (safety === 'save_and_apply') {
+                    const name = await appDialog({ title: 'Save Current Preset', message: 'Name for your current loadout:', input: 'My Saved Loadout', okLabel: 'Save & Continue' });
+                    if (name && name.trim()) {
+                        await invoke('save_preset', { name: name.trim() }).catch(e => showToast(String(e), 'error'));
+                        await refreshPresets();
+                    }
+                }
                 modal.classList.remove('active');
                 await applyPresetDirect(preset);
             }
@@ -1491,6 +1503,64 @@ async function applyPresetDirect(p) {
     }
 }
 
+async function promptPresetApplySafety(presetName) {
+    const activeSwaps = await invoke('get_swaps').catch(() => []);
+    if (!activeSwaps || activeSwaps.length <= 5) {
+        return 'apply';
+    }
+
+    return new Promise(resolve => {
+        const overlay = document.getElementById('app-dialog-overlay');
+        if (!overlay) { resolve('apply'); return; }
+        const titleEl = document.getElementById('app-dialog-title');
+        const msgEl = document.getElementById('app-dialog-message');
+        const inputGroup = document.getElementById('app-dialog-input-group');
+        const okBtn = document.getElementById('app-dialog-ok');
+        const cancelBtn = document.getElementById('app-dialog-cancel');
+        const closeBtn = document.getElementById('app-dialog-close');
+
+        titleEl.textContent = 'Active Loadout Detected';
+        msgEl.textContent = `You already have a loadout equipped (${activeSwaps.length} items), would you like to save it before applying "${presetName || 'this preset'}"?`;
+        inputGroup.style.display = 'none';
+
+        const saveApplyBtn = document.createElement('button');
+        saveApplyBtn.className = 'action-btn action-btn-primary';
+        saveApplyBtn.type = 'button';
+        saveApplyBtn.textContent = 'Save & Apply';
+        saveApplyBtn.style.background = 'var(--accent, #6366f1)';
+        saveApplyBtn.style.color = '#ffffff';
+
+        const applyDirectBtn = document.createElement('button');
+        applyDirectBtn.className = 'action-btn action-btn-secondary';
+        applyDirectBtn.type = 'button';
+        applyDirectBtn.textContent = 'Apply Without Saving';
+
+        okBtn.style.display = 'none';
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.style.display = '';
+
+        const btnRow = okBtn.parentElement;
+        btnRow.insertBefore(applyDirectBtn, okBtn);
+        btnRow.insertBefore(saveApplyBtn, applyDirectBtn);
+
+        overlay.classList.add('active');
+
+        const cleanup = (val) => {
+            overlay.classList.remove('active');
+            saveApplyBtn.remove();
+            applyDirectBtn.remove();
+            okBtn.style.display = '';
+            okBtn.onclick = cancelBtn.onclick = closeBtn.onclick = null;
+            resolve(val);
+        };
+
+        saveApplyBtn.onclick = () => cleanup('save_and_apply');
+        applyDirectBtn.onclick = () => cleanup('apply');
+        cancelBtn.onclick = () => cleanup('cancel');
+        closeBtn.onclick = () => cleanup('cancel');
+    });
+}
+
 async function applyPreset(p) {
     const maps = p.maps || [];
     const library = await invoke('workshop_get_map_library').catch(() => []);
@@ -1502,8 +1572,17 @@ async function applyPreset(p) {
         openPresetPreviewModal(p, { isImport: false });
         return;
     }
-    const mapNote = maps.length > 0 ? ` Includes ${maps.length} map(s).` : '';
-    if (!(await askConfirm(`Apply preset "${p.name}"? This applies ${(p.swaps || []).length} swap(s).${mapNote}`, 'Apply Preset'))) return;
+
+    const safety = await promptPresetApplySafety(p.name);
+    if (safety === 'cancel') return;
+    if (safety === 'save_and_apply') {
+        const name = await appDialog({ title: 'Save Current Preset', message: 'Name for your current loadout:', input: 'My Saved Loadout', okLabel: 'Save & Continue' });
+        if (name && name.trim()) {
+            await invoke('save_preset', { name: name.trim() }).catch(e => showToast(String(e), 'error'));
+            await refreshPresets();
+        }
+    }
+
     await applyPresetDirect(p);
 }
 
@@ -1713,12 +1792,8 @@ function wirePresetsUI() {
                 if (ownedItem && wantedItem) {
                     const ownedId = Number(ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id);
                     const wantedId = Number(wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id);
-                    const activePaintId = wantedPaintId || '0';
-                    let paintId = Number(activePaintId || 0);
-                    const customPaintHex = wantedCustomHex || null;
-                    if (!itemIsPaintable(wantedItem)) {
-                        paintId = 0;
-                    }
+                    let paintId = itemIsPaintable(wantedItem) ? Number(wantedPaintId || 0) : 0;
+                    const customPaintHex = itemIsPaintable(wantedItem) ? (wantedCustomHex || null) : null;
                     const oName = ownedItem.Product || ownedItem.product || '';
                     const wName = wantedItem.Product || wantedItem.product || '';
                     const pkg = ownedItem.AssetPackage || ownedItem.asset_package || '';
@@ -2228,12 +2303,8 @@ async function handleApply() {
         interval = setInterval(() => { if (p < 85) p += 5; showProgress(true, p); }, 400);
         const ownedId = (ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id).toString();
         const wantedId = (wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id).toString();
-        const activePaintId = wantedPaintId || '0';
-        let paintId = Number(activePaintId || 0);
-        const customPaintHex = wantedCustomHex || null;
-        if (!itemIsPaintable(wantedItem)) {
-            paintId = 0;
-        }
+        let paintId = itemIsPaintable(wantedItem) ? Number(wantedPaintId || 0) : 0;
+        const customPaintHex = itemIsPaintable(wantedItem) ? (wantedCustomHex || null) : null;
         const swapResult = await invoke('apply_swap', {
             ownedId,
             wantedId,
