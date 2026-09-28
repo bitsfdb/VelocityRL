@@ -61,6 +61,18 @@ pub fn is_eos_account_host(host: &str) -> bool {
 
 pub fn is_intercept_target(host: &str) -> bool {
     let h = hostname_only(host).to_ascii_lowercase();
+    let is_epic = h.contains("epicgames.dev") || h.contains("epicgames.com");
+    if is_epic {
+        let spoof_cfg = crate::psynet::load_active_spoof_from_disk();
+        let name_spoof_on = spoof_cfg
+            .as_ref()
+            .and_then(|c| c.name_spoof.as_ref())
+            .map(|n| n.enabled)
+            .unwrap_or(false);
+        if !name_spoof_on {
+            return false;
+        }
+    }
     h.contains("epicgames.dev")
         || h.contains("psyonix.com")
         || h.contains("live.psynet.gg")
@@ -981,14 +993,26 @@ async fn handle_crl_or_http(
             .unwrap());
     }
     if path == "/proxy.pac" || path == "/wpad.dat" {
-        let pac = format!(
-            "function FindProxyForURL(url, host) {{\n    \
-             if (shExpMatch(host, \"*.epicgames.dev\") || host == \"api.epicgames.dev\" || shExpMatch(host, \"*account-public-service*\")) {{\n        \
-                 return \"PROXY 127.0.0.1:{SYSTEM_PROXY_PORT}; DIRECT\";\n    \
-             }}\n    \
-             return \"DIRECT\";\n\
-             }}"
-        );
+        let name_spoof_on = {
+            let spoof_cfg = crate::psynet::load_active_spoof_from_disk();
+            spoof_cfg
+                .as_ref()
+                .and_then(|c| c.name_spoof.as_ref())
+                .map(|n| n.enabled)
+                .unwrap_or(false)
+        };
+        let pac = if name_spoof_on {
+            format!(
+                "function FindProxyForURL(url, host) {{\n    \
+                 if (shExpMatch(host, \"*.epicgames.dev\") || host == \"api.epicgames.dev\" || shExpMatch(host, \"*account-public-service*\")) {{\n        \
+                     return \"PROXY 127.0.0.1:{SYSTEM_PROXY_PORT}; DIRECT\";\n    \
+                 }}\n    \
+                 return \"DIRECT\";\n\
+                 }}"
+            )
+        } else {
+            "function FindProxyForURL(url, host) {\n    return \"DIRECT\";\n}".to_string()
+        };
         return Ok(Response::builder()
             .status(StatusCode::OK)
             .header("Content-Type", "application/x-ns-proxy-autoconfig")
@@ -2135,7 +2159,16 @@ async fn handle_request(
         return handle_broker_request(req, client).await;
     }
 
-    if is_eos_account_host(&host_hdr) || host_hdr.contains("psyonix.com") || host_hdr.contains("live.psynet.gg") {
+    let name_spoof_on = {
+        let spoof_cfg = crate::psynet::load_active_spoof_from_disk();
+        spoof_cfg
+            .as_ref()
+            .and_then(|c| c.name_spoof.as_ref())
+            .map(|n| n.enabled)
+            .unwrap_or(false)
+    };
+
+    if (is_eos_account_host(&host_hdr) && name_spoof_on) || host_hdr.contains("psyonix.com") || host_hdr.contains("live.psynet.gg") {
         let host = hostname_only(&host_hdr).to_string();
         let port = host_header_port(&host_hdr, 443);
         crate::applog::event(&format!(

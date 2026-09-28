@@ -426,6 +426,80 @@ const PAINT_SWATCH_COLORS = {
     27: '#F87171', 28: '#FFFFFF', 29: '#FDE047',
 };
 
+const PAINT_TEXT_COLORS = {
+    0: '#09090b',
+    1: '#DC143C',
+    2: '#65a30d',
+    3: '#09090b',
+    4: '#0284c7',
+    5: '#1d4ed8',
+    6: '#854d0e',
+    7: '#15803d',
+    8: '#7e22ce',
+    9: '#db2777',
+    10: '#ea580c',
+    11: '#4b5563',
+    12: '#09090b',
+    13: '#ca8a04',
+    14: '#b45309',
+    15: '#9f1239',
+    16: '#a16207',
+    17: '#09090b',
+    18: '#334155',
+    19: '#0284c7',
+    20: '#2563eb',
+    21: '#92400e',
+    22: '#16a34a',
+    23: '#65a30d',
+    24: '#ea580c',
+    25: '#db2777',
+    26: '#9333ea',
+    27: '#dc2626',
+    28: '#09090b',
+    29: '#ca8a04',
+};
+
+function getPaintTextColor(paint) {
+    if (paint === null || paint === undefined) return '#09090b';
+    if (typeof paint === 'number') {
+        return PAINT_TEXT_COLORS[paint] || '#09090b';
+    }
+    const str = String(paint).trim();
+    if (!isNaN(Number(str))) {
+        return PAINT_TEXT_COLORS[Number(str)] || '#09090b';
+    }
+    for (const [id, name] of Object.entries(PAINT_NAMES)) {
+        if (name.toLowerCase() === str.toLowerCase()) {
+            return PAINT_TEXT_COLORS[Number(id)] || '#09090b';
+        }
+    }
+    return '#09090b';
+}
+
+function renderPaintBadgeHtml(paintIdOrName) {
+    const raw = paintIdOrName;
+    let label = 'None';
+    let color = '#09090b';
+    if (typeof raw === 'number') {
+        label = raw === 0 ? 'None' : paintLabel(raw);
+        color = getPaintTextColor(raw);
+    } else if (raw) {
+        const str = String(raw).trim();
+        if (!isNaN(Number(str))) {
+            const num = Number(str);
+            label = num === 0 ? 'None' : paintLabel(num);
+            color = getPaintTextColor(num);
+        } else if (str.toLowerCase() === 'default' || str.toLowerCase() === 'none') {
+            label = 'None';
+            color = '#09090b';
+        } else {
+            label = str;
+            color = getPaintTextColor(str);
+        }
+    }
+    return `<span class="paint-white-pill" style="background:#ffffff; color:${color};">${escHtml(label)}</span>`;
+}
+
 function paintLabel(id) {
     if (Number(id) === 0) return 'None';
     return PAINT_NAMES[id] || PAINT_NAMES[String(id)] || `Paint ${id}`;
@@ -455,7 +529,6 @@ function renderSelectedItem(container, item, onClear) {
         else ownedPaintId = '0';
     }
     const currentPaintId = Number((isTarget ? wantedPaintId : ownedPaintId) || 0);
-    const currentPaintName = currentPaintId > 0 ? paintLabel(currentPaintId) : 'None';
 
     const itemPaintsList = Array.isArray(item.Paints) && item.Paints.length > 0 
         ? item.Paints 
@@ -479,21 +552,16 @@ function renderSelectedItem(container, item, onClear) {
         }
     }
 
-    const paintMenuHtml = isPaintable ? `
-        <div class="card-paint-wrap" id="card-paint-${container.id}">
-            <button type="button" class="card-paint-btn" title="Choose Paint Color" aria-label="Choose Paint">
-                <span class="paint-dot" style="background:${PAINT_SWATCH_COLORS[currentPaintId] || '#666'}"></span>
-                <span class="paint-label">${escHtml(currentPaintName)}</span>
-                <svg class="paint-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="6 9 12 15 18 9"></polyline>
-                </svg>
-            </button>
-            <div class="card-paint-dropdown">
+    const paintChipsHtml = isPaintable ? `
+        <div class="card-paint-chips-wrap">
+            <div class="card-paint-chips-scroll">
                 ${displayPaints.map(p => `
-                    <button type="button" class="card-paint-option${p.id === currentPaintId ? ' is-selected' : ''}" data-paint="${p.id}">
-                        <span class="opt-swatch" style="background:${PAINT_SWATCH_COLORS[p.id] || '#666'}"></span>
-                        <span class="opt-name">${escHtml(p.name)}</span>
-                        ${p.id === currentPaintId ? `<svg class="opt-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>` : ''}
+                    <button type="button" 
+                            class="paint-chip-pill ${p.id === currentPaintId ? 'is-active' : ''}" 
+                            data-paint="${p.id}"
+                            title="${escHtml(p.name)}"
+                            style="color:${getPaintTextColor(p.id)};">
+                        ${escHtml(p.name)}
                     </button>
                 `).join('')}
             </div>
@@ -511,14 +579,15 @@ function renderSelectedItem(container, item, onClear) {
 
     container.innerHTML = `
         ${clearBtnHtml}
-        ${paintMenuHtml}
         ${pImg ? `<img src="${escHtml(pImg)}" class="selected-img" />` : ''}
         <h2>${escHtml(pName)}</h2>
         <div style="display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;margin:4px 0;">
             <span class="quality-badge ${bgClass}">${escHtml(pQuality)}</span>
             ${decalBadge}
+            ${isPaintable ? `<div class="selected-paint-badge-wrap">${renderPaintBadgeHtml(currentPaintId)}</div>` : ''}
         </div>
         <p class="item-slot-label">${escHtml(pSlot)}${decalBody ? ` (${escHtml(decalBody)})` : ''}</p>
+        ${paintChipsHtml}
     `;
 
     const clearBtn = container.querySelector('.card-clear-btn');
@@ -529,39 +598,24 @@ function renderSelectedItem(container, item, onClear) {
         });
     }
 
-    const paintWrap = container.querySelector('.card-paint-wrap');
-    if (paintWrap) {
-        const toggleBtn = paintWrap.querySelector('.card-paint-btn');
-        toggleBtn?.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const wasOpen = paintWrap.classList.contains('is-open');
-            document.querySelectorAll('.card-paint-wrap.is-open').forEach(el => el.classList.remove('is-open'));
-            if (!wasOpen) paintWrap.classList.add('is-open');
-        });
-        paintWrap.querySelectorAll('.card-paint-option').forEach(opt => {
-            opt.addEventListener('click', (e) => {
+    if (isPaintable) {
+        container.querySelectorAll('.paint-chip-pill').forEach(btn => {
+            btn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                const pid = opt.dataset.paint;
+                const pid = btn.dataset.paint;
                 if (isTarget) {
                     wantedPaintId = pid;
                 } else {
                     ownedPaintId = pid;
                 }
-                const dot = paintWrap.querySelector('.paint-dot');
-                const label = paintWrap.querySelector('.paint-label');
-                if (dot) dot.style.background = PAINT_SWATCH_COLORS[pid] || '#666';
-                if (label) label.textContent = pid === '0' ? 'Paints' : paintLabel(pid);
-                paintWrap.querySelectorAll('.card-paint-option').forEach(o => {
-                    const sel = o.dataset.paint === pid;
-                    o.classList.toggle('is-selected', sel);
-                    let check = o.querySelector('.opt-check');
-                    if (sel && !check) {
-                        o.insertAdjacentHTML('beforeend', '<svg class="opt-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>');
-                    } else if (!sel && check) {
-                        check.remove();
-                    }
+                container.querySelectorAll('.paint-chip-pill').forEach(b => {
+                    b.classList.toggle('is-active', b.dataset.paint === pid);
                 });
-                paintWrap.classList.remove('is-open');
+                const badgeWrap = container.querySelector('.selected-paint-badge-wrap');
+                if (badgeWrap) {
+                    badgeWrap.innerHTML = renderPaintBadgeHtml(Number(pid));
+                }
+                validateSwapInputs();
             });
         });
     }
@@ -1223,7 +1277,7 @@ function renderPresetItemsPage() {
 
     list.innerHTML = itemsToShow.map(s => {
         const slot = normItemSlot(s.slot || 'Item');
-        const paint = s.paint_id > 0 ? `<span class="quality-badge bg-uncommon" style="font-size:9px;padding:2px 5px;">Paint ${s.paint_id}</span>` : '';
+        const paint = s.paint_id > 0 ? renderPaintBadgeHtml(s.paint_id) : '';
         const decalBody = s.asset_package ? getItemDecalBody({ AssetPackage: s.asset_package, Product: s.owned_name, Slot: 'Decal' }) : (slot === 'Decal' ? getItemDecalBody({ Product: s.owned_name, Slot: 'Decal' }) : '');
         const decalPill = decalBody ? `<span style="font-size:10px;padding:2px 5px;background:rgba(91,140,255,0.18);color:#93c5fd;border-radius:3px;font-weight:600;margin-left:4px;">${escHtml(decalBody)}</span>` : '';
         return `
@@ -1757,7 +1811,7 @@ async function refreshBackups() {
                         <div class="backup-col-thumb-wrap">
                             ${renderThumb(pImg, fromName)}
                         </div>
-                        <span class="backup-col-paint">Default</span>
+                        ${renderPaintBadgeHtml(file.swap_from_paint || 0)}
                     </div>
 
                     <div class="backup-arrow-divider">
@@ -1772,7 +1826,7 @@ async function refreshBackups() {
                         <div class="backup-col-thumb-wrap">
                             ${renderThumb(targetImg, targetName)}
                         </div>
-                        <span class="backup-col-paint ${paintName ? 'is-painted' : ''}">${escHtml(paintName || 'Default')}</span>
+                        ${renderPaintBadgeHtml(paintName || file.paint_id || 0)}
                     </div>
                 </div>
                 <button type="button" class="restore-mini-btn" title="Restore this file">
@@ -4999,22 +5053,17 @@ function wirePaintSwatches(swatchId, selectId, selectedLabelId) {
         if (select) select.value = sid;
         if (selectedEl) selectedEl.textContent = paintLabel(sid);
 
-        const targetWrap = document.getElementById('card-paint-wanted-selected');
-        if (targetWrap) {
-            const dot = targetWrap.querySelector('.paint-dot');
-            const label = targetWrap.querySelector('.paint-label');
-            if (dot) dot.style.background = PAINT_SWATCH_COLORS[sid] || '#666';
-            if (label) label.textContent = sid === '0' ? 'Paint' : paintLabel(sid);
-            targetWrap.querySelectorAll('.card-paint-option').forEach(opt => {
-                const isSel = opt.dataset.paint === sid;
-                opt.classList.toggle('is-selected', isSel);
-                let check = opt.querySelector('.opt-check');
-                if (isSel && !check) {
-                    opt.insertAdjacentHTML('beforeend', '<svg class="opt-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>');
-                } else if (!isSel && check) {
-                    check.remove();
-                }
+        const wantedContainer = document.getElementById('wanted-selected');
+        if (wantedContainer) {
+            wantedPaintId = sid;
+            wantedContainer.querySelectorAll('.paint-chip-pill').forEach(b => {
+                b.classList.toggle('is-active', b.dataset.paint === sid);
             });
+            const badgeWrap = wantedContainer.querySelector('.selected-paint-badge-wrap');
+            if (badgeWrap) {
+                badgeWrap.innerHTML = renderPaintBadgeHtml(Number(sid));
+            }
+            validateSwapInputs();
         }
     };
 
@@ -5033,12 +5082,6 @@ function wirePaintSwatches(swatchId, selectId, selectedLabelId) {
     });
     setGlobalPaint(select?.value || '0');
 }
-
-document.addEventListener('click', (e) => {
-    if (!e.target.closest('.card-paint-wrap')) {
-        document.querySelectorAll('.card-paint-wrap.is-open').forEach(el => el.classList.remove('is-open'));
-    }
-});
 
 async function initTitlesTab() {
     if (!titlesTabReady) {
