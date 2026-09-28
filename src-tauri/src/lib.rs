@@ -1141,11 +1141,6 @@ pub(crate) async fn sync_all_swaps_to_tagame(
     }
 
     let items = get_items(app.clone(), None).await.unwrap_or_default();
-    let items_json = load_raw_items_json(app).unwrap_or_else(|_| {
-        serde_json::to_string(&serde_json::json!({ "Items": &items })).unwrap_or_default()
-    });
-    let opts = build_swap_opts(cooked.to_path_buf(), items_json);
-
     let mut tagame_items = Vec::new();
 
     for s in swaps {
@@ -1166,7 +1161,7 @@ pub(crate) async fn sync_all_swaps_to_tagame(
         let product_id = s.wanted_id;
 
         tagame_items.push(upk::TagameSwapItem {
-            slot: slot_str.clone(),
+            slot: slot_str,
             slot_index: Some(slot_index),
             owned_id: Some(s.owned_id),
             product_id,
@@ -1174,20 +1169,6 @@ pub(crate) async fn sync_all_swaps_to_tagame(
             custom_paint_hex: s.custom_paint_hex.clone(),
             package_name: Some(pkg),
         });
-
-        // Goal Explosions (Slot 10) are spawned in matches via their dedicated explosion package
-        let is_goal_explosion = slot_index == 10 || slot_str.to_lowercase().contains("explosion");
-        if is_goal_explosion && s.owned_id != s.wanted_id {
-            if let Err(e) = upk::swap_asset(
-                &s.owned_id.to_string(),
-                &s.wanted_id.to_string(),
-                s.paint_id,
-                &opts,
-            ) {
-                applog::event(&format!("Goal explosion swap error: {e}"));
-                return Err(format!("Goal explosion swap failed: {e}"));
-            }
-        }
     }
 
     let keys_txt = include_str!("../resources/keys.txt");
