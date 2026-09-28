@@ -257,61 +257,27 @@ pub async fn apply_preset(app: tauri::AppHandle, id: String) -> Result<Vec<Strin
         return Err("Game directory not set".to_string());
     }
 
+    let cooked = crate::upk::palette::resolve_cooked_dir(std::path::Path::new(&config.game_dir))
+        .unwrap_or_else(|_| std::path::PathBuf::from(&config.game_dir));
+
     let mut results = Vec::new();
     let mut applied: Vec<SwapEntry> = Vec::new();
 
     if !preset.swaps.is_empty() {
-        let _ = crate::get_items(app.clone(), None).await;
-        let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
-        let items_json = fs::read_to_string(config_dir.join("items.json"))
-            .map_err(|_| "Items database missing — check your internet connection and try again.".to_string())?;
-        let game_dir = crate::upk::palette::resolve_cooked_dir(std::path::Path::new(&config.game_dir))
-            .unwrap_or_else(|_| config.game_dir.clone().into());
-        let opts = crate::build_swap_opts(game_dir.clone(), items_json);
-        let items = crate::get_items(app.clone(), None).await.unwrap_or_default();
-
         for s in &preset.swaps {
-            let pkg = if !s.asset_package.is_empty() {
-                s.asset_package.clone()
+            let paint_str = if s.paint_id > 0 {
+                format!(" ({})", crate::upk::swapper::paint_label(s.paint_id))
             } else {
-                items
-                    .iter()
-                    .find(|i| i.id == s.owned_id)
-                    .map(|i| i.asset_package.clone())
-                    .unwrap_or_default()
+                String::new()
             };
-            if !pkg.is_empty() {
-                let bak = crate::integrity::bak_path_for(&game_dir.join(&pkg));
-                if bak.exists() {
-                    if let Some(bak_s) = bak.to_str() {
-                        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            crate::upk::restore_single(bak_s)
-                        }));
-                    }
-                }
-            }
-            let paint = if (0..=12).contains(&s.paint_id) { s.paint_id } else { 0 };
-            let label = format!(
-                "{} → {}{}",
-                s.owned_name,
-                s.wanted_name,
-                if paint > 0 { format!(" ({paint})") } else { String::new() }
-            );
-            match crate::run_swap_caught(&s.owned_id.to_string(), &s.wanted_id.to_string(), paint, &opts) {
-                Ok(_) => {
-                    results.push(format!("OK  {label}"));
-                    applied.push(s.clone());
-                }
-                Err(e) => results.push(format!("FAIL  {label}  ({e})")),
-            }
+            results.push(format!("OK  {} → {}{}", s.owned_name, s.wanted_name, paint_str));
+            applied.push(s.clone());
         }
 
-        let mut swaps = crate::load_swaps(&app);
-        for s in applied.iter() {
-            swaps.retain(|x| x.owned_id != s.owned_id);
-            swaps.push(s.clone());
+        crate::save_swaps(&app, &preset.swaps);
+        if let Err(e) = crate::sync_all_swaps_to_tagame(&app, &cooked, &preset.swaps).await {
+            return Err(format!("Failed to apply preset swaps: {e}"));
         }
-        crate::save_swaps(&app, &swaps);
     }
 
     let target_map_id = preset.active_map_id.as_ref().or_else(|| preset.maps.first().map(|m| &m.id));
@@ -666,59 +632,29 @@ pub async fn apply_swap_plan(
     if config.game_dir.is_empty() {
         return Err("Game directory not set".to_string());
     }
-    let _ = crate::get_items(app.clone(), None).await;
-    let config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
-    let items_json = fs::read_to_string(config_dir.join("items.json"))
-        .map_err(|_| "Items database missing — check your internet connection and try again.".to_string())?;
-    let game_dir = crate::upk::palette::resolve_cooked_dir(std::path::Path::new(&config.game_dir))
-        .unwrap_or_else(|_| config.game_dir.clone().into());
-    let opts = crate::build_swap_opts(game_dir.clone(), items_json);
-    let items = crate::get_items(app.clone(), None).await.unwrap_or_default();
+    let cooked = crate::upk::palette::resolve_cooked_dir(std::path::Path::new(&config.game_dir))
+        .unwrap_or_else(|_| std::path::PathBuf::from(&config.game_dir));
 
     let mut results = Vec::new();
-    let mut applied: Vec<SwapEntry> = Vec::new();
-    for s in &plan {
-        let pkg = if !s.asset_package.is_empty() {
-            s.asset_package.clone()
-        } else {
-            items
-                .iter()
-                .find(|i| i.id == s.owned_id)
-                .map(|i| i.asset_package.clone())
-                .unwrap_or_default()
-        };
-        if !pkg.is_empty() {
-            let bak = crate::integrity::bak_path_for(&game_dir.join(&pkg));
-            if bak.exists() {
-                if let Some(bak_s) = bak.to_str() {
-                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        crate::upk::restore_single(bak_s)
-                    }));
-                }
-            }
-        }
-        let label = format!("{} → {}", s.owned_name, s.wanted_name);
-        match crate::run_swap_caught(&s.owned_id.to_string(), &s.wanted_id.to_string(), 0, &opts) {
-            Ok(_) => {
-                results.push(format!("OK  {label}"));
-                applied.push(s.clone());
-            }
-            Err(e) => results.push(format!("FAIL  {label}  ({e})")),
-        }
-    }
-
     let mut swaps = crate::load_swaps(&app);
-    for s in applied.iter() {
+
+    for s in &plan {
         swaps.retain(|x| x.owned_id != s.owned_id);
         swaps.push(s.clone());
+        let paint_str = if s.paint_id > 0 {
+            format!(" ({})", crate::upk::swapper::paint_label(s.paint_id))
+        } else {
+            String::new()
+        };
+        results.push(format!("OK  {} → {}{}", s.owned_name, s.wanted_name, paint_str));
     }
-    crate::save_swaps(&app, &swaps);
-    append_history(&app, "random", &applied, "random loadout applied");
 
-    let fails = results.iter().filter(|r| r.starts_with("FAIL")).count();
-    if fails > 0 && applied.is_empty() {
-        return Err(format!("All {} swaps failed:\n{}", results.len(), results.join("\n")));
+    crate::save_swaps(&app, &swaps);
+    if let Err(e) = crate::sync_all_swaps_to_tagame(&app, &cooked, &swaps).await {
+        return Err(format!("Failed to apply random loadout: {e}"));
     }
+
+    append_history(&app, "random", &plan, "random loadout applied");
     Ok(results)
 }
 
