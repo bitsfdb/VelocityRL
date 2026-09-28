@@ -776,127 +776,19 @@ pub fn apply_tagame_modifications(
     }
 
     // 1. Ensure pristine backup exists
-    let source_path = if backup_path.is_file() {
-        &backup_path
-    } else {
-        fs::copy(&tagame_path, &backup_path).map_err(|e| {
-            TagameSwapError::Msg(format!("Failed to create backup {}: {e}", backup_path.display()))
-        })?;
-        &backup_path
-    };
+    if !backup_path.is_file() {
+        let _ = fs::copy(&tagame_path, &backup_path);
+    }
 
-    // 2. Always read from the pristine backup so changes are idempotent and never corrupt
-    let mut file_bytes = fs::read(source_path).map_err(|e| {
-        TagameSwapError::Msg(format!("Failed to read {}: {e}", source_path.display()))
-    })?;
-
-    // Check if custom color palette was enabled/applied. If so, apply rich palette to file_bytes first so palette is never reverted!
+    // 2. Safely sync TAGame.upk: If palette is applied, update palette in TAGame.upk. Otherwise restore pristine backup.
     let pal_st = crate::upk::palette::read_palette_status(cooked_dir, None);
     if pal_st.applied {
-        if let Ok(_) = crate::upk::palette::apply_rich_palette_to_file(cooked_dir, _keys_txt, keys_map_json) {
-            if let Ok(pal_bytes) = fs::read(&tagame_path) {
-                file_bytes = pal_bytes;
-            }
-        }
+        let _ = crate::upk::palette::apply_rich_palette_to_file(cooked_dir, _keys_txt, keys_map_json);
+    } else if backup_path.is_file() {
+        let _ = fs::copy(&backup_path, &tagame_path);
     }
 
-    // Decrypt and parse chunks dynamically
-    let (_summary, meta, plain_header, tagame_key, _) = crate::upk::palette::debug_decrypt(&file_bytes, _keys_txt, keys_map_json)
-        .map_err(|e| TagameSwapError::Msg(format!("Failed to decrypt TAGame.upk: {e}")))?;
-
-    let (_stride, chunks) = crate::upk::parser::parse_chunks_with_stride(&plain_header, meta.compressed_chunks_offset)
-        .map_err(|e| TagameSwapError::Msg(format!("Failed to parse chunks: {e}")))?;
-
-    if chunks.is_empty() {
-        return Err(TagameSwapError::Msg("TAGame has no chunks".into()));
-    }
-
-    // Collect slot overrides
-    let mut slot_overrides = Vec::new();
-    for s in swaps {
-        let slot_idx = if let Some(idx) = s.slot_index {
-            idx as u8
-        } else {
-            match s.slot.to_lowercase().as_str() {
-                "body" | "0" => 0,
-                "skin" | "decal" | "1" => 1,
-                "wheel" | "wheels" | "2" => 2,
-                "boost" | "rocket boost" | "rocketboost" | "3" => 3,
-                "antenna" | "4" => 4,
-                "topper" | "5" => 5,
-                "paint finish" | "paintfinish" | "paint" | "6" => 6,
-                "engine audio" | "engineaudio" | "8" => 8,
-                "trail" | "9" => 9,
-                "goal explosion" | "goalexplosion" | "10" => 10,
-                "player banner" | "playerbanner" | "banner" | "11" => 11,
-                "player anthem" | "playeranthem" | "anthem" | "music" | "12" => 12,
-                "avatar border" | "avatarborder" | "border" | "13" => 13,
-                _ => 10, // Default unknown non-matching cosmetics to Goal Explosion (10) instead of Body (0) to avoid mesh corruption
-            }
-        };
-        let pid = if s.product_id > 0 { s.product_id } else { 4284 };
-        slot_overrides.push(SlotSwapRule {
-            slot_idx,
-            owned_id: s.owned_id,
-            target_id: pid,
-        });
-    }
-
-    // Decompress Chunk 2 and patch LoadoutValidation_TA::CorrectOnlineData and PRI_TA::ValidateReplicatedLoadout in-place
-    if chunks.len() > 2 {
-        let c2 = &chunks[2];
-        let c2_payload = &file_bytes[c2.compressed_offset as usize..(c2.compressed_offset + c2.compressed_size as i64) as usize];
-        let mut decomp2 = crate::upk::compression::decompress_chunk(c2_payload)
-            .map_err(|e| TagameSwapError::Msg(format!("Failed to decompress Chunk 2: {e}")))?;
-
-        // CorrectOnlineData (#47859) - in-place bytecode patch
-        let func_off2_cod = 16098022 - c2.uncompressed_offset as usize;
-        if func_off2_cod + 48 <= decomp2.len() {
-            let orig_disk_sz_cod = u32::from_le_bytes(decomp2[func_off2_cod + 44..func_off2_cod + 48].try_into().unwrap()) as usize;
-            if orig_disk_sz_cod == 3000 {
-                let max_disk_sz2 = 3000usize;
-                let (payload2, mem_sz2) = emit_correct_online_data_bytecode(&slot_overrides, max_disk_sz2)?;
-                decomp2[func_off2_cod + 40..func_off2_cod + 44].copy_from_slice(&mem_sz2.to_le_bytes());
-                decomp2[func_off2_cod + 44..func_off2_cod + 48].copy_from_slice(&(max_disk_sz2 as u32).to_le_bytes());
-                decomp2[func_off2_cod + 48..func_off2_cod + 48 + max_disk_sz2].copy_from_slice(&payload2);
-            }
-        }
-
-        // ValidateReplicatedLoadout (#57832) - bypass to prevent online item stripping
-        let func_off2_val = 19522198 - c2.uncompressed_offset as usize;
-        if func_off2_val + 48 + 708 <= decomp2.len() {
-            let orig_disk_sz_val = u32::from_le_bytes(decomp2[func_off2_val + 44..func_off2_val + 48].try_into().unwrap()) as usize;
-            if orig_disk_sz_val == 708 {
-                let mut val_payload = vec![opcodes::EX_NOTHING; 708];
-                val_payload[0] = opcodes::EX_RETURN;
-                val_payload[1] = opcodes::EX_NOTHING;
-                val_payload[2] = opcodes::EX_END_OF_SCRIPT;
-                let val_mem_sz: u32 = 708;
-                decomp2[func_off2_val + 40..func_off2_val + 44].copy_from_slice(&val_mem_sz.to_le_bytes());
-                decomp2[func_off2_val + 48..func_off2_val + 48 + 708].copy_from_slice(&val_payload);
-            }
-        }
-
-        let mut recomp2 = crate::upk::compression::compress_chunk(&decomp2)
-            .map_err(|e| TagameSwapError::Msg(format!("Failed to compress Chunk 2: {e}")))?;
-        let orig_c_sz2 = c2.compressed_size as usize;
-        if recomp2.len() > orig_c_sz2 {
-            return Err(TagameSwapError::Msg(format!(
-                "Chunk 2 compressed size {} exceeded allocation {}",
-                recomp2.len(),
-                orig_c_sz2
-            )));
-        }
-        recomp2.resize(orig_c_sz2, 0);
-        file_bytes[c2.compressed_offset as usize..c2.compressed_offset as usize + orig_c_sz2].copy_from_slice(&recomp2);
-    }
-
-    // Write TAGame.upk safely
-    fs::write(&tagame_path, &file_bytes).map_err(|e| {
-        TagameSwapError::Msg(format!("Failed to write {}: {e}", tagame_path.display()))
-    })?;
-
-    // Apply material paint overrides (e.g. Fennec Black / custom hex / body_grain_SF)
+    // 3. Apply material paint overrides (e.g. Fennec Black / custom hex / body_grain_SF)
     for s in swaps {
         let pkg = s.package_name.as_deref().unwrap_or("body_grain_SF");
         let custom_hex_str = s.custom_paint_hex.as_deref();
