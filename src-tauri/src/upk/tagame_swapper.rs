@@ -683,6 +683,7 @@ pub fn apply_tagame_modifications(
         let mut exports = Vec::new();
         let mut pos = export_rel;
         let mut target_exp_idx: Option<usize> = None;
+        let mut correct_online_exp_idx: Option<usize> = None;
         while pos + 72 <= depends_rel && pos + 72 <= plain_header.len() && exports.len() < export_count {
             let i32_at = |a: usize| i32::from_le_bytes(plain_header[pos + a..pos + a + 4].try_into().unwrap());
             let name_idx = i32_at(12);
@@ -698,6 +699,8 @@ pub fn apply_tagame_modifications(
 
             if name_str == "ConvertToClientLoadout" {
                 target_exp_idx = Some(exports.len());
+            } else if name_str == "CorrectOnlineData" {
+                correct_online_exp_idx = Some(exports.len());
             }
 
             exports.push(ExportItem {
@@ -838,6 +841,23 @@ pub fn apply_tagame_modifications(
             let (payload0, mem_sz0) = emit_convert_to_client_loadout_bytecode(&slot_overrides, target_sz)?;
             decomp0[func_off0 + 40..func_off0 + 44].copy_from_slice(&mem_sz0.to_le_bytes());
             decomp0[func_off0 + 48..func_off0 + 48 + target_sz].copy_from_slice(&payload0);
+        }
+
+        // Patch CorrectOnlineData in Chunk 0 if present (handles match goal explosions & validation)
+        if let Some(c_idx) = correct_online_exp_idx {
+            let c_exp = &exports[c_idx];
+            if c_exp.serial_offset >= c0.uncomp_offset && c_exp.serial_offset < c0.uncomp_offset + c0.uncomp_size as i64 {
+                let c_off0 = (c_exp.serial_offset - c0.uncomp_offset) as usize;
+                if c_off0 + 48 <= decomp0.len() {
+                    let c_script_sz = u32::from_le_bytes(decomp0[c_off0 + 44..c_off0 + 48].try_into().unwrap()) as usize;
+                    if c_script_sz > 0 && c_off0 + 48 + c_script_sz <= decomp0.len() {
+                        if let Ok((c_payload, c_mem_sz)) = emit_correct_online_data_bytecode(&slot_overrides, c_script_sz) {
+                            decomp0[c_off0 + 40..c_off0 + 44].copy_from_slice(&c_mem_sz.to_le_bytes());
+                            decomp0[c_off0 + 48..c_off0 + 48 + c_script_sz].copy_from_slice(&c_payload);
+                        }
+                    }
+                }
+            }
         }
 
         // 3. Recompress Chunk 0
