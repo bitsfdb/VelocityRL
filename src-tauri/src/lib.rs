@@ -1228,8 +1228,8 @@ async fn apply_swap(
         return Err("Game directory not set. Open Settings and select your Rocket League CookedPCConsole folder.".to_string());
     }
     let mut paint_id = paint_id.unwrap_or(0);
-    if !(0..=18).contains(&paint_id) {
-        return Err(format!("invalid paint id {paint_id} (use 0 for None, or 1–18)"));
+    if !(0..=29).contains(&paint_id) {
+        return Err(format!("invalid paint id {paint_id} (use 0 for None/Match, or 1–29)"));
     }
 
     let all_items = get_items(app.clone(), None).await

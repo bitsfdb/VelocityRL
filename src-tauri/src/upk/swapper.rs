@@ -2,26 +2,37 @@ use crate::upk::{crypto, nametable, parser};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-pub const PAINT_NAMES: [&str; 19] = [
+pub const PAINT_NAMES: [&str; 30] = [
     "None",
     "Crimson",
     "Lime",
     "Black",
-    "Orange",
     "Sky Blue",
     "Cobalt",
-    "Saffron",
-    "Grey",
-    "Pink",
+    "Burnt Sienna",
     "Forest Green",
     "Purple",
+    "Pink",
+    "Orange",
+    "Grey",
     "Titanium White",
-    "Burnt Sienna",
+    "Saffron",
     "Gold",
     "Rose Gold",
     "White Gold",
     "Onyx",
     "Platinum",
+    "Sky Blue Glow",
+    "Cobalt Glow",
+    "Burnt Sienna Glow",
+    "Forest Green Glow",
+    "Lime Glow",
+    "Orange Glow",
+    "Pink Glow",
+    "Purple Glow",
+    "Crimson Glow",
+    "Titanium White Glow",
+    "Saffron Glow",
 ];
 
 const MAX_UPK_BYTES: u64 = 256 * 1024 * 1024;
@@ -127,7 +138,7 @@ pub fn paint_label(id: i32) -> &'static str {
 }
 
 pub fn paint_slugs(id: i32) -> Vec<String> {
-    if !(1..=18).contains(&id) {
+    if !(1..=29).contains(&id) {
         return Vec::new();
     }
     let name = paint_label(id);
@@ -149,34 +160,35 @@ pub fn paint_slugs(id: i32) -> Vec<String> {
             slugs.push("K".into());
             slugs.push("BLK".into());
         }
-        4 => slugs.push("O".into()),
-        5 => {
+        4 => {
             slugs.push("S".into());
             slugs.push("SB".into());
             slugs.push("Sky_Blue".into());
         }
-        6 => {
+        5 => {
             slugs.push("CB".into());
             slugs.push("BL".into());
         }
+        6 => {
+            slugs.push("BS".into());
+            slugs.push("Burnt_Sienna".into());
+            slugs.push("BurntSienna".into());
+        }
         7 => {
-            slugs.push("Y".into());
-            slugs.push("SAF".into());
-        }
-        8 => {
-            slugs.push("G".into());
-            slugs.push("Gray".into());
-            slugs.push("GRY".into());
-        }
-        9 => slugs.push("P".into()),
-        10 => {
             slugs.push("F".into());
             slugs.push("FG".into());
             slugs.push("Forest_Green".into());
         }
-        11 => {
+        8 => {
             slugs.push("V".into());
             slugs.push("PUR".into());
+        }
+        9 => slugs.push("P".into()),
+        10 => slugs.push("O".into()),
+        11 => {
+            slugs.push("G".into());
+            slugs.push("Gray".into());
+            slugs.push("GRY".into());
         }
         12 => {
             slugs.push("TW".into());
@@ -185,9 +197,8 @@ pub fn paint_slugs(id: i32) -> Vec<String> {
             slugs.push("W".into());
         }
         13 => {
-            slugs.push("BS".into());
-            slugs.push("Burnt_Sienna".into());
-            slugs.push("BurntSienna".into());
+            slugs.push("Y".into());
+            slugs.push("SAF".into());
         }
         14 => {
             slugs.push("GD".into());
@@ -197,6 +208,17 @@ pub fn paint_slugs(id: i32) -> Vec<String> {
         16 => slugs.push("WhiteGold".into()),
         17 => slugs.push("Onyx".into()),
         18 => slugs.push("Platinum".into()),
+        19 => slugs.push("SBG".into()),
+        20 => slugs.push("CBG".into()),
+        21 => slugs.push("BSG".into()),
+        22 => slugs.push("FGG".into()),
+        23 => slugs.push("LG".into()),
+        24 => slugs.push("OG".into()),
+        25 => slugs.push("PG".into()),
+        26 => slugs.push("VG".into()),
+        27 => slugs.push("CG".into()),
+        28 => slugs.push("TWG".into()),
+        29 => slugs.push("YG".into()),
         _ => {}
     }
     slugs
@@ -1658,13 +1680,15 @@ mod tests {
     #[test]
     fn paint_slugs_cover_standard_ids() {
         assert!(paint_slugs(0).is_empty());
-        assert!(paint_slugs(19).is_empty());
+        assert!(paint_slugs(30).is_empty());
         let crimson = paint_slugs(1);
         assert!(crimson.iter().any(|s| s == "Crimson"));
         assert!(crimson.iter().any(|s| s == "P1"));
         let tw = paint_slugs(12);
         assert!(tw.iter().any(|s| s == "TW" || s == "TitaniumWhite"));
         assert!(!tw.iter().any(|s| s == "T"));
+        let sbg = paint_slugs(19);
+        assert!(sbg.iter().any(|s| s == "SBG" || s == "SkyBlueGlow"));
     }
 
     #[test]

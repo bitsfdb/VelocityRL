@@ -1,0 +1,212 @@
+[
+  {
+    "id": 0,
+    "name": "None",
+    "abbr": "None",
+    "slug": "None",
+    "hex": "#4B5563"
+  },
+  {
+    "id": 1,
+    "name": "Crimson",
+    "abbr": "C",
+    "slug": "Crimson",
+    "hex": "#D4212B"
+  },
+  {
+    "id": 2,
+    "name": "Lime",
+    "abbr": "L",
+    "slug": "Lime",
+    "hex": "#A7E600"
+  },
+  {
+    "id": 3,
+    "name": "Black",
+    "abbr": "B",
+    "slug": "Black",
+    "hex": "#1E1E1E"
+  },
+  {
+    "id": 4,
+    "name": "Sky Blue",
+    "abbr": "SB",
+    "slug": "SkyBlue",
+    "hex": "#00B4FF"
+  },
+  {
+    "id": 5,
+    "name": "Cobalt",
+    "abbr": "CB",
+    "slug": "Cobalt",
+    "hex": "#1F45FC"
+  },
+  {
+    "id": 6,
+    "name": "Burnt Sienna",
+    "abbr": "BS",
+    "slug": "BurntSienna",
+    "hex": "#8B4513"
+  },
+  {
+    "id": 7,
+    "name": "Forest Green",
+    "abbr": "FG",
+    "slug": "ForestGreen",
+    "hex": "#2E8B57"
+  },
+  {
+    "id": 8,
+    "name": "Purple",
+    "abbr": "V",
+    "slug": "Purple",
+    "hex": "#800080"
+  },
+  {
+    "id": 9,
+    "name": "Pink",
+    "abbr": "P",
+    "slug": "Pink",
+    "hex": "#FF6EB4"
+  },
+  {
+    "id": 10,
+    "name": "Orange",
+    "abbr": "O",
+    "slug": "Orange",
+    "hex": "#FF7400"
+  },
+  {
+    "id": 11,
+    "name": "Grey",
+    "abbr": "G",
+    "slug": "Grey",
+    "hex": "#8A8A8A"
+  },
+  {
+    "id": 12,
+    "name": "Titanium White",
+    "abbr": "TW",
+    "slug": "TitaniumWhite",
+    "hex": "#F8F8FF"
+  },
+  {
+    "id": 13,
+    "name": "Saffron",
+    "abbr": "Y",
+    "slug": "Saffron",
+    "hex": "#FFF117"
+  },
+  {
+    "id": 14,
+    "name": "Gold",
+    "abbr": "GD",
+    "slug": "Gold",
+    "hex": "#FFD700"
+  },
+  {
+    "id": 15,
+    "name": "Rose Gold",
+    "abbr": "RG",
+    "slug": "RoseGold",
+    "hex": "#B76E79"
+  },
+  {
+    "id": 16,
+    "name": "White Gold",
+    "abbr": "WG",
+    "slug": "WhiteGold",
+    "hex": "#D4AF37"
+  },
+  {
+    "id": 17,
+    "name": "Onyx",
+    "abbr": "OX",
+    "slug": "Onyx",
+    "hex": "#353839"
+  },
+  {
+    "id": 18,
+    "name": "Platinum",
+    "abbr": "PL",
+    "slug": "Platinum",
+    "hex": "#E5E4E2"
+  },
+  {
+    "id": 19,
+    "name": "Sky Blue Glow",
+    "abbr": "SBG",
+    "slug": "SkyBlueGlow",
+    "hex": "#38BDF8"
+  },
+  {
+    "id": 20,
+    "name": "Cobalt Glow",
+    "abbr": "CBG",
+    "slug": "CobaltGlow",
+    "hex": "#3B82F6"
+  },
+  {
+    "id": 21,
+    "name": "Burnt Sienna Glow",
+    "abbr": "BSG",
+    "slug": "BurntSiennaGlow",
+    "hex": "#A26C45"
+  },
+  {
+    "id": 22,
+    "name": "Forest Green Glow",
+    "abbr": "FGG",
+    "slug": "ForestGreenGlow",
+    "hex": "#4ADE80"
+  },
+  {
+    "id": 23,
+    "name": "Lime Glow",
+    "abbr": "LG",
+    "slug": "LimeGlow",
+    "hex": "#BEF264"
+  },
+  {
+    "id": 24,
+    "name": "Orange Glow",
+    "abbr": "OG",
+    "slug": "OrangeGlow",
+    "hex": "#FB923C"
+  },
+  {
+    "id": 25,
+    "name": "Pink Glow",
+    "abbr": "PG",
+    "slug": "PinkGlow",
+    "hex": "#F472B6"
+  },
+  {
+    "id": 26,
+    "name": "Purple Glow",
+    "abbr": "VG",
+    "slug": "PurpleGlow",
+    "hex": "#C084FC"
+  },
+  {
+    "id": 27,
+    "name": "Crimson Glow",
+    "abbr": "CG",
+    "slug": "CrimsonGlow",
+    "hex": "#F87171"
+  },
+  {
+    "id": 28,
+    "name": "Titanium White Glow",
+    "abbr": "TWG",
+    "slug": "TitaniumWhiteGlow",
+    "hex": "#FFFFFF"
+  },
+  {
+    "id": 29,
+    "name": "Saffron Glow",
+    "abbr": "YG",
+    "slug": "SaffronGlow",
+    "hex": "#FDE047"
+  }
+]

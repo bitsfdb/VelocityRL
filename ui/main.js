@@ -404,21 +404,30 @@ function getQualityBgClass(q) {
 }
 
 const PAINT_NAMES = {
-    0: 'None', 1: 'Crimson', 2: 'Lime', 3: 'Black', 4: 'Orange', 5: 'Sky Blue',
-    6: 'Cobalt', 7: 'Saffron', 8: 'Grey', 9: 'Pink', 10: 'Forest Green',
-    11: 'Purple', 12: 'Titanium White', 13: 'Burnt Sienna', 14: 'Gold',
+    0: 'All Paints (Match Equipped)',
+    1: 'Crimson', 2: 'Lime', 3: 'Black', 4: 'Sky Blue', 5: 'Cobalt',
+    6: 'Burnt Sienna', 7: 'Forest Green', 8: 'Purple', 9: 'Pink', 10: 'Orange',
+    11: 'Grey', 12: 'Titanium White', 13: 'Saffron', 14: 'Gold',
     15: 'Rose Gold', 16: 'White Gold', 17: 'Onyx', 18: 'Platinum',
+    19: 'Sky Blue Glow', 20: 'Cobalt Glow', 21: 'Burnt Sienna Glow',
+    22: 'Forest Green Glow', 23: 'Lime Glow', 24: 'Orange Glow',
+    25: 'Pink Glow', 26: 'Purple Glow', 27: 'Crimson Glow',
+    28: 'Titanium White Glow', 29: 'Saffron Glow',
 };
 
 const PAINT_SWATCH_COLORS = {
     0: 'linear-gradient(135deg, #333 45%, #777 45%, #777 55%, #333 55%)',
-    1: '#DC143C', 2: '#32CD32', 3: '#0a0a0a', 4: '#FF8C00', 5: '#87CEEB',
-    6: '#0047AB', 7: '#F4C430', 8: '#808080', 9: '#FF69B4', 10: '#228B22',
-    11: '#800080', 12: '#F5F5F5', 13: '#8B4513', 14: '#FFD700',
-    15: '#B76E79', 16: '#D4AF37', 17: '#353839', 18: '#E5E4E2'
+    1: '#DC143C', 2: '#32CD32', 3: '#0a0a0a', 4: '#00B4FF', 5: '#0047AB',
+    6: '#8B4513', 7: '#228B22', 8: '#800080', 9: '#FF69B4', 10: '#FF8C00',
+    11: '#808080', 12: '#F5F5F5', 13: '#F4C430', 14: '#FFD700',
+    15: '#B76E79', 16: '#D4AF37', 17: '#353839', 18: '#E5E4E2',
+    19: '#38BDF8', 20: '#3B82F6', 21: '#A26C45', 22: '#4ADE80',
+    23: '#BEF264', 24: '#FB923C', 25: '#F472B6', 26: '#C084FC',
+    27: '#F87171', 28: '#FFFFFF', 29: '#FDE047',
 };
 
 function paintLabel(id) {
+    if (Number(id) === 0) return 'All Paints (Match Equipped)';
     return PAINT_NAMES[id] || PAINT_NAMES[String(id)] || `Paint ${id}`;
 }
 
@@ -440,15 +449,19 @@ function renderSelectedItem(container, item, onClear) {
     const decalBody = getItemDecalBody(item);
     const decalBadge = decalBody ? `<span class="quality-badge" style="background:rgba(91,140,255,0.18);color:#93c5fd;border:1px solid rgba(91,140,255,0.35);">${escHtml(decalBody)} Decal</span>` : '';
 
-    const currentPaintId = Number((isTarget ? wantedPaintId : ownedPaintId) || 0);
-    const currentPaintName = currentPaintId > 0 ? paintLabel(currentPaintId) : 'Paint';
     const isPaintable = itemIsPaintable(item);
+    if (!isPaintable) {
+        if (isTarget) wantedPaintId = '0';
+        else ownedPaintId = '0';
+    }
+    const currentPaintId = Number((isTarget ? wantedPaintId : ownedPaintId) || 0);
+    const currentPaintName = currentPaintId > 0 ? paintLabel(currentPaintId) : 'All Paints (Match Equipped)';
 
     const itemPaintsList = Array.isArray(item.Paints) && item.Paints.length > 0 
         ? item.Paints 
         : (Array.isArray(item.paints) && item.paints.length > 0 ? item.paints : null);
 
-    let displayPaints = [{ id: 0, name: 'Default / None' }];
+    let displayPaints = [{ id: 0, name: 'All Paints (Match Equipped)' }];
     if (itemPaintsList) {
         for (const p of itemPaintsList) {
             const pid = Number(p.id ?? p.ID);
@@ -457,7 +470,7 @@ function renderSelectedItem(container, item, onClear) {
                 displayPaints.push({ id: pid, name: pname });
             }
         }
-    } else {
+    } else if (isPaintable) {
         for (const [pid, pname] of Object.entries(PAINT_NAMES)) {
             const numId = Number(pid);
             if (numId > 0) {
@@ -487,7 +500,17 @@ function renderSelectedItem(container, item, onClear) {
         </div>
     ` : '';
 
+    const clearBtnHtml = `
+        <button type="button" class="card-clear-btn" title="Clear selection" aria-label="Clear selection">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+        </button>
+    `;
+
     container.innerHTML = `
+        ${clearBtnHtml}
         ${paintMenuHtml}
         ${pImg ? `<img src="${escHtml(pImg)}" class="selected-img" />` : ''}
         <h2>${escHtml(pName)}</h2>
@@ -497,6 +520,14 @@ function renderSelectedItem(container, item, onClear) {
         </div>
         <p class="item-slot-label">${escHtml(pSlot)}${decalBody ? ` (${escHtml(decalBody)})` : ''}</p>
     `;
+
+    const clearBtn = container.querySelector('.card-clear-btn');
+    if (clearBtn && typeof onClear === 'function') {
+        clearBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            onClear();
+        });
+    }
 
     const paintWrap = container.querySelector('.card-paint-wrap');
     if (paintWrap) {
@@ -1927,7 +1958,35 @@ function itemIsPaintable(item) {
     if (!item) return false;
     const slot = normSlot(item.Slot || item.slot || item.Type || item.type);
     if (UNPAINTABLE_SLOTS.has(slot)) return false;
-    return true;
+
+    // Check explicit Paintable boolean/flag on item
+    if (item.Paintable !== undefined) {
+        const flag = coercePaintableFlag(item.Paintable);
+        if (flag !== null) return flag;
+    }
+    if (item.paintable !== undefined) {
+        const flag = coercePaintableFlag(item.paintable);
+        if (flag !== null) return flag;
+    }
+
+    // Check Paints array
+    if (Array.isArray(item.Paints)) {
+        return item.Paints.length > 0;
+    }
+    if (Array.isArray(item.paints)) {
+        return item.paints.length > 0;
+    }
+
+    // Check Attributes list if present
+    for (const entry of itemAttrEntries(item)) {
+        const k = attrKey(entry);
+        if (k === 'paintable' || k === 'ispaintable') {
+            const flag = coercePaintableFlag(attrValue(entry));
+            if (flag !== null) return flag;
+        }
+    }
+
+    return false;
 }
 
 function findItemByProductId(productId) {

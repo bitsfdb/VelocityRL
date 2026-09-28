@@ -29,38 +29,38 @@
   },
   {
     "id": 4,
-    "name": "Orange",
-    "abbr": "O",
-    "slug": "Orange",
-    "hex": "#FF7400"
-  },
-  {
-    "id": 5,
     "name": "Sky Blue",
     "abbr": "SB",
     "slug": "SkyBlue",
     "hex": "#00B4FF"
   },
   {
-    "id": 6,
+    "id": 5,
     "name": "Cobalt",
     "abbr": "CB",
     "slug": "Cobalt",
     "hex": "#1F45FC"
   },
   {
+    "id": 6,
+    "name": "Burnt Sienna",
+    "abbr": "BS",
+    "slug": "BurntSienna",
+    "hex": "#8B4513"
+  },
+  {
     "id": 7,
-    "name": "Saffron",
-    "abbr": "Y",
-    "slug": "Saffron",
-    "hex": "#FFF117"
+    "name": "Forest Green",
+    "abbr": "FG",
+    "slug": "ForestGreen",
+    "hex": "#2E8B57"
   },
   {
     "id": 8,
-    "name": "Grey",
-    "abbr": "G",
-    "slug": "Grey",
-    "hex": "#8A8A8A"
+    "name": "Purple",
+    "abbr": "V",
+    "slug": "Purple",
+    "hex": "#800080"
   },
   {
     "id": 9,
@@ -71,17 +71,17 @@
   },
   {
     "id": 10,
-    "name": "Forest Green",
-    "abbr": "FG",
-    "slug": "ForestGreen",
-    "hex": "#2E8B57"
+    "name": "Orange",
+    "abbr": "O",
+    "slug": "Orange",
+    "hex": "#FF7400"
   },
   {
     "id": 11,
-    "name": "Purple",
-    "abbr": "V",
-    "slug": "Purple",
-    "hex": "#800080"
+    "name": "Grey",
+    "abbr": "G",
+    "slug": "Grey",
+    "hex": "#8A8A8A"
   },
   {
     "id": 12,
@@ -92,10 +92,10 @@
   },
   {
     "id": 13,
-    "name": "Burnt Sienna",
-    "abbr": "BS",
-    "slug": "BurntSienna",
-    "hex": "#8B4513"
+    "name": "Saffron",
+    "abbr": "Y",
+    "slug": "Saffron",
+    "hex": "#FFF117"
   },
   {
     "id": 14,
@@ -131,5 +131,82 @@
     "abbr": "PL",
     "slug": "Platinum",
     "hex": "#E5E4E2"
+  },
+  {
+    "id": 19,
+    "name": "Sky Blue Glow",
+    "abbr": "SBG",
+    "slug": "SkyBlueGlow",
+    "hex": "#38BDF8"
+  },
+  {
+    "id": 20,
+    "name": "Cobalt Glow",
+    "abbr": "CBG",
+    "slug": "CobaltGlow",
+    "hex": "#3B82F6"
+  },
+  {
+    "id": 21,
+    "name": "Burnt Sienna Glow",
+    "abbr": "BSG",
+    "slug": "BurntSiennaGlow",
+    "hex": "#A26C45"
+  },
+  {
+    "id": 22,
+    "name": "Forest Green Glow",
+    "abbr": "FGG",
+    "slug": "ForestGreenGlow",
+    "hex": "#4ADE80"
+  },
+  {
+    "id": 23,
+    "name": "Lime Glow",
+    "abbr": "LG",
+    "slug": "LimeGlow",
+    "hex": "#BEF264"
+  },
+  {
+    "id": 24,
+    "name": "Orange Glow",
+    "abbr": "OG",
+    "slug": "OrangeGlow",
+    "hex": "#FB923C"
+  },
+  {
+    "id": 25,
+    "name": "Pink Glow",
+    "abbr": "PG",
+    "slug": "PinkGlow",
+    "hex": "#F472B6"
+  },
+  {
+    "id": 26,
+    "name": "Purple Glow",
+    "abbr": "VG",
+    "slug": "PurpleGlow",
+    "hex": "#C084FC"
+  },
+  {
+    "id": 27,
+    "name": "Crimson Glow",
+    "abbr": "CG",
+    "slug": "CrimsonGlow",
+    "hex": "#F87171"
+  },
+  {
+    "id": 28,
+    "name": "Titanium White Glow",
+    "abbr": "TWG",
+    "slug": "TitaniumWhiteGlow",
+    "hex": "#FFFFFF"
+  },
+  {
+    "id": 29,
+    "name": "Saffron Glow",
+    "abbr": "YG",
+    "slug": "SaffronGlow",
+    "hex": "#FDE047"
   }
 ]
