@@ -444,6 +444,28 @@ function renderSelectedItem(container, item, onClear) {
     const currentPaintName = currentPaintId > 0 ? paintLabel(currentPaintId) : 'Paint';
     const isPaintable = itemIsPaintable(item);
 
+    const itemPaintsList = Array.isArray(item.Paints) && item.Paints.length > 0 
+        ? item.Paints 
+        : (Array.isArray(item.paints) && item.paints.length > 0 ? item.paints : null);
+
+    let displayPaints = [{ id: 0, name: 'Default / None' }];
+    if (itemPaintsList) {
+        for (const p of itemPaintsList) {
+            const pid = Number(p.id ?? p.ID);
+            const pname = p.label || p.Label || p.name || p.Name || paintLabel(pid);
+            if (pid > 0 && !displayPaints.some(dp => dp.id === pid)) {
+                displayPaints.push({ id: pid, name: pname });
+            }
+        }
+    } else {
+        for (const [pid, pname] of Object.entries(PAINT_NAMES)) {
+            const numId = Number(pid);
+            if (numId > 0) {
+                displayPaints.push({ id: numId, name: pname });
+            }
+        }
+    }
+
     const paintMenuHtml = isPaintable ? `
         <div class="card-paint-wrap" id="card-paint-${container.id}">
             <button type="button" class="card-paint-btn" title="Choose Paint Color" aria-label="Choose Paint">
@@ -454,11 +476,11 @@ function renderSelectedItem(container, item, onClear) {
                 </svg>
             </button>
             <div class="card-paint-dropdown">
-                ${Object.entries(PAINT_NAMES).map(([pid, pname]) => `
-                    <button type="button" class="card-paint-option${Number(pid) === currentPaintId ? ' is-selected' : ''}" data-paint="${pid}">
-                        <span class="opt-swatch" style="background:${PAINT_SWATCH_COLORS[pid] || '#666'}"></span>
-                        <span class="opt-name">${escHtml(pname)}</span>
-                        ${Number(pid) === currentPaintId ? `<svg class="opt-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>` : ''}
+                ${displayPaints.map(p => `
+                    <button type="button" class="card-paint-option${p.id === currentPaintId ? ' is-selected' : ''}" data-paint="${p.id}">
+                        <span class="opt-swatch" style="background:${PAINT_SWATCH_COLORS[p.id] || '#666'}"></span>
+                        <span class="opt-name">${escHtml(p.name)}</span>
+                        ${p.id === currentPaintId ? `<svg class="opt-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>` : ''}
                     </button>
                 `).join('')}
             </div>
