@@ -3761,28 +3761,8 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack.windows(needle.len()).position(|w| w == needle)
 }
 
-fn expand_rank_placeholders(text: &str) -> String {
-    text.replace("{Legend}", "Supersonic Legend")
-        .replace("{legend}", "Supersonic Legend")
-        .replace("{GrandChampion}", "Grand Champion")
-        .replace("{grandchampion}", "Grand Champion")
-        .replace("{Champion}", "Champion")
-        .replace("{champion}", "Champion")
-        .replace("{Diamond}", "Diamond")
-        .replace("{diamond}", "Diamond")
-        .replace("{Platinum}", "Platinum")
-        .replace("{platinum}", "Platinum")
-        .replace("{Gold}", "Gold")
-        .replace("{gold}", "Gold")
-        .replace("{Silver}", "Silver")
-        .replace("{silver}", "Silver")
-        .replace("{Bronze}", "Bronze")
-        .replace("{bronze}", "Bronze")
-}
-
 fn replace_equip_text(body: &[u8], equip_id: &str, new_text: &str) -> Option<Vec<u8>> {
-    let expanded = expand_rank_placeholders(new_text);
-    let encoded_json = serde_json::to_string(&expanded).ok()?;
+    let encoded_json = serde_json::to_string(new_text).ok()?;
     if encoded_json.len() < 2 {
         return None;
     }
