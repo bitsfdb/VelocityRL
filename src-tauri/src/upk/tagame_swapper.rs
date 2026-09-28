@@ -45,6 +45,8 @@ pub struct TagameSwapItem {
     #[serde(default)]
     pub paint_id: Option<i32>,
     #[serde(default)]
+    pub custom_paint_hex: Option<String>,
+    #[serde(default)]
     pub package_name: Option<String>,
 }
 
@@ -590,23 +592,47 @@ fn get_paint_rgba(paint_id: i32) -> [u8; 16] {
     out
 }
 
+pub fn hex_to_linear_rgba(hex: &str) -> [u8; 16] {
+    let clean = hex.trim().trim_start_matches('#');
+    let (r_srgb, g_srgb, b_srgb) = if clean.len() >= 6 {
+        let r = u8::from_str_radix(&clean[0..2], 16).unwrap_or(255) as f32 / 255.0;
+        let g = u8::from_str_radix(&clean[2..4], 16).unwrap_or(255) as f32 / 255.0;
+        let b = u8::from_str_radix(&clean[4..6], 16).unwrap_or(255) as f32 / 255.0;
+        (r, g, b)
+    } else if clean.len() == 3 {
+        let r = u8::from_str_radix(&clean[0..1].repeat(2), 16).unwrap_or(255) as f32 / 255.0;
+        let g = u8::from_str_radix(&clean[1..2].repeat(2), 16).unwrap_or(255) as f32 / 255.0;
+        let b = u8::from_str_radix(&clean[2..3].repeat(2), 16).unwrap_or(255) as f32 / 255.0;
+        (r, g, b)
+    } else {
+        (1.0, 1.0, 1.0)
+    };
+
+    let r_linear = r_srgb.powf(2.2);
+    let g_linear = g_srgb.powf(2.2);
+    let b_linear = b_srgb.powf(2.2);
+    let a_linear = 1.0f32;
+
+    let mut out = [0u8; 16];
+    out[0..4].copy_from_slice(&r_linear.to_le_bytes());
+    out[4..8].copy_from_slice(&g_linear.to_le_bytes());
+    out[8..12].copy_from_slice(&b_linear.to_le_bytes());
+    out[12..16].copy_from_slice(&a_linear.to_le_bytes());
+    out
+}
+
 pub fn apply_body_paint_modification(
     cooked_dir: &Path,
     package_name: &str,
     paint_id: i32,
+    custom_hex: Option<&str>,
     keys_map_json: &str,
 ) -> Result<(), TagameSwapError> {
-    let pkg_file_name = if package_name.ends_with(".upk") {
-        package_name.to_string()
-    } else {
-        format!("{package_name}.upk")
+    let (pkg_path, actual_file_name) = match crate::upk::swapper::resolve_package_path(cooked_dir, package_name) {
+        Some(res) => res,
+        None => return Ok(()),
     };
-    let pkg_path = cooked_dir.join(&pkg_file_name);
-    let backup_path = cooked_dir.join(format!("{pkg_file_name}.bak"));
-
-    if !pkg_path.is_file() {
-        return Ok(());
-    }
+    let backup_path = cooked_dir.join(format!("{actual_file_name}.bak"));
 
     if !backup_path.is_file() {
         let _ = fs::copy(&pkg_path, &backup_path);
@@ -634,7 +660,7 @@ pub fn apply_body_paint_modification(
     }
 
     let keys_map = crypto::load_keys_map(keys_map_json);
-    let key_name = package_name.trim_end_matches(".upk").to_lowercase();
+    let key_name = actual_file_name.trim_end_matches(".upk").to_lowercase();
     let key = keys_map
         .get(&key_name)
         .copied()
@@ -665,18 +691,29 @@ pub fn apply_body_paint_modification(
     let mut decomp = Vec::new();
     decoder.read_to_end(&mut decomp)?;
 
-    let target_rgba = get_paint_rgba(paint_id);
+    let target_rgba = if let Some(hex) = custom_hex.filter(|h| !h.trim().is_empty()) {
+        hex_to_linear_rgba(hex)
+    } else {
+        get_paint_rgba(paint_id)
+    };
 
-    // CustomColor pattern (0.0663)
-    let p1 = [0x25, 0xc6, 0x87, 0x3d, 0x25, 0xc6, 0x87, 0x3d, 0x25, 0xc6, 0x87, 0x3d, 0x00, 0x00, 0x80, 0x3f];
-    if let Some(pos) = decomp.windows(16).position(|w| w == p1) {
-        decomp[pos..pos+16].copy_from_slice(&target_rgba);
-    }
+    // Replace all material instance vector parameter patterns across decompressed chunk
+    let patterns = [
+        // 0.0663 f32 (CustomColor stock on Fennec/Dominus/Octane)
+        [0x25, 0xc6, 0x87, 0x3d, 0x25, 0xc6, 0x87, 0x3d, 0x25, 0xc6, 0x87, 0x3d, 0x00, 0x00, 0x80, 0x3f],
+        // 0.12 f32 (TrimColor stock)
+        [0x8f, 0xc2, 0xf5, 0x3d, 0x8f, 0xc2, 0xf5, 0x3d, 0x8f, 0xc2, 0xf5, 0x3d, 0x00, 0x00, 0x80, 0x3f],
+        // 0.05 f32
+        [0xcd, 0xcc, 0x4c, 0x3d, 0xcd, 0xcc, 0x4c, 0x3d, 0xcd, 0xcc, 0x4c, 0x3d, 0x00, 0x00, 0x80, 0x3f],
+    ];
 
-    // TrimColor pattern (0.12)
-    let p2 = [0x8f, 0xc2, 0xf5, 0x3d, 0x8f, 0xc2, 0xf5, 0x3d, 0x8f, 0xc2, 0xf5, 0x3d, 0x00, 0x00, 0x80, 0x3f];
-    if let Some(pos) = decomp.windows(16).position(|w| w == p2) {
-        decomp[pos..pos+16].copy_from_slice(&target_rgba);
+    for p in &patterns {
+        let mut search_from = 0;
+        while let Some(rel) = decomp[search_from..].windows(16).position(|w| w == p) {
+            let pos = search_from + rel;
+            decomp[pos..pos + 16].copy_from_slice(&target_rgba);
+            search_from = pos + 16;
+        }
     }
 
     // Recompress Chunk 0
@@ -764,7 +801,7 @@ pub fn apply_tagame_modifications(
     }
 
     // Decrypt and parse chunks dynamically
-    let (_summary, meta, mut plain_header, _, _) = crate::upk::palette::debug_decrypt(&file_bytes, _keys_txt, keys_map_json)
+    let (_summary, meta, plain_header, tagame_key, _) = crate::upk::palette::debug_decrypt(&file_bytes, _keys_txt, keys_map_json)
         .map_err(|e| TagameSwapError::Msg(format!("Failed to decrypt TAGame.upk: {e}")))?;
 
     let (_stride, chunks) = crate::upk::parser::parse_chunks_with_stride(&plain_header, meta.compressed_chunks_offset)
@@ -773,12 +810,6 @@ pub fn apply_tagame_modifications(
     if chunks.is_empty() {
         return Err(TagameSwapError::Msg("TAGame has no chunks".into()));
     }
-
-    let c0 = &chunks[0];
-
-    let c0_payload = &file_bytes[c0.compressed_offset as usize..(c0.compressed_offset + c0.compressed_size as i64) as usize];
-    let mut decomp0 = crate::upk::compression::decompress_chunk(c0_payload)
-        .map_err(|e| TagameSwapError::Msg(format!("Failed to decompress Chunk 0: {e}")))?;
 
     // Collect slot overrides
     let mut slot_overrides = Vec::new();
@@ -811,129 +842,29 @@ pub fn apply_tagame_modifications(
         });
     }
 
-    let export_count = _summary.export_count as usize;
-    let export_offset = _summary.export_offset as usize;
-    let name_offset = _summary.name_offset as usize;
-    let depends_offset = _summary.depends_offset as usize;
-
-    let export_rel = export_offset.saturating_sub(name_offset);
-    let depends_rel = depends_offset.saturating_sub(name_offset);
-    let mut exports = Vec::new();
-    let mut pos = export_rel;
-    while pos + 72 <= depends_rel && pos + 72 <= plain_header.len() && exports.len() < export_count {
-        let i32_at = |a: usize| i32::from_le_bytes(plain_header[pos + a..pos + a + 4].try_into().unwrap());
-        let noc = i32_at(48);
-        exports.push((pos, i32_at(0), i32_at(8), i32_at(12), i32_at(32), i64::from_le_bytes(plain_header[pos + 36..pos + 44].try_into().unwrap())));
-        pos += 72 + (noc.max(0) as usize) * 4;
-    }
-
-    if exports.len() < 16587 {
-        return Err(TagameSwapError::Msg(format!("TAGame exports table truncated (found {} exports, expected at least 16587)", exports.len())));
-    }
-
-    let delta1 = 1500usize;
-    let delta2 = 1500usize;
-    let total_delta = delta1 + delta2;
-    let max_disk_sz0 = 124 + delta1;
-    let max_disk_sz_set = 186 + delta2;
-
-    let exp_78_pos = exports[77].0;
-    let exp_78_off = exports[77].5 as usize;
-    let exp_78_sz = exports[77].4 as usize;
-
-    let exp_set_pos = exports[16587 - 1].0;
-    let exp_set_off = exports[16587 - 1].5 as usize;
-    let exp_set_sz = exports[16587 - 1].4 as usize;
-
-    // 1. Update export table in plain_header
-    let new_sz0 = (exp_78_sz + delta1) as i32;
-    plain_header[exp_78_pos + 32..exp_78_pos + 36].copy_from_slice(&new_sz0.to_le_bytes());
-
-    let new_sz_set = (exp_set_sz + delta2) as i32;
-    plain_header[exp_set_pos + 32..exp_set_pos + 36].copy_from_slice(&new_sz_set.to_le_bytes());
-
-    for e in &exports {
-        let e_off = e.5 as usize;
-        let mut shift = 0i64;
-        if e_off > exp_78_off {
-            shift += delta1 as i64;
-        }
-        if e_off > exp_set_off {
-            shift += delta2 as i64;
-        }
-        if shift > 0 {
-            let new_off = e_off as i64 + shift;
-            plain_header[e.0 + 36..e.0 + 44].copy_from_slice(&new_off.to_le_bytes());
-        }
-    }
-
-    // 2. Update chunk table in plain_header
-    let chunk_table_offset = meta.compressed_chunks_offset as usize;
-    let c0_entry = chunk_table_offset + 4;
-
-    // Chunk 0 uncompressed size
-    let c0_usz = u32::from_le_bytes(plain_header[c0_entry + 8..c0_entry + 12].try_into().unwrap()) as usize + total_delta;
-    plain_header[c0_entry + 8..c0_entry + 12].copy_from_slice(&(c0_usz as u32).to_le_bytes());
-
-    // Subsequent chunks uncompressed offset (64-bit integer)
-    for i in 1..chunks.len() {
-        let p = c0_entry + i * _stride;
-        let u_off = u64::from_le_bytes(plain_header[p..p + 8].try_into().unwrap()) + total_delta as u64;
-        plain_header[p..p + 8].copy_from_slice(&u_off.to_le_bytes());
-    }
-
-    // 3. Decompress Chunk 0, splice deltas right after bytecode (preserving 19-byte trailers), inject bytecodes
-    let func_off0_1 = exp_78_off - c0.uncompressed_offset as usize;
-    let orig_disk_sz1 = u32::from_le_bytes(decomp0[func_off0_1 + 44..func_off0_1 + 48].try_into().unwrap()) as usize;
-    let insert_pos1 = func_off0_1 + 48 + orig_disk_sz1;
-    decomp0.splice(insert_pos1..insert_pos1, vec![opcodes::EX_NOTHING; delta1]);
-
-    let (payload0, mem_sz0) = emit_convert_to_client_loadout_bytecode(&slot_overrides, max_disk_sz0)?;
-    decomp0[func_off0_1 + 40..func_off0_1 + 44].copy_from_slice(&mem_sz0.to_le_bytes());
-    decomp0[func_off0_1 + 44..func_off0_1 + 48].copy_from_slice(&(max_disk_sz0 as u32).to_le_bytes());
-    decomp0[func_off0_1 + 48..func_off0_1 + 48 + max_disk_sz0].copy_from_slice(&payload0);
-
-    let func_off0_2 = (exp_set_off + delta1) - c0.uncompressed_offset as usize;
-    let orig_disk_sz2 = u32::from_le_bytes(decomp0[func_off0_2 + 44..func_off0_2 + 48].try_into().unwrap()) as usize;
-    let insert_pos2 = func_off0_2 + 48 + orig_disk_sz2;
-    decomp0.splice(insert_pos2..insert_pos2, vec![opcodes::EX_NOTHING; delta2]);
-
-    let (payload_set, mem_sz_set) = emit_car_set_loadout_bytecode(&slot_overrides, max_disk_sz_set)?;
-    decomp0[func_off0_2 + 40..func_off0_2 + 44].copy_from_slice(&mem_sz_set.to_le_bytes());
-    decomp0[func_off0_2 + 44..func_off0_2 + 48].copy_from_slice(&(max_disk_sz_set as u32).to_le_bytes());
-    decomp0[func_off0_2 + 48..func_off0_2 + 48 + max_disk_sz_set].copy_from_slice(&payload_set);
-
-    let mut recomp0 = crate::upk::compression::compress_chunk(&decomp0)
-        .map_err(|e| TagameSwapError::Msg(format!("Failed to compress Chunk 0: {e}")))?;
-    let orig_c_sz0 = c0.compressed_size as usize;
-    if recomp0.len() > orig_c_sz0 {
-        return Err(TagameSwapError::Msg(format!("Chunk 0 compressed size {} exceeded allocation {}", recomp0.len(), orig_c_sz0)));
-    }
-    recomp0.resize(orig_c_sz0, 0);
-    file_bytes[c0.compressed_offset as usize..c0.compressed_offset as usize + orig_c_sz0].copy_from_slice(&recomp0);
-
-    // 4. Decompress Chunk 2 and patch LoadoutValidation_TA::CorrectOnlineData and PRI_TA::ValidateReplicatedLoadout in-place
+    // Decompress Chunk 2 and patch LoadoutValidation_TA::CorrectOnlineData and PRI_TA::ValidateReplicatedLoadout in-place
     if chunks.len() > 2 {
         let c2 = &chunks[2];
         let c2_payload = &file_bytes[c2.compressed_offset as usize..(c2.compressed_offset + c2.compressed_size as i64) as usize];
         let mut decomp2 = crate::upk::compression::decompress_chunk(c2_payload)
             .map_err(|e| TagameSwapError::Msg(format!("Failed to decompress Chunk 2: {e}")))?;
 
-        // CorrectOnlineData (#47859)
+        // CorrectOnlineData (#47859) - in-place bytecode patch
         let func_off2_cod = 16098022 - c2.uncompressed_offset as usize;
-        let orig_disk_sz_cod = u32::from_le_bytes(decomp2[func_off2_cod + 44..func_off2_cod + 48].try_into().unwrap()) as usize;
-        if orig_disk_sz_cod == 3000 {
-            let max_disk_sz2 = 3000usize;
-            let (payload2, mem_sz2) = emit_correct_online_data_bytecode(&slot_overrides, max_disk_sz2)?;
-            decomp2[func_off2_cod + 40..func_off2_cod + 44].copy_from_slice(&mem_sz2.to_le_bytes());
-            decomp2[func_off2_cod + 44..func_off2_cod + 48].copy_from_slice(&(max_disk_sz2 as u32).to_le_bytes());
-            decomp2[func_off2_cod + 48..func_off2_cod + 48 + max_disk_sz2].copy_from_slice(&payload2);
+        if func_off2_cod + 48 <= decomp2.len() {
+            let orig_disk_sz_cod = u32::from_le_bytes(decomp2[func_off2_cod + 44..func_off2_cod + 48].try_into().unwrap()) as usize;
+            if orig_disk_sz_cod == 3000 {
+                let max_disk_sz2 = 3000usize;
+                let (payload2, mem_sz2) = emit_correct_online_data_bytecode(&slot_overrides, max_disk_sz2)?;
+                decomp2[func_off2_cod + 40..func_off2_cod + 44].copy_from_slice(&mem_sz2.to_le_bytes());
+                decomp2[func_off2_cod + 44..func_off2_cod + 48].copy_from_slice(&(max_disk_sz2 as u32).to_le_bytes());
+                decomp2[func_off2_cod + 48..func_off2_cod + 48 + max_disk_sz2].copy_from_slice(&payload2);
+            }
         }
 
         // ValidateReplicatedLoadout (#57832) - bypass to prevent online item stripping
-        if exports.len() >= 57832 {
-            let exp_val_off = exports[57832 - 1].5 as usize;
-            let func_off2_val = exp_val_off - c2.uncompressed_offset as usize;
+        let func_off2_val = 19522198 - c2.uncompressed_offset as usize;
+        if func_off2_val + 48 + 708 <= decomp2.len() {
             let orig_disk_sz_val = u32::from_le_bytes(decomp2[func_off2_val + 44..func_off2_val + 48].try_into().unwrap()) as usize;
             if orig_disk_sz_val == 708 {
                 let mut val_payload = vec![opcodes::EX_NOTHING; 708];
@@ -960,7 +891,7 @@ pub fn apply_tagame_modifications(
         file_bytes[c2.compressed_offset as usize..c2.compressed_offset as usize + orig_c_sz2].copy_from_slice(&recomp2);
     }
 
-    // Re-encrypt header with TAGAME_KEY
+    // Re-encrypt header with tagame_key
     let total_header_size = u32::from_le_bytes(file_bytes[8..12].try_into().unwrap()) as usize;
     let mut p = 12;
     let flen = i32::from_le_bytes(file_bytes[p..p+4].try_into().unwrap());
@@ -973,7 +904,7 @@ pub fn apply_tagame_modifications(
     let enc_aligned = (enc_size + 15) & !15;
     let enc_end = name_offset + enc_aligned;
 
-    let re_enc = crypto::encrypt_ecb(&TAGAME_KEY, &plain_header);
+    let re_enc = crypto::encrypt_ecb(&tagame_key, &plain_header);
     let target_len = enc_end - name_offset;
     file_bytes[name_offset..enc_end].copy_from_slice(&re_enc[..target_len]);
 
@@ -982,22 +913,26 @@ pub fn apply_tagame_modifications(
         TagameSwapError::Msg(format!("Failed to write {}: {e}", tagame_path.display()))
     })?;
 
-    // 3. Apply material paint overrides (e.g. Fennec Black / body_grain_SF)
+    // Apply material paint overrides (e.g. Fennec Black / custom hex / body_grain_SF)
     for s in swaps {
         let pkg = s.package_name.as_deref().unwrap_or("body_grain_SF");
-        if let Some(paint_id) = s.paint_id {
-            if paint_id > 0 {
-                let _ = apply_body_paint_modification(cooked_dir, "body_grain_SF", paint_id, keys_map_json);
-                if pkg != "body_grain_SF" {
-                    let _ = apply_body_paint_modification(cooked_dir, pkg, paint_id, keys_map_json);
-                }
-            } else {
-                let pkg_file_name = if pkg.ends_with(".upk") { pkg.to_string() } else { format!("{pkg}.upk") };
-                let pkg_path = cooked_dir.join(&pkg_file_name);
-                let bak_path = cooked_dir.join(format!("{pkg_file_name}.bak"));
-                if bak_path.is_file() {
-                    let _ = fs::copy(&bak_path, &pkg_path);
-                }
+        let custom_hex_str = s.custom_paint_hex.as_deref();
+        let has_custom = custom_hex_str.map(|h| !h.trim().is_empty()).unwrap_or(false);
+        let pid = s.paint_id.unwrap_or(0);
+
+        if has_custom || pid > 0 {
+            let _ = apply_body_paint_modification(cooked_dir, "body_grain_SF", pid, custom_hex_str, keys_map_json);
+            if pkg != "body_grain_SF" {
+                let _ = apply_body_paint_modification(cooked_dir, pkg, pid, custom_hex_str, keys_map_json);
+            }
+        } else {
+            let (pkg_path, actual_file_name) = match crate::upk::swapper::resolve_package_path(cooked_dir, pkg) {
+                Some(res) => res,
+                None => continue,
+            };
+            let bak_path = cooked_dir.join(format!("{actual_file_name}.bak"));
+            if bak_path.is_file() {
+                let _ = fs::copy(&bak_path, &pkg_path);
             }
         }
     }

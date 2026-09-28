@@ -611,6 +611,7 @@ pub async fn random_swap_plan(
             owned_name: donor.product.clone(),
             wanted_name: pick.product.clone(),
             paint_id: 0,
+            custom_paint_hex: None,
             asset_package: donor.asset_package.clone(),
             slot: Some(donor.slot.clone()),
         });

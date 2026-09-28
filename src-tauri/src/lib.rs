@@ -242,6 +242,8 @@ pub struct SwapEntry {
     #[serde(default)]
     pub paint_id: i32,
     #[serde(default)]
+    pub custom_paint_hex: Option<String>,
+    #[serde(default)]
     pub asset_package: String,
     #[serde(default)]
     pub slot: Option<String>,
@@ -887,7 +889,9 @@ async fn get_backups(app: tauri::AppHandle) -> Result<Vec<BackupFile>, String> {
         let swap_to_image = wanted_item.map(|i| i.image_url.clone()).unwrap_or_default();
 
         let slot = wanted_item.or(owned_item).map(|i| i.slot.clone()).unwrap_or_default();
-        let paint_name = if swap.paint_id > 0 {
+        let paint_name = if let Some(hex) = swap.custom_paint_hex.as_ref().filter(|h| !h.trim().is_empty()) {
+            hex.clone()
+        } else if swap.paint_id > 0 {
             upk::swapper::paint_label(swap.paint_id).to_string()
         } else {
             String::new()
@@ -1150,6 +1154,7 @@ pub(crate) async fn sync_all_swaps_to_tagame(
             owned_id: Some(s.owned_id),
             product_id,
             paint_id: if s.paint_id > 0 { Some(s.paint_id) } else { None },
+            custom_paint_hex: s.custom_paint_hex.clone(),
             package_name: Some(pkg),
         });
     }
@@ -1207,6 +1212,7 @@ async fn apply_swap(
     owned_id: String,
     wanted_id: String,
     paint_id: Option<i32>,
+    custom_paint_hex: Option<String>,
 ) -> Result<String, String> {
     if !features::is_build_supported() {
         return Err("VelocityRL build is outdated. Please update to the latest version.".into());
@@ -1260,9 +1266,11 @@ async fn apply_swap(
         }
     };
 
+    let clean_hex = custom_paint_hex.filter(|h| !h.trim().is_empty());
+
     applog::event(&format!(
-        "apply_swap: starting owned_id={} wanted_id={} paint_id={} cooked='{}'",
-        owned_id, wanted_id, paint_id, cooked.display()
+        "apply_swap: starting owned_id={} wanted_id={} paint_id={} custom_hex={:?} cooked='{}'",
+        owned_id, wanted_id, paint_id, clean_hex, cooked.display()
     ));
 
     let mut swaps = load_swaps(&app);
@@ -1273,6 +1281,7 @@ async fn apply_swap(
         owned_name: owned.product.clone(),
         wanted_name: wanted.product.clone(),
         paint_id,
+        custom_paint_hex: clean_hex.clone(),
         asset_package: wanted.asset_package.clone(),
         slot: Some(owned.slot.clone()),
     };
@@ -1284,7 +1293,9 @@ async fn apply_swap(
     record_swap_history(&app, "swap", std::slice::from_ref(&new_entry), "");
 
     applog::event(&format!("apply_swap: succeeded for owned_id={} wanted_id={}", owned_id, wanted_id));
-    let paint_suffix = if paint_id > 0 {
+    let paint_suffix = if let Some(hex) = clean_hex {
+        format!(" ({hex})")
+    } else if paint_id > 0 {
         format!(" ({})", upk::swapper::paint_label(paint_id))
     } else {
         String::new()
@@ -1995,6 +2006,7 @@ async fn swap_custom_decal_to_donor(
         owned_name: donor.product.clone(),
         wanted_name: decal_name.clone(),
         paint_id: 0,
+        custom_paint_hex: None,
         asset_package: donor.asset_package.clone(),
         slot: Some("Decal".to_string()),
     };
@@ -2020,15 +2032,11 @@ async fn swap_custom_decal_to_donor(
     let cooked_decals_dir = cooked.join("decals");
     let _ = fs::create_dir_all(&cooked_decals_dir);
 
-    let mut rel_diffuse = String::new();
-    let mut rel_skin = String::new();
-
     if let Some(ref d_path) = decal_cfg.diffuse_path {
         let p = Path::new(d_path);
         if let Some(fname) = p.file_name() {
             let target = cooked_decals_dir.join(fname);
             let _ = fs::copy(p, &target);
-            rel_diffuse = format!("decals/{}", fname.to_string_lossy());
         }
     }
 
@@ -2037,7 +2045,6 @@ async fn swap_custom_decal_to_donor(
         if let Some(fname) = p.file_name() {
             let target = cooked_decals_dir.join(fname);
             let _ = fs::copy(p, &target);
-            rel_skin = format!("decals/{}", fname.to_string_lossy());
         }
     }
 
