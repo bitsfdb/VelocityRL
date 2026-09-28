@@ -891,23 +891,6 @@ pub fn apply_tagame_modifications(
         file_bytes[c2.compressed_offset as usize..c2.compressed_offset as usize + orig_c_sz2].copy_from_slice(&recomp2);
     }
 
-    // Re-encrypt header with tagame_key
-    let total_header_size = u32::from_le_bytes(file_bytes[8..12].try_into().unwrap()) as usize;
-    let mut p = 12;
-    let flen = i32::from_le_bytes(file_bytes[p..p+4].try_into().unwrap());
-    p += 4 + if flen > 0 { flen as usize } else { (-flen * 2) as usize };
-    p += 4;
-    p += 4;
-    let name_offset = u32::from_le_bytes(file_bytes[p..p+4].try_into().unwrap()) as usize;
-    let garbage_size = 559792;
-    let enc_size = total_header_size - garbage_size - name_offset;
-    let enc_aligned = (enc_size + 15) & !15;
-    let enc_end = name_offset + enc_aligned;
-
-    let re_enc = crypto::encrypt_ecb(&tagame_key, &plain_header);
-    let target_len = enc_end - name_offset;
-    file_bytes[name_offset..enc_end].copy_from_slice(&re_enc[..target_len]);
-
     // Write TAGame.upk safely
     fs::write(&tagame_path, &file_bytes).map_err(|e| {
         TagameSwapError::Msg(format!("Failed to write {}: {e}", tagame_path.display()))
