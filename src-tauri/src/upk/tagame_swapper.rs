@@ -709,33 +709,6 @@ pub fn apply_body_paint_modification(
         }
     }
 
-    // Dynamically patch FName vector parameters (BoostColor, ParticleColor, Tint, CustomColor, etc.)
-    let names = crate::upk::palette::parse_names_in_block(&plain_header, name_count).unwrap_or_default();
-    let color_param_keywords = [
-        "customcolor", "trimcolor", "particlecolor", "boostcolor",
-        "flamecolor", "corecolor", "smokecolor", "beamcolor",
-        "trailcolor", "glowcolor", "sparkcolor", "primarycolor",
-        "secondarycolor", "accentcolor", "color", "tint",
-    ];
-
-    for (name_idx, name_str) in names.iter().enumerate() {
-        let lower = name_str.to_ascii_lowercase();
-        if color_param_keywords.iter().any(|&k| lower == k || lower.ends_with(k)) {
-            let mut fname_bytes = [0u8; 8];
-            fname_bytes[0..4].copy_from_slice(&(name_idx as i32).to_le_bytes());
-
-            let mut search_from = 0;
-            while let Some(rel) = decomp[search_from..].windows(8).position(|w| w == fname_bytes) {
-                let pos = search_from + rel;
-                if pos + 24 <= decomp.len() {
-                    // Struct element format: FName (8 bytes) + FLinearColor (16 bytes)
-                    decomp[pos + 8..pos + 24].copy_from_slice(&target_rgba);
-                }
-                search_from = pos + 8;
-            }
-        }
-    }
-
     // Recompress Chunk 0
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::best());
     encoder.write_all(&decomp)?;
@@ -1086,19 +1059,21 @@ pub fn apply_tagame_modifications(
             let _ = fs::copy(&backup_path, &tagame_path);
         }
     }
-
-    // 3. Apply material paint overrides (e.g. Fennec Black / custom hex / body_grain_SF)
+    // 3. Apply body trim paint overrides (e.g. Fennec Black / custom trim hex)
     for s in swaps {
+        let is_body = s.slot.to_lowercase().contains("body")
+            || s.package_name.as_deref().map_or(false, |p| p.to_lowercase().starts_with("body_"));
+        if !is_body {
+            continue;
+        }
+
         let pkg = s.package_name.as_deref().unwrap_or("body_grain_SF");
         let custom_hex_str = s.custom_paint_hex.as_deref();
         let has_custom = custom_hex_str.map(|h| !h.trim().is_empty()).unwrap_or(false);
         let pid = s.paint_id.unwrap_or(0);
 
         if has_custom || pid > 0 {
-            let _ = apply_body_paint_modification(cooked_dir, "body_grain_SF", pid, custom_hex_str, keys_map_json);
-            if pkg != "body_grain_SF" {
-                let _ = apply_body_paint_modification(cooked_dir, pkg, pid, custom_hex_str, keys_map_json);
-            }
+            let _ = apply_body_paint_modification(cooked_dir, pkg, pid, custom_hex_str, keys_map_json);
         } else {
             let (pkg_path, actual_file_name) = match crate::upk::swapper::resolve_package_path(cooked_dir, pkg) {
                 Some(res) => res,
@@ -1147,7 +1122,7 @@ pub fn restore_tagame_upk(cooked_dir: &Path) -> Result<TagameSwapperStatus, Taga
             let path = entry.path();
             if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
                 let lower = file_name.to_lowercase();
-                if lower.starts_with("body_") && lower.ends_with(".upk.bak") {
+                if lower.ends_with(".upk.bak") {
                     let live_name = file_name.trim_end_matches(".bak");
                     let live_path = cooked_dir.join(live_name);
                     let _ = fs::copy(&path, &live_path);
