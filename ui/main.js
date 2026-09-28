@@ -510,8 +510,6 @@ function paintLabel(id) {
 
 let ownedPaintId = '0';
 let wantedPaintId = '0';
-let ownedCustomHex = null;
-let wantedCustomHex = null;
 
 function emptyStateHtml() {
     return '<div class="empty-state"><p>No item selected</p></div>';
@@ -535,12 +533,10 @@ function renderSelectedItem(container, item, onClear) {
 
     const isPaintable = itemIsPaintable(item);
     if (!isPaintable) {
-        if (isTarget) { wantedPaintId = '0'; wantedCustomHex = null; }
-        else { ownedPaintId = '0'; ownedCustomHex = null; }
+        if (isTarget) { wantedPaintId = '0'; }
+        else { ownedPaintId = '0'; }
     }
     const currentPaintId = Number((isTarget ? wantedPaintId : ownedPaintId) || 0);
-    const currentCustomHex = isTarget ? wantedCustomHex : ownedCustomHex;
-    const isCustomActive = !!(currentCustomHex && !currentPaintId);
 
     const itemPaintsList = Array.isArray(item.Paints) && item.Paints.length > 0 
         ? item.Paints 
@@ -569,22 +565,13 @@ function renderSelectedItem(container, item, onClear) {
             <div class="card-paint-chips-scroll">
                 ${displayPaints.map(p => `
                     <button type="button" 
-                            class="paint-chip-pill ${p.id === currentPaintId && !isCustomActive ? 'is-active' : ''}" 
+                            class="paint-chip-pill ${p.id === currentPaintId ? 'is-active' : ''}" 
                             data-paint="${p.id}"
                             title="${escHtml(p.name)}"
                             style="color:${getPaintTextColor(p.id)};">
                         ${escHtml(p.name)}
                     </button>
                 `).join('')}
-                <button type="button" 
-                        class="paint-chip-pill paint-chip-custom ${isCustomActive ? 'is-active' : ''}" 
-                        data-custom="true"
-                        title="Custom Color Picker"
-                        style="color:${currentCustomHex || '#8b5cf6'}; position:relative;">
-                    <span class="custom-color-dot" style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${currentCustomHex || '#8b5cf6'}; margin-right:4px;"></span>
-                    ${currentCustomHex ? escHtml(currentCustomHex.toUpperCase()) : 'Custom'}
-                    <input type="color" class="paint-color-picker-input" value="${currentCustomHex || '#ff007f'}" style="opacity:0; position:absolute; left:0; top:0; width:100%; height:100%; cursor:pointer;">
-                </button>
             </div>
         </div>
     ` : '';
@@ -598,7 +585,7 @@ function renderSelectedItem(container, item, onClear) {
         </button>
     `;
 
-    const activeBadgeContent = isCustomActive ? renderPaintBadgeHtml(currentCustomHex) : renderPaintBadgeHtml(currentPaintId);
+    const activeBadgeContent = renderPaintBadgeHtml(currentPaintId);
 
     container.innerHTML = `
         ${clearBtnHtml}
@@ -619,10 +606,8 @@ function renderSelectedItem(container, item, onClear) {
             e.stopPropagation();
             if (isTarget) {
                 wantedPaintId = '0';
-                wantedCustomHex = null;
             } else {
                 ownedPaintId = '0';
-                ownedCustomHex = null;
             }
             onClear();
         });
@@ -635,10 +620,8 @@ function renderSelectedItem(container, item, onClear) {
                 const pid = btn.dataset.paint;
                 if (isTarget) {
                     wantedPaintId = pid;
-                    wantedCustomHex = null;
                 } else {
                     ownedPaintId = pid;
-                    ownedCustomHex = null;
                 }
                 container.querySelectorAll('.paint-chip-pill').forEach(b => {
                     b.classList.toggle('is-active', b.dataset.paint === pid);
@@ -650,36 +633,6 @@ function renderSelectedItem(container, item, onClear) {
                 validateSwapInputs();
             });
         });
-
-        const customBtn = container.querySelector('.paint-chip-custom');
-        const colorInput = container.querySelector('.paint-color-picker-input');
-        if (colorInput) {
-            colorInput.addEventListener('input', (e) => {
-                e.stopPropagation();
-                const hex = e.target.value;
-                if (isTarget) {
-                    wantedCustomHex = hex;
-                    wantedPaintId = '0';
-                } else {
-                    ownedCustomHex = hex;
-                    ownedPaintId = '0';
-                }
-                container.querySelectorAll('.paint-chip-pill').forEach(b => {
-                    b.classList.remove('is-active');
-                });
-                customBtn?.classList.add('is-active');
-                if (customBtn) {
-                    customBtn.style.color = hex;
-                    const dot = customBtn.querySelector('.custom-color-dot');
-                    if (dot) dot.style.background = hex;
-                }
-                const badgeWrap = container.querySelector('.selected-paint-badge-wrap');
-                if (badgeWrap) {
-                    badgeWrap.innerHTML = renderPaintBadgeHtml(hex);
-                }
-                validateSwapInputs();
-            });
-        }
     }
 
     container.classList.add('selected');
