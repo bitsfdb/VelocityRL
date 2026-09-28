@@ -1814,6 +1814,8 @@ function wirePresetsUI() {
                 if (ownedItem && wantedItem) {
                     const ownedId = Number(ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id);
                     const wantedId = Number(wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id);
+                    const activeOwnedPaintId = Number(ownedPaintId || 0);
+                    const activeOwnedCustomHex = ownedCustomHex || null;
                     let paintId = itemIsPaintable(wantedItem) ? Number(wantedPaintId || 0) : 0;
                     const customPaintHex = itemIsPaintable(wantedItem) ? (wantedCustomHex || null) : null;
                     const oName = ownedItem.Product || ownedItem.product || '';
@@ -1827,6 +1829,8 @@ function wirePresetsUI() {
                         wanted_name: wName,
                         paint_id: paintId,
                         custom_paint_hex: customPaintHex || null,
+                        owned_paint_id: activeOwnedPaintId > 0 ? activeOwnedPaintId : null,
+                        owned_custom_hex: activeOwnedCustomHex || null,
                         asset_package: pkg,
                     });
                     swapsToSend = list;
@@ -2324,6 +2328,7 @@ async function handleApply() {
         let p = 15;
         interval = setInterval(() => { if (p < 85) p += 5; showProgress(true, p); }, 400);
         const ownedId = (ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id).toString();
+        const wantedId = (wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id).toString();
         const activeOwnedPaintId = Number(ownedPaintId || 0);
         const activeOwnedCustomHex = ownedCustomHex || null;
         let paintId = itemIsPaintable(wantedItem) ? Number(wantedPaintId || 0) : 0;
