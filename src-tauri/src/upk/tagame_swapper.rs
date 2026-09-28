@@ -785,6 +785,19 @@ pub fn apply_tagame_modifications(
                 owned_id: s.owned_id,
                 target_id: pid,
             });
+
+            // If owned_id is a default item (e.g. 1903 for Classic Goal Explosion, 1902 for Classic Trail, etc.)
+            // also add rule for owned_id = Some(0) so in-game empty/0 slot values get overridden!
+            if let Some(oid) = s.owned_id {
+                let is_default = oid == 0 || oid == 1903 || oid == 1902 || oid == 3753 || oid == 3247;
+                if is_default && oid != 0 {
+                    slot_overrides.push(SlotSwapRule {
+                        slot_idx,
+                        owned_id: Some(0),
+                        target_id: pid,
+                    });
+                }
+            }
         }
 
         const EXPANDED_SIZE: usize = 3000;
