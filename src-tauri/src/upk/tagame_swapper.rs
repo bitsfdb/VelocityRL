@@ -777,15 +777,151 @@ pub fn apply_tagame_modifications(
 
     // 1. Ensure pristine backup exists
     if !backup_path.is_file() {
-        let _ = fs::copy(&tagame_path, &backup_path);
+        fs::copy(&tagame_path, &backup_path).map_err(|e| {
+            TagameSwapError::Msg(format!("Failed to create backup {}: {e}", backup_path.display()))
+        })?;
     }
 
-    // 2. Safely sync TAGame.upk: If palette is applied, update palette in TAGame.upk. Otherwise restore pristine backup.
+    // 2. Read from backup (or live if palette applied)
+    let mut file_bytes = fs::read(&backup_path).map_err(|e| {
+        TagameSwapError::Msg(format!("Failed to read {}: {e}", backup_path.display()))
+    })?;
+
+    // Check if custom color palette was enabled/applied.
     let pal_st = crate::upk::palette::read_palette_status(cooked_dir, None);
     if pal_st.applied {
-        let _ = crate::upk::palette::apply_rich_palette_to_file(cooked_dir, _keys_txt, keys_map_json);
-    } else if backup_path.is_file() {
-        let _ = fs::copy(&backup_path, &tagame_path);
+        if let Ok(_) = crate::upk::palette::apply_rich_palette_to_file(cooked_dir, _keys_txt, keys_map_json) {
+            if let Ok(pal_bytes) = fs::read(&tagame_path) {
+                file_bytes = pal_bytes;
+            }
+        }
+    }
+
+    if !swaps.is_empty() {
+        // Decrypt header to read chunk table
+        let (_summary, meta, plain_header, _tagame_key, _) = crate::upk::palette::debug_decrypt(&file_bytes, _keys_txt, keys_map_json)
+            .map_err(|e| TagameSwapError::Msg(format!("Failed to decrypt TAGame.upk: {e}")))?;
+
+        let (_stride, chunks) = crate::upk::parser::parse_chunks_with_stride(&plain_header, meta.compressed_chunks_offset)
+            .map_err(|e| TagameSwapError::Msg(format!("Failed to parse chunks: {e}")))?;
+
+        // Collect slot overrides
+        let mut slot_overrides = Vec::new();
+        for s in swaps {
+            let slot_idx = if let Some(idx) = s.slot_index {
+                idx as u8
+            } else {
+                match s.slot.to_lowercase().as_str() {
+                    "body" | "0" => 0,
+                    "skin" | "decal" | "1" => 1,
+                    "wheel" | "wheels" | "2" => 2,
+                    "boost" | "rocket boost" | "rocketboost" | "3" => 3,
+                    "antenna" | "4" => 4,
+                    "topper" | "5" => 5,
+                    "paint finish" | "paintfinish" | "paint" | "6" => 6,
+                    "engine audio" | "engineaudio" | "8" => 8,
+                    "trail" | "9" => 9,
+                    "goal explosion" | "goalexplosion" | "10" => 10,
+                    "player banner" | "playerbanner" | "banner" | "11" => 11,
+                    "player anthem" | "playeranthem" | "anthem" | "music" | "12" => 12,
+                    "avatar border" | "avatarborder" | "border" | "13" => 13,
+                    _ => 0,
+                }
+            };
+            let pid = if s.product_id > 0 { s.product_id } else { 4284 };
+            slot_overrides.push(SlotSwapRule {
+                slot_idx,
+                owned_id: s.owned_id,
+                target_id: pid,
+            });
+        }
+
+        // Patch Chunk 0 (ConvertToClientLoadout & SetLoadout)
+        if !chunks.is_empty() {
+            let c0 = &chunks[0];
+            let c0_payload = &file_bytes[c0.compressed_offset as usize..(c0.compressed_offset + c0.compressed_size as i64) as usize];
+            if let Ok(mut decomp0) = crate::upk::compression::decompress_chunk(c0_payload) {
+                // ConvertToClientLoadout (#78)
+                let func_off0_1 = 0xABC8F9usize.saturating_sub(c0.uncompressed_offset as usize);
+                if func_off0_1 + 48 <= decomp0.len() {
+                    let orig_disk_sz1 = u32::from_le_bytes(decomp0[func_off0_1 + 44..func_off0_1 + 48].try_into().unwrap()) as usize;
+                    if orig_disk_sz1 >= 124 {
+                        if let Ok((payload0, mem_sz0)) = emit_convert_to_client_loadout_bytecode(&slot_overrides, orig_disk_sz1) {
+                            decomp0[func_off0_1 + 40..func_off0_1 + 44].copy_from_slice(&mem_sz0.to_le_bytes());
+                            decomp0[func_off0_1 + 48..func_off0_1 + 48 + orig_disk_sz1].copy_from_slice(&payload0);
+                        }
+                    }
+                }
+
+                // Car_TA::SetLoadout (#16587)
+                let func_off0_2 = 0xAC690Dusize.saturating_sub(c0.uncompressed_offset as usize);
+                if func_off0_2 + 48 <= decomp0.len() {
+                    let orig_disk_sz2 = u32::from_le_bytes(decomp0[func_off0_2 + 44..func_off0_2 + 48].try_into().unwrap()) as usize;
+                    if orig_disk_sz2 >= 186 {
+                        if let Ok((payload_set, mem_sz_set)) = emit_car_set_loadout_bytecode(&slot_overrides, orig_disk_sz2) {
+                            decomp0[func_off0_2 + 40..func_off0_2 + 44].copy_from_slice(&mem_sz_set.to_le_bytes());
+                            decomp0[func_off0_2 + 48..func_off0_2 + 48 + orig_disk_sz2].copy_from_slice(&payload_set);
+                        }
+                    }
+                }
+
+                if let Ok(mut recomp0) = crate::upk::compression::compress_chunk(&decomp0) {
+                    let orig_c_sz0 = c0.compressed_size as usize;
+                    if recomp0.len() <= orig_c_sz0 {
+                        recomp0.resize(orig_c_sz0, 0);
+                        file_bytes[c0.compressed_offset as usize..c0.compressed_offset as usize + orig_c_sz0].copy_from_slice(&recomp0);
+                    }
+                }
+            }
+        }
+
+        // Patch Chunk 2 (CorrectOnlineData & ValidateReplicatedLoadout)
+        if chunks.len() > 2 {
+            let c2 = &chunks[2];
+            let c2_payload = &file_bytes[c2.compressed_offset as usize..(c2.compressed_offset + c2.compressed_size as i64) as usize];
+            if let Ok(mut decomp2) = crate::upk::compression::decompress_chunk(c2_payload) {
+                // CorrectOnlineData (#47859)
+                let func_off2_cod = 16098022usize.saturating_sub(c2.uncompressed_offset as usize);
+                if func_off2_cod + 48 <= decomp2.len() {
+                    let orig_disk_sz_cod = u32::from_le_bytes(decomp2[func_off2_cod + 44..func_off2_cod + 48].try_into().unwrap()) as usize;
+                    if orig_disk_sz_cod == 3000 {
+                        if let Ok((payload2, mem_sz2)) = emit_correct_online_data_bytecode(&slot_overrides, orig_disk_sz_cod) {
+                            decomp2[func_off2_cod + 40..func_off2_cod + 44].copy_from_slice(&mem_sz2.to_le_bytes());
+                            decomp2[func_off2_cod + 48..func_off2_cod + 48 + orig_disk_sz_cod].copy_from_slice(&payload2);
+                        }
+                    }
+                }
+
+                // ValidateReplicatedLoadout (#57832)
+                let func_off2_val = 19522198usize.saturating_sub(c2.uncompressed_offset as usize);
+                if func_off2_val + 48 + 708 <= decomp2.len() {
+                    let orig_disk_sz_val = u32::from_le_bytes(decomp2[func_off2_val + 44..func_off2_val + 48].try_into().unwrap()) as usize;
+                    if orig_disk_sz_val == 708 {
+                        let mut val_payload = vec![opcodes::EX_NOTHING; 708];
+                        val_payload[0] = opcodes::EX_RETURN;
+                        val_payload[1] = opcodes::EX_NOTHING;
+                        val_payload[2] = opcodes::EX_END_OF_SCRIPT;
+                        let val_mem_sz: u32 = 708;
+                        decomp2[func_off2_val + 40..func_off2_val + 44].copy_from_slice(&val_mem_sz.to_le_bytes());
+                        decomp2[func_off2_val + 48..func_off2_val + 48 + 708].copy_from_slice(&val_payload);
+                    }
+                }
+
+                if let Ok(mut recomp2) = crate::upk::compression::compress_chunk(&decomp2) {
+                    let orig_c_sz2 = c2.compressed_size as usize;
+                    if recomp2.len() <= orig_c_sz2 {
+                        recomp2.resize(orig_c_sz2, 0);
+                        file_bytes[c2.compressed_offset as usize..c2.compressed_offset as usize + orig_c_sz2].copy_from_slice(&recomp2);
+                    }
+                }
+            }
+        }
+
+        let _ = fs::write(&tagame_path, &file_bytes);
+    } else {
+        if !pal_st.applied && backup_path.is_file() {
+            let _ = fs::copy(&backup_path, &tagame_path);
+        }
     }
 
     // 3. Apply material paint overrides (e.g. Fennec Black / custom hex / body_grain_SF)
