@@ -309,20 +309,50 @@ pub async fn apply_preset(app: tauri::AppHandle, id: String) -> Result<Vec<Strin
 }
 
 fn code_for_preset(p: &Preset) -> Result<String, String> {
-    let payload = serde_json::json!({
-        "v": 1,
-        "name": p.name,
-        "swaps": p.swaps,
-        "maps": p.maps,
-        "active_map_id": p.active_map_id,
-    })
-    .to_string();
-    let sig = sign_preset_payload(payload.as_bytes());
-    Ok(format!(
-        "1.{}.{}",
-        B64.encode(payload.as_bytes()),
-        B64.encode(sig)
-    ))
+    let mut buf = Vec::new();
+    let name_bytes = p.name.as_bytes();
+    let name_len = name_bytes.len().min(32) as u8;
+    buf.push(name_len);
+    buf.extend_from_slice(&name_bytes[..name_len as usize]);
+
+    let swaps_len = p.swaps.len().min(50) as u8;
+    buf.push(swaps_len);
+
+    for s in p.swaps.iter().take(50) {
+        let o = s.owned_id.max(0).min(65535) as u16;
+        let w = s.wanted_id.max(0).min(65535) as u16;
+        let paint = s.paint_id.max(0).min(255) as u8;
+        
+        let mut flags = 0u8;
+        let mut hex_rgb = [0u8; 3];
+        if let Some(ref hex) = s.custom_paint_hex {
+            let clean = hex.trim_start_matches('#');
+            if clean.len() == 6 {
+                if let (Ok(r), Ok(g), Ok(b)) = (
+                    u8::from_str_radix(&clean[0..2], 16),
+                    u8::from_str_radix(&clean[2..4], 16),
+                    u8::from_str_radix(&clean[4..6], 16),
+                ) {
+                    flags |= 1;
+                    hex_rgb = [r, g, b];
+                }
+            }
+        }
+
+        buf.extend_from_slice(&o.to_le_bytes());
+        buf.extend_from_slice(&w.to_le_bytes());
+        buf.push(paint);
+        buf.push(flags);
+        if (flags & 1) != 0 {
+            buf.extend_from_slice(&hex_rgb);
+        }
+    }
+
+    let sig = sign_preset_payload(&buf);
+    let sig_trunc = &sig[..6.min(sig.len())];
+    buf.extend_from_slice(sig_trunc);
+
+    Ok(format!("VRL:{}", B64.encode(&buf)))
 }
 
 #[tauri::command]
@@ -340,6 +370,69 @@ pub async fn peek_preset_code(code: String) -> Result<Preset, String> {
 
 fn parse_code(code: &str) -> Result<(String, Vec<SwapEntry>, Vec<PresetMapEntry>, Option<String>), String> {
     let code = code.trim();
+    if let Some(vrl_b64) = code.strip_prefix("VRL:") {
+        let data = B64.decode(vrl_b64.as_bytes())
+            .map_err(|_| "Malformed preset code: bad base64 payload.".to_string())?;
+        if data.len() < 8 {
+            return Err("Malformed preset code: payload too short.".into());
+        }
+
+        let body_len = data.len() - 6;
+        let body = &data[..body_len];
+        let sig = &data[body_len..];
+
+        let expected_sig = sign_preset_payload(body);
+        if sig != &expected_sig[..6] {
+            return Err("Preset code failed verification — it was modified or corrupted.".into());
+        }
+
+        let mut p = 0;
+        let name_len = body[p] as usize;
+        p += 1;
+        if p + name_len > body.len() {
+            return Err("Malformed preset code: invalid name header.".into());
+        }
+        let name = String::from_utf8_lossy(&body[p..p + name_len]).to_string();
+        p += name_len;
+
+        if p >= body.len() {
+            return Err("Malformed preset code: missing swaps count.".into());
+        }
+        let swaps_cnt = body[p] as usize;
+        p += 1;
+
+        let mut swaps = Vec::new();
+        for _ in 0..swaps_cnt {
+            if p + 6 > body.len() {
+                break;
+            }
+            let o = u16::from_le_bytes(body[p..p + 2].try_into().unwrap()) as i32;
+            let w = u16::from_le_bytes(body[p + 2..p + 4].try_into().unwrap()) as i32;
+            let paint = body[p + 4] as i32;
+            let flags = body[p + 5];
+            p += 6;
+
+            let mut custom_hex = None;
+            if (flags & 1) != 0 && p + 3 <= body.len() {
+                custom_hex = Some(format!("#{:02X}{:02X}{:02X}", body[p], body[p + 1], body[p + 2]));
+                p += 3;
+            }
+
+            swaps.push(SwapEntry {
+                owned_id: o,
+                wanted_id: w,
+                owned_name: String::new(),
+                wanted_name: String::new(),
+                paint_id: paint,
+                custom_paint_hex: custom_hex,
+                asset_package: String::new(),
+                slot: None,
+            });
+        }
+
+        return Ok((name, swaps, Vec::new(), None));
+    }
+
     let rest = code
         .strip_prefix("1.")
         .ok_or("Not a valid preset code.")?;
