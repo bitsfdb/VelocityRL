@@ -26,6 +26,7 @@ pub mod opcodes {
     pub const EX_INT_CONST: u8 = 0x1D;
     pub const EX_LET: u8 = 0x0F;
     pub const EX_RETURN: u8 = 0x04;
+    pub const EX_RETURN_VALUE: u8 = 0x3A;
     pub const EX_END_OF_SCRIPT: u8 = 0x4C;
     pub const EX_NOTHING: u8 = 0x0B;
     pub const EX_JUMP_IF_NOT: u8 = 0x07;
@@ -257,11 +258,14 @@ pub fn emit_convert_to_client_loadout_bytecode(
     bc.push(opcodes::EX_RETURN);
     bc.push(opcodes::EX_INSTANCE_VARIABLE);
     bc.extend_from_slice(&75i32.to_le_bytes());
+    bc.push(opcodes::EX_RETURN);
+    bc.push(opcodes::EX_RETURN_VALUE);
+    bc.extend_from_slice(&76i32.to_le_bytes());
 
     // 4. End of script
     bc.push(opcodes::EX_END_OF_SCRIPT);
 
-    mem_sz += 10 + 1; // Return (10) + EOS (1) = 11 mem
+    mem_sz += 21; // Return NewLoadout (10) + Return ReturnValue (10) + EOS (1) = 21 mem
 
     let nop_count = max_disk_size.saturating_sub(bc.len());
     bc.resize(max_disk_size, opcodes::EX_NOTHING);
@@ -1161,7 +1165,7 @@ mod tests {
         }];
         let (bc, mem_sz) = emit_convert_to_client_loadout_bytecode(&rules, 124).unwrap();
         assert_eq!(bc.len(), 124);
-        assert_eq!(mem_sz, 164);
+        assert_eq!(mem_sz, 168);
         assert_eq!(bc[0], opcodes::EX_LET);
     }
 
@@ -1177,7 +1181,7 @@ mod tests {
         assert_eq!(bc[0], opcodes::EX_LET);
         assert_eq!(bc[33], opcodes::EX_JUMP_IF_NOT);
         assert_eq!(bc[36], opcodes::EX_EQUAL_EQUAL_INT_INT);
-        assert_eq!(mem_sz, 176);
+        assert_eq!(mem_sz, 180);
     }
 
     #[test]
