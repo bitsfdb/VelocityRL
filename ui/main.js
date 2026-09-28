@@ -485,7 +485,10 @@ function renderPaintBadgeHtml(paintIdOrName) {
         color = getPaintTextColor(raw);
     } else if (raw) {
         const str = String(raw).trim();
-        if (!isNaN(Number(str))) {
+        if (str.startsWith('#')) {
+            label = str.toUpperCase();
+            color = str;
+        } else if (!isNaN(Number(str))) {
             const num = Number(str);
             label = num === 0 ? 'None' : paintLabel(num);
             color = getPaintTextColor(num);
@@ -497,7 +500,7 @@ function renderPaintBadgeHtml(paintIdOrName) {
             color = getPaintTextColor(str);
         }
     }
-    return `<span class="paint-white-pill" style="background:#ffffff; color:${color};">${escHtml(label)}</span>`;
+    return `<span class="paint-white-pill" style="background:#ffffff; color:${color}; font-weight:700;">${escHtml(label)}</span>`;
 }
 
 function paintLabel(id) {
@@ -507,6 +510,8 @@ function paintLabel(id) {
 
 let ownedPaintId = '0';
 let wantedPaintId = '0';
+let ownedCustomHex = null;
+let wantedCustomHex = null;
 
 function emptyStateHtml() {
     return '<div class="empty-state"><p>No item selected</p></div>';
@@ -525,10 +530,12 @@ function renderSelectedItem(container, item, onClear) {
 
     const isPaintable = itemIsPaintable(item);
     if (!isPaintable) {
-        if (isTarget) wantedPaintId = '0';
-        else ownedPaintId = '0';
+        if (isTarget) { wantedPaintId = '0'; wantedCustomHex = null; }
+        else { ownedPaintId = '0'; ownedCustomHex = null; }
     }
     const currentPaintId = Number((isTarget ? wantedPaintId : ownedPaintId) || 0);
+    const currentCustomHex = isTarget ? wantedCustomHex : ownedCustomHex;
+    const isCustomActive = !!(currentCustomHex && !currentPaintId);
 
     const itemPaintsList = Array.isArray(item.Paints) && item.Paints.length > 0 
         ? item.Paints 
@@ -557,13 +564,22 @@ function renderSelectedItem(container, item, onClear) {
             <div class="card-paint-chips-scroll">
                 ${displayPaints.map(p => `
                     <button type="button" 
-                            class="paint-chip-pill ${p.id === currentPaintId ? 'is-active' : ''}" 
+                            class="paint-chip-pill ${p.id === currentPaintId && !isCustomActive ? 'is-active' : ''}" 
                             data-paint="${p.id}"
                             title="${escHtml(p.name)}"
                             style="color:${getPaintTextColor(p.id)};">
                         ${escHtml(p.name)}
                     </button>
                 `).join('')}
+                <button type="button" 
+                        class="paint-chip-pill paint-chip-custom ${isCustomActive ? 'is-active' : ''}" 
+                        data-custom="true"
+                        title="Custom Color Picker"
+                        style="color:${currentCustomHex || '#8b5cf6'}; position:relative;">
+                    <span class="custom-color-dot" style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${currentCustomHex || '#8b5cf6'}; margin-right:4px;"></span>
+                    ${currentCustomHex ? escHtml(currentCustomHex.toUpperCase()) : 'Custom'}
+                    <input type="color" class="paint-color-picker-input" value="${currentCustomHex || '#ff007f'}" style="opacity:0; position:absolute; left:0; top:0; width:100%; height:100%; cursor:pointer;">
+                </button>
             </div>
         </div>
     ` : '';
@@ -577,6 +593,8 @@ function renderSelectedItem(container, item, onClear) {
         </button>
     `;
 
+    const activeBadgeContent = isCustomActive ? renderPaintBadgeHtml(currentCustomHex) : renderPaintBadgeHtml(currentPaintId);
+
     container.innerHTML = `
         ${clearBtnHtml}
         ${pImg ? `<img src="${escHtml(pImg)}" class="selected-img" />` : ''}
@@ -584,7 +602,7 @@ function renderSelectedItem(container, item, onClear) {
         <div style="display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;margin:4px 0;">
             <span class="quality-badge ${bgClass}">${escHtml(pQuality)}</span>
             ${decalBadge}
-            ${isPaintable ? `<div class="selected-paint-badge-wrap">${renderPaintBadgeHtml(currentPaintId)}</div>` : ''}
+            ${isPaintable ? `<div class="selected-paint-badge-wrap">${activeBadgeContent}</div>` : ''}
         </div>
         <p class="item-slot-label">${escHtml(pSlot)}${decalBody ? ` (${escHtml(decalBody)})` : ''}</p>
         ${paintChipsHtml}
@@ -594,19 +612,28 @@ function renderSelectedItem(container, item, onClear) {
     if (clearBtn && typeof onClear === 'function') {
         clearBtn.addEventListener('click', (e) => {
             e.stopPropagation();
+            if (isTarget) {
+                wantedPaintId = '0';
+                wantedCustomHex = null;
+            } else {
+                ownedPaintId = '0';
+                ownedCustomHex = null;
+            }
             onClear();
         });
     }
 
     if (isPaintable) {
-        container.querySelectorAll('.paint-chip-pill').forEach(btn => {
+        container.querySelectorAll('.paint-chip-pill[data-paint]').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const pid = btn.dataset.paint;
                 if (isTarget) {
                     wantedPaintId = pid;
+                    wantedCustomHex = null;
                 } else {
                     ownedPaintId = pid;
+                    ownedCustomHex = null;
                 }
                 container.querySelectorAll('.paint-chip-pill').forEach(b => {
                     b.classList.toggle('is-active', b.dataset.paint === pid);
@@ -618,6 +645,36 @@ function renderSelectedItem(container, item, onClear) {
                 validateSwapInputs();
             });
         });
+
+        const customBtn = container.querySelector('.paint-chip-custom');
+        const colorInput = container.querySelector('.paint-color-picker-input');
+        if (colorInput) {
+            colorInput.addEventListener('input', (e) => {
+                e.stopPropagation();
+                const hex = e.target.value;
+                if (isTarget) {
+                    wantedCustomHex = hex;
+                    wantedPaintId = '0';
+                } else {
+                    ownedCustomHex = hex;
+                    ownedPaintId = '0';
+                }
+                container.querySelectorAll('.paint-chip-pill').forEach(b => {
+                    b.classList.remove('is-active');
+                });
+                customBtn?.classList.add('is-active');
+                if (customBtn) {
+                    customBtn.style.color = hex;
+                    const dot = customBtn.querySelector('.custom-color-dot');
+                    if (dot) dot.style.background = hex;
+                }
+                const badgeWrap = container.querySelector('.selected-paint-badge-wrap');
+                if (badgeWrap) {
+                    badgeWrap.innerHTML = renderPaintBadgeHtml(hex);
+                }
+                validateSwapInputs();
+            });
+        }
     }
 
     container.classList.add('selected');
@@ -1277,7 +1334,7 @@ function renderPresetItemsPage() {
 
     list.innerHTML = itemsToShow.map(s => {
         const slot = normItemSlot(s.slot || 'Item');
-        const paint = s.paint_id > 0 ? renderPaintBadgeHtml(s.paint_id) : '';
+        const paint = s.custom_paint_hex ? renderPaintBadgeHtml(s.custom_paint_hex) : (s.paint_id > 0 ? renderPaintBadgeHtml(s.paint_id) : '');
         const decalBody = s.asset_package ? getItemDecalBody({ AssetPackage: s.asset_package, Product: s.owned_name, Slot: 'Decal' }) : (slot === 'Decal' ? getItemDecalBody({ Product: s.owned_name, Slot: 'Decal' }) : '');
         const decalPill = decalBody ? `<span style="font-size:10px;padding:2px 5px;background:rgba(91,140,255,0.18);color:#93c5fd;border-radius:3px;font-weight:600;margin-left:4px;">${escHtml(decalBody)}</span>` : '';
         return `
@@ -1658,7 +1715,10 @@ function wirePresetsUI() {
                     const wantedId = Number(wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id);
                     const activePaintId = (wantedPaintId && wantedPaintId !== '0') ? wantedPaintId : ((ownedPaintId && ownedPaintId !== '0') ? ownedPaintId : '0');
                     let paintId = Number(activePaintId || 0);
-                    if (!itemIsPaintable(wantedItem) && !itemIsPaintable(ownedItem)) paintId = 0;
+                    const customPaintHex = wantedCustomHex || ownedCustomHex || null;
+                    if (!itemIsPaintable(wantedItem) && !itemIsPaintable(ownedItem)) {
+                        paintId = 0;
+                    }
                     const oName = ownedItem.Product || ownedItem.product || '';
                     const wName = wantedItem.Product || wantedItem.product || '';
                     const pkg = ownedItem.AssetPackage || ownedItem.asset_package || '';
@@ -1669,6 +1729,7 @@ function wirePresetsUI() {
                         owned_name: oName,
                         wanted_name: wName,
                         paint_id: paintId,
+                        custom_paint_hex: customPaintHex || null,
                         asset_package: pkg,
                     });
                     swapsToSend = list;
@@ -2169,16 +2230,23 @@ async function handleApply() {
         const wantedId = (wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id).toString();
         const activePaintId = (wantedPaintId && wantedPaintId !== '0') ? wantedPaintId : ((ownedPaintId && ownedPaintId !== '0') ? ownedPaintId : '0');
         let paintId = Number(activePaintId || 0);
-        if (!itemIsPaintable(wantedItem) && !itemIsPaintable(ownedItem)) paintId = 0;
-        const swapResult = await invoke('apply_swap', { ownedId, wantedId, paintId });
+        const customPaintHex = wantedCustomHex || ownedCustomHex || null;
+        if (!itemIsPaintable(wantedItem) && !itemIsPaintable(ownedItem)) {
+            paintId = 0;
+        }
+        const swapResult = await invoke('apply_swap', {
+            ownedId,
+            wantedId,
+            paintId,
+            customPaintHex: customPaintHex || null,
+        });
         clearInterval(interval);
         interval = null;
         showProgress(true, 100);
         updateStatus('Swap Complete', false);
         const ownedName = ownedItem.product || ownedItem.Product || 'item';
         const wantedName = wantedItem.product || wantedItem.Product || 'item';
-        const paintName = paintLabel(paintId);
-        const paintBit = paintId > 0 ? ` (${escHtml(paintName)})` : '';
+        const paintBit = customPaintHex ? ` (${escHtml(customPaintHex.toUpperCase())})` : (paintId > 0 ? ` (${escHtml(paintLabel(paintId))})` : '');
         showToast(`Swapped <strong>${escHtml(ownedName)}</strong> → <strong>${escHtml(wantedName)}</strong>${paintBit}`, 'success');
 
         if (swapResult && swapResult.includes && swapResult.includes('Warnings:')) {
