@@ -518,12 +518,17 @@ function emptyStateHtml() {
 }
 
 function renderSelectedItem(container, item, onClear) {
+    if (!container) return;
+    if (!item) {
+        container.innerHTML = emptyStateHtml();
+        return;
+    }
     const isTarget = container.id === 'wanted-selected';
-    const pName = item.Product || item.product || 'Unknown';
-    const pQuality = item.Quality || item.quality || 'Common';
-    const pSlot = item.Slot || item.slot || '';
-    const pId = item.ID ?? item.id;
-    const pImg = item.image_url || item.src || '';
+    const pName = item?.Product || item?.product || 'Unknown';
+    const pQuality = item?.Quality || item?.quality || 'Common';
+    const pSlot = item?.Slot || item?.slot || '';
+    const pId = item?.ID ?? item?.id;
+    const pImg = item?.image_url || item?.src || '';
     const bgClass = getQualityBgClass(pQuality);
     const decalBody = getItemDecalBody(item);
     const decalBadge = decalBody ? `<span class="quality-badge" style="background:rgba(91,140,255,0.18);color:#93c5fd;border:1px solid rgba(91,140,255,0.35);">${escHtml(decalBody)} Decal</span>` : '';
@@ -709,6 +714,10 @@ async function init() {
 
     setupSearch(ownedSearch, ownedResults, (item) => {
         ownedItem = item;
+        if (!item) {
+            clearOwned();
+            return;
+        }
         renderSelectedItem(document.getElementById('owned-selected'), item, clearOwned);
         ownedSearch.value = item.Product || item.product || 'Unknown';
         validateSwapInputs();
@@ -716,6 +725,10 @@ async function init() {
 
     setupSearch(wantedSearch, wantedResults, (item) => {
         wantedItem = item;
+        if (!item) {
+            clearWanted();
+            return;
+        }
         renderSelectedItem(document.getElementById('wanted-selected'), item, clearWanted);
         wantedSearch.value = item.Product || item.product || 'Unknown';
         validateSwapInputs();
@@ -1348,11 +1361,11 @@ function renderPresetItemsPage() {
         const slot = normItemSlot(s.slot || 'Item');
         let wantedItemObj = findItemByProductId(s.wanted_id);
         if (!wantedItemObj && s.wanted_name) {
-            wantedItemObj = Array.isArray(items) ? items.find(it => (it.Product || it.product || '').toLowerCase() === s.wanted_name.toLowerCase()) : null;
+            wantedItemObj = Array.isArray(items) ? items.find(it => it && (it.Product || it.product || '').toLowerCase() === s.wanted_name.toLowerCase()) : null;
         }
         let ownedItemObj = findItemByProductId(s.owned_id);
         if (!ownedItemObj && s.owned_name) {
-            ownedItemObj = Array.isArray(items) ? items.find(it => (it.Product || it.product || '').toLowerCase() === s.owned_name.toLowerCase()) : null;
+            ownedItemObj = Array.isArray(items) ? items.find(it => it && (it.Product || it.product || '').toLowerCase() === s.owned_name.toLowerCase()) : null;
         }
 
         const pImg = wantedItemObj?.image_url || wantedItemObj?.src || ownedItemObj?.image_url || ownedItemObj?.src || '';
@@ -1946,12 +1959,13 @@ async function refreshBackups() {
             const fileName = file.path.split(/[/\\]/).pop();
             const cleanName = fileName.toLowerCase().replace('.bak', '').replace('.upk', '');
             let matched = items && items.length > 0 ? items.find(it => {
+                if (!it) return false;
                 const dbPkg = (it.asset_package || '').toLowerCase().replace('.upk', '');
                 if (!dbPkg || dbPkg === 'none') return false;
                 return dbPkg === cleanName || (dbPkg.length > 4 && (cleanName.includes(dbPkg) || dbPkg.includes(cleanName)));
             }) : null;
             if (!matched && file.swap_from && items && items.length > 0) {
-                matched = items.find(it => (it.product || it.Product || '') === file.swap_from);
+                matched = items.find(it => it && (it.product || it.Product || '') === file.swap_from);
             }
             if (matched && matched.image_url && !pImg) {
                 pImg = matched.image_url;
@@ -2058,6 +2072,7 @@ function setupSearch(input, resultsDiv, selectionHandler) {
         }
 
         const matches = items.filter(item => {
+            if (!item) return false;
             const pName = (item.Product || item.product || '').toLowerCase();
             const pAsset = (item.AssetPackage || item.asset_package || '').toLowerCase();
             const pSlot = item.Slot || item.slot || '';
@@ -2080,6 +2095,7 @@ function setupSearch(input, resultsDiv, selectionHandler) {
 
         if (lockCategory !== 'All' && input.value === '') {
             const matches = items.filter(item => {
+                if (!item) return false;
                 return normSlot(item.Slot || item.slot) === normSlot(lockCategory);
             }).slice(0, 50);
             renderResults(matches, resultsDiv, selectionHandler);
@@ -2099,6 +2115,7 @@ function renderResults(matches, resultsDiv, selectionHandler) {
         return;
     }
     matches.forEach(item => {
+        if (!item) return;
         const div = document.createElement('div');
         div.className = 'flyout-row';
         const pName = item.Product || item.product || 'Unknown';
@@ -2345,8 +2362,8 @@ async function handleApply() {
         interval = null;
         showProgress(true, 100);
         updateStatus('Swap Complete', false);
-        const ownedName = ownedItem.product || ownedItem.Product || 'item';
-        const wantedName = wantedItem.product || wantedItem.Product || 'item';
+        const ownedName = ownedItem?.product || ownedItem?.Product || 'item';
+        const wantedName = wantedItem?.product || wantedItem?.Product || 'item';
         const paintBit = customPaintHex ? ` (${escHtml(customPaintHex.toUpperCase())})` : (paintId > 0 ? ` (${escHtml(paintLabel(paintId))})` : '');
         showToast(`Swapped <strong>${escHtml(ownedName)}</strong> → <strong>${escHtml(wantedName)}</strong>${paintBit}`, 'success');
 
@@ -4643,6 +4660,7 @@ function initDecalsTab() {
         const q = filterQuery.toLowerCase().trim();
         const filtered = q
             ? currentCarDecals.filter(d => {
+                if (!d) return false;
                 const name = (d.LongLabel || d.long_label || d.Product || d.product || '').toLowerCase();
                 return name.includes(q);
             })
@@ -4654,7 +4672,8 @@ function initDecalsTab() {
         }
 
         donorSelect.innerHTML = filtered.map(d => {
-            const name = d.LongLabel || d.long_label || `${d.Product || d.product} (${d.Slot || d.slot})`;
+            if (!d) return '';
+            const name = d.LongLabel || d.long_label || `${d.Product || d.product || 'Decal'} (${d.Slot || d.slot || ''})`;
             return `<option value="${d.ID || d.id}">${escHtml(name)}</option>`;
         }).join('');
     };
@@ -4667,14 +4686,15 @@ function initDecalsTab() {
             }
             const carName = (carId === 4284 ? 'fennec' : carId === 403 ? 'dominus' : carId === 1624 ? 'breakout' : carId === 1151 ? 'skyline' : 'octane');
             
-            currentCarDecals = catalogItems.filter(item => {
+            currentCarDecals = Array.isArray(catalogItems) ? catalogItems.filter(item => {
+                if (!item) return false;
                 const s = (item.Slot || item.slot || '').toLowerCase();
                 if (s !== 'decal') return false;
                 const p = (item.Product || item.product || '').toLowerCase();
                 const l = (item.LongLabel || item.long_label || '').toLowerCase();
                 const pkg = (item.AssetPackage || item.asset_package || '').toLowerCase();
                 return p.includes(carName) || l.includes(carName) || pkg.includes(carName) || (carName === 'fennec' && pkg.includes('grain')) || (carName === 'dominus' && pkg.includes('musclecar')) || (carName === 'octane' && (pkg.includes('octane') || !pkg.includes('_')));
-            });
+            }) : [];
 
             const currentQuery = donorSearchInput?.value || '';
             renderDonorOptions(currentQuery);
