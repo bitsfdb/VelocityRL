@@ -1178,12 +1178,15 @@ pub(crate) async fn sync_all_swaps_to_tagame(
         // Goal Explosions (Slot 10) are spawned in matches via their dedicated explosion package
         let is_goal_explosion = slot_index == 10 || slot_str.to_lowercase().contains("explosion");
         if is_goal_explosion && s.owned_id != s.wanted_id {
-            let _ = upk::swap_asset(
+            if let Err(e) = upk::swap_asset(
                 &s.owned_id.to_string(),
                 &s.wanted_id.to_string(),
                 s.paint_id,
                 &opts,
-            );
+            ) {
+                applog::event(&format!("Goal explosion swap error: {e}"));
+                return Err(format!("Goal explosion swap failed: {e}"));
+            }
         }
     }
 
