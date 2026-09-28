@@ -233,7 +233,7 @@ struct BackupFile {
     paint_name: String,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SwapEntry {
     pub owned_id:  i32,
     pub wanted_id: i32,
@@ -2025,6 +2025,8 @@ async fn swap_custom_decal_to_donor(
         wanted_id: 990301,
         owned_name: donor.product.clone(),
         wanted_name: decal_name.clone(),
+        owned_paint_id: None,
+        owned_custom_hex: None,
         paint_id: 0,
         custom_paint_hex: None,
         asset_package: donor.asset_package.clone(),

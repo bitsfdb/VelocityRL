@@ -224,20 +224,6 @@
                             </details>
                         </div>
                         <div class="title-color-row">
-                            <div class="settings-group">
-                                <label for="title-color-hex" data-i18n="titles.color">Color</label>
-                                <div class="title-color-inputs">
-                                    <input type="color" id="title-color-picker" value="#c8c8c8" aria-label="Title color picker">
-                                    <input type="text" id="title-color-hex" placeholder="AEF7FF" maxlength="7" autocomplete="off" spellcheck="false">
-                                </div>
-                            </div>
-                            <div class="settings-group">
-                                <label for="title-glow-hex" data-i18n="titles.glow">Glow</label>
-                                <div class="title-color-inputs">
-                                    <input type="color" id="title-glow-picker" value="#43afff" aria-label="Title glow picker">
-                                    <input type="text" id="title-glow-hex" placeholder="43AFFF" maxlength="7" autocomplete="off" spellcheck="false">
-                                </div>
-                            </div>
                             <label class="switch-row title-color-enable" for="title-color-custom">
                                 <input type="checkbox" id="title-color-custom" class="switch-input" role="switch">
                                 <span class="switch-ui" aria-hidden="true">
@@ -252,6 +238,20 @@
                                     <span class="switch-hint" data-i18n="titles.custom_colors_desc">injects a new title category</span>
                                 </span>
                             </label>
+                            <div class="settings-group">
+                                <label for="title-color-hex" data-i18n="titles.color">Color</label>
+                                <div class="title-color-inputs">
+                                    <input type="color" id="title-color-picker" value="#c8c8c8" aria-label="Title color picker">
+                                    <input type="text" id="title-color-hex" placeholder="AEF7FF" maxlength="7" autocomplete="off" spellcheck="false">
+                                </div>
+                            </div>
+                            <div class="settings-group">
+                                <label for="title-glow-hex" data-i18n="titles.glow">Glow</label>
+                                <div class="title-color-inputs">
+                                    <input type="color" id="title-glow-picker" value="#43afff" aria-label="Title glow picker">
+                                    <input type="text" id="title-glow-hex" placeholder="43AFFF" maxlength="7" autocomplete="off" spellcheck="false">
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -942,7 +942,7 @@
             </div>
 
             <div id="preset-preview-stats" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
-                <span id="preset-badge-items" class="preset-stat-badge">0 / 100 Items</span>
+                <span id="preset-badge-items" class="preset-stat-badge">0 / 50 Items</span>
                 <span id="preset-badge-maps" class="preset-stat-badge">0 / 30 Maps</span>
             </div>
 

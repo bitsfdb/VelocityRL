@@ -17,7 +17,7 @@ const SHARE_KEY: &[u8] = b"VelocityRL::preset-share::v1::A0A523581C0125D1";
 
 pub const MAX_PRESETS: usize = 50;
 pub const MAX_HISTORY: usize = 200;
-pub const MAX_PRESET_ITEMS: usize = 100;
+pub const MAX_PRESET_ITEMS: usize = 50;
 pub const MAX_PRESET_MAPS: usize = 30;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -417,6 +417,12 @@ fn parse_legacy_v1_code(rest: &str) -> Result<(String, Vec<SwapEntry>, Vec<Prese
     let maps: Vec<PresetMapEntry> = serde_json::from_value(val.get("maps").cloned().unwrap_or_default())
         .unwrap_or_default();
     let active_map_id: Option<String> = val.get("active_map_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+    if swaps.len() > MAX_PRESET_ITEMS {
+        return Err(format!("Invalid preset code: contains more than {MAX_PRESET_ITEMS} swaps."));
+    }
+    if maps.len() > MAX_PRESET_MAPS {
+        return Err(format!("Invalid preset code: contains more than {MAX_PRESET_MAPS} maps."));
+    }
     Ok((name, swaps, maps, active_map_id))
 }
 
@@ -439,6 +445,12 @@ fn parse_zlib_code(rest: &str) -> Result<(String, Vec<SwapEntry>, Vec<PresetMapE
     let swaps: Vec<SwapEntry> = serde_json::from_value(val.get("swaps").cloned().unwrap_or_default()).unwrap_or_default();
     let maps: Vec<PresetMapEntry> = serde_json::from_value(val.get("maps").cloned().unwrap_or_default()).unwrap_or_default();
     let active_map_id = val.get("active_map_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+    if swaps.len() > MAX_PRESET_ITEMS {
+        return Err(format!("Invalid preset code: contains more than {MAX_PRESET_ITEMS} swaps."));
+    }
+    if maps.len() > MAX_PRESET_MAPS {
+        return Err(format!("Invalid preset code: contains more than {MAX_PRESET_MAPS} maps."));
+    }
     Ok((name, swaps, maps, active_map_id))
 }
 
@@ -510,6 +522,8 @@ fn parse_code(code: &str) -> Result<(String, Vec<SwapEntry>, Vec<PresetMapEntry>
                         wanted_id: item_id,
                         owned_name: donor_name.to_string(),
                         wanted_name: String::new(),
+                        owned_paint_id: None,
+                        owned_custom_hex: None,
                         paint_id,
                         custom_paint_hex: None,
                         asset_package: String::new(),
@@ -754,6 +768,8 @@ pub async fn random_swap_plan(
             wanted_id: pick.id,
             owned_name: donor.product.clone(),
             wanted_name: pick.product.clone(),
+            owned_paint_id: None,
+            owned_custom_hex: None,
             paint_id: 0,
             custom_paint_hex: None,
             asset_package: donor.asset_package.clone(),
@@ -826,6 +842,8 @@ mod tests {
                 wanted_id: 4284,
                 owned_name: "Octane".into(),
                 wanted_name: "Fennec".into(),
+                owned_paint_id: None,
+                owned_custom_hex: None,
                 paint_id: 12,
                 custom_paint_hex: None,
                 asset_package: "body_grain".into(),
@@ -836,6 +854,8 @@ mod tests {
                 wanted_id: 1565,
                 owned_name: "OEM".into(),
                 wanted_name: "Cristiano".into(),
+                owned_paint_id: None,
+                owned_custom_hex: None,
                 paint_id: 3,
                 custom_paint_hex: None,
                 asset_package: "wheel_cristiano".into(),
@@ -873,6 +893,8 @@ mod tests {
                     wanted_id: 4284,
                     owned_name: "Octane".into(),
                     wanted_name: "Fennec".into(),
+                    owned_paint_id: None,
+                    owned_custom_hex: None,
                     paint_id: 3,
                     custom_paint_hex: None,
                     asset_package: "body_grain".into(),
@@ -897,5 +919,37 @@ mod tests {
         assert_eq!(name, "My Legacy Preset");
         assert_eq!(swaps.len(), 1);
         assert_eq!(swaps[0].wanted_id, 4284);
+    }
+
+    #[test]
+    fn test_parse_code_exceeding_50_swaps_rejected() {
+        let mut swaps = Vec::new();
+        for i in 0..51 {
+            swaps.push(SwapEntry {
+                owned_id: 23,
+                wanted_id: 4284,
+                owned_name: "Octane".into(),
+                wanted_name: "Fennec".into(),
+                owned_paint_id: None,
+                owned_custom_hex: None,
+                paint_id: 0,
+                custom_paint_hex: None,
+                asset_package: "body_grain".into(),
+                slot: Some("Body".into()),
+            });
+        }
+        let payload = serde_json::json!({
+            "v": 1,
+            "name": "Too Many Items",
+            "swaps": swaps,
+            "maps": [],
+            "active_map_id": null,
+        }).to_string();
+        let sig = sign_preset_payload(payload.as_bytes());
+        let code = format!("1.{}.{}", B64.encode(payload.as_bytes()), B64.encode(sig));
+
+        let res = parse_code(&code);
+        assert!(res.is_err(), "Must reject preset with >50 swaps");
+        assert!(res.unwrap_err().contains("contains more than 50 swaps"));
     }
 }
