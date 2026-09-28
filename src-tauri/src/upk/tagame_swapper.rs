@@ -168,12 +168,10 @@ pub fn emit_convert_to_client_loadout_bytecode(
 
     // 2. Overrides (Conditional slot assignments: if Products[slot] == owned_id -> target_id)
     for rule in slot_overrides {
-        if let Some(owned_id) = rule.owned_id {
-            let cond_disk_len = if rule.slot_idx == 0 { 56 } else { 58 };
-            if bc.len() + cond_disk_len + 12 > max_disk_size {
-                break;
-            }
+        let uncond_disk_len = if rule.slot_idx == 0 { 26 } else { 27 };
+        let cond_disk_len = if rule.slot_idx == 0 { 56 } else { 58 };
 
+        if let Some(owned_id) = rule.owned_id.filter(|_| bc.len() + cond_disk_len + 12 <= max_disk_size) {
             // EX_JumpIfNot
             bc.push(opcodes::EX_JUMP_IF_NOT);
             let jump_pos = bc.len();
@@ -232,11 +230,7 @@ pub fn emit_convert_to_client_loadout_bytecode(
             bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target_mem.to_le_bytes());
 
             mem_sz += total_rule_mem;
-        } else {
-            let uncond_disk_len = if rule.slot_idx == 0 { 26 } else { 27 };
-            if bc.len() + uncond_disk_len + 12 > max_disk_size {
-                break;
-            }
+        } else if bc.len() + uncond_disk_len + 12 <= max_disk_size {
             bc.push(opcodes::EX_LET);
             bc.push(opcodes::EX_DYN_ARRAY_OP);
             bc.extend_from_slice(&[0x00, 0x00]);
@@ -419,12 +413,10 @@ pub fn emit_car_set_loadout_bytecode(
 
     // 1. Swap Overrides on Data.Products (Data is local parameter #16586)
     for rule in slot_overrides {
-        if let Some(owned_id) = rule.owned_id {
-            let cond_disk_len = if rule.slot_idx == 0 { 56 } else { 58 };
-            if bc.len() + cond_disk_len + 100 > max_disk_size {
-                break;
-            }
+        let uncond_disk_len = if rule.slot_idx == 0 { 26 } else { 27 };
+        let cond_disk_len = if rule.slot_idx == 0 { 56 } else { 58 };
 
+        if let Some(owned_id) = rule.owned_id.filter(|_| bc.len() + cond_disk_len + 100 <= max_disk_size) {
             bc.push(opcodes::EX_JUMP_IF_NOT);
             let jump_pos = bc.len();
             bc.extend_from_slice(&[0x00, 0x00]);
@@ -477,11 +469,7 @@ pub fn emit_car_set_loadout_bytecode(
             let jump_target_mem = (mem_sz + total_rule_mem) as u16;
             bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target_mem.to_le_bytes());
             mem_sz += total_rule_mem;
-        } else {
-            let uncond_disk_len = if rule.slot_idx == 0 { 26 } else { 27 };
-            if bc.len() + uncond_disk_len + 100 > max_disk_size {
-                break;
-            }
+        } else if bc.len() + uncond_disk_len + 100 <= max_disk_size {
             bc.push(opcodes::EX_LET);
             bc.push(opcodes::EX_DYN_ARRAY_OP);
             bc.extend_from_slice(&[0x00, 0x00]);
