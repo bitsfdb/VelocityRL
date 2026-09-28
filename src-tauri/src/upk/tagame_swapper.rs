@@ -642,7 +642,8 @@ pub fn apply_body_paint_modification(
     let flen = i32::from_le_bytes(file_bytes[p..p+4].try_into().unwrap());
     p += 4 + if flen > 0 { flen as usize } else { (-flen * 2) as usize };
     p += 4; // skip package flags
-    p += 4; // skip name count
+    let name_count = i32::from_le_bytes(file_bytes[p..p+4].try_into().unwrap());
+    p += 4;
     let name_offset = u32::from_le_bytes(file_bytes[p..p+4].try_into().unwrap()) as usize;
 
     let enc_size = (total_header_size - name_offset + 15) & !15;
