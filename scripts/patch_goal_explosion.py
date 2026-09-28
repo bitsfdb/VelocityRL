@@ -287,10 +287,12 @@ def patch_tagame(tagame_path: str, target_explosion_id: int):
     func_off0 = target_exp["serial_offset"] - c0["uncomp_offset"]
     orig_disk_sz = struct.unpack_from("<I", decomp0, func_off0 + 44)[0]
 
-    # Goal Explosion slot overrides (Slot 10: 1903=Classic, 0=Default)
+    # Goal Explosion slot overrides (Slot 10 and Slot 15: 1903=Classic, 0=Default)
     rules = [
-        (10, 1903, target_explosion_id), # Classic Goal Explosion
-        (10, 0, target_explosion_id),    # Default Slot 10
+        (10, 1903, target_explosion_id), # Slot 10 Classic
+        (10, 0, target_explosion_id),    # Slot 10 Default/0
+        (15, 1903, target_explosion_id), # Slot 15 Classic
+        (15, 0, target_explosion_id),    # Slot 15 Default/0
     ]
 
     EXPANDED_SIZE = 3000

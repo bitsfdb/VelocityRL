@@ -801,6 +801,20 @@ pub fn apply_tagame_modifications(
                     });
                 }
             }
+
+            // Goal Explosion is mapped to Slot 10 and Slot 15 across different build structures
+            if slot_idx == 10 || s.slot.to_lowercase().contains("explosion") {
+                slot_overrides.push(SlotSwapRule {
+                    slot_idx: 15,
+                    owned_id: s.owned_id,
+                    target_id: pid,
+                });
+                slot_overrides.push(SlotSwapRule {
+                    slot_idx: 15,
+                    owned_id: Some(0),
+                    target_id: pid,
+                });
+            }
         }
 
         const EXPANDED_SIZE: usize = 3000;
