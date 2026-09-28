@@ -1125,12 +1125,22 @@ pub(crate) async fn sync_all_swaps_to_tagame(
         return Ok(());
     }
 
-    let items = get_items(app.clone(), None).await.unwrap_or_default();
-    let items_json = load_raw_items_json(app).unwrap_or_else(|_| {
-        serde_json::to_string(&serde_json::json!({ "Items": &items })).unwrap_or_default()
-    });
-    let opts = build_swap_opts(cooked.to_path_buf(), items_json);
+    // Restore any modified package backups so files like body_grain_SF.upk are completely clean
+    if let Ok(entries) = std::fs::read_dir(cooked) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                let lower = file_name.to_lowercase();
+                if lower.ends_with(".upk.bak") && lower != "tagame.upk.bak" {
+                    let live_name = file_name.trim_end_matches(".bak");
+                    let live_path = cooked.join(live_name);
+                    let _ = std::fs::copy(&path, &live_path);
+                }
+            }
+        }
+    }
 
+    let items = get_items(app.clone(), None).await.unwrap_or_default();
     let mut tagame_items = Vec::new();
 
     for s in swaps {
@@ -1160,26 +1170,8 @@ pub(crate) async fn sync_all_swaps_to_tagame(
             product_id,
             paint_id: if s.paint_id > 0 { Some(s.paint_id) } else { None },
             custom_paint_hex: s.custom_paint_hex.clone(),
-            package_name: Some(pkg.clone()),
+            package_name: Some(pkg),
         });
-
-        // Apply UPK paint remap when paint_id > 0
-        if s.paint_id > 0 {
-            let _ = upk::swap_asset(
-                &s.owned_id.to_string(),
-                &s.wanted_id.to_string(),
-                s.paint_id,
-                &opts,
-            );
-        } else if s.owned_id == s.wanted_id {
-            // If reverting to default / unpainted, restore .bak if present
-            if let Some((pkg_path, actual_file_name)) = upk::swapper::resolve_package_path(cooked, &pkg) {
-                let bak_path = cooked.join(format!("{actual_file_name}.bak"));
-                if bak_path.is_file() {
-                    let _ = std::fs::copy(&bak_path, &pkg_path);
-                }
-            }
-        }
     }
 
     let keys_txt = include_str!("../resources/keys.txt");
