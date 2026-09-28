@@ -1203,7 +1203,7 @@ async fn delete_swap(app: tauri::AppHandle, owned_id: i32) -> Result<(), String>
     Ok(())
 }
 
-fn run_swap_caught(
+pub(crate) fn run_swap_caught(
     owned_id: &str,
     wanted_id: &str,
     paint_id: i32,
@@ -1291,6 +1291,22 @@ async fn apply_swap(
         owned_id, wanted_id, paint_id, clean_hex, cooked.display()
     ));
 
+    // Perform actual UPK asset mesh/texture swap on game files
+    let items_raw = serde_json::to_string(&all_items).unwrap_or_default();
+    let opts = build_swap_opts(cooked.clone(), items_raw);
+    let mut warning_msg = None;
+    if oid != wid || paint_id > 0 {
+        match run_swap_caught(&owned_id, &wanted_id, paint_id, &opts) {
+            Ok(msg) => {
+                applog::event(&format!("apply_swap: upk swap successful: {msg}"));
+            }
+            Err(err) => {
+                applog::event(&format!("apply_swap: upk swap warning: {err}"));
+                warning_msg = Some(err);
+            }
+        }
+    }
+
     let mut swaps = load_swaps(&app);
     swaps.retain(|s| s.owned_id != oid);
     let new_entry = SwapEntry {
@@ -1320,7 +1336,12 @@ async fn apply_swap(
     } else {
         String::new()
     };
-    Ok(format!("Successfully swapped {} with {}{}", owned.product, wanted.product, paint_suffix))
+    let warn_suffix = if let Some(w) = warning_msg {
+        format!("\nWarnings:\n{w}")
+    } else {
+        String::new()
+    };
+    Ok(format!("Successfully swapped {} with {}{}{}", owned.product, wanted.product, paint_suffix, warn_suffix))
 }
 
 pub(crate) fn build_swap_opts(game_dir: PathBuf, items_json: String) -> upk::SwapOptions {
@@ -1340,6 +1361,15 @@ async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<()
     }
     let cooked = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
         .unwrap_or_else(|_| PathBuf::from(&config.game_dir));
+
+    let bak_path = if path.ends_with(".bak") {
+        PathBuf::from(&path)
+    } else {
+        PathBuf::from(format!("{path}.bak"))
+    };
+
+    let bak_str = bak_path.to_string_lossy().into_owned();
+    let _ = upk::swapper::restore_single(&bak_str);
 
     let mut swaps = load_swaps(&app);
     let orig_len = swaps.len();
@@ -1381,6 +1411,7 @@ async fn restore_backups(app: tauri::AppHandle) -> Result<String, String> {
         .unwrap_or_else(|_| PathBuf::from(&config.game_dir));
 
     let _ = upk::tagame_swapper::restore_tagame_upk(&cooked);
+    let _ = upk::swapper::restore_all(&cooked.to_string_lossy());
 
     let count = load_swaps(&app).len();
     save_swaps(&app, &[]);
@@ -1410,6 +1441,14 @@ async fn reswap_all(app: tauri::AppHandle) -> Result<String, String> {
     }
     let cooked = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
         .unwrap_or_else(|_| PathBuf::from(&config.game_dir));
+
+    let all_items = get_items(app.clone(), None).await.unwrap_or_default();
+    let items_raw = serde_json::to_string(&all_items).unwrap_or_default();
+    let opts = build_swap_opts(cooked.clone(), items_raw);
+
+    for s in &swaps {
+        let _ = run_swap_caught(&s.owned_id.to_string(), &s.wanted_id.to_string(), s.paint_id, &opts);
+    }
 
     sync_all_swaps_to_tagame(&app, &cooked, &swaps).await?;
     Ok(format!("Synchronized {} active swap(s)", swaps.len()))
