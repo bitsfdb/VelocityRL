@@ -870,6 +870,16 @@ pub fn apply_tagame_modifications(
                             if orig_disk_sz >= 100 {
                                 let mut bc = Vec::new();
                                 let mut mem_sz: u32 = 0;
+
+                                // 1. OutLoadout = InProductsConfig;
+                                bc.push(opcodes::EX_LET);
+                                bc.push(opcodes::EX_LOCAL_VARIABLE);
+                                bc.extend_from_slice(&47858i32.to_le_bytes()); // OutLoadout (#47858)
+                                bc.push(opcodes::EX_LOCAL_VARIABLE);
+                                bc.extend_from_slice(&47853i32.to_le_bytes()); // InProductsConfig (#47853)
+                                mem_sz += 11;
+
+                                // 2. Override specific slots on OutLoadout
                                 for rule in &slot_overrides {
                                     if bc.len() + 30 > orig_disk_sz {
                                         break;
@@ -895,7 +905,7 @@ pub fn apply_tagame_modifications(
                                     bc.extend_from_slice(&rule.target_id.to_le_bytes());
                                 }
                                 bc.push(opcodes::EX_RETURN);
-                                bc.push(0x27); // EX_TRUE
+                                bc.push(0x28); // EX_FALSE (valid loadout, no DLC stripping)
                                 bc.push(opcodes::EX_END_OF_SCRIPT);
                                 mem_sz += 3;
 
