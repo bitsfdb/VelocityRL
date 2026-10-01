@@ -7521,13 +7521,13 @@ async function renderSpawnerCatalogue() {
             const text = t.text || t.Text || id;
             const cat = t.category || t.Category || 'Title';
             return `
-                <div class="spawner-card" data-title-id="${escHtml(id)}" title="${escHtml(text)}">
-                    <div style="height:64px; display:flex; align-items:center; justify-content:center; width:100%;">
-                        <span style="font-size:11px; font-weight:700; color:#38bdf8; text-align:center; padding:4px; word-break:break-word; line-height:1.2;">${escHtml(text)}</span>
+                <div class="spawner-card is-title-card" data-title-id="${escHtml(id)}" title="${escHtml(text)}">
+                    <div class="spawner-title-preview-box">
+                        <div class="spawner-title-text">${escHtml(text)}</div>
                     </div>
                     <div class="spawner-card-title">${escHtml(text)}</div>
                     <div class="spawner-card-meta">
-                        <span class="quality-badge bg-premium" style="font-size:9px; padding:1px 4px;">Title</span>
+                        <span class="quality-badge bg-premium" style="font-size:10px; padding:1px 5px;">Title</span>
                         <span>${escHtml(cat)}</span>
                     </div>
                     <div class="spawner-card-overlay">
@@ -7586,10 +7586,12 @@ async function renderSpawnerCatalogue() {
         const bgClass = getQualityBgClass(quality);
         return `
             <div class="spawner-card" data-item-id="${escHtml(id)}" title="${escHtml(name)}">
-                ${img ? `<img src="${escHtml(img)}" class="spawner-card-img" />` : '<div style="height:64px;"></div>'}
+                <div class="spawner-card-img-wrap">
+                    ${img ? `<img src="${escHtml(img)}" class="spawner-card-img" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" /><div style="display:none;align-items:center;justify-content:center;color:var(--muted);width:100%;height:100%;"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></div>` : '<div style="display:flex;align-items:center;justify-content:center;color:var(--muted);width:100%;height:100%;"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></div>'}
+                </div>
                 <div class="spawner-card-title">${escHtml(name)}</div>
                 <div class="spawner-card-meta">
-                    <span class="quality-badge ${bgClass}" style="font-size:9px; padding:1px 4px;">${escHtml(quality)}</span>
+                    <span class="quality-badge ${bgClass}" style="font-size:10px; padding:1px 5px;">${escHtml(quality)}</span>
                     <span>${escHtml(slot)}</span>
                 </div>
                 <div class="spawner-card-overlay">

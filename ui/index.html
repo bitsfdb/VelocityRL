@@ -128,30 +128,17 @@
                         <button class="cat-btn" data-slot="Titles" data-i18n="categories.titles">Titles</button>
                     </div>
 
-                    <div style="display:flex; gap:10px; margin-top:10px; align-items:center;">
+                    <div style="display:flex; gap:10px; margin: 12px 0; align-items:center;">
                         <div class="search-box" style="flex:1;">
                             <input type="text" id="spawner-search" data-i18n-placeholder="spawner.search_placeholder" placeholder="Search item catalogue to spawn..." autocomplete="off">
                         </div>
                     </div>
 
-                    <div class="tags-row" style="display:flex; flex-wrap:wrap; gap:6px; margin: 8px 0 10px 0;">
-                        <button type="button" class="tag-btn action-btn-secondary" data-tag="Fennec" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Fennec</button>
-                        <button type="button" class="tag-btn action-btn-secondary" data-tag="Octane" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Octane</button>
-                        <button type="button" class="tag-btn action-btn-secondary" data-tag="Dominus" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Dominus</button>
-                        <button type="button" class="tag-btn action-btn-secondary" data-tag="GoldRush" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Alpha Boost</button>
-                        <button type="button" class="tag-btn action-btn-secondary" data-tag="Dieci" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Dieci</button>
-                        <button type="button" class="tag-btn action-btn-secondary" data-tag="Reaper" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Reaper</button>
-                        <button type="button" class="tag-btn action-btn-secondary" data-tag="Zomba" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Zomba</button>
-                        <button type="button" class="tag-btn action-btn-secondary" data-tag="Apex" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Apex</button>
-                        <button type="button" class="tag-btn action-btn-secondary" data-tag="SSL" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">SSL</button>
-                        <button type="button" class="tag-btn action-btn-secondary" data-tag="Champion" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">RLCS Champion</button>
-                    </div>
-
-                    <div id="spawner-custom-title-card" class="card" style="display:none; margin-bottom:12px; padding:12px; background:rgba(99,102,241,0.06); border-color:rgba(99,102,241,0.25);">
-                        <h4 style="margin:0 0 8px 0; font-size:13px; color:#93c5fd;">Spawn Custom Title</h4>
+                    <div id="spawner-custom-title-card" class="card" style="display:none; margin-bottom:12px; padding:12px;">
+                        <h4 style="margin:0 0 8px 0; font-size:13px; color:var(--text-primary, #fff);">Spawn Custom Title</h4>
                         <div style="display:flex; gap:8px; align-items:center;">
-                            <input type="text" id="spawner-custom-title-input" placeholder="Type custom title text (e.g. Supersonic Legend)..." style="flex:1; padding:7px 10px; font-size:12px; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#fff;" />
-                            <button type="button" id="spawner-custom-title-btn" class="action-btn" style="padding:7px 14px; font-size:12px; white-space:nowrap; background:#6366f1; color:#fff;">Spawn Custom Title</button>
+                            <input type="text" id="spawner-custom-title-input" placeholder="Type custom title text (e.g. Supersonic Legend)..." style="flex:1; padding:7px 10px; font-size:12px;" />
+                            <button type="button" id="spawner-custom-title-btn" class="action-btn" style="padding:7px 14px; font-size:12px; white-space:nowrap;">Spawn Custom Title</button>
                         </div>
                     </div>
 
@@ -229,11 +216,11 @@
             </div>
 
             <div id="titles-tab" class="tab-content">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 14px; background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 8px; padding: 10px 14px;">
-                    <div style="font-size: 12px; color: #cbd5e1;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 14px; background: rgba(0, 0, 0, 0.22); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;">
+                    <div style="font-size: 12px; color: var(--text-secondary, #94a3b8);">
                         Want to directly spawn title items into your account inventory?
                     </div>
-                    <button type="button" id="btn-goto-title-spawner" class="action-btn" style="padding: 4px 12px; font-size: 11px; white-space: nowrap; background: #6366f1; color: #fff;">
+                    <button type="button" id="btn-goto-title-spawner" class="action-btn" style="padding: 4px 12px; font-size: 11px; white-space: nowrap;">
                         Open Title Spawner &rarr;
                     </button>
                 </div>
