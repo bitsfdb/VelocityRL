@@ -187,12 +187,30 @@
                     </div>
 
                     <div id="restore-spawner-view" style="display:none;">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 10px; flex-wrap:wrap; gap:8px;">
                             <h3 style="margin:0; font-size:14px;" data-i18n="spawner.active_title">Active Spawned Items &amp; Titles</h3>
                             <button id="btn-clear-spawned" class="action-btn action-btn-secondary" style="padding:4px 12px; font-size:11px;" data-i18n="spawner.clear_all">Clear All</button>
                         </div>
-                        <div id="spawner-active-list" class="backup-list" style="max-height: 420px; overflow-y: auto;">
+
+                        <div style="margin-bottom: 10px;">
+                            <div class="search-box">
+                                <input type="text" id="restore-spawner-search" placeholder="Search active spawned items or titles..." autocomplete="off">
+                            </div>
+                        </div>
+
+                        <div id="spawner-active-list" class="backup-list" style="min-height: 180px; max-height: 400px; overflow-y: auto;">
                             <div class="backup-empty" data-i18n="spawner.empty_spawned">No items spawned yet.</div>
+                        </div>
+
+                        <div id="restore-spawner-pagination-bar" class="spawner-pagination-bar" style="margin-top:10px; margin-bottom:0; display:none;">
+                            <div id="restore-spawner-page-stats" class="spawner-page-stats">Showing 0 of 0</div>
+                            <div class="spawner-pagination-controls">
+                                <button type="button" id="restore-spawner-first-btn" class="action-btn action-btn-secondary" style="padding:5px 10px; font-size:11px;" title="First page">«</button>
+                                <button type="button" id="restore-spawner-prev-btn" class="action-btn action-btn-secondary" style="padding:5px 12px; font-size:11px;">← Previous</button>
+                                <span id="restore-spawner-page-info" class="spawner-page-info" style="min-width:75px; font-size:11px;">Page 1 of 1</span>
+                                <button type="button" id="restore-spawner-next-btn" class="action-btn action-btn-secondary" style="padding:5px 12px; font-size:11px;">Next →</button>
+                                <button type="button" id="restore-spawner-last-btn" class="action-btn action-btn-secondary" style="padding:5px 10px; font-size:11px;" title="Last page">»</button>
+                            </div>
                         </div>
                     </div>
                 </div>

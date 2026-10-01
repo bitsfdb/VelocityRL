@@ -7915,99 +7915,196 @@ function wireCatalogueCardEvents() {
     });
 }
 
-async function refreshSpawnedItemsList() {
+let restoreSpawnerPage = 1;
+const RESTORE_SPAWNER_PAGE_SIZE = 25;
+let cachedSpawnedItems = [];
+let cachedSpawnedTitles = [];
+let restoreSpawnerControlsWired = false;
+
+function wireRestoreSpawnerControls() {
+    if (restoreSpawnerControlsWired) return;
+    restoreSpawnerControlsWired = true;
+
+    const searchInput = document.getElementById('restore-spawner-search');
+    const firstBtn = document.getElementById('restore-spawner-first-btn');
+    const prevBtn = document.getElementById('restore-spawner-prev-btn');
+    const nextBtn = document.getElementById('restore-spawner-next-btn');
+    const lastBtn = document.getElementById('restore-spawner-last-btn');
+
+    searchInput?.addEventListener('input', debounce(() => {
+        restoreSpawnerPage = 1;
+        renderRestoreSpawnerPage();
+    }, 150));
+
+    firstBtn?.addEventListener('click', () => {
+        if (restoreSpawnerPage > 1) {
+            restoreSpawnerPage = 1;
+            renderRestoreSpawnerPage();
+        }
+    });
+
+    prevBtn?.addEventListener('click', () => {
+        if (restoreSpawnerPage > 1) {
+            restoreSpawnerPage--;
+            renderRestoreSpawnerPage();
+        }
+    });
+
+    nextBtn?.addEventListener('click', () => {
+        restoreSpawnerPage++;
+        renderRestoreSpawnerPage();
+    });
+
+    lastBtn?.addEventListener('click', () => {
+        restoreSpawnerPage = 999999;
+        renderRestoreSpawnerPage();
+    });
+}
+
+function renderRestoreSpawnerPage() {
     const listEl = document.getElementById('spawner-active-list');
+    const searchInput = document.getElementById('restore-spawner-search');
+    const statsEl = document.getElementById('restore-spawner-page-stats');
+    const infoEl = document.getElementById('restore-spawner-page-info');
+    const firstBtn = document.getElementById('restore-spawner-first-btn');
+    const prevBtn = document.getElementById('restore-spawner-prev-btn');
+    const nextBtn = document.getElementById('restore-spawner-next-btn');
+    const lastBtn = document.getElementById('restore-spawner-last-btn');
+    const paginationBar = document.getElementById('restore-spawner-pagination-bar');
+
     if (!listEl) return;
+    const q = (searchInput?.value || '').trim().toLowerCase();
+
+    const unifiedList = [];
+    (cachedSpawnedItems || []).forEach(item => {
+        const name = item.product_name || item.name || 'Unknown Item';
+        const pid = item.product_id || item.id || 0;
+        const slot = item.slot || '';
+        const paintId = item.paint_id || 0;
+        const paintLabelStr = paintLabel(paintId);
+        unifiedList.push({
+            kind: 'item',
+            name,
+            pid,
+            slot,
+            paintId,
+            paintLabelStr,
+            searchKey: `${name} ${slot} ${paintLabelStr} ${pid}`.toLowerCase()
+        });
+    });
+
+    (cachedSpawnedTitles || []).forEach(t => {
+        const text = typeof t === 'string' ? t : (t.text || t.id || '');
+        const tid = typeof t === 'string' ? t : (t.id || t.text || '');
+        unifiedList.push({
+            kind: 'title',
+            text,
+            tid,
+            searchKey: `${text} ${tid} title`.toLowerCase()
+        });
+    });
+
+    const filtered = unifiedList.filter(entry => !q || entry.searchKey.includes(q));
+    const totalCount = filtered.length;
+    const totalPages = Math.max(1, Math.ceil(totalCount / RESTORE_SPAWNER_PAGE_SIZE));
+    if (restoreSpawnerPage > totalPages) restoreSpawnerPage = totalPages;
+    if (restoreSpawnerPage < 1) restoreSpawnerPage = 1;
+
+    const startIdx = (restoreSpawnerPage - 1) * RESTORE_SPAWNER_PAGE_SIZE;
+    const pageEntries = filtered.slice(startIdx, startIdx + RESTORE_SPAWNER_PAGE_SIZE);
+
+    if (statsEl) statsEl.textContent = `Showing ${totalCount === 0 ? 0 : startIdx + 1}–${Math.min(startIdx + RESTORE_SPAWNER_PAGE_SIZE, totalCount)} of ${totalCount}`;
+    if (infoEl) infoEl.textContent = `Page ${restoreSpawnerPage} of ${totalPages}`;
+    if (firstBtn) firstBtn.disabled = restoreSpawnerPage <= 1;
+    if (prevBtn) prevBtn.disabled = restoreSpawnerPage <= 1;
+    if (nextBtn) nextBtn.disabled = restoreSpawnerPage >= totalPages;
+    if (lastBtn) lastBtn.disabled = restoreSpawnerPage >= totalPages;
+    if (paginationBar) paginationBar.style.display = totalCount > 0 ? 'flex' : 'none';
+
+    if (totalCount === 0) {
+        listEl.innerHTML = q
+            ? '<div class="backup-empty">No spawned items match your search.</div>'
+            : '<div class="backup-empty">No network items or titles spawned yet.</div>';
+        return;
+    }
+
+    listEl.innerHTML = pageEntries.map(entry => {
+        if (entry.kind === 'item') {
+            const paintBadge = entry.paintId > 0 ? `<span class="quality-badge bg-premium" style="font-size:10px; padding:1px 5px;">${escHtml(entry.paintLabelStr)}</span>` : '';
+            return `
+                <div class="backup-item" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.06);">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <div>
+                            <div style="font-weight:600; font-size:13px; color:#fff;">${escHtml(entry.name)}</div>
+                            <div style="font-size:11px; display:flex; gap:6px; align-items:center; margin-top:2px;">
+                                <span class="quality-badge bg-premium" style="font-size:10px; padding:1px 5px;">ID: ${escHtml(String(entry.pid))}</span>
+                                ${paintBadge}
+                                <span style="color:#888;">${escHtml(entry.slot)}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-remove-spawned-item action-btn-secondary" data-pid="${escHtml(String(entry.pid))}" data-paint="${escHtml(String(entry.paintId))}" style="padding:4px 8px; font-size:11px; border-radius:4px; color:#f87171; cursor:pointer;" title="Remove">Remove</button>
+                </div>
+            `;
+        } else {
+            return `
+                <div class="backup-item" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.06);">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <div style="width:36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:4px; background:rgba(99,102,241,0.15); color:#818cf8; font-size:14px; font-weight:bold;">T</div>
+                        <div>
+                            <div style="font-weight:600; font-size:13px; color:#38bdf8;">${escHtml(entry.text)}</div>
+                            <div style="font-size:11px; display:flex; gap:6px; align-items:center; margin-top:2px;">
+                                <span class="quality-badge bg-premium" style="font-size:10px; padding:1px 5px;">Spawned Title</span>
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-remove-spawned-title action-btn-secondary" data-id="${escHtml(String(entry.tid))}" style="padding:4px 8px; font-size:11px; border-radius:4px; color:#f87171; cursor:pointer;" title="Remove">Remove</button>
+                </div>
+            `;
+        }
+    }).join('');
+
+    listEl.querySelectorAll('.btn-remove-spawned-item[data-pid]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const pid = parseInt(btn.dataset.pid, 10) || 0;
+            const paintId = parseInt(btn.dataset.paint, 10) || 0;
+            try {
+                await invoke('remove_network_spawned_item', { productId: pid, paintId: paintId });
+                showToast('Removed spawned item.', 'info');
+                await refreshSpawnedItemsList();
+            } catch (err) {
+                showToast(`Error removing item: ${err}`, 'error');
+            }
+        });
+    });
+
+    listEl.querySelectorAll('.btn-remove-spawned-title[data-id]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const id = btn.dataset.id;
+            try {
+                await invoke('remove_network_spawned_title', { titleId: id });
+                showToast('Removed spawned title.', 'info');
+                await refreshSpawnedItemsList();
+            } catch (err) {
+                showToast(`Error removing title: ${err}`, 'error');
+            }
+        });
+    });
+}
+
+async function refreshSpawnedItemsList() {
+    wireRestoreSpawnerControls();
     try {
         const [spawnedItems, spawnedTitles] = await Promise.all([
             invoke('get_network_spawned_items').catch(() => []),
             invoke('get_network_spawned_titles').catch(() => [])
         ]);
 
-        const totalCount = (spawnedItems?.length || 0) + (spawnedTitles?.length || 0);
-        if (totalCount === 0) {
-            listEl.innerHTML = '<div class="backup-empty">No network items or titles spawned yet.</div>';
-            return;
-        }
-
-        let html = '';
-        if (spawnedItems && spawnedItems.length > 0) {
-            html += spawnedItems.map(item => {
-                const name = item.product_name || item.name || 'Unknown Item';
-                const pid = item.product_id || item.id || 0;
-                const slot = item.slot || '';
-                const paintId = item.paint_id || 0;
-                const paintLabelStr = paintLabel(paintId);
-                const paintBadge = paintId > 0 ? `<span class="quality-badge bg-premium" style="font-size:10px; padding:1px 5px;">${escHtml(paintLabelStr)}</span>` : '';
-                return `
-                    <div class="backup-item" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.06);">
-                        <div style="display:flex; align-items:center; gap:10px;">
-                            <div>
-                                <div style="font-weight:600; font-size:13px; color:#fff;">${escHtml(name)}</div>
-                                <div style="font-size:11px; display:flex; gap:6px; align-items:center; margin-top:2px;">
-                                    <span class="quality-badge bg-premium" style="font-size:10px; padding:1px 5px;">ID: ${escHtml(String(pid))}</span>
-                                    ${paintBadge}
-                                    <span style="color:#888;">${escHtml(slot)}</span>
-                                </div>
-                            </div>
-                        </div>
-                        <button type="button" class="btn-remove-spawned-item action-btn-secondary" data-pid="${escHtml(String(pid))}" data-paint="${escHtml(String(paintId))}" style="padding:4px 8px; font-size:11px; border-radius:4px; color:#f87171; cursor:pointer;" title="Remove">Remove</button>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        if (spawnedTitles && spawnedTitles.length > 0) {
-            html += spawnedTitles.map(t => {
-                const text = typeof t === 'string' ? t : (t.text || t.id);
-                const tid = typeof t === 'string' ? t : (t.id || t.text);
-                return `
-                    <div class="backup-item" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.06);">
-                        <div style="display:flex; align-items:center; gap:10px;">
-                            <div style="width:36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:4px; background:rgba(99,102,241,0.15); color:#818cf8; font-size:14px; font-weight:bold;">T</div>
-                            <div>
-                                <div style="font-weight:600; font-size:13px; color:#38bdf8;">${escHtml(text)}</div>
-                                <div style="font-size:11px; display:flex; gap:6px; align-items:center; margin-top:2px;">
-                                    <span class="quality-badge bg-premium" style="font-size:10px; padding:1px 5px;">Spawned Title</span>
-                                </div>
-                            </div>
-                        </div>
-                        <button type="button" class="btn-remove-spawned-title action-btn-secondary" data-id="${escHtml(String(tid))}" style="padding:4px 8px; font-size:11px; border-radius:4px; color:#f87171; cursor:pointer;" title="Remove">Remove</button>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        listEl.innerHTML = html;
-
-        listEl.querySelectorAll('.btn-remove-spawned-item[data-pid]').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                const pid = parseInt(btn.dataset.pid, 10) || 0;
-                const paintId = parseInt(btn.dataset.paint, 10) || 0;
-                try {
-                    await invoke('remove_network_spawned_item', { productId: pid, paintId: paintId });
-                    showToast('Removed spawned item.', 'info');
-                    await refreshSpawnedItemsList();
-                } catch (err) {
-                    showToast(`Error removing item: ${err}`, 'error');
-                }
-            });
-        });
-
-        listEl.querySelectorAll('.btn-remove-spawned-title[data-id]').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                const id = btn.dataset.id;
-                try {
-                    await invoke('remove_network_spawned_title', { titleId: id });
-                    showToast('Removed spawned title.', 'info');
-                    await refreshSpawnedItemsList();
-                } catch (err) {
-                    showToast(`Error removing title: ${err}`, 'error');
-                }
-            });
-        });
+        cachedSpawnedItems = Array.isArray(spawnedItems) ? spawnedItems : [];
+        cachedSpawnedTitles = Array.isArray(spawnedTitles) ? spawnedTitles : [];
+        renderRestoreSpawnerPage();
     } catch (err) {
         console.error('Error fetching spawned items/titles:', err);
     }
