@@ -258,20 +258,13 @@ pub fn emit_car_set_loadout_bytecode(
     let mut bc = Vec::new();
     let mut mem_sz: u32 = 0;
 
-    // 1. bLoadoutSet = true;
-    bc.push(0x14); // EX_LET_BOOL
-    bc.push(0x2D); // EX_BOOL_VARIABLE
-    bc.extend_from_slice(&16525i32.to_le_bytes()); // #16525: bLoadoutSet
-    bc.push(opcodes::EX_TRUE_CONST);
-    mem_sz += 9;
-
-    // 2. Slot assignments on Data (local #16586)
+    // 1. Slot assignments on Data (local #16586)
     for rule in slot_overrides {
         let cond_disk_len = if rule.slot_idx == 0 { 56 } else { 58 };
         let uncond_disk_len = if rule.slot_idx == 0 { 26 } else { 27 };
 
         if let Some(owned_id) = rule.owned_id {
-            if bc.len() + cond_disk_len + 120 > max_disk_size {
+            if bc.len() + cond_disk_len + 110 > max_disk_size {
                 break;
             }
             bc.push(opcodes::EX_JUMP_IF_NOT);
@@ -325,7 +318,7 @@ pub fn emit_car_set_loadout_bytecode(
             bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target_mem.to_le_bytes());
             mem_sz += total_rule_mem;
         } else {
-            if bc.len() + uncond_disk_len + 120 > max_disk_size {
+            if bc.len() + uncond_disk_len + 110 > max_disk_size {
                 break;
             }
             bc.push(opcodes::EX_LET);
@@ -350,112 +343,24 @@ pub fn emit_car_set_loadout_bytecode(
         }
     }
 
-    // 3. Vanilla event hooks
-    let vanilla_events = [
-        0x52, 0x5e, 0x19, 0x00, 0x01, 0x8e, 0x40, 0x00, 0x00, 0x09, 0x00, 0xf8, 0x3e, 0x00, 0x00, 0x00, 0x01, 0xf8, 0x3e, 0x00, 0x00, 0x49, 0x8b, 0x5c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x52, 0x5e, 0x19, 0x00, 0x01, 0x8e, 0x40, 0x00, 0x00, 0x09, 0x00, 0xf7, 0x3e, 0x00, 0x00, 0x00, 0x01, 0xf7, 0x3e, 0x00, 0x00, 0x49, 0x7d, 0x5c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x5e, 0x19, 0x00, 0x01, 0x8e, 0x40, 0x00, 0x00, 0x13, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    // 2. Exact vanilla execution body:
+    // bLoadoutSet = true; Loadout.EventAssetLoaded = ...; Loadout.EventAllAssetsLoaded = ...; ProductLoader.LoadClientLoadout(Data); return;
+    let vanilla_body: [u8; 97] = [
+        0x14, 0x2D, 0x01, 0x8D, 0x40, 0x00, 0x00, 0x27,
+        0x52, 0x5E, 0x19, 0x00, 0x01, 0x8E, 0x40, 0x00, 0x00, 0x09, 0x00, 0xF8, 0x3E, 0x00, 0x00, 0x00, 0x01, 0xF8, 0x3E, 0x00, 0x00, 0x49, 0x8B, 0x5C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x52, 0x5E, 0x19, 0x00, 0x01, 0x8E, 0x40, 0x00, 0x00, 0x09, 0x00, 0xF7, 0x3E, 0x00, 0x00, 0x00, 0x01, 0xF7, 0x3E, 0x00, 0x00, 0x49, 0x7D, 0x5C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x5E, 0x19, 0x00, 0x01, 0x8E, 0x40, 0x00, 0x00, 0x13, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x1C, 0x10, 0x3F, 0x00, 0x00, 0x46, 0xCA, 0x40, 0x00, 0x00, 0x16,
+        0x04, 0x0B, 0x4C
     ];
-    bc.extend_from_slice(&vanilla_events);
-    mem_sz += 78;
-
-    // 4. ProductLoader.LoadClientLoadout(Data);
-    bc.push(0x1C); // EX_VIRTUAL_FUNCTION
-    bc.extend_from_slice(&16144i32.to_le_bytes()); // #16144: LoadClientLoadout
-    bc.push(opcodes::EX_LOCAL_VARIABLE);
-    bc.extend_from_slice(&16586i32.to_le_bytes()); // Data (#16586)
-    bc.push(opcodes::EX_END_FUNCTION_PARMS);
-    mem_sz += 11;
-
-    // 5. return;
-    bc.push(opcodes::EX_RETURN);
-    bc.push(opcodes::EX_NOTHING);
-    bc.push(opcodes::EX_END_OF_SCRIPT);
-    mem_sz += 3;
+    bc.extend_from_slice(&vanilla_body);
+    mem_sz += 9 + 78 + 11 + 3;
 
     let nop_count = max_disk_size.saturating_sub(bc.len());
     bc.resize(max_disk_size, opcodes::EX_NOTHING);
     mem_sz += nop_count as u32;
 
     Ok((bc, mem_sz))
-}
-
-pub fn emit_init_goal_explosion_bytecode(
-    target_ge: i32,
-    orig_disk_sz: usize,
-) -> (Vec<u8>, u32) {
-    let mut bc = Vec::new();
-
-    // 1. PlayerGoalExplosion = ProductLoader.GetAsset(target_ge);
-    bc.push(opcodes::EX_LET);
-    bc.push(0x01); // EX_INSTANCE_VARIABLE
-    bc.extend_from_slice(&57448i32.to_le_bytes()); // #57448: PlayerGoalExplosion
-    bc.push(0x1C); // EX_VIRTUAL_FUNCTION
-    bc.extend_from_slice(&16155i32.to_le_bytes()); // #16155: ProductLoader_TA::GetAsset
-    bc.push(opcodes::EX_INT_CONST);
-    bc.extend_from_slice(&target_ge.to_le_bytes());
-    bc.push(opcodes::EX_END_FUNCTION_PARMS);
-
-    // 2. EventPlayerGoalExplosionChanged(self);
-    let delegate_call = [0x42, 0x00, 0x24, 0xe0, 0x00, 0x00, 0x9a, 0x47, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x17, 0x16];
-    bc.extend_from_slice(&delegate_call);
-
-    // 3. return;
-    bc.push(opcodes::EX_RETURN);
-    bc.push(opcodes::EX_NOTHING);
-    bc.push(opcodes::EX_END_OF_SCRIPT);
-
-    let pad = orig_disk_sz.saturating_sub(bc.len());
-    bc.resize(orig_disk_sz, opcodes::EX_NOTHING);
-    let mem_sz = (1 + 5 + 5 + 5 + 1 + 18 + 3 + pad) as u32;
-
-    (bc, mem_sz)
-}
-
-pub fn emit_get_match_complete_loadout_bytecode(
-    slot_overrides: &[SlotSwapRule],
-    orig_disk_sz: usize,
-) -> (Vec<u8>, u32) {
-    let mut bc = Vec::new();
-    let mut mem_sz: u32 = 0;
-
-    for rule in slot_overrides {
-        if bc.len() + 30 > orig_disk_sz - 12 {
-            break;
-        }
-        bc.push(opcodes::EX_LET);
-        bc.push(opcodes::EX_DYN_ARRAY_OP);
-        bc.extend_from_slice(&[0x00, 0x00]);
-        if rule.slot_idx == 0 {
-            bc.push(opcodes::EX_INT_ZERO);
-            mem_sz += 38;
-        } else {
-            bc.push(opcodes::EX_INT_CONST_BYTE);
-            bc.push(rule.slot_idx);
-            mem_sz += 39;
-        }
-        bc.push(opcodes::EX_STRUCT_MEMBER);
-        bc.extend_from_slice(&1871i32.to_le_bytes()); // Products
-        bc.extend_from_slice(&1872i32.to_le_bytes()); // ClientLoadoutData
-        bc.extend_from_slice(&[0x00, 0x01]);
-        bc.push(opcodes::EX_LOCAL_VARIABLE);
-        bc.extend_from_slice(&57810i32.to_le_bytes()); // Loadout (#57810)
-        bc.push(opcodes::EX_INT_CONST);
-        bc.extend_from_slice(&rule.target_id.to_le_bytes());
-    }
-
-    // return Loadout;
-    bc.push(opcodes::EX_RETURN);
-    bc.push(opcodes::EX_LOCAL_VARIABLE);
-    bc.extend_from_slice(&57810i32.to_le_bytes());
-    bc.push(opcodes::EX_END_OF_SCRIPT);
-    mem_sz += 9;
-
-    let pad = orig_disk_sz.saturating_sub(bc.len());
-    bc.resize(orig_disk_sz, opcodes::EX_NOTHING);
-    mem_sz += pad as u32;
-
-    (bc, mem_sz)
 }
 
 #[allow(dead_code)]
@@ -1159,41 +1064,13 @@ pub fn apply_tagame_modifications(
                         }
                     }
 
-                    // 3b. PRI_TA::InitGoalExplosion (#57864) -> assign PlayerGoalExplosion = ProductLoader.GetAsset(target_ge)
-                    if let Some(target_ge) = target_ge_opt {
-                        if let Some(exp) = exports.iter().find(|e| e.name == "InitGoalExplosion" && e.outer_name == "PRI_TA") {
-                            let func_off = (exp.serial_offset - c2.uncomp_offset) as usize;
-                            if func_off + 48 <= decomp2.len() {
-                                let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                                if orig_disk_sz >= 36 && func_off + 48 + orig_disk_sz <= decomp2.len() {
-                                    let (bc, mem_sz) = emit_init_goal_explosion_bytecode(target_ge, orig_disk_sz);
-                                    decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                    decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&bc);
-                                }
-                            }
-                        }
-                    }
-
-                    // 3c. PRI_TA::GetMatchCompleteLoadout (#57812) -> ensure match completion loadout contains swapped items
-                    if let Some(exp) = exports.iter().find(|e| e.name == "GetMatchCompleteLoadout" && e.outer_name == "PRI_TA") {
-                        let func_off = (exp.serial_offset - c2.uncomp_offset) as usize;
-                        if func_off + 48 <= decomp2.len() {
-                            let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                            if orig_disk_sz >= 50 && func_off + 48 + orig_disk_sz <= decomp2.len() {
-                                let (bc, mem_sz) = emit_get_match_complete_loadout_bytecode(&slot_overrides, orig_disk_sz);
-                                decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&bc);
-                            }
-                        }
-                    }
-
-                    // 3d. ValidateLoadoutSlots (#47920) -> return false (never remove unowned DLC items)
+                    // 3b. ValidateLoadoutSlots (#47920) -> return false (never remove unowned DLC items)
                     patch_func(&mut decomp2, "ValidateLoadoutSlots", Some("LoadoutValidation_TA"), c2.uncomp_offset, &[0x04, 0x28, 0x4C]);
 
-                    // 3e. ValidateDataProducts (#47954) -> return false (never strip data products)
+                    // 3c. ValidateDataProducts (#47954) -> return false (never strip data products)
                     patch_func(&mut decomp2, "ValidateDataProducts", Some("LoadoutValidation_TA"), c2.uncomp_offset, &[0x04, 0x28, 0x4C]);
 
-                    // 3f. ValidateReplicatedLoadout (#57832) -> return; (never sanitize or revert replicated products)
+                    // 3d. ValidateReplicatedLoadout (#57832) -> return; (never sanitize or revert replicated products)
                     patch_func(&mut decomp2, "ValidateReplicatedLoadout", Some("PRI_TA"), c2.uncomp_offset, &[0x04, 0x0B, 0x4C]);
 
                     if let Ok(mut recomp2) = crate::upk::compression::compress_chunk(&decomp2) {
@@ -1372,28 +1249,8 @@ mod tests {
         ];
         let (bc, mem_sz) = emit_car_set_loadout_bytecode(&rules, 3000).unwrap();
         assert_eq!(bc.len(), 3000);
-        assert_eq!(bc[0], 0x14); // EX_LET_BOOL
+        assert_eq!(bc[0], opcodes::EX_LET);
         assert!(mem_sz > 3000);
-    }
-
-    #[test]
-    fn test_emit_init_goal_explosion_bytecode() {
-        let (bc, mem_sz) = emit_init_goal_explosion_bytecode(2307, 51);
-        assert_eq!(bc.len(), 51);
-        assert_eq!(bc[0], opcodes::EX_LET);
-        assert_eq!(mem_sz, 53);
-    }
-
-    #[test]
-    fn test_emit_get_match_complete_loadout_bytecode() {
-        let rules = [
-            SlotSwapRule { slot_idx: 0, owned_id: None, target_id: 4284 },
-            SlotSwapRule { slot_idx: 10, owned_id: None, target_id: 2307 },
-        ];
-        let (bc, mem_sz) = emit_get_match_complete_loadout_bytecode(&rules, 251);
-        assert_eq!(bc.len(), 251);
-        assert_eq!(bc[0], opcodes::EX_LET);
-        assert!(mem_sz > 200);
     }
 
     #[test]
