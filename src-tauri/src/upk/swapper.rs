@@ -1,3 +1,10 @@
+/*
+ * velocityrl
+ * Copyright (c) 2026 bits (https://github.com/bitsfdb/velocityrl)
+ * 
+ * Licensed under the GNU General Public License v3.0.
+ * unauthorized rebranding or stripping of this copyright notice is strictly prohibited.
+ */
 use crate::upk::{crypto, nametable, parser};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -440,56 +447,54 @@ pub fn generate_paint_remap_pairs(base: &str, paint_id: i32) -> Vec<(String, Str
         }
     }
 
+    // Auto-expand internal engine codename aliases so painted trim stays applied with decals
+    let lower_base = base.to_ascii_lowercase();
+    if lower_base.contains("fennec") || lower_base.contains("grain") {
+        for alias in &["Grain", "grain", "Body_Grain", "body_grain", "Fennec", "fennec", "Body_Fennec", "body_fennec"] {
+            if !bases.contains(&alias.to_string()) { bases.push(alias.to_string()); }
+        }
+    } else if lower_base.contains("dominus") || lower_base.contains("musclecar") {
+        for alias in &["MuscleCar", "musclecar", "Body_MuscleCar", "body_musclecar", "Muscle_Car", "Dominus", "dominus", "Body_Dominus"] {
+            if !bases.contains(&alias.to_string()) { bases.push(alias.to_string()); }
+        }
+    } else if lower_base.contains("octane") {
+        for alias in &["Octane", "octane", "Body_Octane", "body_octane"] {
+            if !bases.contains(&alias.to_string()) { bases.push(alias.to_string()); }
+        }
+    } else if lower_base.contains("breakout") || lower_base.contains("force") {
+        for alias in &["Force", "force", "Body_Force", "body_force", "Breakout", "breakout", "Body_Breakout"] {
+            if !bases.contains(&alias.to_string()) { bases.push(alias.to_string()); }
+        }
+    } else if lower_base.contains("merc") || lower_base.contains("vanquish") {
+        for alias in &["Vanquish", "vanquish", "Body_Vanquish", "Merc", "merc", "Body_Merc"] {
+            if !bases.contains(&alias.to_string()) { bases.push(alias.to_string()); }
+        }
+    }
+
     let defaults = ["Default", "None", "default", "none", "Orig", "orig", "Base", "base"];
-    let chassis_subparts = ["Chassis", "chassis", "Body", "body", "MAT", "mat", "Chassis_MAT", "Chassis_Mat"];
+    let chassis_subparts = [
+        "Chassis", "chassis", "Body", "body", "MAT", "mat", "Chassis_MAT", "Chassis_Mat",
+        "Trim", "trim", "Trim_MAT", "Chassis_Skin", "Skin", "skin", "Skin_MAT", "Decal", "decal",
+    ];
 
     for b in &bases {
         for def in &defaults {
             add_pair(&mut pairs, format!("{b}_{def}"), format!("{b}_{target_slug}"));
             add_pair(&mut pairs, format!("MIC_{b}_{def}"), format!("MIC_{b}_{target_slug}"));
             add_pair(&mut pairs, format!("MAT_{b}_{def}"), format!("MAT_{b}_{target_slug}"));
-            for ch in &chassis_subparts {
-                add_pair(&mut pairs, format!("{b}_{ch}_{def}"), format!("{b}_{ch}_{target_slug}"));
-                add_pair(&mut pairs, format!("MIC_{b}_{ch}_{def}"), format!("MIC_{b}_{ch}_{target_slug}"));
-                add_pair(&mut pairs, format!("{ch}_{b}_{def}"), format!("{ch}_{b}_{target_slug}"));
-                add_pair(&mut pairs, format!("MIC_{ch}_{b}_{def}"), format!("MIC_{ch}_{b}_{target_slug}"));
-                add_pair(&mut pairs, format!("MAT_{ch}_{b}_{def}"), format!("MAT_{ch}_{b}_{target_slug}"));
-            }
         }
 
         for ch in &chassis_subparts {
-            add_pair(&mut pairs, format!("{b}_{ch}"), format!("{b}_{ch}_{target_slug}"));
-            add_pair(&mut pairs, format!("MIC_{b}_{ch}"), format!("MIC_{b}_{ch}_{target_slug}"));
-            add_pair(&mut pairs, format!("MAT_{b}_{ch}"), format!("MAT_{b}_{ch}_{target_slug}"));
             add_pair(&mut pairs, format!("{b}_{ch}_Painted"), format!("{b}_{ch}_{target_slug}"));
             add_pair(&mut pairs, format!("MIC_{b}_{ch}_Painted"), format!("MIC_{b}_{ch}_{target_slug}"));
             add_pair(&mut pairs, format!("{b}_{ch}_P"), format!("{b}_{ch}_{target_slug}"));
             add_pair(&mut pairs, format!("MIC_{b}_{ch}_P"), format!("MIC_{b}_{ch}_{target_slug}"));
 
-            add_pair(&mut pairs, format!("{ch}_{b}"), format!("{ch}_{b}_{target_slug}"));
-            add_pair(&mut pairs, format!("MIC_{ch}_{b}"), format!("MIC_{ch}_{b}_{target_slug}"));
-            add_pair(&mut pairs, format!("MAT_{ch}_{b}"), format!("MAT_{ch}_{b}_{target_slug}"));
             add_pair(&mut pairs, format!("{ch}_{b}_Painted"), format!("{ch}_{b}_{target_slug}"));
             add_pair(&mut pairs, format!("MIC_{ch}_{b}_Painted"), format!("MIC_{ch}_{b}_{target_slug}"));
             add_pair(&mut pairs, format!("{ch}_{b}_P"), format!("{ch}_{b}_{target_slug}"));
             add_pair(&mut pairs, format!("MIC_{ch}_{b}_P"), format!("MIC_{ch}_{b}_{target_slug}"));
-
-            // Remap unpainted chassis directly to painted MIC (e.g. MIC_Chassis_Grain -> MIC_body_grain_Black / MIC_Chassis_Grain_Black)
-            add_pair(&mut pairs, format!("MIC_{ch}_{b}"), format!("MIC_{b}_{target_slug}"));
-            add_pair(&mut pairs, format!("MAT_{ch}_{b}"), format!("MIC_{b}_{target_slug}"));
-            add_pair(&mut pairs, format!("MIC_{ch}_{b}"), format!("MIC_Body_{b}_{target_slug}"));
-            add_pair(&mut pairs, format!("MAT_{ch}_{b}"), format!("MIC_Body_{b}_{target_slug}"));
-            add_pair(&mut pairs, format!("MIC_{ch}_{b}"), format!("MIC_body_{b}_{target_slug}"));
-            add_pair(&mut pairs, format!("MAT_{ch}_{b}"), format!("MIC_body_{b}_{target_slug}"));
         }
-
-        // Shared chassis fallbacks (e.g. MIC_Chassis_Grain used across multiple bodies)
-        add_pair(&mut pairs, "MIC_Chassis_Grain".to_string(), format!("MIC_{b}_{target_slug}"));
-        add_pair(&mut pairs, "MAT_Chassis_Grain".to_string(), format!("MIC_{b}_{target_slug}"));
-        add_pair(&mut pairs, "MIC_Chassis_Grain".to_string(), format!("MIC_Body_{b}_{target_slug}"));
-        add_pair(&mut pairs, "MIC_Chassis_Grain".to_string(), format!("MIC_body_{b}_{target_slug}"));
-        add_pair(&mut pairs, "MIC_Chassis_Grain".to_string(), format!("MIC_Chassis_Grain_{target_slug}"));
-        add_pair(&mut pairs, "MAT_Chassis_Grain".to_string(), format!("MAT_Chassis_Grain_{target_slug}"));
 
         add_pair(&mut pairs, format!("MIC_{b}"), format!("MIC_{b}_{target_slug}"));
         add_pair(&mut pairs, format!("MAT_{b}"), format!("MAT_{b}_{target_slug}"));
@@ -580,12 +585,19 @@ fn infer_name_pairs(target: &Item, donor: &Item) -> Vec<(String, String)> {
     add_pair(&mut pairs, format!("MIC_{donor_obj}"), format!("MIC_{target_obj}"));
     add_pair(&mut pairs, format!("MIC_WHEEL_{donor_obj}"), format!("MIC_WHEEL_{target_obj}"));
 
+    // Goal explosion & particle actor archetype mappings (e.g. Sub-Zero -> Poof)
+    add_pair(&mut pairs, format!("FXActor_{donor_obj}"), format!("FXActor_{target_obj}"));
+    add_pair(&mut pairs, format!("FXActor_Explosion_{donor_obj}"), format!("FXActor_Explosion_{target_obj}"));
+    add_pair(&mut pairs, format!("Explosion_{donor_obj}"), format!("Explosion_{target_obj}"));
+
     let donor_obj_pascal = to_pascal_case(&donor_obj);
     let target_obj_pascal = to_pascal_case(&target_obj);
     add_pair(&mut pairs, donor_obj_pascal.clone(), target_obj_pascal.clone());
     add_pair(&mut pairs, format!("{donor_obj_pascal}_TA"), format!("{target_obj_pascal}_TA"));
     add_pair(&mut pairs, format!("{donor_obj_pascal}_archetype"), format!("{target_obj_pascal}_archetype"));
     add_pair(&mut pairs, format!("MIC_{donor_obj_pascal}"), format!("MIC_{target_obj_pascal}"));
+    add_pair(&mut pairs, format!("FXActor_{donor_obj_pascal}"), format!("FXActor_{target_obj_pascal}"));
+    add_pair(&mut pairs, format!("Explosion_{donor_obj_pascal}"), format!("Explosion_{target_obj_pascal}"));
 
     // 2. Handle package-level remapping and multi-asset sibling isolation
     if !donor_base.is_empty() && !target_base.is_empty() {
@@ -617,6 +629,16 @@ fn infer_name_pairs(target: &Item, donor: &Item) -> Vec<(String, String)> {
             add_pair(&mut pairs, format!("MIC_{donor_pascal}"), format!("MIC_{target_pascal}"));
             add_pair(&mut pairs, format!("MIC_WHEEL_{donor_base}"), format!("MIC_WHEEL_{target_base}"));
             add_pair(&mut pairs, format!("MIC_WHEEL_{donor_pascal}"), format!("MIC_WHEEL_{target_pascal}"));
+
+            // Goal explosion archetype package level mappings
+            add_pair(&mut pairs, format!("FXActor_{donor_base}"), format!("FXActor_{target_base}"));
+            add_pair(&mut pairs, format!("FXActor_{donor_pascal}"), format!("FXActor_{target_pascal}"));
+            add_pair(&mut pairs, format!("FXActor_Explosion_{donor_base}"), format!("FXActor_Explosion_{target_base}"));
+            add_pair(&mut pairs, format!("FXActor_Explosion_{donor_pascal}"), format!("FXActor_Explosion_{target_pascal}"));
+            add_pair(&mut pairs, format!("Explosion_{donor_base}"), format!("Explosion_{target_base}"));
+            add_pair(&mut pairs, format!("Explosion_{donor_pascal}"), format!("Explosion_{target_pascal}"));
+            add_pair(&mut pairs, format!("Archetypes.{donor_base}"), format!("Archetypes.{target_base}"));
+            add_pair(&mut pairs, format!("Archetypes.{donor_pascal}"), format!("Archetypes.{target_pascal}"));
         }
 
         // Package companions (_SF, _sf, _Thumbnail, _SM)

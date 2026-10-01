@@ -1,3 +1,10 @@
+/*
+ * velocityrl
+ * Copyright (c) 2026 bits (https://github.com/bitsfdb/velocityrl)
+ * 
+ * Licensed under the GNU General Public License v3.0.
+ * unauthorized rebranding or stripping of this copyright notice is strictly prohibited.
+ */
 use std::fs;
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
@@ -69,6 +76,8 @@ pub struct SessionTracker {
     pub last_result: String,
     pub connection_status: String,
     pub status_detail: String,
+    pub current_mmr: i32,
+    pub session_mmr_delta: i32,
     save_path: PathBuf,
 }
 
@@ -111,6 +120,8 @@ impl SessionTracker {
             last_result: "none".into(),
             connection_status: "disconnected".into(),
             status_detail: String::new(),
+            current_mmr: 0,
+            session_mmr_delta: 0,
             save_path,
         }
     }
@@ -372,6 +383,15 @@ impl SessionTracker {
             _ => {}
         }
 
+        if let Some(ref ed) = ended_data {
+            if let Some(delta) = ed.mmr_delta {
+                self.session_mmr_delta += delta;
+            }
+            if let Some(new_r) = ed.new_rating {
+                self.current_mmr = new_r;
+            }
+        }
+
         self.session.finalized_matches.push(guid);
         if self.session.finalized_matches.len() > 100 {
             self.session.finalized_matches.remove(0);
@@ -393,8 +413,10 @@ impl SessionTracker {
             },
             live: self.live_stats.clone(),
             last_result: self.last_result.clone(),
-            playlist: 11,
-            playlist_name: "2v2 Doubles".into(),
+            playlist: self.config.playlist,
+            playlist_name: playlist_display_name(self.config.playlist).into(),
+            mmr: self.current_mmr,
+            mmr_delta: self.session_mmr_delta,
         }
     }
 }

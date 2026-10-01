@@ -1,3 +1,10 @@
+/*
+ * velocityrl
+ * Copyright (c) 2026 bits (https://github.com/bitsfdb/velocityrl)
+ * 
+ * Licensed under the GNU General Public License v3.0.
+ * unauthorized rebranding or stripping of this copyright notice is strictly prohibited.
+ */
 use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
 pub const PACKAGE_FILE_TAG: u32 = 0x9E2A83C1;

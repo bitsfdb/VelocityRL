@@ -13,7 +13,10 @@
     },
     "banner": {
         "keep_open_title": "Keep VelocityRL Open",
-        "keep_open_desc": "VelocityRL must remain running in the background for titles, spoofing, and names to appear in Rocket League."
+        "keep_open_desc": "VelocityRL must remain running in the background for titles, spoofing, and names to appear in Rocket League.",
+        "swaps_notice_title": "Saved Swaps Notice",
+        "swaps_notice_desc": "If you are updating from v2.0 to v2.1, please restore all your items here and then reswap manually.",
+        "swaps_notice_btn": "Restore Tab"
     },
     "subtabs": {
         "swaps": "Swaps",
@@ -259,6 +262,8 @@
         "diagnostics_title": "Troubleshooting",
         "debug_panel": "Debug Panel",
         "export_diagnostics": "Export Diagnostics",
+        "refresh_catalog": "Refresh Item Catalogue",
+        "fetch_titles": "Fetch Title Catalogue",
         "privacy_policy": "Privacy Policy",
         "save": "Save"
     },

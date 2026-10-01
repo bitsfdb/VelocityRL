@@ -1,3 +1,10 @@
+/*
+ * velocityrl
+ * Copyright (c) 2026 bits (https://github.com/bitsfdb/velocityrl)
+ * 
+ * Licensed under the GNU General Public License v3.0.
+ * unauthorized rebranding or stripping of this copyright notice is strictly prohibited.
+ */
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -1090,23 +1097,20 @@ pub fn set_system_proxy_enabled(enabled: bool) {
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     if let Ok((key, _)) = hkcu.create_subkey(r"Software\Microsoft\Windows\CurrentVersion\Internet Settings") {
         if enabled {
-            let _ = key.set_value("ProxyEnable", &1u32);
-            let proxy_addr = format!("127.0.0.1:{}", crate::proxy::SYSTEM_PROXY_PORT);
-            let _ = key.set_value("ProxyServer", &proxy_addr);
-            let _ = key.set_value(
-                "ProxyOverride",
-                &"<local>;*epicgames.com;*.epicgames.com;*ol.epicgames.com;*.ol.epicgames.com;*unrealengine.com;*.unrealengine.com;*hcaptcha.com;*arkoselabs.com;*epicgames.org",
-            );
-            let _ = key.delete_value("AutoConfigURL");
+            let pac_url = format!("http://127.0.0.1:{}/proxy.pac", crate::proxy::SYSTEM_PROXY_PORT);
+            let _ = key.set_value("AutoConfigURL", &pac_url);
+            let _ = key.set_value("ProxyEnable", &0u32);
+            let _ = key.delete_value("ProxyServer");
+            let _ = key.delete_value("ProxyOverride");
             crate::applog::event(&format!(
-                "psynet: system proxy enabled -> {proxy_addr} (override=<local>;*epicgames.com;*.epicgames.com;*ol.epicgames.com;*.ol.epicgames.com;*unrealengine.com;*.unrealengine.com;*hcaptcha.com;*arkoselabs.com;*epicgames.org)"
+                "psynet: PAC proxy enabled -> {pac_url}"
             ));
         } else {
             let _ = key.set_value("ProxyEnable", &0u32);
             let _ = key.delete_value("ProxyServer");
             let _ = key.delete_value("ProxyOverride");
             let _ = key.delete_value("AutoConfigURL");
-            crate::applog::event("psynet: proxy disabled (ProxyEnable, ProxyServer, ProxyOverride, AutoConfigURL cleared)");
+            crate::applog::event("psynet: proxy disabled (ProxyEnable=0, AutoConfigURL cleared)");
         }
     }
     notify_system_proxy_changed();
@@ -1131,7 +1135,7 @@ pub fn clean_system_proxy() {
         let _ = key.delete_value("ProxyServer");
         let _ = key.delete_value("ProxyOverride");
         let _ = key.delete_value("AutoConfigURL");
-        crate::applog::event("psynet: system proxy cleared (ProxyEnable=0, ProxyServer, ProxyOverride, AutoConfigURL cleared)");
+        crate::applog::event("psynet: system proxy cleared (ProxyEnable=0, AutoConfigURL cleared)");
     }
     notify_system_proxy_changed();
 }
@@ -1306,9 +1310,8 @@ fn sync_wine_user_reg(path: &Path, enabled: bool) -> Result<(), std::io::Error> 
 
     let proxy_lines = if enabled {
         vec![
-            "\"ProxyEnable\"=dword:00000001".to_string(),
-            format!("\"ProxyServer\"=\"127.0.0.1:{proxy_port}\""),
-            "\"ProxyOverride\"=\"<local>;*epicgames.com;*.epicgames.com;*ol.epicgames.com;*.ol.epicgames.com;*unrealengine.com;*.unrealengine.com;*hcaptcha.com;*arkoselabs.com;*epicgames.org\"".to_string(),
+            "\"ProxyEnable\"=dword:00000000".to_string(),
+            format!("\"AutoConfigURL\"=\"http://127.0.0.1:{proxy_port}/proxy.pac\""),
         ]
     } else {
         vec!["\"ProxyEnable\"=dword:00000000".to_string()]

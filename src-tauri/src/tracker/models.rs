@@ -1,3 +1,10 @@
+/*
+ * velocityrl
+ * Copyright (c) 2026 bits (https://github.com/bitsfdb/velocityrl)
+ * 
+ * Licensed under the GNU General Public License v3.0.
+ * unauthorized rebranding or stripping of this copyright notice is strictly prohibited.
+ */
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -113,6 +120,10 @@ pub struct OverlayStatePayload {
     pub playlist: i32,
     #[serde(default = "default_playlist_name")]
     pub playlist_name: String,
+    #[serde(default)]
+    pub mmr: i32,
+    #[serde(default)]
+    pub mmr_delta: i32,
 }
 
 pub fn playlist_display_name(id: i32) -> &'static str {

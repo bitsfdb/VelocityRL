@@ -1,3 +1,10 @@
+/*
+ * velocityrl
+ * Copyright (c) 2026 bits (https://github.com/bitsfdb/velocityrl)
+ * 
+ * Licensed under the GNU General Public License v3.0.
+ * unauthorized rebranding or stripping of this copyright notice is strictly prohibited.
+ */
 fn serialize_fstring(s: &str) -> Vec<u8> {
     let mut out = Vec::new();
     let len = (s.len() + 1) as i32;

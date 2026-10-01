@@ -1,3 +1,10 @@
+/*
+ * velocityrl
+ * Copyright (c) 2026 bits (https://github.com/bitsfdb/velocityrl)
+ * 
+ * Licensed under the GNU General Public License v3.0.
+ * unauthorized rebranding or stripping of this copyright notice is strictly prohibited.
+ */
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -157,10 +164,32 @@ pub struct FeaturesConfig {
     pub build_outdated: bool,
     #[serde(default)]
     pub client_build_num: i64,
+    #[serde(default)]
+    pub cache: CacheConfig,
 }
 
 fn default_version() -> i32 {
     1
+}
+
+fn default_items_ttl() -> u64 { 172800 }  // 2 days
+fn default_titles_ttl() -> u64 { 172800 } // 2 days
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CacheConfig {
+    #[serde(default = "default_items_ttl")]
+    pub items_ttl_seconds: u64,
+    #[serde(default = "default_titles_ttl")]
+    pub titles_ttl_seconds: u64,
+}
+
+impl Default for CacheConfig {
+    fn default() -> Self {
+        Self {
+            items_ttl_seconds: default_items_ttl(),
+            titles_ttl_seconds: default_titles_ttl(),
+        }
+    }
 }
 
 impl Default for FeaturesConfig {
@@ -173,6 +202,7 @@ impl Default for FeaturesConfig {
             announcement: AnnouncementConfig::default(),
             build_outdated: false,
             client_build_num: get_client_build_id(),
+            cache: CacheConfig::default(),
         }
     }
 }

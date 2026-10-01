@@ -1,10 +1,17 @@
+/**
+ * velocityrl
+ * Copyright (c) 2026 bits (https://github.com/bitsfdb/velocityrl)
+ * 
+ * Licensed under the GNU General Public License v3.0.
+ * unauthorized rebranding or stripping of this copyright notice is strictly prohibited.
+ */
 const invoke = window.__TAURI__?.core?.invoke || (async () => null);
 const listen = window.__TAURI__?.event?.listen || null;
 
 const THEME_SIZES = {
-    circle: { w: 280, h: 165 },
-    minimal: { w: 210, h: 45 },
-    redesigned: { w: 165, h: 100 },
+    circle: { w: 280, h: 215 },
+    minimal: { w: 295, h: 45 },
+    redesigned: { w: 165, h: 140 },
 };
 
 let currentStyle = 'circle';
@@ -16,6 +23,8 @@ let currentState = {
     losses: 0,
     streak: 0,
     streak_type: 'none',
+    mmr: 0,
+    mmr_delta: 0,
     connection_status: 'disconnected'
 };
 
@@ -75,6 +84,8 @@ function updateHUD(data) {
     const streakType = currentState.streak?.type ?? currentState.streak_type ?? 'none';
     const wins = currentState.wins ?? 0;
     const losses = currentState.losses ?? 0;
+    const mmr = currentState.mmr ?? 0;
+    const mmrDelta = currentState.mmr_delta ?? 0;
 
     let streakStr = '0';
     if (streakType === 'win' && streakCount > 0) {
@@ -88,6 +99,18 @@ function updateHUD(data) {
     const winsStr = String(wins);
     const lossStr = String(losses);
 
+    let mmrStr = '--';
+    if (mmr > 0) {
+        if (mmrDelta !== 0) {
+            const deltaSign = mmrDelta > 0 ? `+${mmrDelta}` : `${mmrDelta}`;
+            mmrStr = `${mmr} (${deltaSign})`;
+        } else {
+            mmrStr = `${mmr}`;
+        }
+    } else if (mmrDelta !== 0) {
+        mmrStr = mmrDelta > 0 ? `+${mmrDelta}` : `${mmrDelta}`;
+    }
+
     const isConn = currentState.connection === 'connected' || currentState.connection_status === 'connected';
     const detail = currentState.status_detail || '';
     ['conn-dot', 'conn-dot-min', 'conn-dot-red'].forEach(id => {
@@ -95,6 +118,15 @@ function updateHUD(data) {
         if (dot) {
             dot.classList.toggle('ok', isConn);
             dot.title = isConn ? 'Stats API: Connected' : (detail || 'Stats API: Searching Rocket League...');
+        }
+    });
+
+    ['val-mmr', 'min-val-mmr', 'red-val-mmr'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            updateElementText(el, mmrStr);
+            el.classList.toggle('pos', mmrDelta > 0);
+            el.classList.toggle('neg', mmrDelta < 0);
         }
     });
 

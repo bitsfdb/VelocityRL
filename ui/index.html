@@ -39,6 +39,17 @@
                 </div>
             </div>
 
+            <div id="swaps-notice-banner" class="repair-banner" style="display:none; border-left-color: #ff9800; margin-bottom: 12px; background: rgba(255, 152, 0, 0.08); align-items: center; justify-content: space-between;">
+                <div class="repair-banner-text">
+                    <strong style="color: #ffa726;" data-i18n="banner.swaps_notice_title">Saved Swaps Notice</strong>
+                    <span data-i18n="banner.swaps_notice_desc">If you are updating from v2.0 to v2.1, please restore all your items here and then reswap manually.</span>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center; margin-left: 12px; flex-shrink: 0;">
+                    <button id="swaps-notice-goto-btn" class="action-btn action-btn-secondary" style="padding: 4px 10px; font-size: 11px; white-space: nowrap;" data-i18n="banner.swaps_notice_btn">Restore Tab</button>
+                    <button id="swaps-notice-close-btn" class="action-btn action-btn-secondary" style="padding: 4px 8px; font-size: 11px;" title="Dismiss">✕</button>
+                </div>
+            </div>
+
             <div id="swapper-tab" class="tab-content active">
                 <div class="subtab-strip" role="tablist">
                     <button type="button" class="subtab-btn active" data-subtab="swaps-pane" data-i18n="subtabs.swaps">Swaps</button>
@@ -804,9 +815,12 @@
                 <div>
                     <div style="font-weight:600; font-size:12px;" data-i18n="settings.diagnostics_title">Troubleshooting</div>
                 </div>
-                <div style="display:flex; gap:8px;">
+                <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
                     <button type="button" id="settings-dev-panel-btn" class="path-btn"><span data-i18n="settings.debug_panel">Debug Panel</span></button>
                     <button type="button" id="settings-export-diag-btn" class="path-btn"><span data-i18n="settings.export_diagnostics">Export Diagnostics</span></button>
+                    <button type="button" id="settings-refresh-catalog-btn" class="path-btn"><span data-i18n="settings.refresh_catalog">Refresh Item Catalogue</span></button>
+                    <button type="button" id="settings-fetch-titles-btn" class="path-btn"><span data-i18n="settings.fetch_titles">Fetch Title Catalogue</span></button>
+                    <span id="settings-catalog-msg" style="font-size:12px;color:var(--muted);"></span>
                 </div>
             </div>
             <p class="settings-footer-note">
@@ -904,6 +918,69 @@
             <p id="dev-action-msg" style="font-size:11px;color:var(--text-secondary);margin:6px 0 0;min-height:14px;user-select:text;-webkit-user-select:text;word-break:break-all;white-space:pre-wrap;cursor:text;"></p>
             <p style="font-size:11px;color:var(--text-secondary);margin:8px 0 4px;font-weight:600;">Log Output</p>
             <div class="dev-log-output" id="dev-log-output">Loading logs...</div>
+        </div>
+    </div>
+
+    <div id="paint-notice-modal" class="modal-overlay" role="dialog" aria-modal="true">
+        <div class="modal" style="max-width: 440px;">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <div style="background: rgba(234, 179, 8, 0.15); width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto;">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                </div>
+                <h2 style="font-size: 20px; margin-bottom: 8px; font-weight: 700;">Car Paint &amp; Decal Notice</h2>
+                <p style="color: var(--text-secondary); font-size: 13.5px; line-height: 1.6;">
+                    Painted chassis trims will <strong style="color: var(--text-primary);">only show up when No Decal is equipped</strong> in your garage preset.
+                </p>
+            </div>
+            <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 10px; padding: 14px 16px; margin-bottom: 20px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.6;">
+                <p style="margin-bottom: 6px;">
+                    ⚠️ When a decal is equipped on a painted car, Rocket League's engine automatically removes your paint when putting on a decal.
+                </p>
+                <span style="font-size: 11.5px; color: #71717a; font-style: italic;">
+                    (This is a game engine limitation of Rocket League, not VelocityRL.)
+                </span>
+            </div>
+            <div style="display: flex; gap: 12px;">
+                <button id="paint-notice-cancel" class="action-btn action-btn-secondary" style="flex: 1;">Cancel</button>
+                <button id="paint-notice-proceed" class="action-btn" style="flex: 1.5; background: var(--accent-blue); color: #fff;">Proceed with Swap</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="migration-modal" class="modal-overlay" role="dialog" aria-modal="true">
+        <div class="modal" style="max-width: 460px;">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <div style="background: rgba(234, 179, 8, 0.15); width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto;">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                </div>
+                <h2 style="font-size: 20px; margin-bottom: 8px; font-weight: 700;">Action Required</h2>
+                <p style="color: var(--text-secondary); font-size: 13.5px; line-height: 1.6;">
+                    Your swaps need to be <strong style="color: var(--text-primary);">re-applied</strong> before they'll work correctly.
+                </p>
+            </div>
+            <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 10px; padding: 14px 16px; margin-bottom: 20px; font-size: 13px; color: var(--text-secondary); line-height: 1.8;">
+                <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px;">
+                    <span style="color:#eab308;font-weight:700;flex-shrink:0;">1.</span>
+                    <span>Go to the <strong style="color:var(--text-primary);">Restore</strong> tab and restore all your swaps.</span>
+                </div>
+                <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px;">
+                    <span style="color:#eab308;font-weight:700;flex-shrink:0;">2.</span>
+                    <span>Verify your game files through <strong style="color:var(--text-primary);">Steam</strong>.</span>
+                </div>
+                <div style="display:flex;align-items:flex-start;gap:10px;">
+                    <span style="color:#eab308;font-weight:700;flex-shrink:0;">3.</span>
+                    <span>Re-apply all your swaps manually in the <strong style="color:var(--text-primary);">Swapper</strong> tab.</span>
+                </div>
+            </div>
+            <button id="migration-modal-ok" class="action-btn" style="width:100%;background:var(--accent-blue);color:#fff;">Got it</button>
         </div>
     </div>
 
