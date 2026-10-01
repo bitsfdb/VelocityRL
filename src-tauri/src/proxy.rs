@@ -5183,39 +5183,16 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
         }
     }
 
-    // Always apply standard system class property overrides
-    let standard_class_overrides = [
-        ("FirstTimeExperienceManager_TA", "bEnabled", "false"),
-        ("GFxData_MusicPlayer_TA", "bDebugMusicPlayer", "true"),
-        ("Camera_TA", "FOVLimits", "(Min=60.000000,Max=1000.000000,interval=1.000000)"),
-        ("Camera_TA", "HeightLimits", "(Min=40.000000,Max=1000.000000,interval=1.000000)"),
-        ("Camera_TA", "DistanceLimits", "(Min=100.000000,Max=1000.000000,interval=1.000000)"),
-    ];
-    for (cls, prop, val) in &standard_class_overrides {
-        let (next, changed) = upsert_class_property_override(&out, cls, prop, val);
-        if changed {
-            out = next;
-            any_change = true;
-        }
-    }
-
-    // Always apply standard root config objects
-    let standard_root_objects = [
-        ("TrainingConfig", r#"{"Class":"TrainingConfig_TA","bCanShowHistoryTab":true,"bCanShowProgressV2":true,"bEnableTrainingUIV2":true}"#),
-        ("SettingsMenuConfig", r#"{"Class":"SettingsMenuConfig_TA","bShowTrainingTab":true}"#),
-        ("OnlineStorageConfig", r#"{"Class":"OnlineStorageConfig_TA","MinSecondsBetweenCloudUploads":30}"#),
-        ("ShopTabsConfig", r#"{"Class":"ShopTabsConfig_TA","bUseLegacyTabSorting":false}"#),
-        ("MenuTreeConfig", r#"{"Class":"MenuTreeConfig_TA","bEnableMenuTree":true}"#),
-        ("PrespawnConfig", r#"{"Class":"PrespawnConfig_TA","bPrespawnFeatureEnabled":true}"#),
-        ("LeaderboardsConfig", r#"{"Class":"LeaderboardsConfig_TA","RankedLeaderboards":[{"ImageName":"Icon_1v1","Label":"Duel","RequestName":"Skill10"},{"ImageName":"Icon_2v2","Label":"Doubles","RequestName":"Skill11"},{"ImageName":"Icon_3v3","Label":"Standard","RequestName":"Skill13"},{"ImageName":"Icon_Heatseeker","Label":"Heatseeker","RequestName":"Skill63"},{"ImageName":"Icon_Rumble","Label":"Rumble","RequestName":"Skill28"},{"ImageName":"Icon_Dropshot","Label":"Dropshot","RequestName":"Skill29"},{"ImageName":"Icon_Hoops","Label":"Hoops","RequestName":"Skill27"},{"ImageName":"Icon_SnowDay","Label":"Snow Day","RequestName":"Skill30"}]}"#),
-        ("BlogConfig", r#"{"Class":"BlogConfig_X","MotD":"Use VelocityRL :3"}"#),
-    ];
-    for (key, val) in &standard_root_objects {
-        let (next, changed) = upsert_root_config_object(&out, key, val);
-        if changed {
-            out = next;
-            any_change = true;
-        }
+    // Always override FirstTimeExperienceManager_TA bEnabled = "false"
+    let (next, changed) = upsert_class_property_override(
+        &out,
+        "FirstTimeExperienceManager_TA",
+        "bEnabled",
+        "false",
+    );
+    if changed {
+        out = next;
+        any_change = true;
     }
 
     // Always rewrite PsyNetUrl to local broker (matches Go proxy architecture:
@@ -5226,29 +5203,6 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
     }
 
     (out, any_change)
-}
-
-fn upsert_root_config_object(body: &[u8], key: &str, val_str: &str) -> (Vec<u8>, bool) {
-    if let Some((start, end)) = find_named_object(body, key) {
-        if &body[start..end] == val_str.as_bytes() {
-            return (body.to_vec(), false);
-        }
-        let mut next = Vec::with_capacity(body.len() + val_str.len());
-        next.extend_from_slice(&body[..start]);
-        next.extend_from_slice(val_str.as_bytes());
-        next.extend_from_slice(&body[end..]);
-        (next, true)
-    } else {
-        let Some(close_idx) = body.iter().rposition(|&c| c == b'}') else {
-            return (body.to_vec(), false);
-        };
-        let block = format!(",\"{key}\":{val_str}");
-        let mut res = Vec::with_capacity(body.len() + block.len());
-        res.extend_from_slice(&body[..close_idx]);
-        res.extend_from_slice(block.as_bytes());
-        res.extend_from_slice(&body[close_idx..]);
-        (res, true)
-    }
 }
 
 fn patch_menu_bg(body: &[u8], bg: &str) -> (Vec<u8>, bool) {

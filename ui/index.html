@@ -129,10 +129,19 @@
                     </div>
 
                     <div style="display:flex; gap:10px; margin: 12px 0; align-items:center; flex-wrap:wrap;">
-                        <div class="search-box" style="flex:1; min-width:240px;">
+                        <div class="search-box" style="flex:1; min-width:220px;">
                             <input type="text" id="spawner-search" data-i18n-placeholder="spawner.search_placeholder" placeholder="Search item catalogue to spawn..." autocomplete="off">
                         </div>
-                        <button type="button" id="spawner-spawn-all-btn" class="action-btn" style="padding:8px 16px; font-size:12px; white-space:nowrap; background:var(--accent-blue); color:#fff;">Spawn All in Category</button>
+                        <div class="spawner-paint-wrap" id="spawner-paint-wrap" style="display:flex; align-items:center; gap:6px;">
+                            <label for="spawner-paint-select" style="font-size:12px; color:var(--text-secondary); font-weight:600; white-space:nowrap;">Paint Finish:</label>
+                            <select id="spawner-paint-select" class="spawner-paint-select" style="background:var(--input-bg); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:7px 10px; font-size:12px; cursor:pointer; min-width:140px;"></select>
+                        </div>
+                        <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                            <button type="button" id="spawner-select-page-btn" class="action-btn action-btn-secondary" style="padding:7px 12px; font-size:12px; white-space:nowrap;">Select Page</button>
+                            <button type="button" id="spawner-deselect-all-btn" class="action-btn action-btn-secondary" style="padding:7px 12px; font-size:12px; white-space:nowrap; display:none;">Deselect All</button>
+                            <button type="button" id="spawner-spawn-selected-btn" class="action-btn" style="padding:7px 14px; font-size:12px; white-space:nowrap; background:var(--accent); color:#fff; display:none;">Spawn Selected (0)</button>
+                            <button type="button" id="spawner-spawn-all-btn" class="action-btn" style="padding:7px 14px; font-size:12px; white-space:nowrap; background:var(--accent-blue); color:#fff;">Spawn All in Category</button>
+                        </div>
                     </div>
 
                     <div id="spawner-catalogue-grid" class="spawner-catalogue-grid">
