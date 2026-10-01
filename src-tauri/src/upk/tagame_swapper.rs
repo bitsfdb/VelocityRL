@@ -158,7 +158,10 @@ pub fn emit_convert_to_client_loadout_bytecode(
         let cond_disk_len = if rule.slot_idx == 0 { 56 } else { 58 };
         let uncond_disk_len = if rule.slot_idx == 0 { 26 } else { 27 };
 
-        if let Some(owned_id) = rule.owned_id.filter(|_| bc.len() + cond_disk_len + 7 <= max_disk_size) {
+        if let Some(owned_id) = rule.owned_id {
+            if bc.len() + cond_disk_len + 12 > max_disk_size {
+                break;
+            }
             bc.push(opcodes::EX_JUMP_IF_NOT);
             let jump_pos = bc.len();
             bc.extend_from_slice(&[0x00, 0x00]);
@@ -209,7 +212,10 @@ pub fn emit_convert_to_client_loadout_bytecode(
             let jump_target_mem = (mem_sz + total_rule_mem) as u16;
             bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target_mem.to_le_bytes());
             mem_sz += total_rule_mem;
-        } else if bc.len() + uncond_disk_len + 7 <= max_disk_size {
+        } else {
+            if bc.len() + uncond_disk_len + 12 > max_disk_size {
+                break;
+            }
             bc.push(opcodes::EX_LET);
             bc.push(opcodes::EX_DYN_ARRAY_OP);
             bc.extend_from_slice(&[0x00, 0x00]);
@@ -233,11 +239,11 @@ pub fn emit_convert_to_client_loadout_bytecode(
     }
 
     // 3. return NewLoadout;
-    bc.push(opcodes::EX_RETURN_VALUE);
+    bc.push(opcodes::EX_RETURN);
     bc.push(opcodes::EX_INSTANCE_VARIABLE);
     bc.extend_from_slice(&75i32.to_le_bytes());
     bc.push(opcodes::EX_END_OF_SCRIPT);
-    mem_sz += 1 + 9 + 1;
+    mem_sz += 11;
 
     let nop_count = max_disk_size.saturating_sub(bc.len());
     bc.resize(max_disk_size, opcodes::EX_NOTHING);
@@ -534,7 +540,7 @@ pub fn apply_tagame_modifications(
             return Err(TagameSwapError::Msg("Encrypted header bounds invalid".into()));
         }
 
-        let plain_header = crypto::decrypt_ecb(&TAGAME_KEY, &file_bytes[name_offset..enc_end]);
+        let mut plain_header = crypto::decrypt_ecb(&TAGAME_KEY, &file_bytes[name_offset..enc_end]);
         let names = crate::upk::palette::parse_names_in_block(&plain_header, name_count)
             .map_err(|e| TagameSwapError::Msg(e.to_string()))?;
 
@@ -548,6 +554,7 @@ pub fn apply_tagame_modifications(
 
         #[allow(dead_code)]
         struct ExportItem {
+            pos: usize,
             name: String,
             outer_name: String,
             serial_size: i32,
@@ -578,6 +585,7 @@ pub fn apply_tagame_modifications(
             };
 
             exports.push(ExportItem {
+                pos,
                 name: nm,
                 outer_name: out_nm,
                 serial_size,
@@ -589,6 +597,7 @@ pub fn apply_tagame_modifications(
 
         #[allow(dead_code)]
         struct ChunkItem {
+            pos: usize,
             uncomp_offset: i64,
             uncomp_size: i32,
             comp_offset: i64,
@@ -612,6 +621,7 @@ pub fn apply_tagame_modifications(
             let comp_offset = i64::from_le_bytes(plain_header[c_pos + 12..c_pos + 20].try_into().unwrap());
             let comp_size = i32::from_le_bytes(plain_header[c_pos + 20..c_pos + 24].try_into().unwrap());
             chunks.push(ChunkItem {
+                pos: c_pos,
                 uncomp_offset,
                 uncomp_size,
                 comp_offset,
@@ -681,7 +691,7 @@ pub fn apply_tagame_modifications(
             }
         }
 
-        // 1. Patch Chunk 0: ConvertToClientLoadout (#78) and ProductLoader_TA.GetAssetByID (#16152)
+        // 1. Patch Chunk 0: ConvertToClientLoadout (#78)
         if !chunks.is_empty() {
             let c0 = &chunks[0];
             let c0_start = c0.comp_offset as usize;
@@ -693,7 +703,37 @@ pub fn apply_tagame_modifications(
                         let func_off = (exp.serial_offset - c0.uncomp_offset) as usize;
                         if func_off + 48 <= decomp0.len() {
                             let orig_disk_sz = u32::from_le_bytes(decomp0[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                            if orig_disk_sz >= 124 {
+                            const EXPANDED_SIZE: usize = 3000;
+                            if orig_disk_sz < EXPANDED_SIZE {
+                                let delta = EXPANDED_SIZE - orig_disk_sz;
+                                let insert_pos = func_off + 48 + orig_disk_sz;
+                                decomp0.splice(insert_pos..insert_pos, std::iter::repeat(opcodes::EX_NOTHING).take(delta));
+
+                                if let Ok((payload, mem_sz)) = emit_convert_to_client_loadout_bytecode(&slot_overrides, EXPANDED_SIZE) {
+                                    decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                    decomp0[func_off + 44..func_off + 48].copy_from_slice(&(EXPANDED_SIZE as u32).to_le_bytes());
+                                    decomp0[func_off + 48..func_off + 48 + EXPANDED_SIZE].copy_from_slice(&payload);
+
+                                    // 1. Update export table in plain_header
+                                    let exp_pos = exp.pos;
+                                    let new_serial_sz = exp.serial_size + delta as i32;
+                                    plain_header[exp_pos + 32..exp_pos + 36].copy_from_slice(&new_serial_sz.to_le_bytes());
+                                    for other_exp in &exports {
+                                        if other_exp.serial_offset > exp.serial_offset {
+                                            let new_s_off = other_exp.serial_offset + delta as i64;
+                                            plain_header[other_exp.pos + 36..other_exp.pos + 44].copy_from_slice(&new_s_off.to_le_bytes());
+                                        }
+                                    }
+
+                                    // 2. Update chunk table in plain_header
+                                    let new_c0_uncomp = c0.uncomp_size + delta as i32;
+                                    plain_header[c0.pos + 8..c0.pos + 12].copy_from_slice(&new_c0_uncomp.to_le_bytes());
+                                    for ch in &chunks[1..] {
+                                        let new_u_off = ch.uncomp_offset + delta as i64;
+                                        plain_header[ch.pos..ch.pos + 8].copy_from_slice(&new_u_off.to_le_bytes());
+                                    }
+                                }
+                            } else {
                                 if let Ok((payload, mem_sz)) = emit_convert_to_client_loadout_bytecode(&slot_overrides, orig_disk_sz) {
                                     decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
                                     decomp0[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
@@ -701,8 +741,6 @@ pub fn apply_tagame_modifications(
                             }
                         }
                     }
-
-
 
                     if let Ok(mut recomp0) = crate::upk::compression::compress_chunk(&decomp0) {
                         let orig_c0_sz = c0.comp_size as usize;
@@ -714,6 +752,10 @@ pub fn apply_tagame_modifications(
                 }
             }
         }
+
+        // Re-encrypt header cleanly
+        let re_enc = crypto::encrypt_ecb(&TAGAME_KEY, &plain_header);
+        file_bytes[name_offset..enc_end].copy_from_slice(&re_enc);
 
         fs::write(&tagame_path, &file_bytes)?;
     } else {
