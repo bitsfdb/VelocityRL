@@ -1,3 +1,10 @@
+/*
+ * velocityrl
+ * Copyright (c) 2026 bits (https://github.com/bitsfdb/velocityrl)
+ * 
+ * Licensed under the GNU General Public License v3.0.
+ * unauthorized rebranding or stripping of this copyright notice is strictly prohibited.
+ */
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::fs;
@@ -73,7 +80,7 @@ fn default_lang() -> String {
     "en".to_string()
 }
 
-#[derive(Serialize, Deserialize, Clone, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 struct ItemAttribute {
     #[serde(default, alias = "Key")]
     key: String,
@@ -81,67 +88,197 @@ struct ItemAttribute {
     value: serde_json::Value,
 }
 
-fn opt_paintable<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let val = Option::<serde_json::Value>::deserialize(deserializer)?;
-    Ok(match val {
-        None | Some(serde_json::Value::Null) => None,
-        Some(serde_json::Value::Bool(b)) => Some(b),
-        Some(serde_json::Value::Number(n)) => Some(n.as_i64() != Some(0)),
-        Some(serde_json::Value::String(s)) => {
-            let s = s.trim().to_lowercase();
-            if matches!(s.as_str(), "true" | "yes" | "1" | "paintable") {
-                Some(true)
-            } else if matches!(s.as_str(), "false" | "no" | "0" | "unpaintable" | "none") {
-                Some(false)
-            } else {
-                None
-            }
-        }
-        Some(_) => None,
-    })
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct PaintEntry {
+    #[serde(default)]
+    pub id: i32,
+    #[serde(default, alias = "Label", alias = "name", alias = "Name")]
+    pub label: String,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 struct Item {
-    #[serde(alias = "id-rl-garage", alias = "id", alias = "ID")]
     id: i32,
-    #[serde(alias = "name", alias = "Product", alias = "label", alias = "long_label")]
     product: String,
-    #[serde(default, alias = "src", alias = "thumbnail", alias = "image_url")]
     image_url: String,
-    #[serde(default, alias = "AssetPackage", alias = "asset_package")]
     asset_package: String,
-    #[serde(default, alias = "AssetPath", alias = "asset_path")]
     asset_path: String,
-    #[serde(default, alias = "ObjectName", alias = "object_name")]
     object_name: Option<String>,
-    #[serde(default, alias = "ObjectClass", alias = "object_class")]
     object_class: Option<String>,
-    #[serde(default, alias = "IsMultiAssetPackage", alias = "is_multi_asset_package")]
     is_multi_asset_package: Option<bool>,
-    #[serde(default, alias = "PackageItemCount", alias = "package_item_count")]
     package_item_count: Option<usize>,
-    #[serde(default, alias = "CompatibleBodyId", alias = "compatible_body_id")]
     compatible_body_id: Option<i64>,
-    #[serde(default, alias = "CompatibleBodyName", alias = "compatible_body_name")]
     compatible_body_name: Option<String>,
-    #[serde(default, alias = "Type", alias = "Slot", alias = "slot")]
     slot: String,
-    #[serde(default, alias = "Quality", alias = "quality")]
     quality: String,
-    #[serde(default, alias = "Paintable", alias = "paintable", deserialize_with = "opt_paintable")]
-    #[serde(skip_serializing_if = "Option::is_none")]
     paintable: Option<bool>,
-    #[serde(default, alias = "Attributes", alias = "attributes")]
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    paints: Option<Vec<PaintEntry>>,
     attributes: Vec<ItemAttribute>,
-
-    #[serde(default, alias = "DLC", alias = "dlc")]
-    #[serde(skip_serializing_if = "String::is_empty")]
     dlc: String,
+}
+
+impl<'de> Deserialize<'de> for Item {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let v = serde_json::Value::deserialize(deserializer)?;
+        let obj = match v.as_object() {
+            Some(o) => o,
+            None => return Err(serde::de::Error::custom("Expected object for Item")),
+        };
+
+        let get_str = |keys: &[&str]| -> String {
+            for &k in keys {
+                if let Some(val) = obj.get(k) {
+                    if let Some(s) = val.as_str() {
+                        return s.to_string();
+                    }
+                }
+            }
+            String::new()
+        };
+
+        let get_opt_str = |keys: &[&str]| -> Option<String> {
+            for &k in keys {
+                if let Some(val) = obj.get(k) {
+                    if let Some(s) = val.as_str() {
+                        return Some(s.to_string());
+                    }
+                }
+            }
+            None
+        };
+
+        let id = {
+            let mut res = 0;
+            for &k in &["id", "ID", "id-rl-garage"] {
+                if let Some(val) = obj.get(k) {
+                    if let Some(n) = val.as_i64() {
+                        res = n as i32;
+                        break;
+                    } else if let Some(s) = val.as_str() {
+                        if let Ok(n) = s.trim().parse::<i32>() {
+                            res = n;
+                            break;
+                        }
+                    }
+                }
+            }
+            res
+        };
+
+        let product = get_str(&["Product", "product", "name", "label", "long_label"]);
+        let image_url = get_str(&["src", "thumbnail", "image_url"]);
+        let asset_package = get_str(&["AssetPackage", "asset_package"]);
+        let asset_path = get_str(&["AssetPath", "asset_path"]);
+        let object_name = get_opt_str(&["ObjectName", "object_name"]);
+        let object_class = get_opt_str(&["ObjectClass", "object_class"]);
+
+        let is_multi_asset_package = {
+            let mut res = None;
+            for &k in &["IsMultiAssetPackage", "is_multi_asset_package"] {
+                if let Some(val) = obj.get(k) {
+                    if let Some(b) = val.as_bool() {
+                        res = Some(b);
+                        break;
+                    }
+                }
+            }
+            res
+        };
+
+        let package_item_count = {
+            let mut res = None;
+            for &k in &["PackageItemCount", "package_item_count"] {
+                if let Some(val) = obj.get(k) {
+                    if let Some(n) = val.as_u64() {
+                        res = Some(n as usize);
+                        break;
+                    } else if let Some(s) = val.as_str() {
+                        if let Ok(n) = s.trim().parse::<usize>() {
+                            res = Some(n);
+                            break;
+                        }
+                    }
+                }
+            }
+            res
+        };
+
+        let compatible_body_id = {
+            let mut res = None;
+            for &k in &["CompatibleBodyId", "compatible_body_id"] {
+                if let Some(val) = obj.get(k) {
+                    if let Some(n) = val.as_i64() {
+                        res = Some(n);
+                        break;
+                    } else if let Some(s) = val.as_str() {
+                        if let Ok(n) = s.trim().parse::<i64>() {
+                            res = Some(n);
+                            break;
+                        }
+                    }
+                }
+            }
+            res
+        };
+
+        let compatible_body_name = get_opt_str(&["CompatibleBodyName", "compatible_body_name"]);
+        let slot = get_str(&["Slot", "slot", "Type", "type"]);
+        let quality = get_str(&["Quality", "quality"]);
+
+        let paintable = {
+            let mut res = None;
+            for &k in &["Paintable", "paintable"] {
+                if let Some(val) = obj.get(k) {
+                    match val {
+                        serde_json::Value::Bool(b) => { res = Some(*b); break; }
+                        serde_json::Value::Number(n) => { res = Some(n.as_i64() != Some(0)); break; }
+                        serde_json::Value::String(s) => {
+                            let s = s.trim().to_lowercase();
+                            if matches!(s.as_str(), "true" | "yes" | "1" | "paintable") {
+                                res = Some(true); break;
+                            } else if matches!(s.as_str(), "false" | "no" | "0" | "unpaintable" | "none") {
+                                res = Some(false); break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            res
+        };
+
+        let paints: Option<Vec<PaintEntry>> = obj.get("Paints").or_else(|| obj.get("paints"))
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+
+        let attributes: Vec<ItemAttribute> = obj.get("Attributes").or_else(|| obj.get("attributes"))
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default();
+
+        let dlc = get_str(&["DLC", "dlc"]);
+
+        Ok(Item {
+            id,
+            product,
+            image_url,
+            asset_package,
+            asset_path,
+            object_name,
+            object_class,
+            is_multi_asset_package,
+            package_item_count,
+            compatible_body_id,
+            compatible_body_name,
+            slot,
+            quality,
+            paintable,
+            paints,
+            attributes,
+            dlc,
+        })
+    }
 }
 
 pub fn norm_item_slot(slot: &str) -> String {
@@ -199,19 +336,6 @@ fn item_is_paintable(item: &Item) -> bool {
     true
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(untagged)]
-enum ItemsResponse {
-    Database {
-        #[serde(alias = "Items", alias = "items")]
-        items: Vec<Item>,
-        #[serde(default)]
-        meta: Option<serde_json::Value>,
-        #[serde(default)]
-        categories: Option<serde_json::Value>,
-    },
-    List(Vec<Item>),
-}
 
 #[derive(Serialize, Deserialize)]
 struct BackupFile {
@@ -253,6 +377,8 @@ pub struct SwapEntry {
     pub asset_package: String,
     #[serde(default)]
     pub slot: Option<String>,
+    #[serde(default)]
+    pub timestamp: Option<String>, // ISO 8601 UTC e.g. "2026-09-30T00:00:00Z"
 }
 
 static ITEMS_CACHE: std::sync::RwLock<Option<std::collections::HashMap<u32, Vec<Item>>>> = std::sync::RwLock::new(None);
@@ -442,12 +568,26 @@ fn load_raw_items_json(app: &tauri::AppHandle) -> Result<String, String> {
 
 async fn parse_items_slice(bytes: Vec<u8>) -> Result<Vec<Item>, String> {
     tokio::task::spawn_blocking(move || {
-        let resp = serde_json::from_slice::<ItemsResponse>(&bytes)
+        let root: serde_json::Value = serde_json::from_slice(&bytes)
             .map_err(|e| format!("JSON parse error: {e}"))?;
-        let mut items = match resp {
-            ItemsResponse::Database { items, .. } => items,
-            ItemsResponse::List(items) => items,
+
+        let array_val = if let Some(items) = root.get("items").or_else(|| root.get("Items")) {
+            items.as_array().ok_or("Items field is not an array")?
+        } else if let Some(arr) = root.as_array() {
+            arr
+        } else {
+            return Err("JSON has no items array".to_string());
         };
+
+        let mut items: Vec<Item> = array_val
+            .iter()
+            .filter_map(|val| serde_json::from_value(val.clone()).ok())
+            .collect();
+
+        if items.is_empty() && !array_val.is_empty() {
+            return Err("Failed to parse items from JSON array".to_string());
+        }
+
         populate_thumbnails(&mut items);
         Ok(items)
     })
@@ -573,7 +713,6 @@ async fn background_check_items_update(data_dir: PathBuf, config_dir: Option<Pat
 
     match result {
         Ok(None) => {
-            // 304 Not Modified: cache is current and retained
         }
         Ok(Some((bytes, new_meta))) => {
             if let Ok(items) = parse_items_slice(bytes).await {
@@ -721,6 +860,237 @@ async fn get_items(app: tauri::AppHandle, lang: Option<String>) -> Result<Vec<It
 
     Err("Failed to load items database".into())
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+struct CacheMeta {
+    #[serde(default)]
+    last_cleared_version: String,
+    #[serde(default)]
+    last_cleared_build: i64,
+    #[serde(default)]
+    last_cleared_timestamp: u64,
+}
+
+fn read_cache_meta(config_dir: &Path) -> CacheMeta {
+    let path = config_dir.join("cache_meta.json");
+    if let Ok(content) = fs::read_to_string(&path) {
+        if let Ok(meta) = serde_json::from_str::<CacheMeta>(&content) {
+            return meta;
+        }
+    }
+    CacheMeta::default()
+}
+
+fn write_cache_meta(config_dir: &Path, meta: &CacheMeta) {
+    let path = config_dir.join("cache_meta.json");
+    if let Ok(s) = serde_json::to_string_pretty(meta) {
+        let _ = fs::write(path, s);
+    }
+}
+
+fn get_ebwebview_cache_dirs(app: &tauri::AppHandle) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Ok(p) = app.path().app_local_data_dir() {
+        roots.push(p.join("EBWebView"));
+    }
+    if let Ok(p) = app.path().app_data_dir() {
+        roots.push(p.join("EBWebView"));
+    }
+    if let Ok(local_appdata) = std::env::var("LOCALAPPDATA") {
+        roots.push(PathBuf::from(local_appdata).join("com.velocityrl.app").join("EBWebView"));
+    }
+    roots.sort();
+    roots.dedup();
+
+    let mut cache_targets = Vec::new();
+    for root in roots {
+        if root.exists() {
+            cache_targets.push(root.join("Default").join("Cache"));
+            cache_targets.push(root.join("Default").join("Code Cache"));
+            cache_targets.push(root.join("Default").join("GPUCache"));
+            cache_targets.push(root.join("GrShaderCache"));
+            cache_targets.push(root.join("ShaderCache"));
+            cache_targets.push(root.join("GPUPersistentCache"));
+        }
+    }
+    cache_targets
+}
+
+fn remove_dir_contents_best_effort(path: &Path) {
+    if !path.exists() {
+        return;
+    }
+    if let Ok(entries) = fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                let _ = fs::remove_dir_all(&p);
+            } else {
+                let _ = fs::remove_file(&p);
+            }
+        }
+    }
+    let _ = fs::remove_dir(path);
+}
+
+fn clear_webview_cache(app: &tauri::AppHandle) {
+    let targets = get_ebwebview_cache_dirs(app);
+    let mut cleared_count = 0;
+    for dir in targets {
+        if dir.exists() {
+            if fs::remove_dir_all(&dir).is_ok() {
+                cleared_count += 1;
+            } else {
+                remove_dir_contents_best_effort(&dir);
+                cleared_count += 1;
+            }
+        }
+    }
+    if cleared_count > 0 {
+        applog::event(&format!("clear_webview_cache: cleared {cleared_count} cache directories"));
+    }
+}
+
+fn purge_api_catalog_files(data_dir: &Path, config_dir: Option<&Path>) {
+    let clean_dir = |d: &Path| {
+        if let Ok(entries) = fs::read_dir(d) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with("items") && (name.ends_with(".json") || name.ends_with(".ver")) {
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
+        }
+    };
+    clean_dir(data_dir);
+    if let Some(cfg) = config_dir {
+        if cfg != data_dir {
+            clean_dir(cfg);
+        }
+    }
+    if let Ok(mut guard) = ITEMS_CACHE.write() {
+        *guard = None;
+    }
+}
+
+fn perform_startup_cache_maintenance(app: &tauri::AppHandle) {
+    let (data_dir, config_dir) = get_catalog_dirs(app);
+    let cfg_dir = config_dir.as_ref().unwrap_or(&data_dir);
+    let meta = read_cache_meta(cfg_dir);
+
+    let current_ver = env!("CARGO_PKG_VERSION");
+    let current_build = features::get_client_build_id();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let features = features::get_cached_features();
+    let ttl = features.cache.items_ttl_seconds;
+
+    let version_changed = meta.last_cleared_version != current_ver || meta.last_cleared_build != current_build;
+    let ttl_expired = meta.last_cleared_timestamp == 0 || now.saturating_sub(meta.last_cleared_timestamp) >= ttl;
+
+    if version_changed || ttl_expired {
+        applog::event(&format!(
+            "cache maintenance: purging cache (version_changed={version_changed}, ttl_expired={ttl_expired})"
+        ));
+        clear_webview_cache(app);
+        purge_api_catalog_files(&data_dir, config_dir.as_deref());
+
+        let new_meta = CacheMeta {
+            last_cleared_version: current_ver.to_string(),
+            last_cleared_build: current_build,
+            last_cleared_timestamp: now,
+        };
+        write_cache_meta(cfg_dir, &new_meta);
+    }
+}
+
+fn catalog_age_seconds(data_dir: &Path, lang_id: u32) -> Option<u64> {
+    let file_name = if lang_id == 0 { "items.json".to_string() } else { format!("items_{lang_id}.json") };
+    let path = data_dir.join(file_name);
+    let meta = fs::metadata(&path).ok()?;
+    let modified = meta.modified().ok()?;
+    let age = std::time::SystemTime::now().duration_since(modified).ok()?;
+    Some(age.as_secs())
+}
+
+#[tauri::command]
+async fn force_refresh_catalog(app: tauri::AppHandle) -> Result<String, String> {
+    let config = get_config(app.clone()).await.unwrap_or_else(|_| Config { game_dir: String::new(), privacy_agreed: false, privacy_version: String::new(), changelog_on_startup: true, launch_on_startup: false, minimize_to_tray: false, language: "en".to_string() });
+    let lang_id = rl_lang_id(&config.language);
+
+    clear_webview_cache(&app);
+
+    let (data_dir, config_dir) = get_catalog_dirs(&app);
+    purge_api_catalog_files(&data_dir, config_dir.as_deref());
+
+    let client = reqwest::Client::builder()
+        .user_agent(app_user_agent())
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let api_url = items_api_url_for_lang(lang_id);
+    let github_url = "https://raw.githubusercontent.com/CrunchyRL/RLUPKTools/refs/heads/main/items.json";
+    let empty_meta = CatalogMetadata::default();
+
+    let fetch_res = match fetch_catalog_update(&client, &api_url, &empty_meta).await {
+        Ok(Some(res)) => Some(res),
+        _ => fetch_catalog_update(&client, github_url, &empty_meta).await.ok().flatten(),
+    };
+
+    let cfg_dir = config_dir.as_ref().unwrap_or(&data_dir);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let new_meta = CacheMeta {
+        last_cleared_version: env!("CARGO_PKG_VERSION").to_string(),
+        last_cleared_build: features::get_client_build_id(),
+        last_cleared_timestamp: now,
+    };
+    write_cache_meta(cfg_dir, &new_meta);
+
+    if let Some((bytes, meta)) = fetch_res {
+        let count = bytes.len();
+        let items = parse_items_slice(bytes).await?;
+        let item_count = items.len();
+        set_cached_items(lang_id, items.clone());
+        let _ = persist_catalog(items, data_dir, config_dir, Some(meta), lang_id).await;
+        applog::event(&format!("force_refresh_catalog: fetched {item_count} items ({count} bytes)"));
+        return Ok(format!("Refreshed — {item_count} items downloaded."));
+    }
+
+    Err("Failed to refresh item catalogue — check your internet connection.".into())
+}
+
+async fn maybe_refresh_catalog_by_ttl(app: tauri::AppHandle) {
+    let (data_dir, config_dir) = get_catalog_dirs(&app);
+    let cfg_dir = config_dir.as_ref().unwrap_or(&data_dir);
+    let meta = read_cache_meta(cfg_dir);
+    let features = features::get_cached_features();
+    let ttl = features.cache.items_ttl_seconds;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let should_refresh = if meta.last_cleared_timestamp == 0 {
+        let config = get_config(app.clone()).await.unwrap_or_else(|_| Config { game_dir: String::new(), privacy_agreed: false, privacy_version: String::new(), changelog_on_startup: true, launch_on_startup: false, minimize_to_tray: false, language: "en".to_string() });
+        let lang_id = rl_lang_id(&config.language);
+        catalog_age_seconds(&data_dir, lang_id).map(|age| age >= ttl).unwrap_or(false)
+    } else {
+        now.saturating_sub(meta.last_cleared_timestamp) >= ttl
+    };
+
+    if should_refresh {
+        applog::event(&format!("catalog TTL expired (ttl={ttl}s) — force refreshing"));
+        let _ = force_refresh_catalog(app).await;
+    }
+}
+
 
 #[tauri::command]
 async fn get_config(app: tauri::AppHandle) -> Result<Config, String> {
@@ -1014,7 +1384,6 @@ async fn apply_rich_palette(app: tauri::AppHandle) -> Result<upk::PaletteStatus,
     )
     .map_err(|e| explain_palette_error(e.to_string()))?;
     let mut state = load_integrity(&app);
-    // Compute Engine.upk fingerprint now so we can detect future RL updates.
     let cooked = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default();
@@ -1023,7 +1392,6 @@ async fn apply_rich_palette(app: tauri::AppHandle) -> Result<upk::PaletteStatus,
     save_integrity(&app, &state)?;
     let _ = psynet::merge_palette_spoof(true);
 
-    // Re-apply any active loadout swaps so palette and item swaps coexist perfectly
     let swaps = load_swaps(&app);
     if let Ok(cooked_path) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
         let _ = sync_all_swaps_to_tagame(&app, &cooked_path, &swaps).await;
@@ -1045,7 +1413,6 @@ async fn restore_rich_palette(app: tauri::AppHandle) -> Result<upk::PaletteStatu
     save_integrity(&app, &state)?;
     let _ = psynet::merge_palette_spoof(false);
 
-    // Re-apply any active loadout swaps after restoring palette
     let swaps = load_swaps(&app);
     if let Ok(cooked_path) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
         let _ = sync_all_swaps_to_tagame(&app, &cooked_path, &swaps).await;
@@ -1125,21 +1492,6 @@ pub(crate) async fn sync_all_swaps_to_tagame(
         return Ok(());
     }
 
-    // Restore any modified package backups so files like body_grain_SF.upk are completely clean
-    if let Ok(entries) = std::fs::read_dir(cooked) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                let lower = file_name.to_lowercase();
-                if lower.ends_with(".upk.bak") && lower != "tagame.upk.bak" {
-                    let live_name = file_name.trim_end_matches(".bak");
-                    let live_path = cooked.join(live_name);
-                    let _ = std::fs::copy(&path, &live_path);
-                }
-            }
-        }
-    }
-
     let items = get_items(app.clone(), None).await.unwrap_or_default();
     let mut tagame_items = Vec::new();
 
@@ -1158,17 +1510,27 @@ pub(crate) async fn sync_all_swaps_to_tagame(
             .map(|w| w.asset_package.clone())
             .unwrap_or_else(|| s.asset_package.clone());
 
-        let product_id = s.wanted_id;
+        let product_id = match s.wanted_id {
+            999902 => 2526,
+            _ => s.wanted_id,
+        };
 
         tagame_items.push(upk::TagameSwapItem {
-            slot: slot_str,
+            slot: slot_str.clone(),
             slot_index: Some(slot_index),
             owned_id: Some(s.owned_id),
             product_id,
             paint_id: if s.paint_id > 0 { Some(s.paint_id) } else { None },
             custom_paint_hex: s.custom_paint_hex.clone(),
-            package_name: Some(pkg),
+            package_name: Some(pkg.clone()),
         });
+
+        if let Some((pkg_path, actual_file_name)) = upk::swapper::resolve_package_path(cooked, &pkg) {
+            let bak_path = cooked.join(format!("{actual_file_name}.bak"));
+            if bak_path.is_file() {
+                let _ = std::fs::copy(&bak_path, &pkg_path);
+            }
+        }
     }
 
     let keys_txt = include_str!("../resources/keys.txt");
@@ -1301,6 +1663,7 @@ async fn apply_swap(
         custom_paint_hex: clean_hex.clone(),
         asset_package: wanted.asset_package.clone(),
         slot: Some(owned.slot.clone()),
+        timestamp: Some(chrono::Utc::now().to_rfc3339()),
     };
     swaps.push(new_entry.clone());
     save_swaps(&app, &swaps);
@@ -2038,6 +2401,7 @@ async fn swap_custom_decal_to_donor(
         custom_paint_hex: None,
         asset_package: donor.asset_package.clone(),
         slot: Some("Decal".to_string()),
+        timestamp: Some(chrono::Utc::now().to_rfc3339()),
     };
     swaps.push(new_entry.clone());
     save_swaps(&app, &swaps);
@@ -2057,7 +2421,6 @@ async fn swap_custom_decal_to_donor(
     };
     let _ = save_custom_decal_config(app.clone(), decal_cfg.clone()).await;
 
-    // Normalization to <CookedPCConsole>/decals/ and write decals.ini
     let cooked_decals_dir = cooked.join("decals");
     let _ = fs::create_dir_all(&cooked_decals_dir);
 
@@ -2636,13 +2999,13 @@ pub fn run() {
         .setup(|app| {
             let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
             let dir = applog::init(app.handle());
+            perform_startup_cache_maintenance(app.handle());
             let (_data_dir, _) = get_catalog_dirs(app.handle());
             psynet::ensure_wininet_revocation_disabled();
             #[cfg(windows)]
             let _ = psynet::revert_config_hosts();
             psynet::set_system_proxy_enabled(false);
 
-            // Spawn detached guardian watchdog to guarantee proxy/hosts cleanup even if process is forcefully killed or crashes
             if let Ok(exe) = std::env::current_exe() {
                 let pid = std::process::id();
                 #[cfg(windows)]
@@ -2662,7 +3025,6 @@ pub fn run() {
                 }
             }
 
-            // Register Ctrl-C handler for terminal/signal interrupts
             let _ = ctrlc::set_handler(move || {
                 crate::proxy::stop_native_proxy(true);
                 psynet::set_system_proxy_enabled(false);
@@ -2670,7 +3032,6 @@ pub fn run() {
                 std::process::exit(0);
             });
 
-            // Register panic hook for graceful cleanup
             let orig_panic_hook = std::panic::take_hook();
             std::panic::set_hook(Box::new(move |info| {
                 crate::proxy::stop_native_proxy(true);
@@ -2679,12 +3040,7 @@ pub fn run() {
                 orig_panic_hook(info);
             }));
 
-            // Install CA and CRL to the user certificate store immediately (non-blocking, no UAC).
             psynet::install_user_ca_direct();
-            // If the system (LocalMachine Root) store is missing the CA, trigger an elevated
-            // install now — before the proxy auto-start — so the cert is in place before RL connects.
-            // This catches fresh installs where the NSIS hooks ran but the machine cert store
-            // was wiped (e.g. by antivirus) before the first launch.
             let ca_ok_at_startup = psynet::is_ca_installed();
             applog::event(&format!(
                 "startup: system CA installed={ca_ok_at_startup} hosts={}",
@@ -2703,17 +3059,12 @@ pub fn run() {
 
             let _ = tracker::create_overlay_window(app);
 
-            // Load proxy dir override from config if present
             psynet::load_proxy_dir_override(app.handle());
 
-            // Sync color palette status to psynet proxy so OrangeTeamV2 override is active only when applied
             let mut integrity = load_integrity(app.handle());
             let app_handle = app.handle().clone();
             let applied = if let Ok(config) = tauri::async_runtime::block_on(get_config(app_handle.clone())) {
                 if !config.game_dir.is_empty() {
-                    // Detect RL game updates: Engine.upk changes on every RL update.
-                    // If it changed since we applied the palette, the new game binary
-                    // will crash against the old patched TAGame.upk — auto-restore first.
                     if integrity.palette_active && !integrity.rl_update_fingerprint.is_empty() {
                         if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
                             let current_rl_fp = integrity::rl_update_fingerprint_for(&cooked);
@@ -2756,22 +3107,6 @@ pub fn run() {
             };
             let _ = psynet::merge_palette_spoof(applied);
 
-            // Verify and synchronize TAGame.ini and TAGame.upk hooks on startup if swaps exist
-            let app_h = app.handle().clone();
-            std::thread::spawn(move || {
-                let swaps = load_swaps(&app_h);
-                if !swaps.is_empty() {
-                    if let Ok(config) = tauri::async_runtime::block_on(get_config(app_h.clone())) {
-                        if !config.game_dir.is_empty() {
-                            if let Ok(cooked) = upk::tagame_swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                                let _ = tauri::async_runtime::block_on(sync_all_swaps_to_tagame(&app_h, &cooked, &swaps));
-                                applog::event("startup: verified and synced active swaps to TAGame.ini and TAGame.upk");
-                            }
-                        }
-                    }
-                }
-            });
-
             applog::event(&format!(
                 "app setup complete; build {} (v{}, hash {}) logs at {}",
                 env!("VRL_BUILD_NUMBER"),
@@ -2780,6 +3115,12 @@ pub fn run() {
                 dir.display()
             ));
 
+            let ttl_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await; // brief delay after boot
+                maybe_refresh_catalog_by_ttl(ttl_app).await;
+            });
+
             std::thread::spawn(|| {
                 if let Ok(()) = ctrlc::set_handler(|| {
                     psynet::kill_proxy_on_exit();
@@ -2787,8 +3128,6 @@ pub fn run() {
                 }) {}
             });
             std::thread::spawn(|| {
-                // Bind the native MITM first; only rewrite hosts after :443 is healthy.
-                // Orphan config.psynet.gg → 127.0.0.1 is what testers see as EOS/online failure.
                 tauri::async_runtime::spawn(async {
                     let _ = psynet::clear_rocket_league_cache();
                     if crate::proxy::is_proxy_running() {
@@ -2841,8 +3180,6 @@ pub fn run() {
                             "psynet: WS broker auto-started on 127.0.0.1:{port}"
                         )),
                         Err(e) => {
-                            // PsyNetUrl rewrite targets the ephemeral broker — without it,
-                            // in-game Auth/WS fail while config MITM still looks fine in a browser.
                             applog::event(&format!(
                                 "psynet: WS broker auto-start failed — stopping proxy: {e}"
                             ));
@@ -2966,6 +3303,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_items,
+            force_refresh_catalog,
             get_config,
             save_config,
             get_launch_on_startup,

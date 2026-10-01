@@ -1,3 +1,10 @@
+/**
+ * velocityrl
+ * Copyright (c) 2026 bits (https://github.com/bitsfdb/velocityrl)
+ * 
+ * Licensed under the GNU General Public License v3.0.
+ * unauthorized rebranding or stripping of this copyright notice is strictly prohibited.
+ */
 const invoke = (...args) => window.__TAURI__?.core?.invoke(...args);
 const openDialog = async (options) => {
     if (window.__TAURI__?.dialog?.open) {
@@ -531,12 +538,13 @@ function renderSelectedItem(container, item, onClear) {
     const decalBody = getItemDecalBody(item);
     const decalBadge = decalBody ? `<span class="quality-badge" style="background:rgba(91,140,255,0.18);color:#93c5fd;border:1px solid rgba(91,140,255,0.35);">${escHtml(decalBody)} Decal</span>` : '';
 
-    const isPaintable = itemIsPaintable(item);
-    if (!isPaintable) {
-        if (isTarget) { wantedPaintId = '0'; }
-        else { ownedPaintId = '0'; }
+    const isPaintable = isTarget && itemIsPaintable(item);
+    if (!isTarget) {
+        ownedPaintId = '0';
+    } else if (!isPaintable) {
+        wantedPaintId = '0';
     }
-    const currentPaintId = Number((isTarget ? wantedPaintId : ownedPaintId) || 0);
+    const currentPaintId = Number((isTarget ? wantedPaintId : 0) || 0);
 
     const itemPaintsList = Array.isArray(item.Paints) && item.Paints.length > 0 
         ? item.Paints 
@@ -613,16 +621,12 @@ function renderSelectedItem(container, item, onClear) {
         });
     }
 
-    if (isPaintable) {
+    if (isPaintable && isTarget) {
         container.querySelectorAll('.paint-chip-pill[data-paint]').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const pid = btn.dataset.paint;
-                if (isTarget) {
-                    wantedPaintId = pid;
-                } else {
-                    ownedPaintId = pid;
-                }
+                wantedPaintId = pid;
                 container.querySelectorAll('.paint-chip-pill').forEach(b => {
                     b.classList.toggle('is-active', b.dataset.paint === pid);
                 });
@@ -694,7 +698,7 @@ async function init() {
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
             btn.classList.add('active');
             document.getElementById(btn.dataset.tab).classList.add('active');
-            if (btn.dataset.tab === 'swapper-tab') refreshSwapRlHint();
+            if (btn.dataset.tab === 'swapper-tab') { refreshSwapRlHint(); checkMigrationPopup(); }
             if (btn.dataset.tab === 'titles-tab') initTitlesTab();
             if (btn.dataset.tab === 'customization-tab' || btn.dataset.tab === 'names-tab') initCustomizationTab();
             if (btn.dataset.tab === 'ranks-tab') initRanksTab();
@@ -740,6 +744,24 @@ async function init() {
     });
 
     applyBtn.onclick = handleApply;
+    const paintModal = document.getElementById('paint-notice-modal');
+    if (paintModal) {
+        document.getElementById('paint-notice-cancel').onclick = () => {
+            paintModal.classList.remove('active');
+        };
+        paintModal.onclick = (e) => {
+            if (e.target === paintModal) paintModal.classList.remove('active');
+        };
+        document.getElementById('paint-notice-proceed').onclick = () => {
+            paintModal.classList.remove('active');
+            executeApply();
+        };
+    }
+    const migrationModal = document.getElementById('migration-modal');
+    if (migrationModal) {
+        document.getElementById('migration-modal-ok').onclick = () => migrationModal.classList.remove('active');
+        migrationModal.onclick = (e) => { if (e.target === migrationModal) migrationModal.classList.remove('active'); };
+    }
     document.getElementById('restore-btn').onclick = handleRestore;
     document.getElementById('website-btn').onclick = () => {
         if (isAppLoading()) return;
@@ -952,6 +974,58 @@ async function init() {
     document.getElementById('dev-export-diag-btn')?.addEventListener('click', () => {
         triggerExportDiagnostics(document.getElementById('dev-action-msg'));
     });
+    document.getElementById('settings-refresh-catalog-btn')?.addEventListener('click', async () => {
+        const btn = document.getElementById('settings-refresh-catalog-btn');
+        const msg = document.getElementById('settings-catalog-msg');
+        if (!btn) return;
+        btn.disabled = true;
+        btn.textContent = 'Refreshing…';
+        if (msg) msg.textContent = '';
+        try {
+            const result = await invoke('force_refresh_catalog');
+            if (msg) { msg.textContent = result; msg.style.color = 'var(--accent-blue)'; }
+            localStorage.removeItem('titles_fetched_at');
+            showToast('Item catalogue refreshed!', 'success');
+        } catch (e) {
+            if (msg) { msg.textContent = String(e); msg.style.color = '#f87171'; }
+            showToast(String(e), 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Refresh Item Catalogue';
+        }
+    });
+    document.getElementById('settings-fetch-titles-btn')?.addEventListener('click', async () => {
+        const btn = document.getElementById('settings-fetch-titles-btn');
+        const msg = document.getElementById('settings-catalog-msg');
+        if (!btn) return;
+        btn.disabled = true;
+        btn.textContent = 'Fetching…';
+        if (msg) msg.textContent = '';
+        try {
+            const count = await loadTitlesDatabase(true);
+            if (typeof renderDonorList === 'function') {
+                renderDonorList(document.getElementById('donor-search')?.value || '');
+            }
+            if (typeof renderDisplayList === 'function') {
+                renderDisplayList(document.getElementById('display-search')?.value || '');
+            }
+            if (msg) {
+                msg.textContent = `Fetched ${count} titles.`;
+                msg.style.color = 'var(--accent-blue)';
+            }
+            showToast(`Title catalogue updated (${count} titles loaded)`, 'success');
+        } catch (e) {
+            const errStr = String(e?.message || e);
+            if (msg) {
+                msg.textContent = errStr;
+                msg.style.color = '#f87171';
+            }
+            showToast(errStr, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Fetch Title Catalogue';
+        }
+    });
 
     await loadData();
 }
@@ -1058,6 +1132,8 @@ async function loadData() {
         await new Promise(r => setTimeout(r, 150));
         releaseAppLoading();
         wirePresetsUI();
+        initSwapsNoticeBannerEvents();
+        checkMigrationPopup();
     } catch (err) {
         releaseAppLoading();
         updateStatus('Init Failure', true);
@@ -1726,6 +1802,60 @@ function threeWayDialog({ title = 'VelocityRL', message = '', okLabel = 'OK', ex
     });
 }
 
+let _migrationPopupShown = false;
+
+async function checkMigrationPopup() {
+    checkSwapsNoticeBanner();
+    if (_migrationPopupShown) return;
+    const modal = document.getElementById('migration-modal');
+    if (!modal) return;
+    try {
+        const activeSwaps = await invoke('get_swaps').catch(() => []);
+        if (!activeSwaps || !activeSwaps.length) return;
+        const cutoff = new Date('2026-09-30T00:00:00Z');
+        const hasStale = activeSwaps.some(s => {
+            if (!s.timestamp) return true;
+            try { return new Date(s.timestamp) < cutoff; } catch { return true; }
+        });
+        if (hasStale) {
+            _migrationPopupShown = true;
+            modal.classList.add('active');
+        }
+    } catch { /* silent */ }
+}
+
+let _swapsNoticeDismissed = false;
+async function checkSwapsNoticeBanner() {
+    const banner = document.getElementById('swaps-notice-banner');
+    if (!banner || _swapsNoticeDismissed) return;
+    try {
+        const activeSwaps = await invoke('get_swaps').catch(() => []);
+        if (activeSwaps && activeSwaps.length > 0) {
+            banner.style.display = 'flex';
+        } else {
+            banner.style.display = 'none';
+        }
+    } catch { /* silent */ }
+}
+
+function initSwapsNoticeBannerEvents() {
+    const gotoBtn = document.getElementById('swaps-notice-goto-btn');
+    if (gotoBtn) {
+        gotoBtn.onclick = () => {
+            const restoreBtn = document.querySelector('[data-subtab="restore-pane"]');
+            if (restoreBtn) restoreBtn.click();
+        };
+    }
+    const closeBtn = document.getElementById('swaps-notice-close-btn');
+    if (closeBtn) {
+        closeBtn.onclick = () => {
+            _swapsNoticeDismissed = true;
+            const banner = document.getElementById('swaps-notice-banner');
+            if (banner) banner.style.display = 'none';
+        };
+    }
+}
+
 async function refreshSwapHistory() {
     const list = document.getElementById('preset-history-list');
     if (!list) return;
@@ -1794,7 +1924,7 @@ function wirePresetsUI() {
                         wanted_name: wName,
                         paint_id: paintId,
                         custom_paint_hex: null,
-                        owned_paint_id: activeOwnedPaintId > 0 ? activeOwnedPaintId : null,
+                        owned_paint_id: null,
                         owned_custom_hex: null,
                         asset_package: pkg,
                     });
@@ -2283,6 +2413,23 @@ async function openSettingsForPath() {
 
 async function handleApply() {
     if (isAppLoading() || swapBusy || !applyBtn) return;
+    if (!ownedItem || !wantedItem) {
+        showToast('Select an owned item and a target asset first.', 'error');
+        return;
+    }
+    const isCarBody = normSlot(ownedItem?.Slot || ownedItem?.slot) === 'body' || normSlot(wantedItem?.Slot || wantedItem?.slot) === 'body';
+    if (isCarBody) {
+        const paintModal = document.getElementById('paint-notice-modal');
+        if (paintModal) {
+            paintModal.classList.add('active');
+            return;
+        }
+    }
+    executeApply();
+}
+
+async function executeApply() {
+    if (isAppLoading() || swapBusy || !applyBtn) return;
     swapBusy = true;
     applyBtn.disabled = true;
     let interval;
@@ -2303,7 +2450,7 @@ async function handleApply() {
         const swapResult = await invoke('apply_swap', {
             ownedId,
             wantedId,
-            ownedPaintId: activeOwnedPaintId > 0 ? activeOwnedPaintId : null,
+            ownedPaintId: null,
             ownedCustomHex: null,
             paintId,
             customPaintHex: null,
@@ -3097,9 +3244,13 @@ async function hydrateSpoofToolsFromDisk() {
 
     {
         const cs = toolSliceFromDiskOrLocal(disk, CREDIT_SPOOF_KEY, 'credit_spoof');
-        const credit_spoof = (cs && typeof cs === 'object' && ('enabled' in cs || cs.amount != null))
-            ? { enabled: !!cs.enabled, amount: Number(cs.amount) || 100000 }
-            : { enabled: false, amount: 100000 };
+        const credit_spoof = (cs && typeof cs === 'object' && ('enabled' in cs || cs.amount != null || cs.tournament_amount != null))
+            ? { 
+                enabled: !!cs.enabled, 
+                amount: Number(cs.amount) || 100000,
+                tournament_amount: Number(cs.tournament_amount ?? cs.tournament_credits) || 100000 
+              }
+            : { enabled: false, amount: 100000, tournament_amount: 100000 };
         localStorage.setItem(CREDIT_SPOOF_KEY, JSON.stringify({ credit_spoof }));
     }
 
@@ -5619,44 +5770,82 @@ function categoriesMapFromPayload(data) {
     return {};
 }
 
-async function loadTitlesDatabase() {
+async function loadTitlesDatabase(force = false) {
     const lists = [document.getElementById('donor-list'), document.getElementById('display-list')];
     const onTitlesLoadFailed = (msg) => lists.forEach(list => { if (list) list.innerHTML = `<div class="backup-empty">${escHtml(msg)}</div>`; });
     const bundledCats = await loadBundledCategories();
     const applyLoadedTitles = (raw) => {
         titlesDb = normalizeTitlesPayload(raw);
-
         titlesDb.categories = { ...titlesDb.categories, ...bundledCats };
+        localStorage.setItem('titles_fetched_at', String(Date.now()));
     };
+
+    if (!force && (!titlesDb || !titlesDb.titles || titlesDb.titles.length === 0)) {
+        try {
+            const localRes = await fetch('titles.json');
+            if (localRes.ok) {
+                applyLoadedTitles(await localRes.json());
+            }
+        } catch { }
+    }
+
+    if (!force) {
+        try {
+            const features = await invoke('get_features').catch(() => null);
+            const ttlSec = features?.cache?.titles_ttl_seconds ?? 172800;
+            const lastFetch = Number(localStorage.getItem('titles_fetched_at') || 0);
+            const ageMs = Date.now() - lastFetch;
+            if (titlesDb && titlesDb.titles && titlesDb.titles.length > 0 && lastFetch > 0 && ageMs < ttlSec * 1000) {
+                return titlesDb.titles.length;
+            }
+        } catch { }
+    }
+
+    const timeoutMs = force ? 5000 : 2500;
+    const fetchWithTimeout = async (url, ms = timeoutMs) => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), ms);
+        try {
+            const res = await fetch(url, { cache: 'no-store', signal: controller.signal });
+            clearTimeout(timer);
+            return res;
+        } catch (e) {
+            clearTimeout(timer);
+            throw e;
+        }
+    };
+
     try {
-        const res = await fetch(`https://api.velocityrl.tech/titles.json?t=${Date.now()}`, { cache: 'no-store' });
+        const res = await fetchWithTimeout(`https://api.velocityrl.tech/titles.json?t=${Date.now()}`, timeoutMs);
         if (res.ok) {
             applyLoadedTitles(await res.json());
-            return;
+            return titlesDb?.titles?.length || 0;
         }
-    } catch {  }
+    } catch { }
     try {
-        const res = await fetch(`${API_BASE}/v2/rl/titles?t=${Date.now()}`, { cache: 'no-store' });
+        const res = await fetchWithTimeout(`https://raw.githubusercontent.com/bitsfdb/VelocityRL/main/tools/psynet_proxy/titles.json?t=${Date.now()}`, timeoutMs);
         if (res.ok) {
             applyLoadedTitles(await res.json());
-            return;
+            return titlesDb?.titles?.length || 0;
         }
-    } catch {  }
-    try {
-        const res = await fetch(`https://raw.githubusercontent.com/bitsfdb/VelocityRL/main/tools/psynet_proxy/titles.json?t=${Date.now()}`, { cache: 'no-store' });
-        if (res.ok) {
-            applyLoadedTitles(await res.json());
-            return;
-        }
-    } catch {  }
-    try {
-        const res = await fetch('titles.json', { cache: 'no-store' });
-        if (res.ok) {
-            applyLoadedTitles(await res.json());
-            return;
-        }
-    } catch {  }
-    onTitlesLoadFailed('Could not load titles database.');
+    } catch { }
+
+    if (force && (!titlesDb || !titlesDb.titles || titlesDb.titles.length === 0)) {
+        try {
+            const localRes = await fetch('titles.json');
+            if (localRes.ok) {
+                applyLoadedTitles(await localRes.json());
+                return titlesDb?.titles?.length || 0;
+            }
+        } catch { }
+    }
+
+    if (!titlesDb || !titlesDb.titles || titlesDb.titles.length === 0) {
+        onTitlesLoadFailed('Could not load titles database.');
+        if (force) throw new Error('Could not fetch title catalogue from server.');
+        return 0;
+    }
+    return titlesDb.titles.length;
 }
 
 function categoriesFromTitles(titles) {
@@ -6128,7 +6317,7 @@ async function loadWorkshopCatalog(page = 1, query = '') {
                     }
 
                     showToast(`"${mapName}" installed! In Rocket League: select Underpass in Free Play or Exhibition to play.`, 'success');
-                    btn.textContent = 'Installed ✓';
+                    btn.textContent = 'Installed ';
                     btn.style.background = '#1b5e20';
                     await refreshWorkshopInstalled();
                 } catch (err) {
@@ -6393,7 +6582,7 @@ async function refreshWorkshopLibrary() {
     const guideBanner = document.createElement('div');
     guideBanner.className = 'map-how-to-play-banner';
     guideBanner.innerHTML = `
-        <div class="map-how-to-play-icon">ℹ️</div>
+        <div class="map-how-to-play-icon">️</div>
         <div class="map-how-to-play-text">
             <strong>How to play your custom map in Rocket League:</strong><br>
             Custom maps replace the <em>Underpass</em> arena. After loading a map below, start Rocket League and join:
@@ -6920,7 +7109,7 @@ function bindTrackerEvents() {
                         if (rewritten) {
                             showToast('Stats API files updated — restart Rocket League for changes to apply.', 'success');
                         } else {
-                            showToast('Stats API already configured ✓', 'info');
+                            showToast('Stats API already configured ', 'info');
                         }
                     } else {
                         showToast('Set your Rocket League path in Settings so Stats API can be configured.', 'error');

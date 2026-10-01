@@ -35,7 +35,7 @@
     "createUpdaterArtifacts": true,
     "windows": {
       "nsis": {
-        "installMode": "currentUser",
+        "installMode": "perMachine",
         "installerHooks": "hooks.nsh"
       },
       "wix": null

@@ -1,3 +1,10 @@
+/*
+ * velocityrl
+ * Copyright (c) 2026 bits (https://github.com/bitsfdb/velocityrl)
+ * 
+ * Licensed under the GNU General Public License v3.0.
+ * unauthorized rebranding or stripping of this copyright notice is strictly prohibited.
+ */
 #![windows_subsystem = "windows"]
 
 fn main() {
@@ -279,7 +286,7 @@ fn run_cli_recover() {
       new_text.push('\n');
     }
     let _ = std::fs::write("/etc/hosts", new_text);
-    println!("    [✓] Removed VelocityRL domain redirects from /etc/hosts");
+    println!("    [] Removed VelocityRL domain redirects from /etc/hosts");
   }
 
   println!("[*] Flushing DNS cache...");
@@ -289,7 +296,7 @@ fn run_cli_recover() {
 
   println!("[*] Disabling Wine/Proton proxies...");
   app_lib::psynet::set_system_proxy_enabled(false);
-  println!("    [✓] Disabled system proxy in Wine/Proton user.reg");
+  println!("    [] Disabled system proxy in Wine/Proton user.reg");
 
   println!("[*] Removing VelocityRL Root CA from system trust store...");
   let mut ca_removed = false;
@@ -321,21 +328,21 @@ fn run_cli_recover() {
     let _ = std::fs::remove_file(&tmp_ca);
   }
   if ca_removed {
-    println!("    [✓] Removed root certificate and updated trust store");
+    println!("    [] Removed root certificate and updated trust store");
   } else {
-    println!("    [✓] No certificate left in system trust anchors");
+    println!("    [] No certificate left in system trust anchors");
   }
 
   println!("[*] Removing custom sysctl configuration...");
   let sysctl_file = std::path::Path::new("/etc/sysctl.d/50-velocityrl.conf");
   if sysctl_file.exists() {
     let _ = std::fs::remove_file(sysctl_file);
-    println!("    [✓] Removed /etc/sysctl.d/50-velocityrl.conf");
+    println!("    [] Removed /etc/sysctl.d/50-velocityrl.conf");
   }
 
   println!("[*] Cleaning up temporary proxy files...");
   let _ = std::fs::remove_dir_all("/tmp/VelocityRL_proxy");
-  println!("    [✓] Cleared /tmp/VelocityRL_proxy");
+  println!("    [] Cleared /tmp/VelocityRL_proxy");
 
   println!("==========================================");
   println!("  [SUCCESS] All settings restored to normal!");

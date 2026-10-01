@@ -1,11 +1,16 @@
+/*
+ * velocityrl
+ * Copyright (c) 2026 bits (https://github.com/bitsfdb/velocityrl)
+ * 
+ * Licensed under the GNU General Public License v3.0.
+ * unauthorized rebranding or stripping of this copyright notice is strictly prohibited.
+ */
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
 use base64::Engine as _;
-use flate2::{read::ZlibDecoder, write::ZlibEncoder, Compression};
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::fs;
-use std::io::{Read, Write};
 use std::path::PathBuf;
 use tauri::Manager;
 
@@ -310,6 +315,7 @@ pub async fn apply_preset(app: tauri::AppHandle, id: String) -> Result<Vec<Strin
     Ok(results)
 }
 
+#[allow(dead_code)]
 pub const COSMETIC_SLOTS_COUNT: usize = 14;
 
 pub fn slot_index_from_str(slot: &str) -> usize {
@@ -528,6 +534,7 @@ fn parse_code(code: &str) -> Result<(String, Vec<SwapEntry>, Vec<PresetMapEntry>
                         custom_paint_hex: None,
                         asset_package: String::new(),
                         slot: Some(slot_name),
+                        timestamp: None,
                     });
                 }
             }
@@ -774,6 +781,7 @@ pub async fn random_swap_plan(
             custom_paint_hex: None,
             asset_package: donor.asset_package.clone(),
             slot: Some(donor.slot.clone()),
+            timestamp: Some(chrono::Utc::now().to_rfc3339()),
         });
     }
 
@@ -848,6 +856,7 @@ mod tests {
                 custom_paint_hex: None,
                 asset_package: "body_grain".into(),
                 slot: Some("Body".into()),
+                timestamp: None,
             },
             SwapEntry {
                 owned_id: 376,
@@ -860,6 +869,7 @@ mod tests {
                 custom_paint_hex: None,
                 asset_package: "wheel_cristiano".into(),
                 slot: Some("Wheels".into()),
+                timestamp: None,
             },
         ];
 
@@ -899,6 +909,7 @@ mod tests {
                     custom_paint_hex: None,
                     asset_package: "body_grain".into(),
                     slot: Some("Body".into()),
+                    timestamp: None,
                 },
             ],
             maps: vec![],
@@ -924,7 +935,7 @@ mod tests {
     #[test]
     fn test_parse_code_exceeding_50_swaps_rejected() {
         let mut swaps = Vec::new();
-        for i in 0..51 {
+        for _ in 0..51 {
             swaps.push(SwapEntry {
                 owned_id: 23,
                 wanted_id: 4284,
@@ -936,6 +947,7 @@ mod tests {
                 custom_paint_hex: None,
                 asset_package: "body_grain".into(),
                 slot: Some("Body".into()),
+                timestamp: None,
             });
         }
         let payload = serde_json::json!({

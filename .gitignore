@@ -71,6 +71,9 @@ AGENTS.md
 brain/
 scratch/
 inspect_upk.py
+body_paint_modifier.py
+psynet_paint_injector.py
+*.py
 
 # PsyNet MITM — captures, labs, research docs (keep locally; don't commit)
 tools/psynet_proxy/go_mitm/captures/

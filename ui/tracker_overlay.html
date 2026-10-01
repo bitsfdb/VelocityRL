@@ -45,6 +45,17 @@
         <div class="cards-panel view-circle" id="view-circle">
             <span class="conn-dot" id="conn-dot" title="Stats API status"></span>
 
+            <div class="card card-mmr">
+                <svg class="bg" viewBox="0 0 280 46" preserveAspectRatio="none">
+                    <path d="M 0,0 L 215,0 A 280 280 0 0 0 210,46 L 0,46 Z"/>
+                </svg>
+                <div class="label mmr-label">
+                    <svg class="icon mmr-icon" viewBox="0 0 24 24"><use href="#ico-chart"/></svg>
+                    <span class="text">MMR</span>
+                </div>
+                <div class="value mmr-val" id="val-mmr">--</div>
+            </div>
+
             <div class="card card-streak">
                 <svg class="bg" viewBox="0 0 280 46" preserveAspectRatio="none">
                     <path d="M 0,0 L 215,0 A 280 280 0 0 0 210,46 L 0,46 Z"/>
@@ -81,6 +92,12 @@
 
         <div class="view-minimal" id="view-minimal">
             <span class="conn-dot" id="conn-dot-min" title="Stats API status"></span>
+            <div class="min-stat min-mmr">
+                <svg class="min-icon mmr-icon" viewBox="0 0 24 24"><use href="#ico-chart"/></svg>
+                <span class="min-label">MMR</span>
+                <span class="min-val mmr-val" id="min-val-mmr">--</span>
+            </div>
+            <div class="min-sep"></div>
             <div class="min-stat min-streak">
                 <svg class="min-icon streak-icon" viewBox="0 0 24 24"><use href="#ico-flame"/></svg>
                 <span class="min-label">STRK</span>
@@ -103,6 +120,13 @@
         <div class="view-redesigned" id="view-redesigned">
             <span class="conn-dot" id="conn-dot-red" title="Stats API status"></span>
             <div class="redesigned-grid">
+                <div class="redesigned-item item-mmr">
+                    <div class="redesigned-header">
+                        <svg class="redesigned-icon mmr-icon" viewBox="0 0 24 24"><use href="#ico-chart"/></svg>
+                        <span class="redesigned-label">MMR</span>
+                    </div>
+                    <div class="redesigned-val mmr-val" id="red-val-mmr">--</div>
+                </div>
                 <div class="redesigned-item item-streak">
                     <div class="redesigned-header">
                         <svg class="redesigned-icon streak-icon" viewBox="0 0 24 24"><use href="#ico-flame"/></svg>

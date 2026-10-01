@@ -1,3 +1,10 @@
+/*
+ * velocityrl
+ * Copyright (c) 2026 bits (https://github.com/bitsfdb/velocityrl)
+ * 
+ * Licensed under the GNU General Public License v3.0.
+ * unauthorized rebranding or stripping of this copyright notice is strictly prohibited.
+ */
 use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::Arc;
 use tokio::sync::{oneshot, RwLock};
@@ -688,6 +695,16 @@ fn is_loadout_sensitive(svc: &str, body: &[u8]) -> bool {
         "microtransaction/getcatalog",
         // AuthPlayer must never be patched with name spoofing
         "authplayer",
+        // Only tournament brackets and tournament listings - preserve authentic names
+        "tournaments/getbracket",
+        "tournaments/getactivebracket",
+        "tournaments/gettournament",
+        "tournaments/gettournaments",
+        // Leaderboard services - preserve authentic names
+        "skills/getskillleaderboard",
+        "stats/getstatleaderboard",
+        "leaderboards/getleaderboard",
+        "leaderboard",
     ] {
         if s.contains(needle) {
             return true;
@@ -705,6 +722,11 @@ fn is_loadout_sensitive(svc: &str, body: &[u8]) -> bool {
         b"RichPresence",
         b"SocialBeacon",
         b"FriendStatus",
+        // Tournament brackets and leaderboard payloads - preserve authentic names
+        b"TournamentBracket",
+        b"Tournament_TA",
+        b"GetSkillLeaderboard",
+        b"GetStatLeaderboard",
     ] {
         if find_bytes(body, cat).is_some() {
             return true;
@@ -993,26 +1015,22 @@ async fn handle_crl_or_http(
             .unwrap());
     }
     if path == "/proxy.pac" || path == "/wpad.dat" {
-        let name_spoof_on = {
-            let spoof_cfg = crate::psynet::load_active_spoof_from_disk();
-            spoof_cfg
-                .as_ref()
-                .and_then(|c| c.name_spoof.as_ref())
-                .map(|n| n.enabled)
-                .unwrap_or(false)
-        };
-        let pac = if name_spoof_on {
-            format!(
-                "function FindProxyForURL(url, host) {{\n    \
-                 if (shExpMatch(host, \"*.epicgames.dev\") || host == \"api.epicgames.dev\" || shExpMatch(host, \"*account-public-service*\")) {{\n        \
-                     return \"PROXY 127.0.0.1:{SYSTEM_PROXY_PORT}; DIRECT\";\n    \
-                 }}\n    \
-                 return \"DIRECT\";\n\
-                 }}"
-            )
-        } else {
-            "function FindProxyForURL(url, host) {\n    return \"DIRECT\";\n}".to_string()
-        };
+        let pac = format!(
+            "function FindProxyForURL(url, host) {{\n\
+             \x20   if (\n\
+             \x20       shExpMatch(host, \"*.epicgames.dev\") ||\n\
+             \x20       host == \"api.epicgames.dev\" ||\n\
+             \x20       shExpMatch(host, \"*account-public-service*\") ||\n\
+             \x20       shExpMatch(host, \"*.psynet.gg\") ||\n\
+             \x20       host == \"config.psynet.gg\" ||\n\
+             \x20       shExpMatch(host, \"*.psyops.psynet.gg\") ||\n\
+             \x20       shExpMatch(host, \"*.rocketleague.com\")\n\
+             \x20   ) {{\n\
+             \x20       return \"PROXY 127.0.0.1:{SYSTEM_PROXY_PORT}; DIRECT\";\n\
+             \x20   }}\n\
+             \x20   return \"DIRECT\";\n\
+             }}"
+        );
         return Ok(Response::builder()
             .status(StatusCode::OK)
             .header("Content-Type", "application/x-ns-proxy-autoconfig")
