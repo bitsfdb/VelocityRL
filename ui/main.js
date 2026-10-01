@@ -1106,6 +1106,7 @@ async function loadData() {
         await new Promise(r => setTimeout(r, 150));
         releaseAppLoading();
         wirePresetsUI();
+        initItemSpawner();
         initSwapsNoticeBannerEvents();
         checkMigrationPopup();
     } catch (err) {
@@ -7421,6 +7422,7 @@ let spawnerPaintsLoaded = false;
 async function populateSpawnerPaints() {
     if (spawnerPaintsLoaded) return;
     const sel = document.getElementById('spawner-paint-select');
+    const colorDot = document.getElementById('spawner-paint-color-dot');
     if (!sel) return;
     let paintsList = [];
     try {
@@ -7437,27 +7439,45 @@ async function populateSpawnerPaints() {
     sel.innerHTML = paintsList.map(p => {
         const id = p.id ?? 0;
         const name = p.name || `Paint ${id}`;
-        return `<option value="${id}">${escHtml(name)}</option>`;
+        const hex = p.hex || '#888888';
+        return `<option value="${id}" data-hex="${escHtml(hex)}" style="color:${escHtml(hex)}; background:#18181b;">● ${escHtml(name)}</option>`;
     }).join('');
     sel.value = '0';
+    
+    const updateDot = () => {
+        const opt = sel.options[sel.selectedIndex];
+        const hex = opt?.dataset?.hex || '#4B5563';
+        if (colorDot) {
+            colorDot.style.background = hex;
+            colorDot.style.boxShadow = hex !== '#1E1E1E' && hex !== '#4B5563' ? `0 0 6px ${hex}99` : 'none';
+        }
+    };
+    
+    sel.addEventListener('change', updateDot);
+    updateDot();
     spawnerPaintsLoaded = true;
 }
 
 function getSelectedSpawnerPaint() {
     const sel = document.getElementById('spawner-paint-select');
     const val = parseInt(sel?.value || '0', 10);
-    const name = sel?.options?.[sel?.selectedIndex]?.text || paintLabel(val);
+    const name = sel?.options?.[sel?.selectedIndex]?.text?.replace(/^[●\s]+/, '') || paintLabel(val);
     return { id: isNaN(val) ? 0 : val, name };
 }
 
 function updateSpawnerSelectionUi() {
     const count = spawnerSelectedItems.size;
-    const spawnSelectedBtn = document.getElementById('spawner-spawn-selected-btn');
+    const singleBtn = document.getElementById('spawner-spawn-single-btn');
+    const bulkBtn = document.getElementById('spawner-spawn-bulk-btn');
     const deselectBtn = document.getElementById('spawner-deselect-all-btn');
 
-    if (spawnSelectedBtn) {
-        spawnSelectedBtn.textContent = `Spawn Selected (${count})`;
-        spawnSelectedBtn.style.display = count > 0 ? 'inline-flex' : 'none';
+    if (singleBtn) {
+        singleBtn.textContent = 'Paint Individual';
+        singleBtn.style.display = count === 1 ? 'inline-flex' : 'none';
+    }
+    if (bulkBtn) {
+        bulkBtn.textContent = `Paint Bulk (${count})`;
+        bulkBtn.style.display = count > 1 ? 'inline-flex' : 'none';
     }
     if (deselectBtn) {
         deselectBtn.style.display = count > 0 ? 'inline-flex' : 'none';
@@ -7467,8 +7487,6 @@ function updateSpawnerSelectionUi() {
         const key = card.dataset.cardKey;
         const isSel = spawnerSelectedItems.has(key);
         card.classList.toggle('is-selected', isSel);
-        const cb = card.querySelector('.spawner-card-cb');
-        if (cb) cb.checked = isSel;
     });
 }
 
@@ -7499,7 +7517,8 @@ function wireSpawnerControls() {
     const spawnAllBtn = document.getElementById('spawner-spawn-all-btn');
     const selectPageBtn = document.getElementById('spawner-select-page-btn');
     const deselectBtn = document.getElementById('spawner-deselect-all-btn');
-    const spawnSelectedBtn = document.getElementById('spawner-spawn-selected-btn');
+    const singleBtn = document.getElementById('spawner-spawn-single-btn');
+    const bulkBtn = document.getElementById('spawner-spawn-bulk-btn');
 
     catButtons.forEach(btn => {
         btn.addEventListener('click', () => {
@@ -7567,14 +7586,14 @@ function wireSpawnerControls() {
         updateSpawnerSelectionUi();
     });
 
-    spawnSelectedBtn?.addEventListener('click', async () => {
+    const spawnSelectedHandler = async (triggerBtn) => {
         if (spawnerSelectedItems.size === 0) return;
         const selected = Array.from(spawnerSelectedItems.values());
         const titlesToSpawn = selected.filter(s => s.kind === 'title').map(s => String(s.id));
         const itemsToSpawn = selected.filter(s => s.kind === 'item');
         const paint = getSelectedSpawnerPaint();
 
-        spawnSelectedBtn.disabled = true;
+        if (triggerBtn) triggerBtn.disabled = true;
         try {
             if (titlesToSpawn.length > 0) {
                 await invoke('add_network_spawned_titles_bulk', { titleIds: titlesToSpawn });
@@ -7603,13 +7622,24 @@ function wireSpawnerControls() {
         } catch (err) {
             showToast(`Failed to spawn selected items: ${err}`, 'error');
         } finally {
-            spawnSelectedBtn.disabled = false;
+            if (triggerBtn) triggerBtn.disabled = false;
         }
-    });
+    };
+
+    singleBtn?.addEventListener('click', () => spawnSelectedHandler(singleBtn));
+    bulkBtn?.addEventListener('click', () => spawnSelectedHandler(bulkBtn));
 
     spawnAllBtn?.addEventListener('click', async () => {
         const q = (searchInput?.value || '').trim().toLowerCase();
         const paint = getSelectedSpawnerPaint();
+
+        const confirmed = await appDialog({
+            title: 'Spawn All Items',
+            message: 'Are you sure you want to spawn all items?',
+            okLabel: 'Spawn All',
+            cancelLabel: 'Cancel'
+        });
+        if (!confirmed) return;
 
         if (spawnerCategory === 'Titles') {
             if (!titlesDb || !titlesDb.titles || titlesDb.titles.length === 0) {
@@ -7626,6 +7656,20 @@ function wireSpawnerControls() {
                 showToast('No titles to spawn.', 'warning');
                 return;
             }
+
+            // Visually select all matching titles across all pages
+            filtered.forEach(t => {
+                const tid = String(t.id || t.Id || '');
+                const key = `title_${tid}`;
+                spawnerSelectedItems.set(key, {
+                    kind: 'title',
+                    id: tid,
+                    name: t.text || t.Text || tid,
+                    slot: 'Titles'
+                });
+            });
+            updateSpawnerSelectionUi();
+
             spawnAllBtn.disabled = true;
             try {
                 await invoke('add_network_spawned_titles_bulk', { titleIds: ids });
@@ -7668,6 +7712,19 @@ function wireSpawnerControls() {
             return;
         }
 
+        // Visually select all matching items across all pages
+        filtered.forEach(item => {
+            const iid = String(item.ID ?? item.id ?? '');
+            const key = `item_${iid}`;
+            spawnerSelectedItems.set(key, {
+                kind: 'item',
+                id: iid,
+                name: item.Product || item.product || 'Unknown',
+                slot: item.Slot || item.slot || ''
+            });
+        });
+        updateSpawnerSelectionUi();
+
         spawnAllBtn.disabled = true;
         try {
             await invoke('add_network_spawned_items_bulk', { items: payload });
@@ -7693,9 +7750,9 @@ function wireSpawnerControls() {
     });
 
     document.getElementById('btn-goto-title-spawner')?.addEventListener('click', () => {
-        const itemsNavBtn = document.querySelector('.nav-item[data-tab="items-tab"]');
+        const itemsNavBtn = document.querySelector('.nav-item[data-tab="swapper-tab"]');
         itemsNavBtn?.click();
-        const spawnerSubtabBtn = document.querySelector('#items-tab .subtab-btn[data-subtab="spawner-pane"]');
+        const spawnerSubtabBtn = document.querySelector('#swapper-tab .subtab-btn[data-subtab="spawner-pane"]');
         spawnerSubtabBtn?.click();
         const titlesCatBtn = document.querySelector('#spawner-category-strip .cat-btn[data-slot="Titles"]');
         titlesCatBtn?.click();
@@ -7764,20 +7821,14 @@ async function renderSpawnerCatalogue() {
             const isSel = spawnerSelectedItems.has(key);
             return `
                 <div class="spawner-card is-title-card${isSel ? ' is-selected' : ''}" data-card-key="${escHtml(key)}" data-card-kind="title" data-card-raw-id="${escHtml(id)}" data-card-name="${escHtml(text)}" title="${escHtml(text)}">
-                    <label class="spawner-card-check-wrap" onclick="event.stopPropagation()" title="Select for bulk spawn">
-                        <input type="checkbox" class="spawner-card-cb" data-card-key="${escHtml(key)}" ${isSel ? 'checked' : ''}>
-                    </label>
                     <div class="spawner-title-preview-box">
                         <div class="spawner-title-text">${formatTitleHtml(text)}</div>
-                    </div>
-                    <div class="spawner-card-overlay">
-                        <button type="button" class="spawner-card-overlay-btn" data-spawn-title="${escHtml(id)}">Spawn</button>
                     </div>
                 </div>
             `;
         }).join('');
 
-        wireCatalogueCardEvents(pageTitles, 'title');
+        wireCatalogueCardEvents();
         updateSpawnerSelectionUi();
         return;
     }
@@ -7825,9 +7876,6 @@ async function renderSpawnerCatalogue() {
         const isSel = spawnerSelectedItems.has(key);
         return `
             <div class="spawner-card${isSel ? ' is-selected' : ''}" data-card-key="${escHtml(key)}" data-card-kind="item" data-card-raw-id="${escHtml(id)}" data-card-name="${escHtml(name)}" data-card-slot="${escHtml(slot)}" title="${escHtml(name)}">
-                <label class="spawner-card-check-wrap" onclick="event.stopPropagation()" title="Select for bulk spawn">
-                    <input type="checkbox" class="spawner-card-cb" data-card-key="${escHtml(key)}" ${isSel ? 'checked' : ''}>
-                </label>
                 <div class="spawner-card-img-wrap">
                     ${img ? `<img src="${escHtml(img)}" class="spawner-card-img" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" /><div style="display:none;align-items:center;justify-content:center;color:var(--muted);width:100%;height:100%;"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></div>` : '<div style="display:flex;align-items:center;justify-content:center;color:var(--muted);width:100%;height:100%;"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></div>'}
                 </div>
@@ -7836,76 +7884,33 @@ async function renderSpawnerCatalogue() {
                     <span class="quality-badge ${bgClass}" style="font-size:10px; padding:1px 5px;">${escHtml(quality)}</span>
                     <span>${escHtml(slot)}</span>
                 </div>
-                <div class="spawner-card-overlay">
-                    <button type="button" class="spawner-card-overlay-btn" data-spawn-item="${escHtml(id)}">Spawn</button>
-                </div>
             </div>
         `;
     }).join('');
 
-    wireCatalogueCardEvents(pageItems, 'item');
+    wireCatalogueCardEvents();
     updateSpawnerSelectionUi();
 }
 
-function wireCatalogueCardEvents(pageList, kind) {
+function wireCatalogueCardEvents() {
     const grid = document.getElementById('spawner-catalogue-grid');
     if (!grid) return;
 
-    grid.querySelectorAll('.spawner-card-cb').forEach(cb => {
-        cb.addEventListener('change', (e) => {
+    grid.querySelectorAll('.spawner-card').forEach(card => {
+        card.addEventListener('click', (e) => {
             e.stopPropagation();
-            const key = cb.dataset.cardKey;
-            const card = cb.closest('.spawner-card');
-            if (!key || !card) return;
-            if (cb.checked) {
+            const key = card.dataset.cardKey;
+            if (!key) return;
+            if (spawnerSelectedItems.has(key)) {
+                spawnerSelectedItems.delete(key);
+            } else {
                 const kind = card.dataset.cardKind;
                 const rawId = card.dataset.cardRawId;
                 const name = card.dataset.cardName || 'Item';
                 const slot = card.dataset.cardSlot || '';
                 spawnerSelectedItems.set(key, { kind, id: rawId, name, slot });
-            } else {
-                spawnerSelectedItems.delete(key);
             }
             updateSpawnerSelectionUi();
-        });
-    });
-
-    grid.querySelectorAll('.spawner-card').forEach((card, idx) => {
-        card.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            const paint = getSelectedSpawnerPaint();
-
-            if (kind === 'title') {
-                const t = pageList[idx];
-                const id = String(t.id || t.Id || '');
-                const text = t.text || t.Text || id;
-                try {
-                    await invoke('add_network_spawned_title', { titleId: id });
-                    showToast(`Spawned title <strong>${escHtml(text)}</strong> into network inventory!`, 'success');
-                    refreshSpawnedItemsList();
-                } catch (err) {
-                    showToast(`Failed to spawn title: ${err}`, 'error');
-                }
-            } else {
-                const item = pageList[idx];
-                const id = (item.ID ?? item.id ?? '').toString();
-                const slot = normSlot(item.Slot || item.slot || '');
-                const name = item.Product || item.product || item.name || 'Unknown Item';
-
-                try {
-                    await invoke('add_network_spawned_item', {
-                        productId: parseInt(id, 10) || 0,
-                        paintId: paint.id,
-                        slot: slot,
-                        productName: name
-                    });
-                    const paintSuffix = paint.id > 0 ? ` (${paint.name})` : '';
-                    showToast(`Spawned <strong>${escHtml(name)}</strong>${paintSuffix} into network inventory!`, 'success');
-                    refreshSpawnedItemsList();
-                } catch (err) {
-                    showToast(`Failed to spawn item: ${err}`, 'error');
-                }
-            }
         });
     });
 }

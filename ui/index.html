@@ -52,13 +52,69 @@
 
             <div id="swapper-tab" class="tab-content active">
                 <div class="subtab-strip" role="tablist">
-                    <button type="button" class="subtab-btn active" data-subtab="swaps-pane" data-i18n="subtabs.swaps">Swapper</button>
-                    <button type="button" class="subtab-btn" data-subtab="spawner-pane" data-i18n="subtabs.spawner">Spawner</button>
+                    <button type="button" class="subtab-btn active" data-subtab="spawner-pane" data-i18n="subtabs.spawner">Spawner</button>
+                    <button type="button" class="subtab-btn" data-subtab="swaps-pane" data-i18n="subtabs.swaps">Swapper</button>
                     <button type="button" class="subtab-btn" data-subtab="restore-pane" data-i18n="subtabs.restore">Restore</button>
                     <button type="button" class="subtab-btn" data-subtab="presets-pane" data-i18n="subtabs.presets">Presets</button>
                 </div>
 
-                <div id="swaps-pane" class="subtab-pane active">
+                <!-- SUBTAB: SPAWNER CATALOGUE -->
+                <div id="spawner-pane" class="subtab-pane active">
+                    <div class="category-strip" id="spawner-category-strip">
+                        <button class="cat-btn active" data-slot="All" data-i18n="categories.all">All Items</button>
+                        <button class="cat-btn" data-slot="Body" data-i18n="categories.bodies">Bodies</button>
+                        <button class="cat-btn" data-slot="Decal" data-i18n="categories.decals">Decals</button>
+                        <button class="cat-btn" data-slot="Wheels" data-i18n="categories.wheels">Wheels</button>
+                        <button class="cat-btn" data-slot="Rocket Boost" data-i18n="categories.boosts">Boosts</button>
+                        <button class="cat-btn" data-slot="Trail" data-i18n="categories.trails">Trails</button>
+                        <button class="cat-btn" data-slot="Goal Explosion" data-i18n="categories.explosions">Goal Explosions</button>
+                        <button class="cat-btn" data-slot="Player Banner" data-i18n="categories.banners">Player Banners</button>
+                        <button class="cat-btn" data-slot="Avatar Border" data-i18n="categories.borders">Avatar Borders</button>
+                        <button class="cat-btn" data-slot="Antenna" data-i18n="categories.antennas">Antennas</button>
+                        <button class="cat-btn" data-slot="Topper" data-i18n="categories.toppers">Toppers</button>
+                        <button class="cat-btn" data-slot="Engine Audio" data-i18n="categories.engine_audio">Engine Audio</button>
+                        <button class="cat-btn" data-slot="Paint Finish" data-i18n="categories.paint_finishes">Paint Finishes</button>
+                        <button class="cat-btn" data-slot="Titles" data-i18n="categories.titles">Titles</button>
+                    </div>
+
+                    <div style="display:flex; gap:10px; margin: 12px 0; align-items:center; flex-wrap:wrap;">
+                        <div class="search-box" style="flex:1; min-width:200px;">
+                            <input type="text" id="spawner-search" data-i18n-placeholder="spawner.search_placeholder" placeholder="Search item catalogue to spawn..." autocomplete="off">
+                        </div>
+                        <button type="button" id="spawner-select-page-btn" class="action-btn action-btn-secondary" style="padding:7px 12px; font-size:12px; white-space:nowrap;">Select Page</button>
+                        <button type="button" id="spawner-deselect-all-btn" class="action-btn action-btn-secondary" style="padding:7px 12px; font-size:12px; white-space:nowrap; display:none;">Deselect All</button>
+                        
+                        <div class="spawner-paint-wrap" id="spawner-paint-wrap" style="display:flex; align-items:center; gap:8px;">
+                            <label for="spawner-paint-select" style="font-size:12px; color:var(--text-secondary); font-weight:600; white-space:nowrap;">Paint:</label>
+                            <span id="spawner-paint-color-dot" class="spawner-paint-color-dot" style="width:12px; height:12px; border-radius:50%; background:#4B5563; display:inline-block; border:1px solid rgba(255,255,255,0.25); flex-shrink:0;"></span>
+                            <select id="spawner-paint-select" class="spawner-paint-select" style="min-width:140px;"></select>
+                        </div>
+                        
+                        <div class="spawner-actions-wrap" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                            <button type="button" id="spawner-spawn-single-btn" class="action-btn" style="padding:7px 14px; font-size:12px; white-space:nowrap; background:var(--accent); color:#fff; display:none;">Paint Individual</button>
+                            <button type="button" id="spawner-spawn-bulk-btn" class="action-btn" style="padding:7px 14px; font-size:12px; white-space:nowrap; background:var(--accent); color:#fff; display:none;">Paint Bulk</button>
+                            <button type="button" id="spawner-spawn-all-btn" class="action-btn" style="padding:7px 14px; font-size:12px; white-space:nowrap; background:var(--accent-blue); color:#fff;">Paint All Items</button>
+                        </div>
+                    </div>
+
+                    <div id="spawner-catalogue-grid" class="spawner-catalogue-grid">
+                        <div class="backup-empty">Loading catalogue...</div>
+                    </div>
+
+                    <div id="spawner-pagination-bar" class="spawner-pagination-bar">
+                        <div id="spawner-page-stats" class="spawner-page-stats">Showing 0 of 0 items</div>
+                        <div class="spawner-pagination-controls">
+                            <button type="button" id="spawner-first-btn" class="action-btn action-btn-secondary" style="padding:6px 12px; font-size:12px;" title="First page">«</button>
+                            <button type="button" id="spawner-prev-btn" class="action-btn action-btn-secondary" style="padding:6px 14px; font-size:12px;">← Previous</button>
+                            <span id="spawner-page-info" class="spawner-page-info">Page 1 of 1</span>
+                            <button type="button" id="spawner-next-btn" class="action-btn action-btn-secondary" style="padding:6px 14px; font-size:12px;">Next →</button>
+                            <button type="button" id="spawner-last-btn" class="action-btn action-btn-secondary" style="padding:6px 12px; font-size:12px;" title="Last page">»</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SUBTAB: SWAPPER -->
+                <div id="swaps-pane" class="subtab-pane">
                     <div class="category-strip">
                         <button class="cat-btn active" data-slot="All" data-i18n="categories.all">All Items</button>
                         <button class="cat-btn" data-slot="Body" data-i18n="categories.bodies">Bodies</button>
@@ -107,57 +163,6 @@
                         <button id="apply-swap" class="action-btn" disabled data-i18n="swapper.swap_btn">Swap Items</button>
                     </div>
                     <p id="swap-rl-hint" class="field-hint" hidden data-i18n="swapper.rl_running_hint">Rocket League is running — close it before swapping or restoring.</p>
-                </div>
-
-                <!-- SUBTAB: SPAWNER CATALOGUE -->
-                <div id="spawner-pane" class="subtab-pane">
-                    <div class="category-strip" id="spawner-category-strip">
-                        <button class="cat-btn active" data-slot="All" data-i18n="categories.all">All Items</button>
-                        <button class="cat-btn" data-slot="Body" data-i18n="categories.bodies">Bodies</button>
-                        <button class="cat-btn" data-slot="Decal" data-i18n="categories.decals">Decals</button>
-                        <button class="cat-btn" data-slot="Wheels" data-i18n="categories.wheels">Wheels</button>
-                        <button class="cat-btn" data-slot="Rocket Boost" data-i18n="categories.boosts">Boosts</button>
-                        <button class="cat-btn" data-slot="Trail" data-i18n="categories.trails">Trails</button>
-                        <button class="cat-btn" data-slot="Goal Explosion" data-i18n="categories.explosions">Goal Explosions</button>
-                        <button class="cat-btn" data-slot="Player Banner" data-i18n="categories.banners">Player Banners</button>
-                        <button class="cat-btn" data-slot="Avatar Border" data-i18n="categories.borders">Avatar Borders</button>
-                        <button class="cat-btn" data-slot="Antenna" data-i18n="categories.antennas">Antennas</button>
-                        <button class="cat-btn" data-slot="Topper" data-i18n="categories.toppers">Toppers</button>
-                        <button class="cat-btn" data-slot="Engine Audio" data-i18n="categories.engine_audio">Engine Audio</button>
-                        <button class="cat-btn" data-slot="Paint Finish" data-i18n="categories.paint_finishes">Paint Finishes</button>
-                        <button class="cat-btn" data-slot="Titles" data-i18n="categories.titles">Titles</button>
-                    </div>
-
-                    <div style="display:flex; gap:10px; margin: 12px 0; align-items:center; flex-wrap:wrap;">
-                        <div class="search-box" style="flex:1; min-width:220px;">
-                            <input type="text" id="spawner-search" data-i18n-placeholder="spawner.search_placeholder" placeholder="Search item catalogue to spawn..." autocomplete="off">
-                        </div>
-                        <div class="spawner-paint-wrap" id="spawner-paint-wrap" style="display:flex; align-items:center; gap:6px;">
-                            <label for="spawner-paint-select" style="font-size:12px; color:var(--text-secondary); font-weight:600; white-space:nowrap;">Paint Finish:</label>
-                            <select id="spawner-paint-select" class="spawner-paint-select" style="background:var(--input-bg); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:7px 10px; font-size:12px; cursor:pointer; min-width:140px;"></select>
-                        </div>
-                        <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                            <button type="button" id="spawner-select-page-btn" class="action-btn action-btn-secondary" style="padding:7px 12px; font-size:12px; white-space:nowrap;">Select Page</button>
-                            <button type="button" id="spawner-deselect-all-btn" class="action-btn action-btn-secondary" style="padding:7px 12px; font-size:12px; white-space:nowrap; display:none;">Deselect All</button>
-                            <button type="button" id="spawner-spawn-selected-btn" class="action-btn" style="padding:7px 14px; font-size:12px; white-space:nowrap; background:var(--accent); color:#fff; display:none;">Spawn Selected (0)</button>
-                            <button type="button" id="spawner-spawn-all-btn" class="action-btn" style="padding:7px 14px; font-size:12px; white-space:nowrap; background:var(--accent-blue); color:#fff;">Spawn All in Category</button>
-                        </div>
-                    </div>
-
-                    <div id="spawner-catalogue-grid" class="spawner-catalogue-grid">
-                        <div class="backup-empty">Loading catalogue...</div>
-                    </div>
-
-                    <div id="spawner-pagination-bar" class="spawner-pagination-bar">
-                        <div id="spawner-page-stats" class="spawner-page-stats">Showing 0 of 0 items</div>
-                        <div class="spawner-pagination-controls">
-                            <button type="button" id="spawner-first-btn" class="action-btn action-btn-secondary" style="padding:6px 12px; font-size:12px;" title="First page">«</button>
-                            <button type="button" id="spawner-prev-btn" class="action-btn action-btn-secondary" style="padding:6px 14px; font-size:12px;">← Previous</button>
-                            <span id="spawner-page-info" class="spawner-page-info">Page 1 of 1</span>
-                            <button type="button" id="spawner-next-btn" class="action-btn action-btn-secondary" style="padding:6px 14px; font-size:12px;">Next →</button>
-                            <button type="button" id="spawner-last-btn" class="action-btn action-btn-secondary" style="padding:6px 12px; font-size:12px;" title="Last page">»</button>
-                        </div>
-                    </div>
                 </div>
 
                 <div id="restore-pane" class="subtab-pane">
