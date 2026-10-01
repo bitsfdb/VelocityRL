@@ -1064,15 +1064,6 @@ pub fn apply_tagame_modifications(
                         }
                     }
 
-                    // 3b. ValidateLoadoutSlots (#47920) -> return false (never remove unowned DLC items)
-                    patch_func(&mut decomp2, "ValidateLoadoutSlots", Some("LoadoutValidation_TA"), c2.uncomp_offset, &[0x04, 0x28, 0x4C]);
-
-                    // 3c. ValidateDataProducts (#47954) -> return false (never strip data products)
-                    patch_func(&mut decomp2, "ValidateDataProducts", Some("LoadoutValidation_TA"), c2.uncomp_offset, &[0x04, 0x28, 0x4C]);
-
-                    // 3d. ValidateReplicatedLoadout (#57832) -> return; (never sanitize or revert replicated products)
-                    patch_func(&mut decomp2, "ValidateReplicatedLoadout", Some("PRI_TA"), c2.uncomp_offset, &[0x04, 0x0B, 0x4C]);
-
                     if let Ok(mut recomp2) = crate::upk::compression::compress_chunk(&decomp2) {
                         let orig_c2_sz = c2.comp_size as usize;
                         if recomp2.len() <= orig_c2_sz {
@@ -1084,38 +1075,6 @@ pub fn apply_tagame_modifications(
             }
         }
 
-        // 4. Patch Chunk 3: SaveData_TA ownership functions to grant full client-side product ownership
-        if chunks.len() > 3 && !slot_overrides.is_empty() {
-            let c3 = &chunks[3];
-            let c3_start = c3.comp_offset as usize;
-            let c3_end = c3_start + c3.comp_size as usize;
-            if c3_end <= file_bytes.len() {
-                if let Ok(mut decomp3) = crate::upk::compression::decompress_chunk(&file_bytes[c3_start..c3_end]) {
-                    // IsProductOwned (#65373) -> return true;
-                    patch_func(&mut decomp3, "IsProductOwned", Some("SaveData_TA"), c3.uncomp_offset, &[0x04, 0x27, 0x4C]);
-
-                    // OwnsProductID (#65584) -> return true;
-                    patch_func(&mut decomp3, "OwnsProductID", Some("SaveData_TA"), c3.uncomp_offset, &[0x04, 0x27, 0x4C]);
-
-                    // HasAnyOnlineProductOfID (#65388) -> return true;
-                    patch_func(&mut decomp3, "HasAnyOnlineProductOfID", Some("SaveData_TA"), c3.uncomp_offset, &[0x04, 0x27, 0x4C]);
-
-                    // HasAnyOnlineProductsForSlot (#65391) -> return true;
-                    patch_func(&mut decomp3, "HasAnyOnlineProductsForSlot", Some("SaveData_TA"), c3.uncomp_offset, &[0x04, 0x27, 0x4C]);
-
-                    // CanUseOnlineData (#65501) -> return true;
-                    patch_func(&mut decomp3, "CanUseOnlineData", Some("SaveData_TA"), c3.uncomp_offset, &[0x04, 0x27, 0x4C]);
-
-                    if let Ok(mut recomp3) = crate::upk::compression::compress_chunk(&decomp3) {
-                        let orig_c3_sz = c3.comp_size as usize;
-                        if recomp3.len() <= orig_c3_sz {
-                            recomp3.resize(orig_c3_sz, 0);
-                            file_bytes[c3_start..c3_start + orig_c3_sz].copy_from_slice(&recomp3);
-                        }
-                    }
-                }
-            }
-        }
         let re_enc = crypto::encrypt_ecb(&TAGAME_KEY, &plain_header);
         file_bytes[name_offset..enc_end].copy_from_slice(&re_enc);
 
