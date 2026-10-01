@@ -922,31 +922,16 @@
     </div>
 
     <div id="paint-notice-modal" class="modal-overlay" role="dialog" aria-modal="true">
-        <div class="modal" style="max-width: 440px;">
-            <div style="text-align: center; margin-bottom: 20px;">
-                <div style="background: rgba(234, 179, 8, 0.15); width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto;">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                        <line x1="12" y1="9" x2="12" y2="13"></line>
-                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                    </svg>
-                </div>
-                <h2 style="font-size: 20px; margin-bottom: 8px; font-weight: 700;">Car Paint &amp; Decal Notice</h2>
-                <p style="color: var(--text-secondary); font-size: 13.5px; line-height: 1.6;">
-                    Painted chassis trims will <strong style="color: var(--text-primary);">only show up when No Decal is equipped</strong> in your garage preset.
-                </p>
+        <div class="modal" style="max-width: 320px; padding: 16px 18px; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                <strong style="font-size: 13px; font-weight: 600; color: var(--text);">Car Paint Notice</strong>
+                <button id="paint-notice-cancel" type="button" class="action-btn action-btn-secondary" style="padding: 2px 7px; font-size: 11px; line-height: 1;" title="Dismiss">✕</button>
             </div>
-            <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 10px; padding: 14px 16px; margin-bottom: 20px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.6;">
-                <p style="margin-bottom: 6px;">
-                    ⚠️ When a decal is equipped on a painted car, Rocket League's engine automatically removes your paint when putting on a decal.
-                </p>
-                <span style="font-size: 11.5px; color: #71717a; font-style: italic;">
-                    (This is a game engine limitation of Rocket League, not VelocityRL.)
-                </span>
-            </div>
-            <div style="display: flex; gap: 12px;">
-                <button id="paint-notice-cancel" class="action-btn action-btn-secondary" style="flex: 1;">Cancel</button>
-                <button id="paint-notice-proceed" class="action-btn" style="flex: 1.5; background: var(--accent-blue); color: #fff;">Proceed with Swap</button>
+            <p style="font-size: 12px; color: var(--muted); line-height: 1.45; margin-bottom: 14px;">
+                Painted trims only display when <strong>No Decal</strong> is equipped in your Rocket League preset.
+            </p>
+            <div style="display: flex; justify-content: flex-end;">
+                <button id="paint-notice-proceed" class="action-btn" style="padding: 5px 14px; font-size: 12px; background: var(--accent-blue); color: #fff;">Proceed</button>
             </div>
         </div>
     </div>

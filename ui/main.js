@@ -2418,7 +2418,8 @@ async function handleApply() {
         return;
     }
     const isCarBody = normSlot(ownedItem?.Slot || ownedItem?.slot) === 'body' || normSlot(wantedItem?.Slot || wantedItem?.slot) === 'body';
-    if (isCarBody) {
+    const isPaintedCar = isCarBody && ((wantedPaintId && wantedPaintId !== '0') || (ownedPaintId && ownedPaintId !== '0'));
+    if (isPaintedCar) {
         const paintModal = document.getElementById('paint-notice-modal');
         if (paintModal) {
             paintModal.classList.add('active');
