@@ -8,4 +8,6 @@ By downloading, installing, or using this cosmetic modification software, you ac
 
 3. **User Discretion**: You use this software entirely at your own risk. It is your sole responsibility to comply with all applicable third-party Terms of Service and End User License Agreements.
 
-4. **No Affiliation**: This software is an independent open-source project and is not affiliated with, endorsed by, or associated with Psyonix, Epic Games, or any of their subsidiaries.
+4. **Privacy Policy**: By using this software, you agree to and accept the Privacy Policy available at https://velocityrl.tech/privacy.html.
+
+5. **No Affiliation**: This software is an independent open-source project and is not affiliated with, endorsed by, or associated with Psyonix, Epic Games, or any of their subsidiaries.
