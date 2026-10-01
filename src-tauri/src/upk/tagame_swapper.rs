@@ -680,11 +680,34 @@ pub fn apply_tagame_modifications(
             let is_ge = slot_idx == 10 || norm.contains("goal") || norm.contains("explosion") || s.slot_index == Some(14);
             if is_ge {
                 let target_ge = if s.product_id > 0 { s.product_id } else { 2044 };
-                let owned = s.owned_id.unwrap_or(0);
-                if seen_ge.insert(owned) {
-                    ge_rules.push(SlotSwapRule {
+
+                // Goal Explosions map to Slot 10 (garage/legacy) and Slot 15 (in-match/replication)
+                slot_overrides.push(SlotSwapRule {
+                    slot_idx: 15,
+                    owned_id: s.owned_id,
+                    target_id: target_ge,
+                });
+
+                // If owned is 0, 1903, or None (default), cover both 0 and 1903 on both slot 10 and slot 15
+                if s.owned_id == Some(1903) || s.owned_id == Some(0) || s.owned_id.is_none() {
+                    slot_overrides.push(SlotSwapRule {
                         slot_idx: 10,
-                        owned_id: s.owned_id,
+                        owned_id: Some(0),
+                        target_id: target_ge,
+                    });
+                    slot_overrides.push(SlotSwapRule {
+                        slot_idx: 10,
+                        owned_id: Some(1903),
+                        target_id: target_ge,
+                    });
+                    slot_overrides.push(SlotSwapRule {
+                        slot_idx: 15,
+                        owned_id: Some(0),
+                        target_id: target_ge,
+                    });
+                    slot_overrides.push(SlotSwapRule {
+                        slot_idx: 15,
+                        owned_id: Some(1903),
                         target_id: target_ge,
                     });
                 }
