@@ -28,6 +28,7 @@ pub mod opcodes {
     pub const EX_INT_CONST: u8 = 0x1D;
     pub const EX_LET: u8 = 0x0F;
     pub const EX_RETURN: u8 = 0x04;
+    pub const EX_RETURN_VALUE: u8 = 0x3A;
     pub const EX_END_OF_SCRIPT: u8 = 0x4C;
     pub const EX_NOTHING: u8 = 0x0B;
     pub const EX_JUMP_IF_NOT: u8 = 0x07;
@@ -816,7 +817,7 @@ mod tests {
         }];
         let (bc, mem_sz) = emit_convert_to_client_loadout_bytecode(&rules, 124).unwrap();
         assert_eq!(bc.len(), 124);
-        assert_eq!(mem_sz, 148);
+        assert_eq!(mem_sz, 164);
         assert_eq!(bc[0], opcodes::EX_LET);
     }
 
@@ -830,9 +831,9 @@ mod tests {
         let (bc, mem_sz) = emit_convert_to_client_loadout_bytecode(&rules, 124).unwrap();
         assert_eq!(bc.len(), 124);
         assert_eq!(bc[0], opcodes::EX_LET);
-        assert_eq!(bc[11], opcodes::EX_JUMP_IF_NOT);
-        assert_eq!(bc[14], opcodes::EX_EQUAL_EQUAL_INT_INT);
-        assert_eq!(mem_sz, 160);
+        assert_eq!(bc[33], opcodes::EX_JUMP_IF_NOT);
+        assert_eq!(bc[36], opcodes::EX_EQUAL_EQUAL_INT_INT);
+        assert_eq!(mem_sz, 176);
     }
 
     #[test]
