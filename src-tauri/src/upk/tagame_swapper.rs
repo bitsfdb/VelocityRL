@@ -136,13 +136,22 @@ pub fn emit_convert_to_client_loadout_bytecode(
     let mut bc = Vec::new();
     let mut mem_sz: u32 = 0;
 
-    // NewLoadout = InLoadout (struct copy: 11 disk bytes, 19 mem bytes)
+    // 1. NewLoadout.Products = FromData.Products;
     bc.push(opcodes::EX_LET);
+    bc.push(opcodes::EX_STRUCT_MEMBER);
+    bc.extend_from_slice(&1871i32.to_le_bytes());
+    bc.extend_from_slice(&1872i32.to_le_bytes());
+    bc.extend_from_slice(&[0x00, 0x01]);
     bc.push(opcodes::EX_INSTANCE_VARIABLE);
     bc.extend_from_slice(&75i32.to_le_bytes());
+
+    bc.push(opcodes::EX_STRUCT_MEMBER);
+    bc.extend_from_slice(&1871i32.to_le_bytes());
+    bc.extend_from_slice(&2364i32.to_le_bytes());
+    bc.extend_from_slice(&[0x00, 0x00]);
     bc.push(opcodes::EX_LOCAL_VARIABLE);
     bc.extend_from_slice(&77i32.to_le_bytes());
-    mem_sz += 1 + 9 + 9;
+    mem_sz += 57;
 
     for rule in slot_overrides {
         let cond_disk_len = if rule.slot_idx == 0 { 56 } else { 58 };
@@ -222,7 +231,8 @@ pub fn emit_convert_to_client_loadout_bytecode(
         }
     }
 
-    bc.push(opcodes::EX_RETURN);
+    // 3. return NewLoadout;
+    bc.push(opcodes::EX_RETURN_VALUE);
     bc.push(opcodes::EX_INSTANCE_VARIABLE);
     bc.extend_from_slice(&75i32.to_le_bytes());
     bc.push(opcodes::EX_END_OF_SCRIPT);
@@ -234,6 +244,7 @@ pub fn emit_convert_to_client_loadout_bytecode(
     Ok((bc, mem_sz))
 }
 
+#[allow(dead_code)]
 pub fn emit_get_asset_by_id_bytecode(
     rules: &[SlotSwapRule],
     orig_script: &[u8],
@@ -690,22 +701,7 @@ pub fn apply_tagame_modifications(
                         }
                     }
 
-                    // ProductLoader_TA.GetAssetByID (#16152)
-                    if !slot_overrides.is_empty() {
-                        if let Some(exp) = exports.iter().find(|e| e.name == "GetAssetByID") {
-                            let func_off = (exp.serial_offset - c0.uncomp_offset) as usize;
-                            if func_off + 48 <= decomp0.len() {
-                                let orig_mem_sz = u32::from_le_bytes(decomp0[func_off + 40..func_off + 44].try_into().unwrap());
-                                let orig_disk_sz = u32::from_le_bytes(decomp0[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                                let orig_script = decomp0[func_off + 48..func_off + 48 + orig_disk_sz].to_vec();
 
-                                if let Ok((payload, mem_sz)) = emit_get_asset_by_id_bytecode(&slot_overrides, &orig_script, orig_mem_sz, orig_disk_sz) {
-                                    decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                    decomp0[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
-                                }
-                            }
-                        }
-                    }
 
                     if let Ok(mut recomp0) = crate::upk::compression::compress_chunk(&decomp0) {
                         let orig_c0_sz = c0.comp_size as usize;
