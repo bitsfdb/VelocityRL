@@ -631,8 +631,6 @@ pub fn apply_tagame_modifications(
         }
 
         let mut slot_overrides = Vec::new();
-        let mut ge_rules = Vec::new();
-        let mut seen_ge = std::collections::HashSet::new();
 
         for s in swaps {
             let pid = if s.product_id > 0 { s.product_id } else { 4284 };
