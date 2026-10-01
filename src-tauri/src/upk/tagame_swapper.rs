@@ -927,9 +927,13 @@ pub fn apply_tagame_modifications(
 
         // 1. Patch Chunk 0: ConvertToClientLoadout (#78) & Car_TA::SetLoadout (#16587)
         if !chunks.is_empty() {
-            let c0 = &chunks[0];
-            let c0_start = c0.comp_offset as usize;
-            let c0_end = c0_start + c0.comp_size as usize;
+            let c0_pos = chunks[0].pos;
+            let c0_uncomp_offset = chunks[0].uncomp_offset;
+            let c0_uncomp_size = chunks[0].uncomp_size;
+            let c0_comp_offset = chunks[0].comp_offset;
+            let c0_comp_size = chunks[0].comp_size;
+            let c0_start = c0_comp_offset as usize;
+            let c0_end = c0_start + c0_comp_size as usize;
             if c0_end <= file_bytes.len() {
                 if let Ok(mut decomp0) = crate::upk::compression::decompress_chunk(&file_bytes[c0_start..c0_end]) {
                     let mut total_c0_delta = 0usize;
@@ -945,8 +949,9 @@ pub fn apply_tagame_modifications(
 
                     for (target_idx, target_pos, target_name, _) in chunk0_targets {
                         if let Some(exp_idx) = exports.iter().position(|e| e.idx == target_idx) {
-                            let exp = &exports[exp_idx];
-                            let func_off = (exp.serial_offset - c0.uncomp_offset) as usize;
+                            let exp_serial_offset = exports[exp_idx].serial_offset;
+                            let exp_serial_size = exports[exp_idx].serial_size;
+                            let func_off = (exp_serial_offset - c0_uncomp_offset) as usize;
                             if func_off + 48 <= decomp0.len() {
                                 let orig_disk_sz = u32::from_le_bytes(decomp0[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
                                 const EXPANDED_SIZE: usize = 3000;
@@ -966,11 +971,11 @@ pub fn apply_tagame_modifications(
                                     decomp0[func_off + 48..func_off + 48 + EXPANDED_SIZE].copy_from_slice(&payload);
 
                                     // Update export table in plain_header and in memory
-                                    let new_serial_sz = exp.serial_size + delta as i32;
+                                    let new_serial_sz = exp_serial_size + delta as i32;
                                     plain_header[target_pos + 32..target_pos + 36].copy_from_slice(&new_serial_sz.to_le_bytes());
                                     exports[exp_idx].serial_size = new_serial_sz;
 
-                                    let cur_s_off = exp.serial_offset;
+                                    let cur_s_off = exp_serial_offset;
                                     for other_exp in &mut exports {
                                         if other_exp.serial_offset > cur_s_off {
                                             other_exp.serial_offset += delta as i64;
@@ -993,8 +998,8 @@ pub fn apply_tagame_modifications(
                     }
 
                     if total_c0_delta > 0 {
-                        let new_c0_uncomp = c0.uncomp_size + total_c0_delta as i32;
-                        plain_header[c0.pos + 8..c0.pos + 12].copy_from_slice(&new_c0_uncomp.to_le_bytes());
+                        let new_c0_uncomp = c0_uncomp_size + total_c0_delta as i32;
+                        plain_header[c0_pos + 8..c0_pos + 12].copy_from_slice(&new_c0_uncomp.to_le_bytes());
                         for ch in &mut chunks[1..] {
                             ch.uncomp_offset += total_c0_delta as i64;
                             plain_header[ch.pos..ch.pos + 8].copy_from_slice(&ch.uncomp_offset.to_le_bytes());
@@ -1002,7 +1007,7 @@ pub fn apply_tagame_modifications(
                     }
 
                     if let Ok(mut recomp0) = crate::upk::compression::compress_chunk(&decomp0) {
-                        let orig_c0_sz = c0.comp_size as usize;
+                        let orig_c0_sz = c0_comp_size as usize;
                         if recomp0.len() <= orig_c0_sz {
                             recomp0.resize(orig_c0_sz, 0);
                             file_bytes[c0_start..c0_start + orig_c0_sz].copy_from_slice(&recomp0);
