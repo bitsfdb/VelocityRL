@@ -15,7 +15,6 @@
 
         <nav class="nav-links">
             <div class="nav-item active" data-tab="swapper-tab" data-i18n="nav.items">Items</div>
-            <div class="nav-item" data-tab="spawner-tab" data-i18n="nav.spawner">Spawner</div>
             <div class="nav-item" data-tab="titles-tab" data-i18n="nav.titles">Titles</div>
             <div class="nav-item" data-tab="customization-tab" data-i18n="nav.customization">Customization</div>
             <div class="nav-item" data-tab="ranks-tab" data-i18n="nav.ranks">Fake Ranks</div>
@@ -53,7 +52,8 @@
 
             <div id="swapper-tab" class="tab-content active">
                 <div class="subtab-strip" role="tablist">
-                    <button type="button" class="subtab-btn active" data-subtab="swaps-pane" data-i18n="subtabs.swaps">Swaps</button>
+                    <button type="button" class="subtab-btn active" data-subtab="swaps-pane" data-i18n="subtabs.swaps">Swapper</button>
+                    <button type="button" class="subtab-btn" data-subtab="spawner-pane" data-i18n="subtabs.spawner">Spawner</button>
                     <button type="button" class="subtab-btn" data-subtab="restore-pane" data-i18n="subtabs.restore">Restore</button>
                     <button type="button" class="subtab-btn" data-subtab="presets-pane" data-i18n="subtabs.presets">Presets</button>
                 </div>
@@ -109,16 +109,85 @@
                     <p id="swap-rl-hint" class="field-hint" hidden data-i18n="swapper.rl_running_hint">Rocket League is running — close it before swapping or restoring.</p>
                 </div>
 
+                <!-- SUBTAB: SPAWNER CATALOGUE -->
+                <div id="spawner-pane" class="subtab-pane">
+                    <div class="category-strip" id="spawner-category-strip">
+                        <button class="cat-btn active" data-slot="All" data-i18n="categories.all">All Items</button>
+                        <button class="cat-btn" data-slot="Body" data-i18n="categories.bodies">Bodies</button>
+                        <button class="cat-btn" data-slot="Decal" data-i18n="categories.decals">Decals</button>
+                        <button class="cat-btn" data-slot="Wheels" data-i18n="categories.wheels">Wheels</button>
+                        <button class="cat-btn" data-slot="Rocket Boost" data-i18n="categories.boosts">Boosts</button>
+                        <button class="cat-btn" data-slot="Trail" data-i18n="categories.trails">Trails</button>
+                        <button class="cat-btn" data-slot="Goal Explosion" data-i18n="categories.explosions">Goal Explosions</button>
+                        <button class="cat-btn" data-slot="Player Banner" data-i18n="categories.banners">Player Banners</button>
+                        <button class="cat-btn" data-slot="Avatar Border" data-i18n="categories.borders">Avatar Borders</button>
+                        <button class="cat-btn" data-slot="Antenna" data-i18n="categories.antennas">Antennas</button>
+                        <button class="cat-btn" data-slot="Topper" data-i18n="categories.toppers">Toppers</button>
+                        <button class="cat-btn" data-slot="Engine Audio" data-i18n="categories.engine_audio">Engine Audio</button>
+                        <button class="cat-btn" data-slot="Paint Finish" data-i18n="categories.paint_finishes">Paint Finishes</button>
+                        <button class="cat-btn" data-slot="Titles" data-i18n="categories.titles">Titles</button>
+                    </div>
+
+                    <div style="display:flex; gap:10px; margin-top:10px; align-items:center;">
+                        <div class="search-box" style="flex:1;">
+                            <input type="text" id="spawner-search" data-i18n-placeholder="spawner.search_placeholder" placeholder="Search item catalogue to spawn..." autocomplete="off">
+                        </div>
+                    </div>
+
+                    <div class="tags-row" style="display:flex; flex-wrap:wrap; gap:6px; margin: 8px 0 10px 0;">
+                        <button type="button" class="tag-btn action-btn-secondary" data-tag="Fennec" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Fennec</button>
+                        <button type="button" class="tag-btn action-btn-secondary" data-tag="Octane" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Octane</button>
+                        <button type="button" class="tag-btn action-btn-secondary" data-tag="Dominus" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Dominus</button>
+                        <button type="button" class="tag-btn action-btn-secondary" data-tag="GoldRush" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Alpha Boost</button>
+                        <button type="button" class="tag-btn action-btn-secondary" data-tag="Dieci" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Dieci</button>
+                        <button type="button" class="tag-btn action-btn-secondary" data-tag="Reaper" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Reaper</button>
+                        <button type="button" class="tag-btn action-btn-secondary" data-tag="Zomba" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Zomba</button>
+                        <button type="button" class="tag-btn action-btn-secondary" data-tag="Apex" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Apex</button>
+                        <button type="button" class="tag-btn action-btn-secondary" data-tag="SSL" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">SSL</button>
+                        <button type="button" class="tag-btn action-btn-secondary" data-tag="Champion" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">RLCS Champion</button>
+                    </div>
+
+                    <div id="spawner-custom-title-card" class="card" style="display:none; margin-bottom:12px; padding:12px; background:rgba(99,102,241,0.06); border-color:rgba(99,102,241,0.25);">
+                        <h4 style="margin:0 0 8px 0; font-size:13px; color:#93c5fd;">Spawn Custom Title</h4>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            <input type="text" id="spawner-custom-title-input" placeholder="Type custom title text (e.g. Supersonic Legend)..." style="flex:1; padding:7px 10px; font-size:12px; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); border-radius:6px; color:#fff;" />
+                            <button type="button" id="spawner-custom-title-btn" class="action-btn" style="padding:7px 14px; font-size:12px; white-space:nowrap; background:#6366f1; color:#fff;">Spawn Custom Title</button>
+                        </div>
+                    </div>
+
+                    <div id="spawner-catalogue-grid" class="spawner-catalogue-grid">
+                        <div class="backup-empty">Loading catalogue...</div>
+                    </div>
+                </div>
+
                 <div id="restore-pane" class="subtab-pane">
                     <h2 class="section-title" data-i18n="restore.title">Restore / Revert</h2>
-                    <p class="section-desc" data-i18n="restore.desc">Revert individual files or restore everything from clean backups.</p>
-                    <div class="restoration-grid">
-                        <div id="backup-container" class="backup-list">
-                            <div class="backup-empty" data-i18n="restore.scanning">Scanning for backups...</div>
+                    <p class="section-desc" data-i18n="restore.desc">Revert individual UPK files or manage active spawned network items &amp; titles.</p>
+                    
+                    <div class="subtab-strip" style="margin-bottom:14px;" role="tablist">
+                        <button type="button" class="subtab-btn active" id="restore-nav-swapper" data-restore-tab="swapper">Swapper Backups</button>
+                        <button type="button" class="subtab-btn" id="restore-nav-spawner" data-restore-tab="spawner">Spawned Items &amp; Titles</button>
+                    </div>
+
+                    <div id="restore-swapper-view">
+                        <div class="restoration-grid">
+                            <div id="backup-container" class="backup-list">
+                                <div class="backup-empty" data-i18n="restore.scanning">Scanning for backups...</div>
+                            </div>
+                            <div style="display: flex; gap: 12px; margin-top: 12px;">
+                                <button id="restore-btn" class="action-btn action-btn-secondary" disabled data-i18n="restore.restore_all">Restore All Items</button>
+                                <button id="reswap-btn" class="action-btn" style="background: var(--accent-blue); color: #fff;" disabled data-i18n="restore.reswap_all">Reswap All Items</button>
+                            </div>
                         </div>
-                        <div style="display: flex; gap: 12px; margin-top: 12px;">
-                            <button id="restore-btn" class="action-btn action-btn-secondary" disabled data-i18n="restore.restore_all">Restore All Items</button>
-                            <button id="reswap-btn" class="action-btn" style="background: var(--accent-blue); color: #fff;" disabled data-i18n="restore.reswap_all">Reswap All Items</button>
+                    </div>
+
+                    <div id="restore-spawner-view" style="display:none;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+                            <h3 style="margin:0; font-size:14px;" data-i18n="spawner.active_title">Active Spawned Items &amp; Titles</h3>
+                            <button id="btn-clear-spawned" class="action-btn action-btn-secondary" style="padding:4px 12px; font-size:11px;" data-i18n="spawner.clear_all">Clear All</button>
+                        </div>
+                        <div id="spawner-active-list" class="backup-list" style="max-height: 420px; overflow-y: auto;">
+                            <div class="backup-empty" data-i18n="spawner.empty_spawned">No items spawned yet.</div>
                         </div>
                     </div>
                 </div>
@@ -159,70 +228,16 @@
                 </div>
             </div>
 
-            <!-- TAB: SPAWNER -->
-            <div id="spawner-tab" class="tab-content">
-                <h2 class="section-title" data-i18n="spawner.title">Item Spawner</h2>
-                <p class="section-desc" data-i18n="spawner.desc">Spawn any cosmetic or car body directly into your client loadout and network inventory.</p>
-
-                <div class="category-strip" id="spawner-category-strip">
-                    <button class="cat-btn active" data-slot="All" data-i18n="categories.all">All Items</button>
-                    <button class="cat-btn" data-slot="Body" data-i18n="categories.bodies">Bodies</button>
-                    <button class="cat-btn" data-slot="Decal" data-i18n="categories.decals">Decals</button>
-                    <button class="cat-btn" data-slot="Wheels" data-i18n="categories.wheels">Wheels</button>
-                    <button class="cat-btn" data-slot="Rocket Boost" data-i18n="categories.boosts">Boosts</button>
-                    <button class="cat-btn" data-slot="Trail" data-i18n="categories.trails">Trails</button>
-                    <button class="cat-btn" data-slot="Goal Explosion" data-i18n="categories.explosions">Goal Explosions</button>
-                    <button class="cat-btn" data-slot="Player Banner" data-i18n="categories.banners">Player Banners</button>
-                    <button class="cat-btn" data-slot="Avatar Border" data-i18n="categories.borders">Avatar Borders</button>
-                    <button class="cat-btn" data-slot="Antenna" data-i18n="categories.antennas">Antennas</button>
-                    <button class="cat-btn" data-slot="Topper" data-i18n="categories.toppers">Toppers</button>
-                    <button class="cat-btn" data-slot="Engine Audio" data-i18n="categories.engine_audio">Engine Audio</button>
-                    <button class="cat-btn" data-slot="Paint Finish" data-i18n="categories.paint_finishes">Paint Finishes</button>
-                </div>
-
-                <div class="swapper-grid" style="margin-top: 12px;">
-                    <div class="card">
-                        <h3 data-i18n="spawner.search_title">Search & Select Item</h3>
-                        <div class="search-box">
-                            <input type="text" id="spawner-search" data-i18n-placeholder="spawner.search_placeholder" placeholder="Search items to spawn..." autocomplete="off">
-                            <div id="spawner-results" class="search-flyout"></div>
-                        </div>
-
-                        <div class="tags-row" style="display:flex; flex-wrap:wrap; gap:6px; margin: 10px 0 12px 0;">
-                            <button type="button" class="tag-btn action-btn-secondary" data-tag="Fennec" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Fennec</button>
-                            <button type="button" class="tag-btn action-btn-secondary" data-tag="Octane" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Octane</button>
-                            <button type="button" class="tag-btn action-btn-secondary" data-tag="Dominus" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Dominus</button>
-                            <button type="button" class="tag-btn action-btn-secondary" data-tag="GoldRush" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Alpha Boost</button>
-                            <button type="button" class="tag-btn action-btn-secondary" data-tag="Zomba" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Zomba</button>
-                            <button type="button" class="tag-btn action-btn-secondary" data-tag="Reaper" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Reaper</button>
-                            <button type="button" class="tag-btn action-btn-secondary" data-tag="Dieci" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Dieci</button>
-                            <button type="button" class="tag-btn action-btn-secondary" data-tag="Apex" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Apex</button>
-                        </div>
-
-                        <div id="spawner-selected" class="item-selected-view">
-                            <div class="empty-state">
-                                <p data-i18n="spawner.no_item_selected">No item selected</p>
-                            </div>
-                        </div>
-
-                        <div style="margin-top: 12px; display:flex; gap:10px;">
-                            <button id="btn-spawn-item" class="action-btn" disabled data-i18n="spawner.spawn_btn">Spawn Item</button>
-                        </div>
-                    </div>
-
-                    <div class="card">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
-                            <h3 style="margin:0;" data-i18n="spawner.active_title">Active Spawned Items</h3>
-                            <button id="btn-clear-spawned" class="action-btn action-btn-secondary" style="padding:3px 10px; font-size:11px;" data-i18n="spawner.clear_all">Clear All</button>
-                        </div>
-                        <div id="spawner-active-list" class="backup-list" style="max-height: 380px; overflow-y: auto;">
-                            <div class="backup-empty" data-i18n="spawner.empty_spawned">No items spawned yet.</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <div id="titles-tab" class="tab-content">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 14px; background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 8px; padding: 10px 14px;">
+                    <div style="font-size: 12px; color: #cbd5e1;">
+                        Want to directly spawn title items into your account inventory?
+                    </div>
+                    <button type="button" id="btn-goto-title-spawner" class="action-btn" style="padding: 4px 12px; font-size: 11px; white-space: nowrap; background: #6366f1; color: #fff;">
+                        Open Title Spawner &rarr;
+                    </button>
+                </div>
+
                 <h2 class="section-title titles-hero" data-i18n="titles.title">Titles</h2>
 
                 <div class="card spoof-card titles-shell">

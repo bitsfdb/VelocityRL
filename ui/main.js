@@ -638,7 +638,6 @@ async function init() {
             btn.classList.add('active');
             document.getElementById(btn.dataset.tab).classList.add('active');
             if (btn.dataset.tab === 'swapper-tab') { refreshSwapRlHint(); checkMigrationPopup(); }
-            if (btn.dataset.tab === 'spawner-tab') initItemSpawner();
             if (btn.dataset.tab === 'titles-tab') initTitlesTab();
             if (btn.dataset.tab === 'customization-tab' || btn.dataset.tab === 'names-tab') initCustomizationTab();
             if (btn.dataset.tab === 'ranks-tab') initRanksTab();
@@ -649,27 +648,73 @@ async function init() {
         };
     });
 
-    document.querySelectorAll('.subtab-btn').forEach(btn => {
+    document.querySelectorAll('.subtab-btn[data-subtab]').forEach(btn => {
         btn.onclick = () => {
             if (isAppLoading()) return;
             const paneId = btn.dataset.subtab;
             const parentTab = btn.closest('.tab-content');
             if (parentTab) {
-                parentTab.querySelectorAll('.subtab-btn').forEach(b => b.classList.remove('active'));
+                parentTab.querySelectorAll('.subtab-btn[data-subtab]').forEach(b => b.classList.remove('active'));
                 parentTab.querySelectorAll('.subtab-pane').forEach(p => p.classList.remove('active'));
             } else {
-                document.querySelectorAll('.subtab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.subtab-btn[data-subtab]').forEach(b => b.classList.remove('active'));
                 document.querySelectorAll('.subtab-pane').forEach(p => p.classList.remove('active'));
             }
             btn.classList.add('active');
             document.getElementById(paneId)?.classList.add('active');
+            if (paneId === 'spawner-pane') initItemSpawner();
             if (paneId === 'custom-decals-pane') initDecalsTab();
-            if (paneId === 'restore-pane') refreshBackups();
+            if (paneId === 'restore-pane') { refreshBackups(); refreshSpawnedItemsList(); }
             if (paneId === 'presets-pane') refreshPresets();
             if (paneId === 'maplib-pane') refreshWorkshopLibrary();
             if (paneId === 'mappresets-pane') refreshWorkshopPresets();
             if (paneId === 'browser-pane') loadWorkshopCatalog(1, workshopCatalogQuery);
         };
+    });
+
+    // Restore Dual Tabs (Swapper Backups vs Spawned Items)
+    document.querySelectorAll('[data-restore-tab]').forEach(btn => {
+        btn.onclick = () => {
+            document.querySelectorAll('[data-restore-tab]').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const target = btn.dataset.restoreTab;
+            const swapperView = document.getElementById('restore-swapper-view');
+            const spawnerView = document.getElementById('restore-spawner-view');
+            if (target === 'swapper') {
+                if (swapperView) swapperView.style.display = '';
+                if (spawnerView) spawnerView.style.display = 'none';
+                refreshBackups();
+            } else {
+                if (swapperView) swapperView.style.display = 'none';
+                if (spawnerView) spawnerView.style.display = '';
+                refreshSpawnedItemsList();
+            }
+        };
+    });
+
+    // Title Spawner Link in Titles Tab
+    document.getElementById('btn-goto-title-spawner')?.addEventListener('click', () => {
+        document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        document.querySelector('.nav-item[data-tab="swapper-tab"]')?.classList.add('active');
+        document.getElementById('swapper-tab')?.classList.add('active');
+
+        const spawnerBtn = document.querySelector('#swapper-tab .subtab-btn[data-subtab="spawner-pane"]');
+        if (spawnerBtn) {
+            document.querySelectorAll('#swapper-tab .subtab-btn[data-subtab]').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('#swapper-tab .subtab-pane').forEach(p => p.classList.remove('active'));
+            spawnerBtn.classList.add('active');
+            document.getElementById('spawner-pane')?.classList.add('active');
+        }
+
+        initItemSpawner();
+        const titlesCatBtn = document.querySelector('#spawner-category-strip .cat-btn[data-slot="Titles"]');
+        if (titlesCatBtn) {
+            document.querySelectorAll('#spawner-category-strip .cat-btn').forEach(b => b.classList.remove('active'));
+            titlesCatBtn.classList.add('active');
+            spawnerCategory = 'Titles';
+            renderSpawnerCatalogue();
+        }
     });
 
     document.querySelectorAll('.cat-btn').forEach(btn => {
@@ -1008,10 +1053,12 @@ async function loadData() {
 
         if (itemsResult) {
             items = Array.isArray(itemsResult) ? itemsResult : (itemsResult.items || itemsResult.Items || []);
+            if (spawnerTabReady) renderSpawnerCatalogue();
         } else {
             invoke('get_items').catch(() => {}).then(fetched => {
                 if (fetched) {
                     items = Array.isArray(fetched) ? fetched : (fetched.items || fetched.Items || []);
+                    if (spawnerTabReady) renderSpawnerCatalogue();
                 }
             });
         }
@@ -7364,7 +7411,6 @@ document.addEventListener('keydown', (e) => {
     }
 }, true);
 
-let spawnerSelected = null;
 let spawnerCategory = 'All';
 let spawnerTabReady = false;
 
@@ -7373,25 +7419,23 @@ function initItemSpawner() {
         spawnerTabReady = true;
         wireSpawnerControls();
     }
-    refreshSpawnedItemsList();
+    renderSpawnerCatalogue();
 }
 
 function wireSpawnerControls() {
     const searchInput = document.getElementById('spawner-search');
-    const resultsDiv = document.getElementById('spawner-results');
-    const spawnBtn = document.getElementById('btn-spawn-item');
-    const clearBtn = document.getElementById('btn-clear-spawned');
     const catButtons = document.querySelectorAll('#spawner-category-strip .cat-btn');
-    const tagButtons = document.querySelectorAll('#spawner-tab .tag-btn');
+    const tagButtons = document.querySelectorAll('#spawner-pane .tag-btn');
+    const customTitleBtn = document.getElementById('spawner-custom-title-btn');
+    const customTitleInput = document.getElementById('spawner-custom-title-input');
+    const clearBtn = document.getElementById('btn-clear-spawned');
 
     catButtons.forEach(btn => {
         btn.addEventListener('click', () => {
             catButtons.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             spawnerCategory = btn.dataset.slot || 'All';
-            if (searchInput && searchInput.value.trim().length >= 1) {
-                renderSpawnerSearchResults(searchInput.value.trim());
-            }
+            renderSpawnerCatalogue();
         });
     });
 
@@ -7400,61 +7444,47 @@ function wireSpawnerControls() {
             const tag = btn.dataset.tag;
             if (searchInput) {
                 searchInput.value = tag;
-                renderSpawnerSearchResults(tag);
+                renderSpawnerCatalogue();
             }
         });
     });
 
-    searchInput?.addEventListener('input', (e) => {
-        const q = e.target.value.trim();
-        if (q.length < 1) {
-            if (resultsDiv) resultsDiv.classList.remove('active');
+    searchInput?.addEventListener('input', debounce(() => {
+        renderSpawnerCatalogue();
+    }, 150));
+
+    customTitleBtn?.addEventListener('click', async () => {
+        const text = customTitleInput?.value?.trim();
+        if (!text) {
+            showToast('Enter a custom title name first.', 'warning');
             return;
         }
-        renderSpawnerSearchResults(q);
-    });
-
-    document.addEventListener('click', (e) => {
-        if (!searchInput?.contains(e.target) && !resultsDiv?.contains(e.target)) {
-            resultsDiv?.classList.remove('active');
-        }
-    });
-
-    spawnBtn?.addEventListener('click', async () => {
-        if (!spawnerSelected) return;
-        spawnBtn.disabled = true;
         try {
-            const id = (spawnerSelected.ID ?? spawnerSelected.id ?? '').toString();
-            const slot = normSlot(spawnerSelected.Slot || spawnerSelected.slot || '');
-            const name = spawnerSelected.Product || spawnerSelected.product || spawnerSelected.name || 'Unknown Item';
-            const quality = spawnerSelected.Quality || spawnerSelected.quality || 'Common';
-            const img = spawnerSelected.image_url || spawnerSelected.src || '';
-
-            await invoke('add_network_spawned_item', {
-                item: {
+            const id = 'custom_title_' + Date.now();
+            await invoke('add_network_spawned_title', {
+                title: {
                     id: id,
-                    slot: slot,
-                    product_id: parseInt(id, 10) || 0,
-                    name: name,
-                    quality: quality,
-                    image_url: img,
-                    paint_id: 0,
-                    series: null
+                    text: text,
+                    color: null
                 }
             });
-            showToast(`Spawned <strong>${escHtml(name)}</strong> into network inventory!`, 'success');
-            await refreshSpawnedItemsList();
+            showToast(`Spawned title <strong>${escHtml(text)}</strong> into network inventory!`, 'success');
+            if (customTitleInput) customTitleInput.value = '';
+            refreshSpawnedItemsList();
         } catch (err) {
-            showToast(`Failed to spawn item: ${err}`, 'error');
-        } finally {
-            if (spawnerSelected) spawnBtn.disabled = false;
+            showToast(`Failed to spawn title: ${err}`, 'error');
         }
+    });
+
+    customTitleInput?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') customTitleBtn?.click();
     });
 
     clearBtn?.addEventListener('click', async () => {
         try {
             await invoke('clear_network_spawned_items');
-            showToast('Cleared all spawned items.', 'info');
+            await invoke('clear_network_spawned_titles').catch(() => {});
+            showToast('Cleared all spawned items and titles.', 'info');
             await refreshSpawnedItemsList();
         } catch (err) {
             showToast(`Error clearing items: ${err}`, 'error');
@@ -7462,138 +7492,209 @@ function wireSpawnerControls() {
     });
 }
 
-function renderSpawnerSearchResults(query) {
-    const resultsDiv = document.getElementById('spawner-results');
-    if (!resultsDiv) return;
-    const q = query.toLowerCase();
-    const filtered = (items || []).filter(item => {
+async function renderSpawnerCatalogue() {
+    const grid = document.getElementById('spawner-catalogue-grid');
+    const customTitleCard = document.getElementById('spawner-custom-title-card');
+    const searchInput = document.getElementById('spawner-search');
+    const q = (searchInput?.value || '').trim().toLowerCase();
+    if (!grid) return;
+
+    if (spawnerCategory === 'Titles') {
+        if (customTitleCard) customTitleCard.style.display = '';
+        if (!titlesDb || !titlesDb.titles || titlesDb.titles.length === 0) {
+            await loadTitlesDatabase().catch(() => {});
+        }
+        const allTitles = titlesDb.titles || [];
+        const filteredTitles = allTitles.filter(t => {
+            const text = (t.text || t.Text || t.id || '').toLowerCase();
+            const cat = (t.category || t.Category || '').toLowerCase();
+            return !q || text.includes(q) || cat.includes(q);
+        }).slice(0, 150);
+
+        if (filteredTitles.length === 0) {
+            grid.innerHTML = '<div class="backup-empty" style="grid-column:1/-1;">No titles found matching search.</div>';
+            return;
+        }
+
+        grid.innerHTML = filteredTitles.map(t => {
+            const id = t.id || t.Id;
+            const text = t.text || t.Text || id;
+            const cat = t.category || t.Category || 'Title';
+            return `
+                <div class="spawner-card" data-title-id="${escHtml(id)}" title="${escHtml(text)}">
+                    <div style="height:64px; display:flex; align-items:center; justify-content:center; width:100%;">
+                        <span style="font-size:11px; font-weight:700; color:#38bdf8; text-align:center; padding:4px; word-break:break-word; line-height:1.2;">${escHtml(text)}</span>
+                    </div>
+                    <div class="spawner-card-title">${escHtml(text)}</div>
+                    <div class="spawner-card-meta">
+                        <span class="quality-badge bg-premium" style="font-size:9px; padding:1px 4px;">Title</span>
+                        <span>${escHtml(cat)}</span>
+                    </div>
+                    <div class="spawner-card-overlay">
+                        <button type="button" class="spawner-card-overlay-btn" data-spawn-title="${escHtml(id)}">Spawn</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        grid.querySelectorAll('.spawner-card[data-title-id]').forEach((card, idx) => {
+            card.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const t = filteredTitles[idx];
+                const id = t.id || t.Id;
+                const text = t.text || t.Text || id;
+                try {
+                    await invoke('add_network_spawned_title', {
+                        title: {
+                            id: id,
+                            text: text,
+                            color: null
+                        }
+                    });
+                    showToast(`Spawned title <strong>${escHtml(text)}</strong> into network inventory!`, 'success');
+                    refreshSpawnedItemsList();
+                } catch (err) {
+                    showToast(`Failed to spawn title: ${err}`, 'error');
+                }
+            });
+        });
+        return;
+    }
+
+    if (customTitleCard) customTitleCard.style.display = 'none';
+    const allItems = items || [];
+    const filteredItems = allItems.filter(item => {
         const slot = normSlot(item.Slot || item.slot || '');
         if (spawnerCategory !== 'All' && slot.toLowerCase() !== spawnerCategory.toLowerCase()) {
             return false;
         }
         const name = (item.Product || item.product || '').toLowerCase();
-        return name.includes(q);
-    }).slice(0, 30);
+        return !q || name.includes(q);
+    }).slice(0, 150);
 
-    if (filtered.length === 0) {
-        resultsDiv.innerHTML = '<div class="flyout-item">No items found</div>';
-        resultsDiv.classList.add('active');
+    if (filteredItems.length === 0) {
+        grid.innerHTML = '<div class="backup-empty" style="grid-column:1/-1;">No items found in catalogue.</div>';
         return;
     }
 
-    resultsDiv.innerHTML = filtered.map(item => {
+    grid.innerHTML = filteredItems.map(item => {
+        const id = String(item.ID ?? item.id ?? '');
         const name = item.Product || item.product || 'Unknown';
         const quality = item.Quality || item.quality || 'Common';
         const slot = item.Slot || item.slot || '';
         const img = item.image_url || item.src || '';
         const bgClass = getQualityBgClass(quality);
         return `
-            <div class="flyout-item" data-id="${escHtml(String(item.ID ?? item.id))}">
-                ${img ? `<img src="${escHtml(img)}" class="flyout-thumb" />` : ''}
-                <div class="flyout-info">
-                    <span class="flyout-name">${escHtml(name)}</span>
-                    <span class="flyout-meta"><span class="quality-badge ${bgClass}">${escHtml(quality)}</span> ${escHtml(slot)}</span>
+            <div class="spawner-card" data-item-id="${escHtml(id)}" title="${escHtml(name)}">
+                ${img ? `<img src="${escHtml(img)}" class="spawner-card-img" />` : '<div style="height:64px;"></div>'}
+                <div class="spawner-card-title">${escHtml(name)}</div>
+                <div class="spawner-card-meta">
+                    <span class="quality-badge ${bgClass}" style="font-size:9px; padding:1px 4px;">${escHtml(quality)}</span>
+                    <span>${escHtml(slot)}</span>
+                </div>
+                <div class="spawner-card-overlay">
+                    <button type="button" class="spawner-card-overlay-btn" data-spawn-item="${escHtml(id)}">Spawn</button>
                 </div>
             </div>
         `;
     }).join('');
-    resultsDiv.classList.add('active');
 
-    resultsDiv.querySelectorAll('.flyout-item[data-id]').forEach((el, idx) => {
-        el.addEventListener('click', () => {
-            selectSpawnerItem(filtered[idx]);
-            resultsDiv.classList.remove('active');
+    grid.querySelectorAll('.spawner-card[data-item-id]').forEach((card, idx) => {
+        card.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const item = filteredItems[idx];
+            const id = (item.ID ?? item.id ?? '').toString();
+            const slot = normSlot(item.Slot || item.slot || '');
+            const name = item.Product || item.product || item.name || 'Unknown Item';
+            const quality = item.Quality || item.quality || 'Common';
+            const img = item.image_url || item.src || '';
+
+            try {
+                await invoke('add_network_spawned_item', {
+                    item: {
+                        id: id,
+                        slot: slot,
+                        product_id: parseInt(id, 10) || 0,
+                        name: name,
+                        quality: quality,
+                        image_url: img,
+                        paint_id: 0,
+                        series: null
+                    }
+                });
+                showToast(`Spawned <strong>${escHtml(name)}</strong> into network inventory!`, 'success');
+                refreshSpawnedItemsList();
+            } catch (err) {
+                showToast(`Failed to spawn item: ${err}`, 'error');
+            }
         });
     });
-}
-
-function selectSpawnerItem(item) {
-    spawnerSelected = item;
-    const container = document.getElementById('spawner-selected');
-    const spawnBtn = document.getElementById('btn-spawn-item');
-    if (!container) return;
-
-    if (!item) {
-        container.innerHTML = emptyStateHtml();
-        container.classList.remove('selected');
-        if (spawnBtn) spawnBtn.disabled = true;
-        return;
-    }
-
-    const pName = item?.Product || item?.product || 'Unknown';
-    const pQuality = item?.Quality || item?.quality || 'Common';
-    const pSlot = item?.Slot || item?.slot || '';
-    const pImg = item?.image_url || item?.src || '';
-    const bgClass = getQualityBgClass(pQuality);
-    const decalBody = getItemDecalBody(item);
-    const decalBadge = decalBody ? `<span class="quality-badge" style="background:rgba(91,140,255,0.18);color:#93c5fd;border:1px solid rgba(91,140,255,0.35);">${escHtml(decalBody)} Decal</span>` : '';
-
-    const clearBtnHtml = `
-        <button type="button" class="card-clear-btn" title="Clear selection" aria-label="Clear selection">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-        </button>
-    `;
-
-    container.innerHTML = `
-        ${clearBtnHtml}
-        ${pImg ? `<img src="${escHtml(pImg)}" class="selected-img" />` : ''}
-        <h2>${escHtml(pName)}</h2>
-        <div style="display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;margin:4px 0;">
-            <span class="quality-badge ${bgClass}">${escHtml(pQuality)}</span>
-            ${decalBadge}
-        </div>
-        <p class="item-slot-label">${escHtml(pSlot)}${decalBody ? ` (${escHtml(decalBody)})` : ''}</p>
-    `;
-
-    const clearBtn = container.querySelector('.card-clear-btn');
-    if (clearBtn) {
-        clearBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            selectSpawnerItem(null);
-        });
-    }
-
-    container.classList.add('selected');
-    if (spawnBtn) spawnBtn.disabled = false;
 }
 
 async function refreshSpawnedItemsList() {
     const listEl = document.getElementById('spawner-active-list');
     if (!listEl) return;
     try {
-        const spawned = await invoke('get_network_spawned_items');
-        if (!spawned || spawned.length === 0) {
-            listEl.innerHTML = '<div class="backup-empty">No items spawned yet.</div>';
+        const [spawnedItems, spawnedTitles] = await Promise.all([
+            invoke('get_network_spawned_items').catch(() => []),
+            invoke('get_network_spawned_titles').catch(() => [])
+        ]);
+
+        const totalCount = (spawnedItems?.length || 0) + (spawnedTitles?.length || 0);
+        if (totalCount === 0) {
+            listEl.innerHTML = '<div class="backup-empty">No network items or titles spawned yet.</div>';
             return;
         }
 
-        listEl.innerHTML = spawned.map(item => {
-            const name = item.name || 'Unknown Item';
-            const quality = item.quality || 'Common';
-            const slot = item.slot || '';
-            const img = item.image_url || '';
-            const bgClass = getQualityBgClass(quality);
-            return `
-                <div class="backup-item" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.06);">
-                    <div style="display:flex; align-items:center; gap:10px;">
-                        ${img ? `<img src="${escHtml(img)}" style="width:36px; height:36px; object-fit:contain; border-radius:4px; background:rgba(0,0,0,0.3);" />` : ''}
-                        <div>
-                            <div style="font-weight:600; font-size:13px; color:#fff;">${escHtml(name)}</div>
-                            <div style="font-size:11px; display:flex; gap:6px; align-items:center; margin-top:2px;">
-                                <span class="quality-badge ${bgClass}" style="font-size:10px; padding:1px 5px;">${escHtml(quality)}</span>
-                                <span style="color:#888;">${escHtml(slot)}</span>
+        let html = '';
+        if (spawnedItems && spawnedItems.length > 0) {
+            html += spawnedItems.map(item => {
+                const name = item.name || 'Unknown Item';
+                const quality = item.quality || 'Common';
+                const slot = item.slot || '';
+                const img = item.image_url || '';
+                const bgClass = getQualityBgClass(quality);
+                return `
+                    <div class="backup-item" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.06);">
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            ${img ? `<img src="${escHtml(img)}" style="width:36px; height:36px; object-fit:contain; border-radius:4px; background:rgba(0,0,0,0.3);" />` : ''}
+                            <div>
+                                <div style="font-weight:600; font-size:13px; color:#fff;">${escHtml(name)}</div>
+                                <div style="font-size:11px; display:flex; gap:6px; align-items:center; margin-top:2px;">
+                                    <span class="quality-badge ${bgClass}" style="font-size:10px; padding:1px 5px;">${escHtml(quality)}</span>
+                                    <span style="color:#888;">${escHtml(slot)}</span>
+                                </div>
                             </div>
                         </div>
+                        <button type="button" class="btn-remove-spawned-item action-btn-secondary" data-id="${escHtml(String(item.id))}" style="padding:4px 8px; font-size:11px; border-radius:4px; color:#f87171; cursor:pointer;" title="Remove">Remove</button>
                     </div>
-                    <button type="button" class="btn-remove-spawned action-btn-secondary" data-id="${escHtml(String(item.id))}" style="padding:4px 8px; font-size:11px; border-radius:4px; color:#f87171; cursor:pointer;" title="Remove">Remove</button>
-                </div>
-            `;
-        }).join('');
+                `;
+            }).join('');
+        }
 
-        listEl.querySelectorAll('.btn-remove-spawned[data-id]').forEach(btn => {
+        if (spawnedTitles && spawnedTitles.length > 0) {
+            html += spawnedTitles.map(t => {
+                const text = t.text || t.id;
+                return `
+                    <div class="backup-item" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.06);">
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <div style="width:36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:4px; background:rgba(99,102,241,0.15); color:#818cf8; font-size:14px; font-weight:bold;">T</div>
+                            <div>
+                                <div style="font-weight:600; font-size:13px; color:#38bdf8;">${escHtml(text)}</div>
+                                <div style="font-size:11px; display:flex; gap:6px; align-items:center; margin-top:2px;">
+                                    <span class="quality-badge bg-premium" style="font-size:10px; padding:1px 5px;">Spawned Title</span>
+                                </div>
+                            </div>
+                        </div>
+                        <button type="button" class="btn-remove-spawned-title action-btn-secondary" data-id="${escHtml(String(t.id))}" style="padding:4px 8px; font-size:11px; border-radius:4px; color:#f87171; cursor:pointer;" title="Remove">Remove</button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        listEl.innerHTML = html;
+
+        listEl.querySelectorAll('.btn-remove-spawned-item[data-id]').forEach(btn => {
             btn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 const id = btn.dataset.id;
@@ -7606,10 +7707,25 @@ async function refreshSpawnedItemsList() {
                 }
             });
         });
+
+        listEl.querySelectorAll('.btn-remove-spawned-title[data-id]').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const id = btn.dataset.id;
+                try {
+                    await invoke('remove_network_spawned_title', { id });
+                    showToast('Removed spawned title.', 'info');
+                    await refreshSpawnedItemsList();
+                } catch (err) {
+                    showToast(`Error removing title: ${err}`, 'error');
+                }
+            });
+        });
     } catch (err) {
-        console.error('Error fetching spawned items:', err);
+        console.error('Error fetching spawned items/titles:', err);
     }
 }
+
 
 
 

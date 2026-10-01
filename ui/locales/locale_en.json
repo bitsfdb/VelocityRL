@@ -21,7 +21,8 @@
         "swaps_notice_btn": "Restore Tab"
     },
     "subtabs": {
-        "swaps": "Swaps",
+        "swaps": "Swapper",
+        "spawner": "Spawner",
         "restore": "Restore",
         "presets": "Presets"
     },
@@ -38,7 +39,8 @@
         "trails": "Trails",
         "borders": "Avatar Borders",
         "paint_finishes": "Paint Finishes",
-        "engine_audio": "Engine Audio"
+        "engine_audio": "Engine Audio",
+        "titles": "Titles"
     },
     "spawner": {
         "title": "Item Spawner",
