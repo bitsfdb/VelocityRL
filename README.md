@@ -19,6 +19,8 @@ The all-in-one customization app for Rocket League. Swap items, show off ranks, 
 | Turkish (`tr` / Türkçe) | [Deniz](https://discord.com/users/521513972646543413) |
 | Russian (`ru` / Русский) | [individualist.](https://discord.com/users/659669003278614558) |
 
+> [!NOTE]
+> see [NOTICE.md](NOTICE.md) for third-party attributions and legal notices.
 
 ## Features
 
