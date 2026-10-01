@@ -3224,6 +3224,24 @@ pub async fn clear_network_spawned_items() -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn add_network_spawned_items_bulk(
+    items: Vec<InventorySpoofItemPayload>,
+) -> Result<Vec<InventorySpoofItemPayload>, String> {
+    let dir = config_dir();
+    let mut cfg = read_or_default_spoof(&dir).unwrap_or_else(|_| default_spoof_payload());
+    let mut inv = cfg.inventory_spoof.unwrap_or_default();
+    inv.enabled = true;
+    for it in items {
+        inv.items.retain(|i| !(i.product_id == it.product_id && i.paint_id == it.paint_id));
+        inv.items.push(it);
+    }
+    cfg.inventory_spoof = Some(inv.clone());
+    let _ = write_spoof(&dir, &cfg)?;
+    crate::proxy::set_spoof_config(cfg).await;
+    Ok(inv.items)
+}
+
+#[tauri::command]
 pub async fn add_network_spawned_title(title_id: String) -> Result<Vec<String>, String> {
     let dir = config_dir();
     let mut cfg = read_or_default_spoof(&dir).unwrap_or_else(|_| default_spoof_payload());
@@ -3232,6 +3250,26 @@ pub async fn add_network_spawned_title(title_id: String) -> Result<Vec<String>, 
     let tid = title_id.trim().to_string();
     if !tid.is_empty() && !inv.titles.iter().any(|t| t.eq_ignore_ascii_case(&tid)) {
         inv.titles.push(tid);
+    }
+    cfg.inventory_spoof = Some(inv.clone());
+    let _ = write_spoof(&dir, &cfg)?;
+    crate::proxy::set_spoof_config(cfg).await;
+    Ok(inv.titles)
+}
+
+#[tauri::command]
+pub async fn add_network_spawned_titles_bulk(
+    title_ids: Vec<String>,
+) -> Result<Vec<String>, String> {
+    let dir = config_dir();
+    let mut cfg = read_or_default_spoof(&dir).unwrap_or_else(|_| default_spoof_payload());
+    let mut inv = cfg.inventory_spoof.unwrap_or_default();
+    inv.enabled = true;
+    for tid in title_ids {
+        let tid_trim = tid.trim().to_string();
+        if !tid_trim.is_empty() && !inv.titles.iter().any(|t| t.eq_ignore_ascii_case(&tid_trim)) {
+            inv.titles.push(tid_trim);
+        }
     }
     cfg.inventory_spoof = Some(inv.clone());
     let _ = write_spoof(&dir, &cfg)?;

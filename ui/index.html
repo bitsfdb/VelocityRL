@@ -128,22 +128,26 @@
                         <button class="cat-btn" data-slot="Titles" data-i18n="categories.titles">Titles</button>
                     </div>
 
-                    <div style="display:flex; gap:10px; margin: 12px 0; align-items:center;">
-                        <div class="search-box" style="flex:1;">
+                    <div style="display:flex; gap:10px; margin: 12px 0; align-items:center; flex-wrap:wrap;">
+                        <div class="search-box" style="flex:1; min-width:240px;">
                             <input type="text" id="spawner-search" data-i18n-placeholder="spawner.search_placeholder" placeholder="Search item catalogue to spawn..." autocomplete="off">
                         </div>
-                    </div>
-
-                    <div id="spawner-custom-title-card" class="card" style="display:none; margin-bottom:12px; padding:12px;">
-                        <h4 style="margin:0 0 8px 0; font-size:13px; color:var(--text-primary, #fff);">Spawn Custom Title</h4>
-                        <div style="display:flex; gap:8px; align-items:center;">
-                            <input type="text" id="spawner-custom-title-input" placeholder="Type custom title text (e.g. Supersonic Legend)..." style="flex:1; padding:7px 10px; font-size:12px;" />
-                            <button type="button" id="spawner-custom-title-btn" class="action-btn" style="padding:7px 14px; font-size:12px; white-space:nowrap;">Spawn Custom Title</button>
-                        </div>
+                        <button type="button" id="spawner-spawn-all-btn" class="action-btn" style="padding:8px 16px; font-size:12px; white-space:nowrap; background:var(--accent-blue); color:#fff;">Spawn All in Category</button>
                     </div>
 
                     <div id="spawner-catalogue-grid" class="spawner-catalogue-grid">
                         <div class="backup-empty">Loading catalogue...</div>
+                    </div>
+
+                    <div id="spawner-pagination-bar" class="spawner-pagination-bar">
+                        <div id="spawner-page-stats" class="spawner-page-stats">Showing 0 of 0 items</div>
+                        <div class="spawner-pagination-controls">
+                            <button type="button" id="spawner-first-btn" class="action-btn action-btn-secondary" style="padding:6px 12px; font-size:12px;" title="First page">«</button>
+                            <button type="button" id="spawner-prev-btn" class="action-btn action-btn-secondary" style="padding:6px 14px; font-size:12px;">← Previous</button>
+                            <span id="spawner-page-info" class="spawner-page-info">Page 1 of 1</span>
+                            <button type="button" id="spawner-next-btn" class="action-btn action-btn-secondary" style="padding:6px 14px; font-size:12px;">Next →</button>
+                            <button type="button" id="spawner-last-btn" class="action-btn action-btn-secondary" style="padding:6px 12px; font-size:12px;" title="Last page">»</button>
+                        </div>
                     </div>
                 </div>
 
