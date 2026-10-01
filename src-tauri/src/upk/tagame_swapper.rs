@@ -766,6 +766,66 @@ pub fn apply_tagame_modifications(
                         }
                     }
 
+                    // Car_TA::SetLoadout (#16587) for spawned match cars
+                    if let Some(exp) = exports.iter().find(|e| e.name == "SetLoadout" && e.outer_name == "Car_TA") {
+                        let func_off = (exp.serial_offset - c0.uncomp_offset) as usize;
+                        if func_off + 48 <= decomp0.len() {
+                            let orig_disk_sz = u32::from_le_bytes(decomp0[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                            if orig_disk_sz >= 186 && func_off + 48 + orig_disk_sz <= decomp0.len() {
+                                let mut bc = Vec::new();
+                                let mut mem_sz: u32 = 0;
+                                for rule in &slot_overrides {
+                                    if bc.len() + 30 > orig_disk_sz.saturating_sub(45) {
+                                        break;
+                                    }
+                                    bc.push(opcodes::EX_LET);
+                                    bc.push(opcodes::EX_DYN_ARRAY_OP);
+                                    bc.extend_from_slice(&[0x00, 0x00]);
+                                    if rule.slot_idx == 0 {
+                                        bc.push(opcodes::EX_INT_ZERO);
+                                        mem_sz += 38;
+                                    } else {
+                                        bc.push(opcodes::EX_INT_CONST_BYTE);
+                                        bc.push(rule.slot_idx);
+                                        mem_sz += 39;
+                                    }
+                                    bc.push(opcodes::EX_STRUCT_MEMBER);
+                                    bc.extend_from_slice(&1871i32.to_le_bytes()); // Products
+                                    bc.extend_from_slice(&1872i32.to_le_bytes()); // ClientLoadoutData
+                                    bc.extend_from_slice(&[0x00, 0x01]);
+                                    bc.push(opcodes::EX_LOCAL_VARIABLE);
+                                    bc.extend_from_slice(&16586i32.to_le_bytes()); // Data (#16586)
+                                    bc.push(opcodes::EX_INT_CONST);
+                                    bc.extend_from_slice(&rule.target_id.to_le_bytes());
+                                }
+                                // bLoadoutSet = true;
+                                bc.push(0x14); // EX_ASSIGN_BOOL
+                                bc.push(0x2D); // EX_INSTANCE_VARIABLE_BOOL
+                                bc.extend_from_slice(&16525i32.to_le_bytes()); // bLoadoutSet
+                                bc.push(0x27); // EX_TRUE
+                                mem_sz += 8;
+
+                                // ProductsComponent.SetLoadout(Data); return;
+                                let tail = [
+                                    0x5e, 0x19, 0x00, 0x01, 0x8e, 0x40, 0x00, 0x00,
+                                    0x13, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                    0x1c, 0x10, 0x3f, 0x00, 0x00,
+                                    0x46, 0xca, 0x40, 0x00, 0x00,
+                                    0x16, 0x04, 0x0b, 0x4c
+                                ];
+                                bc.extend_from_slice(&tail);
+                                mem_sz += 35;
+
+                                let pad = orig_disk_sz.saturating_sub(bc.len());
+                                bc.resize(orig_disk_sz, opcodes::EX_NOTHING);
+                                mem_sz += pad as u32;
+
+                                decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                decomp0[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&bc);
+                            }
+                        }
+                    }
+
                     if let Ok(mut recomp0) = crate::upk::compression::compress_chunk(&decomp0) {
                         let orig_c0_sz = c0.comp_size as usize;
                         if recomp0.len() <= orig_c0_sz {
@@ -883,6 +943,39 @@ pub fn apply_tagame_modifications(
 
                                 decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
                                 decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&bc);
+                            }
+                        }
+                    }
+
+                    // PRI_TA::InitGoalExplosion (#57864) for in-match goal explosions
+                    if let Some(target_ge) = target_ge_opt {
+                        if let Some(exp) = exports.iter().find(|e| e.name == "InitGoalExplosion" && e.outer_name == "PRI_TA") {
+                            let func_off = (exp.serial_offset - c2.uncomp_offset) as usize;
+                            if func_off + 48 <= decomp2.len() {
+                                let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                                if orig_disk_sz >= 51 && func_off + 48 + orig_disk_sz <= decomp2.len() {
+                                    // GoalExplosionArchetype = ProductDatabase.GetGoalExplosion(target_ge); return;
+                                    let head = [
+                                        0x0f, 0x01, 0x68, 0xe0, 0x00, 0x00, 0x5e, 0x19, 0x00, 0x2b,
+                                        0x07, 0xe2, 0x00, 0x00, 0x13, 0x00, 0x19, 0x3f, 0x00, 0x00,
+                                        0x00, 0x1c, 0x1b, 0x3f, 0x00, 0x00, 0x20
+                                    ];
+                                    let mut bc = Vec::new();
+                                    bc.extend_from_slice(&head);
+                                    bc.push(opcodes::EX_INT_CONST);
+                                    bc.extend_from_slice(&target_ge.to_le_bytes());
+                                    bc.push(opcodes::EX_END_FUNCTION_PARMS);
+                                    bc.push(opcodes::EX_RETURN);
+                                    bc.push(opcodes::EX_NOTHING);
+                                    bc.push(opcodes::EX_END_OF_SCRIPT);
+
+                                    let pad = orig_disk_sz.saturating_sub(bc.len());
+                                    bc.resize(orig_disk_sz, opcodes::EX_NOTHING);
+                                    let new_mem = (27 + 5 + 4 + pad) as u32;
+
+                                    decomp2[func_off + 40..func_off + 44].copy_from_slice(&new_mem.to_le_bytes());
+                                    decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&bc);
+                                }
                             }
                         }
                     }
