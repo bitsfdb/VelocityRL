@@ -556,6 +556,7 @@ pub fn apply_tagame_modifications(
         struct ExportItem {
             pos: usize,
             name: String,
+            outer_idx: i32,
             outer_name: String,
             serial_size: i32,
             serial_offset: i64,
@@ -578,21 +579,23 @@ pub fn apply_tagame_modifications(
                 String::new()
             };
 
-            let out_nm = if outer_idx > 0 && (outer_idx as usize) <= exports.len() {
-                exports[outer_idx as usize - 1].name.clone()
-            } else {
-                String::new()
-            };
-
             exports.push(ExportItem {
                 pos,
                 name: nm,
-                outer_name: out_nm,
+                outer_idx,
+                outer_name: String::new(),
                 serial_size,
                 serial_offset,
             });
 
             pos += 72 + (noc.max(0) as usize) * 4;
+        }
+
+        for i in 0..exports.len() {
+            let out_idx = exports[i].outer_idx;
+            if out_idx > 0 && (out_idx as usize) <= exports.len() {
+                exports[i].outer_name = exports[out_idx as usize - 1].name.clone();
+            }
         }
 
         #[allow(dead_code)]
@@ -768,6 +771,120 @@ pub fn apply_tagame_modifications(
                         if recomp0.len() <= orig_c0_sz {
                             recomp0.resize(orig_c0_sz, 0);
                             file_bytes[c0_start..c0_start + orig_c0_sz].copy_from_slice(&recomp0);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Patch Chunk 1: ExplosionPreviewer_TA::SetLoadout (#23226) for Garage 3D Stage Preview
+        let target_ge_opt = swaps.iter()
+            .find(|s| {
+                let norm = s.slot.to_lowercase().replace([' ', '_', '-'], "");
+                norm.contains("goal") || norm.contains("explosion") || s.slot_index == Some(10) || s.slot_index == Some(14)
+            })
+            .map(|s| if s.product_id > 0 { s.product_id } else { 2044 });
+
+        if chunks.len() > 1 {
+            if let Some(target_ge) = target_ge_opt {
+                let c1 = &chunks[1];
+                let c1_start = c1.comp_offset as usize;
+                let c1_end = c1_start + c1.comp_size as usize;
+                if c1_end <= file_bytes.len() {
+                    if let Ok(mut decomp1) = crate::upk::compression::decompress_chunk(&file_bytes[c1_start..c1_end]) {
+                        if let Some(exp) = exports.iter().find(|e| {
+                            e.name == "SetLoadout" && e.outer_name == "ExplosionPreviewer_TA"
+                        }) {
+                            let func_off = (exp.serial_offset - c1.uncomp_offset) as usize;
+                            if func_off + 48 <= decomp1.len() {
+                                let orig_disk_sz = u32::from_le_bytes(decomp1[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                                if orig_disk_sz >= 13 {
+                                    let mut bc = Vec::new();
+                                    bc.push(0x1C); // EX_VIRTUAL_FUNCTION
+                                    bc.extend_from_slice(&23231i32.to_le_bytes()); // SetProduct (#23231)
+                                    bc.push(opcodes::EX_INT_CONST);
+                                    bc.extend_from_slice(&target_ge.to_le_bytes());
+                                    bc.push(opcodes::EX_END_FUNCTION_PARMS);
+                                    bc.push(opcodes::EX_RETURN);
+                                    bc.push(opcodes::EX_END_OF_SCRIPT);
+                                    bc.resize(orig_disk_sz, opcodes::EX_NOTHING);
+
+                                    decomp1[func_off + 40..func_off + 44].copy_from_slice(&(orig_disk_sz as u32).to_le_bytes());
+                                    decomp1[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&bc);
+                                }
+                            }
+                        }
+
+                        if let Ok(mut recomp1) = crate::upk::compression::compress_chunk(&decomp1) {
+                            let orig_c1_sz = c1.comp_size as usize;
+                            if recomp1.len() <= orig_c1_sz {
+                                recomp1.resize(orig_c1_sz, 0);
+                                file_bytes[c1_start..c1_start + orig_c1_sz].copy_from_slice(&recomp1);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Patch Chunk 2: LoadoutValidation_TA::CorrectOnlineData (#47859) for In-Game / Online Matches
+        if chunks.len() > 2 && !slot_overrides.is_empty() {
+            let c2 = &chunks[2];
+            let c2_start = c2.comp_offset as usize;
+            let c2_end = c2_start + c2.comp_size as usize;
+            if c2_end <= file_bytes.len() {
+                if let Ok(mut decomp2) = crate::upk::compression::decompress_chunk(&file_bytes[c2_start..c2_end]) {
+                    if let Some(exp) = exports.iter().find(|e| e.name == "CorrectOnlineData") {
+                        let func_off = (exp.serial_offset - c2.uncomp_offset) as usize;
+                        if func_off + 48 <= decomp2.len() {
+                            let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                            if orig_disk_sz >= 100 {
+                                let mut bc = Vec::new();
+                                let mut mem_sz: u32 = 0;
+                                for rule in &slot_overrides {
+                                    if bc.len() + 30 > orig_disk_sz {
+                                        break;
+                                    }
+                                    bc.push(opcodes::EX_LET);
+                                    bc.push(opcodes::EX_DYN_ARRAY_OP);
+                                    bc.extend_from_slice(&[0x00, 0x00]);
+                                    if rule.slot_idx == 0 {
+                                        bc.push(opcodes::EX_INT_ZERO);
+                                        mem_sz += 38;
+                                    } else {
+                                        bc.push(opcodes::EX_INT_CONST_BYTE);
+                                        bc.push(rule.slot_idx);
+                                        mem_sz += 39;
+                                    }
+                                    bc.push(opcodes::EX_STRUCT_MEMBER);
+                                    bc.extend_from_slice(&1871i32.to_le_bytes());
+                                    bc.extend_from_slice(&1872i32.to_le_bytes());
+                                    bc.extend_from_slice(&[0x00, 0x01]);
+                                    bc.push(opcodes::EX_LOCAL_VARIABLE);
+                                    bc.extend_from_slice(&47858i32.to_le_bytes()); // OutLoadout (#47858)
+                                    bc.push(opcodes::EX_INT_CONST);
+                                    bc.extend_from_slice(&rule.target_id.to_le_bytes());
+                                }
+                                bc.push(opcodes::EX_RETURN);
+                                bc.push(0x27); // EX_TRUE
+                                bc.push(opcodes::EX_END_OF_SCRIPT);
+                                mem_sz += 3;
+
+                                let nop_cnt = orig_disk_sz.saturating_sub(bc.len());
+                                bc.resize(orig_disk_sz, opcodes::EX_NOTHING);
+                                mem_sz += nop_cnt as u32;
+
+                                decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&bc);
+                            }
+                        }
+                    }
+
+                    if let Ok(mut recomp2) = crate::upk::compression::compress_chunk(&decomp2) {
+                        let orig_c2_sz = c2.comp_size as usize;
+                        if recomp2.len() <= orig_c2_sz {
+                            recomp2.resize(orig_c2_sz, 0);
+                            file_bytes[c2_start..c2_start + orig_c2_sz].copy_from_slice(&recomp2);
                         }
                     }
                 }
