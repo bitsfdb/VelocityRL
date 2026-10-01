@@ -1526,6 +1526,11 @@ async fn handle_forward_websocket(
         }
     }
 
+    crate::applog::traffic_debug(&format!(
+        "[FWD-WS] ⚠ RAW TUNNEL (no frame patching!) to {} | path={} | status={}",
+        upstream_host, path_and_query, status_code
+    ));
+
     tokio::spawn(async move {
         match hyper::upgrade::on(req).await {
             Ok(upgraded) => {
@@ -1571,6 +1576,10 @@ async fn handle_forward_intercepted_request(
     let path = req.uri().path().to_string();
     let query = req.uri().query().map(|q| format!("?{q}")).unwrap_or_default();
     let url = format!("https://{upstream_host}:{upstream_port}{path}{query}");
+
+    crate::applog::traffic_debug(&format!(
+        "[FWD-HTTP] >>> REQUEST {method} {url}"
+    ));
 
     let headers = req.headers().clone();
     let req_body_bytes = match req.into_body().collect().await {
@@ -1641,6 +1650,12 @@ async fn handle_forward_intercepted_request(
             }
         };
 
+        crate::applog::traffic_debug(&format!(
+            "[FWD-HTTP] <<< RESPONSE {status} {path}{query} from {upstream_host} | {} bytes | body: {}",
+            resp_bytes.len(),
+            crate::applog::body_snippet(&resp_bytes, 600)
+        ));
+
         let spoof_cfg = match crate::psynet::load_active_spoof_from_disk() {
             Some(c) => Some(c),
             None => get_spoof_config().await,
@@ -1708,6 +1723,9 @@ async fn handle_forward_intercepted_request(
                 || path_lower.contains("currencies")
                 || path_lower.contains("shops")
                 || find_bytes(&final_body, b"\"Currencies\"").is_some()
+                || find_bytes(&final_body, b"\"currencies\"").is_some()
+                || find_bytes(&final_body, b"\"Wallet\"").is_some()
+                || find_bytes(&final_body, b"\"wallet\"").is_some()
                 || find_bytes(&final_body, b"TournamentCredit").is_some()
                 || find_bytes(&final_body, b"TournamentPoint").is_some();
             if is_wallet {
@@ -1716,6 +1734,51 @@ async fn handle_forward_intercepted_request(
                     crate::applog::event(&format!(
                         "forward proxy: patched wallet credits -> {} / tourney {} in response from {}",
                         cs.amount, cs.tournament_amount, upstream_host
+                    ));
+                    final_body = new_body;
+                }
+            }
+        }
+
+        if let Some(inv) = spoof_cfg.as_ref().and_then(|c| c.inventory_spoof.as_ref()).filter(|i| i.enabled) {
+            let path_lower = path.to_ascii_lowercase();
+            let is_loadout = path_lower.contains("loadout")
+                || path_lower.contains("matchmaking")
+                || path_lower.contains("reservation")
+                || path_lower.contains("party")
+                || path_lower.contains("authplayer")
+                || path_lower.contains("genericstorage")
+                || find_bytes(&final_body, b"PlayerLoadout").is_some()
+                || find_bytes(&final_body, b"LoadoutResponse").is_some()
+                || find_bytes(&final_body, b"CustomLoadouts").is_some()
+                || find_bytes(&final_body, b"ProfileLoadoutSave_TA").is_some();
+
+            if is_loadout && !inv.items.is_empty() {
+                let (new_body, did_patch) = patch_loadout_rpc_json(&final_body, inv, path_lower.contains("authplayer"));
+                if did_patch {
+                    crate::applog::event(&format!(
+                        "forward proxy: patched loadout RPC [{path}] -> {} items spoofed in response from {upstream_host}",
+                        inv.items.len()
+                    ));
+                    final_body = new_body;
+                }
+            }
+
+            let is_inventory = path_lower.contains("products")
+                || path_lower.contains("getloadoutproducts")
+                || path_lower.contains("getplayerproducts")
+                || find_bytes(&final_body, b"\"ProductData\"").is_some();
+
+            let has_titles = !inv.titles.is_empty()
+                || spoof_cfg.as_ref().map(|c| !c.equip_title_id.trim().is_empty()).unwrap_or(false);
+
+            if (is_inventory || is_loadout) && (!inv.items.is_empty() || has_titles) {
+                let (new_body, did_patch) = patch_player_inventory_json(&final_body, inv);
+                if did_patch {
+                    crate::applog::event(&format!(
+                        "forward proxy: patched inventory products [{path}] -> {} items, {} titles injected in response from {upstream_host}",
+                        inv.items.len(),
+                        inv.titles.len()
                     ));
                     final_body = new_body;
                 }
@@ -1950,7 +2013,7 @@ async fn handle_broker_request(
         }
     };
 
-    let mut up_builder = client.request(method, &upstream_url);
+    let mut up_builder = client.request(method.clone(), &upstream_url);
     for (k, v) in req_headers.iter() {
         let k_str = k.as_str().to_ascii_lowercase();
         // Skip hop-by-hop headers and headers that reqwest manages
@@ -1970,8 +2033,25 @@ async fn handle_broker_request(
         }
     }
     up_builder = up_builder.header("Host", "api.rlpp.psynet.gg");
-    if !body_bytes.is_empty() {
-        up_builder = up_builder.body(body_bytes.clone());
+    let mut outgoing_body = body_bytes.clone();
+    if !outgoing_body.is_empty() {
+        if let Some(cfg) = crate::psynet::load_active_spoof_from_disk() {
+            if let Some(inv) = &cfg.inventory_spoof {
+                if inv.enabled && !inv.items.is_empty() {
+                    let (new_body, did_patch) = patch_loadout_rpc_json(&outgoing_body, inv, false);
+                    if did_patch {
+                        outgoing_body = new_body;
+                        let mut m = Hmac::<Sha256>::new_from_slice(PSY_REQ_KEY).expect("valid hmac key");
+                        m.update(b"-");
+                        m.update(&outgoing_body);
+                        let sig = base64::engine::general_purpose::STANDARD.encode(m.finalize().into_bytes());
+                        up_builder = up_builder.header("PsySig", sig);
+                        crate::applog::event("broker: patched outgoing client HTTP loadout RPC and re-signed PsySig");
+                    }
+                }
+            }
+        }
+        up_builder = up_builder.body(outgoing_body);
     }
 
     let up_resp = match up_builder.send().await {
@@ -2000,8 +2080,24 @@ async fn handle_broker_request(
     let mut out_body = resp_bytes;
     let mut patched = false;
 
+    crate::applog::traffic_debug(&format!(
+        "[BROKER-HTTP] {} {} | status={} | resp_len={} | body: {}",
+        method,
+        path_and_query,
+        status,
+        out_body.len(),
+        crate::applog::body_snippet(&out_body, 600)
+    ));
+
     let path_lower = path_and_query.to_ascii_lowercase();
-    if path_lower.contains("authplayer") {
+    let is_auth_player = path_lower.contains("authplayer");
+
+    let cfg_opt = match crate::psynet::load_active_spoof_from_disk() {
+        Some(c) => Some(c),
+        None => get_spoof_config().await,
+    };
+
+    if is_auth_player {
         cache_auth_ws(&out_body);
         for k in &["VerifiedPlayerName", "PlayerName", "DisplayName"] {
             if let Some(rn) = find_json_value(&out_body, k) {
@@ -2049,54 +2145,135 @@ async fn handle_broker_request(
                 "broker: AuthPlayer WS rewrite skipped — broker port not set",
             );
         }
-    } else {
-        let cfg_opt = match crate::psynet::load_active_spoof_from_disk() {
-            Some(c) => Some(c),
-            None => get_spoof_config().await,
-        };
+
         if let Some(cfg) = &cfg_opt {
-            let is_wallet_rpc = path_lower.contains("getplayerwallet")
-                || path_lower.contains("wallet")
-                || path_lower.contains("tournament")
-                || path_lower.contains("currencies")
-                || path_lower.contains("shops")
-                || find_bytes(&out_body, b"\"Currencies\"").is_some()
-                || find_bytes(&out_body, b"TournamentCredit").is_some()
-                || find_bytes(&out_body, b"TournamentPoint").is_some();
-            if is_wallet_rpc {
-                if let Some(cs) = &cfg.credit_spoof {
-                    if cs.enabled {
-                        let (new_body, did_patch) = patch_player_wallet_json(&out_body, cs);
-                        if did_patch {
-                            out_body = new_body;
-                            patched = true;
-                            crate::applog::event(&format!(
-                                "broker: patched wallet credits in RPC response -> credits: {}, tourney: {}",
-                                cs.amount, cs.tournament_amount
-                            ));
-                        }
-                    }
-                }
-            }
-
-            if let Some(ns) = &cfg.name_spoof {
-                if ns.enabled && !ns.display_name.trim().is_empty() {
-                    let learned_pid = get_learned_player_id();
-                    let target_pid = learned_pid.as_deref().or(ns.player_id.as_deref());
-
-                    let (new_body, did_patch) = patch_ws_name_fields(
-                        &out_body,
-                        ns.display_name.trim(),
-                        target_pid,
-                    );
+            if let Some(inv) = &cfg.inventory_spoof {
+                if inv.enabled && !inv.items.is_empty() {
+                    let (new_body, did_patch) = patch_loadout_rpc_json(&out_body, inv, true);
                     if did_patch {
                         out_body = new_body;
                         patched = true;
                         crate::applog::event(&format!(
-                            "broker: patched name in RPC response -> '{}'",
-                            ns.display_name.trim()
+                            "broker: patched AuthPlayer loadout cosmetics -> {} items spoofed ({} bytes)",
+                            inv.items.len(),
+                            out_body.len()
                         ));
                     }
+                    let (new_body, did_patch_inv) = patch_player_inventory_json(&out_body, inv);
+                    if did_patch_inv {
+                        out_body = new_body;
+                        patched = true;
+                        crate::applog::event(&format!(
+                            "broker: patched AuthPlayer products inventory -> {} items injected",
+                            inv.items.len()
+                        ));
+                    }
+                }
+            }
+
+            if let Some(cs) = &cfg.credit_spoof {
+                if cs.enabled {
+                    let (new_body, did_patch_wallet) = patch_player_wallet_json(&out_body, cs);
+                    if did_patch_wallet {
+                        out_body = new_body;
+                        patched = true;
+                        crate::applog::event(&format!(
+                            "broker: patched AuthPlayer wallet currencies -> {} credits, {} tourney",
+                            cs.amount, cs.tournament_amount
+                        ));
+                    }
+                }
+            }
+        }
+    } else if let Some(cfg) = &cfg_opt {
+        let is_loadout_rpc = path_lower.contains("loadout")
+            || path_lower.contains("products")
+            || path_lower.contains("genericstorage")
+            || find_bytes(&out_body, b"PlayerLoadout").is_some()
+            || find_bytes(&out_body, b"playerLoadout").is_some()
+            || find_bytes(&out_body, b"LoadoutResponse").is_some()
+            || find_bytes(&out_body, b"loadoutResponse").is_some()
+            || find_bytes(&out_body, b"CustomLoadouts").is_some()
+            || find_bytes(&out_body, b"ProfileLoadoutSave_TA").is_some()
+            || find_bytes(&out_body, b"ProductData").is_some()
+            || find_bytes(&out_body, b"productData").is_some()
+            || find_bytes(&out_body, b"Products").is_some();
+
+        if is_loadout_rpc {
+            if let Some(inv) = &cfg.inventory_spoof {
+                let has_titles = !inv.titles.is_empty()
+                    || !cfg.equip_title_id.trim().is_empty()
+                    || cfg.swaps.as_ref().map(|s| !s.is_empty()).unwrap_or(false);
+                if inv.enabled && (!inv.items.is_empty() || has_titles) {
+                    if !inv.items.is_empty() {
+                        let (new_body, did_patch) = patch_loadout_rpc_json(&out_body, inv, false);
+                        if did_patch {
+                            out_body = new_body;
+                            patched = true;
+                            crate::applog::event(&format!(
+                                "broker: patched HTTP loadout RPC [{path_and_query}] -> {} items spoofed",
+                                inv.items.len()
+                            ));
+                        }
+                    }
+                    let (new_body, did_patch_inv) = patch_player_inventory_json(&out_body, inv);
+                    if did_patch_inv {
+                        out_body = new_body;
+                        patched = true;
+                        crate::applog::event(&format!(
+                            "broker: patched HTTP products inventory [{path_and_query}] -> {} items, {} titles injected",
+                            inv.items.len(),
+                            inv.titles.len()
+                        ));
+                    }
+                }
+            }
+        }
+
+        let is_wallet_rpc = path_lower.contains("getplayerwallet")
+            || path_lower.contains("wallet")
+            || path_lower.contains("tournament")
+            || path_lower.contains("currencies")
+            || path_lower.contains("shops")
+            || find_bytes(&out_body, b"\"Currencies\"").is_some()
+            || find_bytes(&out_body, b"\"currencies\"").is_some()
+            || find_bytes(&out_body, b"\"Wallet\"").is_some()
+            || find_bytes(&out_body, b"\"wallet\"").is_some()
+            || find_bytes(&out_body, b"TournamentCredit").is_some()
+            || find_bytes(&out_body, b"TournamentPoint").is_some();
+        if is_wallet_rpc {
+            if let Some(cs) = &cfg.credit_spoof {
+                if cs.enabled {
+                    let (new_body, did_patch) = patch_player_wallet_json(&out_body, cs);
+                    if did_patch {
+                        out_body = new_body;
+                        patched = true;
+                        crate::applog::event(&format!(
+                            "broker: patched wallet credits in RPC response -> credits: {}, tourney: {}",
+                            cs.amount, cs.tournament_amount
+                        ));
+                    }
+                }
+            }
+        }
+
+        if let Some(ns) = &cfg.name_spoof {
+            if ns.enabled && !ns.display_name.trim().is_empty() {
+                let learned_pid = get_learned_player_id();
+                let target_pid = learned_pid.as_deref().or(ns.player_id.as_deref());
+
+                let (new_body, did_patch) = patch_ws_name_fields(
+                    &out_body,
+                    ns.display_name.trim(),
+                    target_pid,
+                );
+                if did_patch {
+                    out_body = new_body;
+                    patched = true;
+                    crate::applog::event(&format!(
+                        "broker: patched name in RPC response -> '{}'",
+                        ns.display_name.trim()
+                    ));
                 }
             }
         }
@@ -2169,7 +2346,7 @@ async fn handle_request(
         .map(|v| v.eq_ignore_ascii_case("websocket"))
         .unwrap_or(false);
 
-    if host_hdr.contains("ws.rlpp.psynet.gg") || is_upgrade {
+    if host_hdr.contains("ws.rlpp.psynet.gg") || (host_hdr.contains("psynet.gg") && is_upgrade) {
         return handle_websocket(req).await;
     }
 
@@ -2425,7 +2602,18 @@ async fn tunnel_websocket<S1, S2>(
         while let Some(msg_res) = client_rx.next().await {
             match msg_res {
                 Ok(msg) => {
-                    if up_tx.send(msg).await.is_err() {
+                    let out_msg = match msg {
+                        tokio_tungstenite::tungstenite::Message::Text(t) => {
+                            let (patched_text, _) = patch_ws_frame_text(&t).await;
+                            tokio_tungstenite::tungstenite::Message::Text(patched_text.into())
+                        }
+                        tokio_tungstenite::tungstenite::Message::Binary(b) => {
+                            let (patched_b, _) = patch_ws_frame_binary(&b).await;
+                            tokio_tungstenite::tungstenite::Message::Binary(patched_b.into())
+                        }
+                        other => other,
+                    };
+                    if up_tx.send(out_msg).await.is_err() {
                         break;
                     }
                 }
@@ -2465,6 +2653,29 @@ async fn tunnel_websocket<S1, S2>(
     crate::applog::event("proxy: WebSocket tunnel closed");
 }
 
+static PSY_PENDING_REQUESTS: std::sync::Mutex<Option<std::collections::HashMap<String, String>>> = std::sync::Mutex::new(None);
+
+pub fn remember_psy_request(req_id: &str, service: &str) {
+    if req_id.is_empty() || service.is_empty() { return; }
+    if let Ok(mut guard) = PSY_PENDING_REQUESTS.lock() {
+        let map = guard.get_or_insert_with(std::collections::HashMap::new);
+        if map.len() > 1000 {
+            map.clear();
+        }
+        map.insert(req_id.to_string(), service.to_ascii_lowercase());
+    }
+}
+
+pub fn get_psy_service_for_response(resp_id: &str) -> Option<String> {
+    if resp_id.is_empty() { return None; }
+    if let Ok(mut guard) = PSY_PENDING_REQUESTS.lock() {
+        if let Some(map) = guard.as_mut() {
+            return map.remove(resp_id);
+        }
+    }
+    None
+}
+
 async fn patch_ws_frame_text(text: &str) -> (String, bool) {
     let (patched_bytes, changed) = patch_ws_frame_binary(text.as_bytes()).await;
     if changed {
@@ -2488,9 +2699,45 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         set_learned_player_id(&conn_id);
     }
 
-    let svc = get_ws_header_value(headers_part, "PsyService");
-    let is_skill = svc.contains("skills/getplayerskill")
-        || svc.contains("skills/getplayersskills")
+    let req_id = get_ws_header_value(headers_part, "PsyRequestID");
+    let req_svc = get_ws_header_value(headers_part, "PsyService");
+    if !req_id.is_empty() && !req_svc.is_empty() {
+        remember_psy_request(&req_id, &req_svc);
+    }
+
+    let resp_id = get_ws_header_value(headers_part, "PsyResponseID");
+    let correlated_svc = if !resp_id.is_empty() {
+        get_psy_service_for_response(&resp_id)
+    } else {
+        None
+    };
+
+    let svc = if !req_svc.is_empty() {
+        req_svc
+    } else if let Some(ref cs) = correlated_svc {
+        cs.clone()
+    } else {
+        get_ws_header_value(headers_part, "PsyService")
+    };
+
+    let svc_lower = svc.to_ascii_lowercase();
+
+    // ---- Traffic Debug: log every WS frame ----
+    {
+        let direction = if !req_id.is_empty() { "CLIENT->SRV" } else { "SRV->CLIENT" };
+        crate::applog::traffic_debug(&format!(
+            "[WS-FRAME] {} | svc={} | req_id={} | resp_id={} | body_len={} | body: {}",
+            direction,
+            if svc.is_empty() { "(none)" } else { &svc },
+            if req_id.is_empty() { "-" } else { &req_id },
+            if resp_id.is_empty() { "-" } else { &resp_id },
+            body_part.len(),
+            crate::applog::body_snippet(body_part, 800)
+        ));
+    }
+
+    let is_skill = svc_lower.contains("skills/getplayerskill")
+        || svc_lower.contains("skills/getplayersskills")
         || (find_bytes(body_part, b"\"Skills\"").is_some()
             && (find_bytes(body_part, b"\"Mu\"").is_some()
                 || find_bytes(body_part, b"\"Tier\"").is_some()
@@ -2512,16 +2759,20 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
     let mut current_body = body_part.to_vec();
     let mut any_changed = false;
 
-    let is_wallet = svc.contains("shops/getplayerwallet")
-        || svc.contains("getplayerwallet")
-        || svc.contains("wallet")
-        || svc.contains("tournament")
-        || svc.contains("currencies")
-        || (find_bytes(body_part, b"\"Currencies\"").is_some() && find_bytes(body_part, b"\"IsTradable\"").is_some())
-        || find_bytes(body_part, b"TournamentCredit").is_some()
-        || find_bytes(body_part, b"TournamentPoint").is_some();
+    // Only match actual wallet/currency RPCs — NOT tournament schedule/status/etc.
+    let is_wallet = svc_lower.contains("shops/getplayerwallet")
+        || svc_lower.contains("getplayerwallet")
+        || (svc_lower.contains("wallet") && !svc_lower.contains("tournament"))
+        || (find_bytes(body_part, b"\"Currencies\"").is_some()
+            && find_bytes(body_part, b"\"Amount\"").is_some()
+            && !svc_lower.contains("tournament")
+            && !svc_lower.contains("schedule")
+            && !svc_lower.contains("cycle"));
 
-    if is_wallet {
+    // Determine direction early for all patching decisions
+    let is_response_frame = !resp_id.is_empty();
+
+    if is_wallet && is_response_frame {
         if let Some(cs) = &cfg.credit_spoof {
             if cs.enabled {
                 let (new_body, changed) = patch_player_wallet_json(&current_body, cs);
@@ -2532,6 +2783,83 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
                         "proxy: patched wallet credits -> {} / tourney {} ({} -> {} bytes)",
                         cs.amount,
                         cs.tournament_amount,
+                        frame.len(),
+                        current_body.len()
+                    ));
+                }
+            }
+        }
+    }
+
+    // Only match actual loadout RPCs — NOT matchmaking or generic party/server/session RPCs.
+    // DSR/RelayToServer is handled separately below.
+    let is_loadout_ws = svc_lower.contains("loadout")
+        || svc_lower.contains("authplayer")
+        || svc_lower.contains("genericstorage")
+        || svc_lower.contains("playerhasloadout")
+        || find_bytes(body_part, b"PlayerLoadout").is_some()
+        || find_bytes(body_part, b"playerLoadout").is_some()
+        || find_bytes(body_part, b"LoadoutResponse").is_some()
+        || find_bytes(body_part, b"loadoutResponse").is_some()
+        || find_bytes(body_part, b"CustomLoadouts").is_some()
+        || find_bytes(body_part, b"CustomLoadout").is_some()
+        || find_bytes(body_part, b"ProfileLoadoutSave_TA").is_some()
+        || find_bytes(body_part, b"ProductsSave_TA").is_some()
+        || find_bytes(body_part, b"PartyMessage_Loadout").is_some()
+        || find_bytes(body_part, b"ReplicatedLoadout").is_some()
+        || (find_bytes(body_part, b"\"Loadout\"").is_some() && (find_bytes(body_part, b"\"Slot\"").is_some() || find_bytes(body_part, b"\"ProductID\"").is_some()));
+
+    let is_inventory_ws = svc_lower.contains("products")
+        || svc_lower.contains("getloadoutproducts")
+        || svc_lower.contains("getplayerproducts")
+        || (find_bytes(body_part, b"\"ProductData\"").is_some() && (find_bytes(body_part, b"\"InstanceID\"").is_some() || find_bytes(body_part, b"\"ProductID\"").is_some()))
+        || (find_bytes(body_part, b"\"Products\"").is_some() && find_bytes(body_part, b"\"InstanceID\"").is_some())
+        || (find_bytes(body_part, b"\"ProductID\"").is_some() && find_bytes(body_part, b"\"InstanceID\"").is_some());
+
+    if svc_lower.contains("playerhasloadout") {
+        if let Ok(mut val) = serde_json::from_slice::<serde_json::Value>(&current_body) {
+            if let Some(obj) = val.as_object_mut() {
+                obj.insert("Result".into(), serde_json::json!(true));
+                obj.insert("HasTemplate".into(), serde_json::json!(true));
+                if let Ok(new_body) = serde_json::to_vec(&val) {
+                    current_body = new_body;
+                    any_changed = true;
+                }
+            }
+        }
+    }
+
+    // Only patch loadout/inventory in SRV->CLIENT (response) direction, except DSR relay.
+    let is_dsr = svc_lower.contains("dsr/") || svc_lower.contains("relaytoserver");
+    if (is_loadout_ws || is_inventory_ws) && (is_response_frame || is_dsr) {
+        if let Some(inv) = &cfg.inventory_spoof {
+            let has_titles = !inv.titles.is_empty()
+                || !cfg.equip_title_id.trim().is_empty()
+                || cfg.swaps.as_ref().map(|s| !s.is_empty()).unwrap_or(false);
+            let has_work = inv.enabled && (!inv.items.is_empty() || has_titles);
+            if has_work {
+                let mut ws_patched = false;
+                if is_loadout_ws && !inv.items.is_empty() {
+                    let (new_body, changed) = patch_loadout_rpc_json(&current_body, inv, svc_lower.contains("authplayer"));
+                    if changed {
+                        current_body = new_body;
+                        ws_patched = true;
+                    }
+                }
+                if is_inventory_ws || find_bytes(&current_body, b"\"ProductData\"").is_some() {
+                    let (new_body, changed) = patch_player_inventory_json(&current_body, inv);
+                    if changed {
+                        current_body = new_body;
+                        ws_patched = true;
+                    }
+                }
+                if ws_patched {
+                    any_changed = true;
+                    crate::applog::event(&format!(
+                        "proxy: patched loadout/inventory ws frame [{}] -> {} items, {} titles spoofed ({} -> {} bytes)",
+                        svc,
+                        inv.items.len(),
+                        inv.titles.len(),
                         frame.len(),
                         current_body.len()
                     ));
@@ -2598,8 +2926,20 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
     }
 
     if !any_changed {
+        crate::applog::traffic_debug(&format!(
+            "[WS-FRAME] ↩ NOT PATCHED | svc={}",
+            if svc.is_empty() { "(none)" } else { &svc }
+        ));
         return (frame.to_vec(), false);
     }
+
+    crate::applog::traffic_debug(&format!(
+        "[WS-FRAME] ✅ PATCHED | svc={} | orig_body_len={} | new_body_len={} | new_body: {}",
+        if svc.is_empty() { "(none)" } else { &svc },
+        body_part.len(),
+        current_body.len(),
+        crate::applog::body_snippet(&current_body, 800)
+    ));
 
     let new_headers = resign_ws_headers(headers_part, &current_body);
     let mut out = Vec::with_capacity(new_headers.len() + 4 + current_body.len());
@@ -2652,8 +2992,16 @@ fn resign_ws_headers(headers: &[u8], body: &[u8]) -> Vec<u8> {
     let has_psysig = find_bytes(headers, b"PsySig:").is_some() || find_bytes(headers, b"psysig:").is_some();
     let has_psysignature = find_bytes(headers, b"Psysignature:").is_some() || find_bytes(headers, b"psysignature:").is_some();
 
+    let updated_headers = if find_bytes(headers, b"Content-Length:").is_some()
+        || find_bytes(headers, b"content-length:").is_some()
+    {
+        replace_ws_header_value(headers, "Content-Length", &body.len().to_string())
+    } else {
+        headers.to_vec()
+    };
+
     if !has_psysig && !has_psysignature {
-        return headers.to_vec();
+        return updated_headers;
     }
 
     let sig = if !psy_time.is_empty() {
@@ -2669,7 +3017,7 @@ fn resign_ws_headers(headers: &[u8], body: &[u8]) -> Vec<u8> {
     };
 
     let key_to_replace = if has_psysig { "PsySig" } else { "Psysignature" };
-    replace_ws_header_value(headers, key_to_replace, &sig)
+    replace_ws_header_value(&updated_headers, key_to_replace, &sig)
 }
 
 #[allow(dead_code)]
@@ -3089,7 +3437,8 @@ fn patch_get_player_skill_json(
     }
 
     if let Some(rl) = &fake_ranks.reward_levels {
-        if let Some(reward_obj) = result_obj.get_mut("RewardLevels") {
+        if let Some(obj) = result_obj.as_object_mut() {
+            let reward_obj = obj.entry("RewardLevels").or_insert_with(|| serde_json::json!({}));
             if let Some(lvl) = rl.season_level {
                 reward_obj["SeasonLevel"] = serde_json::json!(lvl);
                 changed = true;
@@ -3100,6 +3449,628 @@ fn patch_get_player_skill_json(
             }
         }
     }
+
+    if !changed {
+        return (body.to_vec(), false);
+    }
+
+    let out = serde_json::to_vec(&root).unwrap_or_else(|_| body.to_vec());
+    (out, true)
+}
+
+fn slot_index_for_item(item: &crate::psynet::InventorySpoofItemPayload) -> usize {
+    crate::presets::slot_index_from_str(&item.slot)
+}
+
+fn slot_aliases(slot_idx: usize) -> &'static [&'static str] {
+    match slot_idx {
+        0 => &["Body", "body", "Car", "car", "Vehicle", "vehicle", "CarID", "BodyID", "BodyProductID", "VehicleProductID"],
+        1 => &["Skin", "skin", "Decal", "decal", "SkinProductID", "DecalProductID"],
+        2 => &["Wheel", "wheel", "Wheels", "wheels", "WheelProductID", "WheelsProductID"],
+        3 => &["Boost", "boost", "RocketBoost", "rocketboost", "BoostProductID", "RocketBoostProductID"],
+        4 => &["Antenna", "antenna", "AntennaProductID"],
+        5 => &["Topper", "topper", "Hat", "hat", "TopperProductID"],
+        6 => &["PaintFinish", "paintfinish", "Paint", "paint", "PaintFinishProductID"],
+        7 => &["PaintFinishAccent", "CustomFinish", "AccentFinish", "PaintFinishSecondary"],
+        8 => &["EngineAudio", "engineaudio", "Audio", "audio", "EngineAudioProductID"],
+        9 => &["Trail", "trail", "SupersonicTrail", "TrailProductID"],
+        10 => &["GoalExplosion", "goalexplosion", "Explosion", "explosion", "GoalExplosionProductID"],
+        11 => &["PlayerBanner", "playerbanner", "Banner", "banner", "BannerProductID"],
+        12 => &["PlayerAnthem", "playeranthem", "Anthem", "anthem", "Music", "music", "AnthemProductID"],
+        13 => &["AvatarBorder", "avatarborder", "Border", "border", "BorderProductID"],
+        _ => &["Body", "body"],
+    }
+}
+
+fn new_slot_entry(slot_idx: usize, item: &crate::psynet::InventorySpoofItemPayload) -> serde_json::Value {
+    let mut attributes = Vec::new();
+    if item.paint_id > 0 {
+        attributes.push(serde_json::json!({
+            "Key": "Painted",
+            "Value": item.paint_id
+        }));
+        attributes.push(serde_json::json!({
+            "Key": "Paint",
+            "Value": item.paint_id
+        }));
+    }
+    let instance_id_num = 998_000_000i64 + (slot_idx as i64);
+    let instance_id_str = instance_id_num.to_string();
+    serde_json::json!({
+        "Slot": slot_idx,
+        "SlotIndex": slot_idx,
+        "ProductID": item.product_id,
+        "ProductId": item.product_id,
+        "SeriesID": item.series_id,
+        "Paint": item.paint_id,
+        "PaintID": item.paint_id,
+        "InstanceID": instance_id_str,
+        "ProductInstanceID": instance_id_str,
+        "Attributes": attributes,
+    })
+}
+
+fn update_slot_entry(elem: &mut serde_json::Value, item: &crate::psynet::InventorySpoofItemPayload) {
+    let obj = match elem.as_object_mut() {
+        Some(o) => o,
+        None => return,
+    };
+
+    let mut updated_pid = false;
+    for k in &["ProductID", "ProductId", "product_id", "Value", "ID", "Id"] {
+        if obj.contains_key(*k) {
+            obj.insert(k.to_string(), serde_json::json!(item.product_id));
+            updated_pid = true;
+        }
+    }
+    if !updated_pid {
+        obj.insert("ProductID".into(), serde_json::json!(item.product_id));
+    }
+
+    let target_slot = slot_index_for_item(item);
+    let instance_id_num = 998_000_000i64 + (target_slot as i64);
+    let instance_id_str = instance_id_num.to_string();
+    obj.insert("InstanceID".into(), serde_json::json!(&instance_id_str));
+    obj.insert("ProductInstanceID".into(), serde_json::json!(&instance_id_str));
+    if obj.contains_key("InstanceId") {
+        obj.insert("InstanceId".into(), serde_json::json!(&instance_id_str));
+    }
+
+    if item.paint_id > 0 {
+        let mut updated_paint = false;
+        for k in &["Paint", "PaintID", "PaintId", "paint_id", "Painted"] {
+            if obj.contains_key(*k) {
+                obj.insert(k.to_string(), serde_json::json!(item.paint_id));
+                updated_paint = true;
+            }
+        }
+        if !updated_paint {
+            obj.insert("Paint".into(), serde_json::json!(item.paint_id));
+        }
+
+        if let Some(attrs) = obj.get_mut("Attributes").and_then(|a| a.as_array_mut()) {
+            let mut paint_found = false;
+            for attr in attrs.iter_mut() {
+                let key_name = attr.get("Key").and_then(|k| k.as_str()).unwrap_or("");
+                if key_name.eq_ignore_ascii_case("paint") || key_name.eq_ignore_ascii_case("painted") {
+                    if let Some(attr_obj) = attr.as_object_mut() {
+                        attr_obj.insert("Value".into(), serde_json::json!(item.paint_id));
+                        paint_found = true;
+                    }
+                }
+            }
+            if !paint_found {
+                attrs.push(serde_json::json!({
+                    "Key": "Painted",
+                    "Value": item.paint_id
+                }));
+                attrs.push(serde_json::json!({
+                    "Key": "Paint",
+                    "Value": item.paint_id
+                }));
+            }
+        } else {
+            obj.insert("Attributes".into(), serde_json::json!([
+                { "Key": "Painted", "Value": item.paint_id },
+                { "Key": "Paint", "Value": item.paint_id }
+            ]));
+        }
+    }
+}
+
+fn patch_loadout_container(
+    val: &mut serde_json::Value,
+    items: &[&crate::psynet::InventorySpoofItemPayload],
+) -> bool {
+    let mut changed = false;
+
+    if let Some(arr) = val.as_array_mut() {
+        if arr.is_empty() {
+            return false;
+        }
+
+        // 1. Array of teams or presets containing Loadout/Products
+        let has_teams_or_presets = arr.iter().any(|e| {
+            e.get("TeamIndex").is_some()
+                || e.get("Loadout").is_some()
+                || e.get("Products").is_some()
+                || e.get("CustomLoadout").is_some()
+                || e.get("customLoadout").is_some()
+        });
+        if has_teams_or_presets {
+            for elem in arr.iter_mut() {
+                if let Some(loadout_val) = elem.get_mut("Loadout") {
+                    changed |= patch_loadout_container(loadout_val, items);
+                } else {
+                    changed |= patch_loadout_container(elem, items);
+                }
+            }
+            return changed;
+        }
+
+        // 2. Array of integer product IDs: [23, 0, 1565, ...] (standard Rocket League Products array)
+        let is_number_array = arr.iter().all(|e| e.is_number());
+        if is_number_array {
+            for item in items {
+                let target_slot = slot_index_for_item(item);
+                if target_slot < arr.len() {
+                    arr[target_slot] = serde_json::json!(item.product_id);
+                    changed = true;
+                } else if target_slot < 32 {
+                    while arr.len() <= target_slot {
+                        arr.push(serde_json::json!(0));
+                    }
+                    arr[target_slot] = serde_json::json!(item.product_id);
+                    changed = true;
+                }
+            }
+            return changed;
+        }
+
+        // 3. Array of slot entries: [ { "Slot": 0, "ProductID": 23 }, ... ]
+        for item in items {
+            let target_slot = slot_index_for_item(item);
+            let aliases = slot_aliases(target_slot);
+            let mut found = false;
+
+            for elem in arr.iter_mut() {
+                if let Some(slot_val) = elem.get("Slot")
+                    .or_else(|| elem.get("SlotIndex"))
+                    .or_else(|| elem.get("slot"))
+                    .or_else(|| elem.get("SlotIdx"))
+                {
+                    let matches_slot = if let Some(n) = slot_val.as_i64() {
+                        n == target_slot as i64
+                    } else if let Some(s) = slot_val.as_str() {
+                        s.parse::<usize>().map(|n| n == target_slot).unwrap_or_else(|_| {
+                            aliases.iter().any(|alias| s.eq_ignore_ascii_case(alias))
+                        })
+                    } else {
+                        false
+                    };
+
+                    if matches_slot {
+                        update_slot_entry(elem, item);
+                        found = true;
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+
+            if !found {
+                arr.push(new_slot_entry(target_slot, item));
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    if let Some(obj) = val.as_object_mut() {
+        // 1. Recurse into all nested objects, arrays, and stringified JSON (Data, Categories, Objects, SaveData, etc.)
+        for (_, sub_val) in obj.iter_mut() {
+            if sub_val.is_object() || sub_val.is_array() {
+                changed |= patch_loadout_container(sub_val, items);
+            } else if let Some(s) = sub_val.as_str() {
+                let trimmed = s.trim();
+                if (trimmed.starts_with('{') && trimmed.ends_with('}'))
+                    || (trimmed.starts_with('[') && trimmed.ends_with(']'))
+                {
+                    if let Ok(mut inner_val) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                        if patch_loadout_container(&mut inner_val, items) {
+                            if let Ok(new_str) = serde_json::to_string(&inner_val) {
+                                *sub_val = serde_json::json!(new_str);
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        for item in items {
+            let slot_idx = slot_index_for_item(item);
+            let aliases = slot_aliases(slot_idx);
+            let mut key_found = false;
+
+            for alias in aliases {
+                if let Some(field) = obj.get_mut(*alias) {
+                    key_found = true;
+                    if field.is_number() {
+                        *field = serde_json::json!(item.product_id);
+                        changed = true;
+                    } else if let Some(field_obj) = field.as_object_mut() {
+                        field_obj.insert("ProductID".into(), serde_json::json!(item.product_id));
+                        if item.paint_id > 0 {
+                            field_obj.insert("Paint".into(), serde_json::json!(item.paint_id));
+                        }
+                        changed = true;
+                    }
+                }
+            }
+
+            let idx_str = slot_idx.to_string();
+            if let Some(field) = obj.get_mut(&idx_str) {
+                key_found = true;
+                if field.is_number() {
+                    *field = serde_json::json!(item.product_id);
+                    changed = true;
+                } else if let Some(field_obj) = field.as_object_mut() {
+                    field_obj.insert("ProductID".into(), serde_json::json!(item.product_id));
+                    if item.paint_id > 0 {
+                        field_obj.insert("Paint".into(), serde_json::json!(item.paint_id));
+                    }
+                    changed = true;
+                }
+            }
+
+            if !key_found {
+                let has_loadout_markers = obj.keys().any(|k| {
+                    k == "Body" || k == "Wheels" || k == "Boost" || k == "0" || k == "2" || k == "3" || k.ends_with("ProductID")
+                });
+                if has_loadout_markers {
+                    let canonical_name = aliases[0];
+                    obj.insert(canonical_name.to_string(), serde_json::json!(item.product_id));
+                    obj.insert(idx_str, serde_json::json!(item.product_id));
+                    if item.paint_id > 0 {
+                        obj.insert(format!("{canonical_name}Paint"), serde_json::json!(item.paint_id));
+                    }
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    changed
+}
+
+fn patch_loadout_rpc_json(
+    body: &[u8],
+    inventory_spoof: &crate::psynet::InventorySpoofPayload,
+    is_auth_player: bool,
+) -> (Vec<u8>, bool) {
+    if !inventory_spoof.enabled || inventory_spoof.items.is_empty() {
+        return (body.to_vec(), false);
+    }
+    let mut root: serde_json::Value = match serde_json::from_slice(body) {
+        Ok(v) => v,
+        Err(_) => return (body.to_vec(), false),
+    };
+
+    let items_ref: Vec<&crate::psynet::InventorySpoofItemPayload> = inventory_spoof
+        .items
+        .iter()
+        .filter(|it| it.product_id > 0)
+        .collect();
+    if items_ref.is_empty() {
+        return (body.to_vec(), false);
+    }
+
+    let mut changed = false;
+
+    changed |= patch_loadout_container(&mut root, &items_ref);
+    if let Some(res) = root.get_mut("Result") {
+        changed |= patch_loadout_container(res, &items_ref);
+    }
+
+    if is_auth_player {
+        if let Some(obj) = root.as_object_mut() {
+            let loadout_arr: Vec<serde_json::Value> = items_ref.iter().map(|item| {
+                let slot_idx = slot_index_for_item(item);
+                new_slot_entry(slot_idx, item)
+            }).collect();
+
+            if !obj.contains_key("PlayerLoadout") && !obj.contains_key("playerLoadout") {
+                obj.insert("PlayerLoadout".into(), serde_json::json!(loadout_arr));
+                changed = true;
+            }
+            if !obj.contains_key("LoadoutResponse") && !obj.contains_key("loadoutResponse") {
+                obj.insert("LoadoutResponse".into(), serde_json::json!({
+                    "PlayerLoadout": loadout_arr
+                }));
+                changed = true;
+            }
+
+            if let Some(res_obj) = obj.get_mut("Result").and_then(|r| r.as_object_mut()) {
+                if !res_obj.contains_key("PlayerLoadout") && !res_obj.contains_key("playerLoadout") {
+                    res_obj.insert("PlayerLoadout".into(), serde_json::json!(loadout_arr));
+                    changed = true;
+                }
+                if !res_obj.contains_key("LoadoutResponse") && !res_obj.contains_key("loadoutResponse") {
+                    res_obj.insert("LoadoutResponse".into(), serde_json::json!({
+                        "PlayerLoadout": loadout_arr
+                    }));
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    if !changed {
+        return (body.to_vec(), false);
+    }
+
+    let out = serde_json::to_vec(&root).unwrap_or_else(|_| body.to_vec());
+    (out, true)
+}
+
+fn hash_title_str(s: &str) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in s.as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
+}
+
+fn patch_inventory_array(
+    arr: &mut Vec<serde_json::Value>,
+    inventory_spoof: &crate::psynet::InventorySpoofPayload,
+) -> bool {
+    let mut changed = false;
+    let use_string_id = arr
+        .iter()
+        .find_map(|p| p.get("InstanceID").or_else(|| p.get("InstanceId")))
+        .map(|v| v.is_string())
+        .unwrap_or(true);
+
+    // Collect all titles to inject:
+    let mut titles_to_spawn: Vec<String> = inventory_spoof.titles.clone();
+    if let Some(cfg) = crate::psynet::load_active_spoof_from_disk() {
+        let eq = cfg.equip_title_id.trim();
+        if !eq.is_empty() && !titles_to_spawn.iter().any(|t| t.eq_ignore_ascii_case(eq)) {
+            titles_to_spawn.push(eq.to_string());
+        }
+        if let Some(ref swaps) = cfg.swaps {
+            for sw in swaps {
+                let s1 = sw.equip_title_id.trim();
+                if !s1.is_empty() && !titles_to_spawn.iter().any(|t| t.eq_ignore_ascii_case(s1)) {
+                    titles_to_spawn.push(s1.to_string());
+                }
+                let s2 = sw.display_title_id.trim();
+                if !s2.is_empty() && s2 != "custom" && !titles_to_spawn.iter().any(|t| t.eq_ignore_ascii_case(s2)) {
+                    titles_to_spawn.push(s2.to_string());
+                }
+            }
+        }
+    }
+
+    for tid in &titles_to_spawn {
+        let tid_trim = tid.trim();
+        if tid_trim.is_empty() {
+            continue;
+        }
+
+        let already_has = arr.iter().any(|p| {
+            let is_title_prod = p.get("ProductID")
+                .or_else(|| p.get("productId"))
+                .and_then(|v| v.as_i64())
+                == Some(3036);
+            if !is_title_prod {
+                return false;
+            }
+            if let Some(attrs) = p.get("Attributes").or_else(|| p.get("attributes")).and_then(|a| a.as_array()) {
+                attrs.iter().any(|attr| {
+                    let k = attr.get("Key").or_else(|| attr.get("key")).and_then(|v| v.as_str()).unwrap_or("");
+                    let v = attr.get("Value").or_else(|| attr.get("value")).and_then(|v| v.as_str()).unwrap_or("");
+                    (k.eq_ignore_ascii_case("Title")
+                        || k.eq_ignore_ascii_case("TitleId")
+                        || k.eq_ignore_ascii_case("TitleID")
+                        || k.eq_ignore_ascii_case("PlayerTitle")
+                        || k.eq_ignore_ascii_case("PlayerTitleId")
+                        || k.eq_ignore_ascii_case("Name"))
+                        && v.eq_ignore_ascii_case(tid_trim)
+                })
+            } else {
+                false
+            }
+        });
+
+        if !already_has {
+            let h = hash_title_str(tid_trim);
+            let instance_id_num = 998_500_000i64 + ((h % 500_000) as i64);
+            let instance_id_str = instance_id_num.to_string();
+            let instance_val = if use_string_id {
+                serde_json::json!(instance_id_str)
+            } else {
+                serde_json::json!(instance_id_num)
+            };
+
+            arr.push(serde_json::json!({
+                "ProductID": 3036,
+                "productId": 3036,
+                "InstanceID": instance_val.clone(),
+                "ProductInstanceID": instance_val,
+                "SeriesID": 0,
+                "Attributes": [
+                    { "Key": "Title", "Value": tid_trim },
+                    { "Key": "TitleId", "Value": tid_trim },
+                    { "Key": "TitleID", "Value": tid_trim },
+                    { "Key": "PlayerTitle", "Value": tid_trim },
+                    { "Key": "PlayerTitleId", "Value": tid_trim },
+                    { "Key": "Name", "Value": tid_trim }
+                ],
+                "AddedTimestamp": 1755399374i64,
+                "UpdatedTimestamp": 1755399374i64,
+                "TradeHold": -2,
+            }));
+            changed = true;
+        }
+    }
+
+    for item in &inventory_spoof.items {
+        if item.product_id <= 0 {
+            continue;
+        }
+
+        let target_slot = slot_index_for_item(item);
+        let instance_id_num = 998_000_000i64 + (target_slot as i64);
+        let instance_val = if use_string_id {
+            serde_json::json!(instance_id_num.to_string())
+        } else {
+            serde_json::json!(instance_id_num)
+        };
+
+        let mut attributes = Vec::new();
+        if item.paint_id > 0 {
+            attributes.push(serde_json::json!({
+                "Key": "Painted",
+                "Value": item.paint_id
+            }));
+            attributes.push(serde_json::json!({
+                "Key": "Paint",
+                "Value": item.paint_id
+            }));
+        }
+
+        let existing_entry = arr.iter_mut().find(|p| {
+            p.get("ProductID")
+                .or_else(|| p.get("productId"))
+                .or_else(|| p.get("product_id"))
+                .and_then(|id| {
+                    if let Some(n) = id.as_i64() {
+                        Some(n)
+                    } else if let Some(s) = id.as_str() {
+                        s.parse::<i64>().ok()
+                    } else {
+                        None
+                    }
+                })
+                == Some(item.product_id as i64)
+        });
+
+        if let Some(existing) = existing_entry {
+            if let Some(obj) = existing.as_object_mut() {
+                obj.insert("InstanceID".into(), instance_val.clone());
+                obj.insert("ProductInstanceID".into(), instance_val);
+                if item.paint_id > 0 {
+                    obj.insert("Attributes".into(), serde_json::json!(attributes));
+                }
+                changed = true;
+            }
+        } else {
+            let new_prod = serde_json::json!({
+                "ProductID": item.product_id,
+                "productId": item.product_id,
+                "InstanceID": instance_val.clone(),
+                "ProductInstanceID": instance_val,
+                "SeriesID": item.series_id,
+                "Attributes": attributes,
+                "AddedTimestamp": 1755399374i64,
+                "UpdatedTimestamp": 1755399374i64,
+                "TradeHold": -2,
+            });
+
+            arr.push(new_prod);
+            changed = true;
+        }
+    }
+    changed
+}
+
+fn patch_inventory_containers(
+    val: &mut serde_json::Value,
+    inventory_spoof: &crate::psynet::InventorySpoofPayload,
+) -> bool {
+    let mut changed = false;
+
+    if let Some(obj) = val.as_object_mut() {
+        let keys = [
+            "ProductData", "productData", "Products", "products",
+            "ProductList", "Inventory", "Drops", "UnlockedItems", "ReceivedItems",
+        ];
+
+        let mut found_any_key = false;
+        for k in &keys {
+            if let Some(sub_val) = obj.get_mut(*k) {
+                if let Some(arr) = sub_val.as_array_mut() {
+                    found_any_key = true;
+                    changed |= patch_inventory_array(arr, inventory_spoof);
+                }
+            }
+        }
+
+        for rk in &["Result", "result"] {
+            if let Some(res_val) = obj.get_mut(*rk) {
+                changed |= patch_inventory_containers(res_val, inventory_spoof);
+            }
+        }
+
+        // If this object is or contains Result, and no product list was found:
+        // Automatically inject ProductData into it so empty GetLoadoutProducts / GetPlayerProducts responses are populated!
+        if !found_any_key {
+            let is_result_obj = obj.contains_key("ProductData")
+                || obj.contains_key("Products")
+                || obj.contains_key("PlayerID")
+                || obj.contains_key("Loadout");
+
+            if is_result_obj {
+                let mut new_arr = Vec::new();
+                patch_inventory_array(&mut new_arr, inventory_spoof);
+                obj.insert("ProductData".into(), serde_json::json!(new_arr));
+                changed = true;
+            } else if let Some(res_obj) = obj.get_mut("Result").and_then(|r| r.as_object_mut()) {
+                let has_prod = keys.iter().any(|k| res_obj.contains_key(*k));
+                if !has_prod {
+                    let mut new_arr = Vec::new();
+                    patch_inventory_array(&mut new_arr, inventory_spoof);
+                    res_obj.insert("ProductData".into(), serde_json::json!(new_arr));
+                    changed = true;
+                }
+            }
+        }
+    } else if let Some(arr) = val.as_array_mut() {
+        let is_product_array = arr.iter().any(|elem| {
+            elem.get("ProductID").is_some() || elem.get("InstanceID").is_some() || elem.get("productId").is_some()
+        });
+
+        if is_product_array {
+            changed |= patch_inventory_array(arr, inventory_spoof);
+        } else {
+            for elem in arr.iter_mut() {
+                changed |= patch_inventory_containers(elem, inventory_spoof);
+            }
+        }
+    }
+
+    changed
+}
+
+fn patch_player_inventory_json(
+    body: &[u8],
+    inventory_spoof: &crate::psynet::InventorySpoofPayload,
+) -> (Vec<u8>, bool) {
+    let has_titles = !inventory_spoof.titles.is_empty()
+        || crate::psynet::load_active_spoof_from_disk().map(|c| !c.equip_title_id.trim().is_empty()).unwrap_or(false);
+    if !inventory_spoof.enabled || (inventory_spoof.items.is_empty() && !has_titles) {
+        return (body.to_vec(), false);
+    }
+    let mut root: serde_json::Value = match serde_json::from_slice(body) {
+        Ok(v) => v,
+        Err(_) => return (body.to_vec(), false),
+    };
+
+    let changed = patch_inventory_containers(&mut root, inventory_spoof);
 
     if !changed {
         return (body.to_vec(), false);
@@ -3301,6 +4272,9 @@ fn patch_player_wallet_json(
         if let Some(obj) = root.as_object_mut() {
             let mut list = Vec::new();
             patch_currency_array(&mut list, credit_spoof);
+            if let Some(res_obj) = obj.get_mut("Result").and_then(|r| r.as_object_mut()) {
+                res_obj.insert("Currencies".to_string(), serde_json::Value::Array(list.clone()));
+            }
             obj.insert("Currencies".to_string(), serde_json::Value::Array(list));
             changed = true;
         }
@@ -3945,7 +4919,11 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
     let mut any_change = false;
 
     if cfg.enabled {
-        let equip_id = cfg.equip_title_id.trim();
+        let equip_id = if !cfg.equip_title_id.trim().is_empty() {
+            cfg.equip_title_id.trim()
+        } else {
+            "Team_Iraq_World_Cup_2026"
+        };
         let display_id = cfg.display_title_id.trim();
         let mut custom_text = cfg.custom_text.trim();
         if custom_text.is_empty() {
@@ -4932,5 +5910,152 @@ mod tests {
             assert_eq!(c.unwrap()["Amount"], 500000);
         }
     }
+
+    #[test]
+    fn test_patch_loadout_rpc_array() {
+        let body = br#"{"Result":{"PlayerLoadout":[{"Slot":0,"ProductID":23},{"Slot":2,"ProductID":1565}]}}"#;
+        let inv = crate::psynet::InventorySpoofPayload {
+            enabled: true,
+            items: vec![
+                crate::psynet::InventorySpoofItemPayload {
+                    product_id: 4284,
+                    paint_id: 3,
+                    series_id: 0,
+                    slot: "Body".to_string(),
+                    product_name: "Fennec".to_string(),
+                    dlc: false,
+                },
+                crate::psynet::InventorySpoofItemPayload {
+                    product_id: 45,
+                    paint_id: 0,
+                    series_id: 0,
+                    slot: "Boost".to_string(),
+                    product_name: "Gold Rush (Alpha Boost)".to_string(),
+                    dlc: false,
+                },
+            ],
+            titles: vec![],
+        };
+
+        let (patched, changed) = patch_loadout_rpc_json(body, &inv, false);
+        assert!(changed);
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        let loadout = val["Result"]["PlayerLoadout"].as_array().unwrap();
+
+        // Slot 0 (Body) must be updated to 4284 (Fennec) with paint 3
+        let body_slot = loadout.iter().find(|e| e["Slot"] == 0).unwrap();
+        assert_eq!(body_slot["ProductID"], 4284);
+        assert_eq!(body_slot["Paint"], 3);
+
+        // Slot 2 (Wheels) unchanged
+        let wheel_slot = loadout.iter().find(|e| e["Slot"] == 2).unwrap();
+        assert_eq!(wheel_slot["ProductID"], 1565);
+
+        // Slot 3 (Boost) appended with 45 (Gold Rush)
+        let boost_slot = loadout.iter().find(|e| e["Slot"] == 3).unwrap();
+        assert_eq!(boost_slot["ProductID"], 45);
+    }
+
+    #[test]
+    fn test_patch_loadout_rpc_object() {
+        let body = br#"{"PlayerLoadout":{"Body":23,"Wheels":1565}}"#;
+        let inv = crate::psynet::InventorySpoofPayload {
+            enabled: true,
+            items: vec![crate::psynet::InventorySpoofItemPayload {
+                product_id: 4284,
+                paint_id: 1,
+                series_id: 0,
+                slot: "Body".to_string(),
+                product_name: "Fennec".to_string(),
+                dlc: false,
+            }],
+            titles: vec![],
+        };
+
+        let (patched, changed) = patch_loadout_rpc_json(body, &inv, false);
+        assert!(changed);
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        assert_eq!(val["PlayerLoadout"]["Body"], 4284);
+        assert_eq!(val["PlayerLoadout"]["Wheels"], 1565);
+    }
+
+    #[test]
+    fn test_patch_loadout_rpc_authplayer() {
+        let body = br#"{"SessionID":"7196cb8e","PsyToken":"token123"}"#;
+        let inv = crate::psynet::InventorySpoofPayload {
+            enabled: true,
+            items: vec![crate::psynet::InventorySpoofItemPayload {
+                product_id: 4284,
+                paint_id: 3,
+                series_id: 0,
+                slot: "Body".to_string(),
+                product_name: "Fennec".to_string(),
+                dlc: false,
+            }],
+            titles: vec![],
+        };
+
+        let (patched, changed) = patch_loadout_rpc_json(body, &inv, true);
+        assert!(changed);
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        assert!(val.get("PlayerLoadout").is_some());
+        assert!(val.get("LoadoutResponse").is_some());
+        let pl = val["PlayerLoadout"].as_array().unwrap();
+        let body_slot = pl.iter().find(|e| e["Slot"] == 0).unwrap();
+        assert_eq!(body_slot["ProductID"], 4284);
+        assert_eq!(body_slot["Paint"], 3);
+    }
+
+    #[test]
+    fn test_patch_player_inventory_product_data() {
+        let body = br#"{"Result":{"ProductData":[{"ProductID":2363,"InstanceID":"123456","Attributes":[],"SeriesID":19}]}}"#;
+        let inv = crate::psynet::InventorySpoofPayload {
+            enabled: true,
+            items: vec![crate::psynet::InventorySpoofItemPayload {
+                product_id: 4284,
+                paint_id: 12,
+                series_id: 0,
+                slot: "Body".to_string(),
+                product_name: "Fennec".to_string(),
+                dlc: false,
+            }],
+            titles: vec![],
+        };
+
+        let (patched, changed) = patch_player_inventory_json(body, &inv);
+        assert!(changed);
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        let prod_arr = val["Result"]["ProductData"].as_array().unwrap();
+        assert!(prod_arr.len() >= 2);
+        let fennec = prod_arr.iter().find(|p| p["ProductID"] == 4284).unwrap();
+        assert!(fennec["InstanceID"].is_string());
+        let attrs = fennec["Attributes"].as_array().unwrap();
+        assert!(attrs.iter().any(|a| a["Key"] == "Painted" && a["Value"] == 12));
+    }
+
+    #[test]
+    fn test_patch_player_inventory_empty_result() {
+        let body = br#"{"Result":{"ProductData":[]}}"#;
+        let inv = crate::psynet::InventorySpoofPayload {
+            enabled: true,
+            items: vec![crate::psynet::InventorySpoofItemPayload {
+                product_id: 4284,
+                paint_id: 0,
+                series_id: 0,
+                slot: "Body".to_string(),
+                product_name: "Fennec".to_string(),
+                dlc: false,
+            }],
+            titles: vec![],
+        };
+
+        let (patched, changed) = patch_player_inventory_json(body, &inv);
+        assert!(changed);
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        let prod_arr = val["Result"]["ProductData"].as_array().unwrap();
+        assert!(prod_arr.len() >= 1);
+        assert!(prod_arr.iter().any(|p| p["ProductID"] == 4284));
+    }
 }
+
 

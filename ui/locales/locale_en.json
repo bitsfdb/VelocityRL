@@ -1,6 +1,8 @@
 {
     "nav": {
-        "swapper": "Swapper",
+        "swapper": "Items",
+        "items": "Items",
+        "spawner": "Spawner",
         "titles": "Titles",
         "customization": "Customization",
         "ranks": "Fake Ranks",
@@ -38,15 +40,23 @@
         "paint_finishes": "Paint Finishes",
         "engine_audio": "Engine Audio"
     },
+    "spawner": {
+        "title": "Item Spawner",
+        "desc": "Spawn any cosmetic or car body directly into your client loadout and network inventory.",
+        "search_title": "Search & Select Item",
+        "search_placeholder": "Search items to spawn...",
+        "no_item_selected": "No item selected",
+        "spawn_btn": "Spawn Item",
+        "active_title": "Active Spawned Items",
+        "clear_all": "Clear All",
+        "empty_spawned": "No items spawned yet."
+    },
     "swapper": {
         "owned_item": "Owned Item",
         "target_asset": "Target Asset",
         "search_owned": "Search your items...",
         "search_target": "Search target assets...",
         "no_item_selected": "No item selected",
-        "paint": "Paint",
-        "coming_soon": "None",
-        "paint_hint": "Select a paint color to apply to the target item.",
         "swap_btn": "Swap Items",
         "rl_running_hint": "Rocket League is running — close it before swapping or restoring."
     },

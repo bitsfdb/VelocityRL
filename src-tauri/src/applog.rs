@@ -461,3 +461,64 @@ pub fn open_log_folder(app: AppHandle) -> Result<(), String> {
         Ok(())
     }
 }
+
+// =============================================================================
+// Traffic Debug Logger
+// =============================================================================
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static TRAFFIC_DEBUG_ENABLED: AtomicBool = AtomicBool::new(true);
+
+pub fn set_traffic_debug(enabled: bool) {
+    TRAFFIC_DEBUG_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
+pub fn is_traffic_debug() -> bool {
+    TRAFFIC_DEBUG_ENABLED.load(Ordering::Relaxed)
+}
+
+/// Write a line to traffic_debug.log.  Designed to be called at high frequency
+/// from the proxy hot-path, so it silently drops on any IO error.
+pub fn traffic_debug(message: &str) {
+    if !TRAFFIC_DEBUG_ENABLED.load(Ordering::Relaxed) {
+        return;
+    }
+    let line = format!("[{}] {}", now_stamp(), message);
+    if let Ok(guard) = LOG_DIR.lock() {
+        if let Some(ref dir) = *guard {
+            let path = dir.join("traffic_debug.log");
+            append_raw(&path, &line);
+        }
+    }
+}
+
+/// Return the absolute path to the traffic debug log file (or None if logging
+/// hasn't been initialised yet).
+pub fn traffic_debug_path() -> Option<String> {
+    if let Ok(guard) = LOG_DIR.lock() {
+        if let Some(ref dir) = *guard {
+            return Some(dir.join("traffic_debug.log").to_string_lossy().to_string());
+        }
+    }
+    None
+}
+
+/// Truncate/reset the traffic debug log for a fresh capture session.
+pub fn reset_traffic_debug() {
+    if let Ok(guard) = LOG_DIR.lock() {
+        if let Some(ref dir) = *guard {
+            let path = dir.join("traffic_debug.log");
+            let _ = fs::write(&path, format!("=== NetRL Traffic Debug - Started {} ===\n", now_stamp()));
+        }
+    }
+}
+
+/// Helper: produce a truncated body snippet for logging (max 800 chars).
+pub fn body_snippet(body: &[u8], max_len: usize) -> String {
+    let s = String::from_utf8_lossy(body);
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...[truncated, total {} bytes]", &s[..max_len], body.len())
+    }
+}

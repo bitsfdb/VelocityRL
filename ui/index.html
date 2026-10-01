@@ -14,7 +14,8 @@
         </div>
 
         <nav class="nav-links">
-            <div class="nav-item active" data-tab="swapper-tab" data-i18n="nav.swapper">Swapper</div>
+            <div class="nav-item active" data-tab="swapper-tab" data-i18n="nav.items">Items</div>
+            <div class="nav-item" data-tab="spawner-tab" data-i18n="nav.spawner">Spawner</div>
             <div class="nav-item" data-tab="titles-tab" data-i18n="nav.titles">Titles</div>
             <div class="nav-item" data-tab="customization-tab" data-i18n="nav.customization">Customization</div>
             <div class="nav-item" data-tab="ranks-tab" data-i18n="nav.ranks">Fake Ranks</div>
@@ -153,6 +154,69 @@
                         <div id="preset-history-list" class="backup-list" style="max-height:260px; overflow:auto;"></div>
                         <div class="swapper-controls" style="margin-top:8px;">
                             <button id="preset-history-clear" class="action-btn action-btn-secondary" type="button" data-i18n="presets.clear_history">Clear history</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB: SPAWNER -->
+            <div id="spawner-tab" class="tab-content">
+                <h2 class="section-title" data-i18n="spawner.title">Item Spawner</h2>
+                <p class="section-desc" data-i18n="spawner.desc">Spawn any cosmetic or car body directly into your client loadout and network inventory.</p>
+
+                <div class="category-strip" id="spawner-category-strip">
+                    <button class="cat-btn active" data-slot="All" data-i18n="categories.all">All Items</button>
+                    <button class="cat-btn" data-slot="Body" data-i18n="categories.bodies">Bodies</button>
+                    <button class="cat-btn" data-slot="Decal" data-i18n="categories.decals">Decals</button>
+                    <button class="cat-btn" data-slot="Wheels" data-i18n="categories.wheels">Wheels</button>
+                    <button class="cat-btn" data-slot="Rocket Boost" data-i18n="categories.boosts">Boosts</button>
+                    <button class="cat-btn" data-slot="Trail" data-i18n="categories.trails">Trails</button>
+                    <button class="cat-btn" data-slot="Goal Explosion" data-i18n="categories.explosions">Goal Explosions</button>
+                    <button class="cat-btn" data-slot="Player Banner" data-i18n="categories.banners">Player Banners</button>
+                    <button class="cat-btn" data-slot="Avatar Border" data-i18n="categories.borders">Avatar Borders</button>
+                    <button class="cat-btn" data-slot="Antenna" data-i18n="categories.antennas">Antennas</button>
+                    <button class="cat-btn" data-slot="Topper" data-i18n="categories.toppers">Toppers</button>
+                    <button class="cat-btn" data-slot="Engine Audio" data-i18n="categories.engine_audio">Engine Audio</button>
+                    <button class="cat-btn" data-slot="Paint Finish" data-i18n="categories.paint_finishes">Paint Finishes</button>
+                </div>
+
+                <div class="swapper-grid" style="margin-top: 12px;">
+                    <div class="card">
+                        <h3 data-i18n="spawner.search_title">Search & Select Item</h3>
+                        <div class="search-box">
+                            <input type="text" id="spawner-search" data-i18n-placeholder="spawner.search_placeholder" placeholder="Search items to spawn..." autocomplete="off">
+                            <div id="spawner-results" class="search-flyout"></div>
+                        </div>
+
+                        <div class="tags-row" style="display:flex; flex-wrap:wrap; gap:6px; margin: 10px 0 12px 0;">
+                            <button type="button" class="tag-btn action-btn-secondary" data-tag="Fennec" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Fennec</button>
+                            <button type="button" class="tag-btn action-btn-secondary" data-tag="Octane" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Octane</button>
+                            <button type="button" class="tag-btn action-btn-secondary" data-tag="Dominus" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Dominus</button>
+                            <button type="button" class="tag-btn action-btn-secondary" data-tag="GoldRush" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Alpha Boost</button>
+                            <button type="button" class="tag-btn action-btn-secondary" data-tag="Zomba" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Zomba</button>
+                            <button type="button" class="tag-btn action-btn-secondary" data-tag="Reaper" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Reaper</button>
+                            <button type="button" class="tag-btn action-btn-secondary" data-tag="Dieci" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Dieci</button>
+                            <button type="button" class="tag-btn action-btn-secondary" data-tag="Apex" style="padding:3px 8px; font-size:11px; border-radius:4px; cursor:pointer;">Apex</button>
+                        </div>
+
+                        <div id="spawner-selected" class="item-selected-view">
+                            <div class="empty-state">
+                                <p data-i18n="spawner.no_item_selected">No item selected</p>
+                            </div>
+                        </div>
+
+                        <div style="margin-top: 12px; display:flex; gap:10px;">
+                            <button id="btn-spawn-item" class="action-btn" disabled data-i18n="spawner.spawn_btn">Spawn Item</button>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
+                            <h3 style="margin:0;" data-i18n="spawner.active_title">Active Spawned Items</h3>
+                            <button id="btn-clear-spawned" class="action-btn action-btn-secondary" style="padding:3px 10px; font-size:11px;" data-i18n="spawner.clear_all">Clear All</button>
+                        </div>
+                        <div id="spawner-active-list" class="backup-list" style="max-height: 380px; overflow-y: auto;">
+                            <div class="backup-empty" data-i18n="spawner.empty_spawned">No items spawned yet.</div>
                         </div>
                     </div>
                 </div>
@@ -757,15 +821,15 @@
                 <label data-i18n="settings.language">Language</label>
                 <div class="path-input-wrap">
                     <select id="app-language" style="width:100%; background:var(--input-bg); color:var(--text); border:1px solid var(--border); border-radius:6px; padding:8px 10px; font-size:13px; font-family:inherit; outline:none; cursor:pointer;">
-                        <option value="en">English</option>
-                        <option value="es">Español</option>
-                        <option value="fr">Français</option>
-                        <option value="de">Deutsch</option>
-                        <option value="pt">Português</option>
-                        <option value="it">Italiano</option>
-                        <option value="nl">Nederlands</option>
-                        <option value="tr">Türkçe</option>
-                        <option value="ru">Русский</option>
+                        <option value="en">English (100%)</option>
+                        <option value="es">Español (85%)</option>
+                        <option value="fr">Français (85%)</option>
+                        <option value="de">Deutsch (80%)</option>
+                        <option value="pt">Português (80%)</option>
+                        <option value="it">Italiano (75%)</option>
+                        <option value="nl">Nederlands (75%)</option>
+                        <option value="tr">Türkçe (70%)</option>
+                        <option value="ru">Русский (70%)</option>
                     </select>
                 </div>
             </div>
@@ -918,21 +982,6 @@
             <p id="dev-action-msg" style="font-size:11px;color:var(--text-secondary);margin:6px 0 0;min-height:14px;user-select:text;-webkit-user-select:text;word-break:break-all;white-space:pre-wrap;cursor:text;"></p>
             <p style="font-size:11px;color:var(--text-secondary);margin:8px 0 4px;font-weight:600;">Log Output</p>
             <div class="dev-log-output" id="dev-log-output">Loading logs...</div>
-        </div>
-    </div>
-
-    <div id="paint-notice-modal" class="modal-overlay" role="dialog" aria-modal="true">
-        <div class="modal" style="max-width: 320px; padding: 16px 18px; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-                <strong style="font-size: 13px; font-weight: 600; color: var(--text);">Car Paint Notice</strong>
-                <button id="paint-notice-cancel" type="button" class="action-btn action-btn-secondary" style="padding: 2px 7px; font-size: 11px; line-height: 1;" title="Dismiss">✕</button>
-            </div>
-            <p style="font-size: 12px; color: var(--muted); line-height: 1.45; margin-bottom: 14px;">
-                Painted trims only display when <strong>No Decal</strong> is equipped in your Rocket League preset.
-            </p>
-            <div style="display: flex; justify-content: flex-end;">
-                <button id="paint-notice-proceed" class="action-btn" style="padding: 5px 14px; font-size: 12px; background: var(--accent-blue); color: #fff;">Proceed</button>
-            </div>
         </div>
     </div>
 

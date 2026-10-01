@@ -819,6 +819,16 @@ pub async fn import_local_zip(app: AppHandle, zip_path: &Path) -> Result<CustomM
 }
 
 #[tauri::command]
+pub async fn workshop_import_local_zip(app: AppHandle, zip_path: String) -> Result<CustomMapEntry, String> {
+    import_local_zip(app, Path::new(&zip_path)).await
+}
+
+#[tauri::command]
+pub async fn workshop_restore_original_map(app: AppHandle) -> Result<(), String> {
+    workshop_restore(app).await
+}
+
+#[tauri::command]
 pub async fn workshop_import_bakkes_zip(app: AppHandle, zip_url: String) -> Result<CustomMapEntry, String> {
     let url = zip_url.trim().to_string();
     let parsed_url = tauri::Url::parse(&url).map_err(|_| "Invalid download URL format.".to_string())?;

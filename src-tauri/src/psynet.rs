@@ -145,6 +145,8 @@ pub struct InventorySpoofItemPayload {
     pub series_id: i32,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub slot: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub product_name: String,
     #[serde(default)]
     pub dlc: bool,
 }
@@ -155,6 +157,8 @@ pub struct InventorySpoofPayload {
     pub enabled: bool,
     #[serde(default)]
     pub items: Vec<InventorySpoofItemPayload>,
+    #[serde(default)]
+    pub titles: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -322,7 +326,7 @@ pub struct SpoofPayload {
 
     #[serde(default)]
     pub palette_spoof: Option<PaletteSpoofPayload>,
-    #[serde(default, skip_serializing)]
+    #[serde(default)]
     pub inventory_spoof: Option<InventorySpoofPayload>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title_color: Option<TitleColorPayload>,
@@ -721,7 +725,17 @@ fn write_spoof(dir: &Path, payload: &SpoofPayload) -> Result<PathBuf, String> {
         obj.insert("method".into(), serde_json::json!(method));
 
         obj.remove("observe_only");
-        obj.remove("inventory_spoof");
+        if let Some(inv) = &payload.inventory_spoof {
+            obj.insert(
+                "inventory_spoof".into(),
+                serde_json::to_value(inv).unwrap_or(serde_json::json!({
+                    "enabled": false,
+                    "items": []
+                })),
+            );
+        } else {
+            obj.remove("inventory_spoof");
+        }
         obj.remove("ping_spoof");
         if !payload.custom_name.is_empty() {
             obj.insert("custom_name".into(), serde_json::json!(payload.custom_name));
@@ -801,6 +815,7 @@ fn write_spoof(dir: &Path, payload: &SpoofPayload) -> Result<PathBuf, String> {
                 serde_json::json!({
                     "enabled": cs.enabled,
                     "amount": cs.amount,
+                    "tournament_amount": cs.tournament_amount,
                 }),
             );
         }
@@ -2733,11 +2748,8 @@ pub async fn start_psynet_proxy(
 
     if let Err(e) = ensure_config_hosts() {
         crate::applog::event(&format!(
-            "psynet: hosts/CA setup failed after listen — stopping proxy: {e}"
+            "psynet: hosts/CA setup warning after listen: {e}"
         ));
-        crate::proxy::stop_native_proxy(true);
-        let _ = revert_config_hosts();
-        return Err(e);
     }
 
     *state.running.lock().map_err(|e| e.to_string())? = true;
@@ -2913,10 +2925,7 @@ pub async fn restart_psynet_proxy(
     }
 
     if let Err(e) = ensure_config_hosts() {
-        crate::applog::event(&format!("psynet: restart hosts failed: {e}"));
-        crate::proxy::stop_native_proxy(true);
-        let _ = revert_config_hosts();
-        return Err(e);
+        crate::applog::event(&format!("psynet: restart hosts warning: {e}"));
     }
 
     *state.running.lock().map_err(|e| e.to_string())? = true;
@@ -3132,5 +3141,167 @@ exit 0
     {
         Ok("Not applicable on this platform.".into())
     }
+}
+
+#[tauri::command]
+pub async fn get_network_spawned_items() -> Result<Vec<InventorySpoofItemPayload>, String> {
+    let cfg = load_active_spoof_from_disk();
+    let items = cfg
+        .and_then(|c| c.inventory_spoof)
+        .map(|inv| inv.items)
+        .unwrap_or_default();
+    Ok(items)
+}
+
+#[tauri::command]
+pub async fn set_network_spawn_enabled(enabled: bool) -> Result<bool, String> {
+    let dir = config_dir();
+    let mut cfg = read_or_default_spoof(&dir).unwrap_or_else(|_| default_spoof_payload());
+    let mut inv = cfg.inventory_spoof.unwrap_or_default();
+    inv.enabled = enabled;
+    cfg.inventory_spoof = Some(inv);
+    let _ = write_spoof(&dir, &cfg)?;
+    crate::proxy::set_spoof_config(cfg).await;
+    Ok(enabled)
+}
+
+#[tauri::command]
+pub async fn add_network_spawned_item(
+    product_id: i32,
+    paint_id: i32,
+    slot: String,
+    product_name: String,
+) -> Result<Vec<InventorySpoofItemPayload>, String> {
+    let dir = config_dir();
+    let mut cfg = read_or_default_spoof(&dir).unwrap_or_else(|_| default_spoof_payload());
+    let mut inv = cfg.inventory_spoof.unwrap_or_default();
+    inv.enabled = true;
+    let norm_slot = slot.trim().to_ascii_lowercase();
+    if !norm_slot.is_empty() {
+        inv.items.retain(|i| i.slot.trim().to_ascii_lowercase() != norm_slot && !(i.product_id == product_id && i.paint_id == paint_id));
+    } else {
+        inv.items.retain(|i| !(i.product_id == product_id && i.paint_id == paint_id));
+    }
+    inv.items.push(InventorySpoofItemPayload {
+        product_id,
+        paint_id,
+        series_id: 0,
+        slot,
+        product_name,
+        dlc: false,
+    });
+    cfg.inventory_spoof = Some(inv.clone());
+    let _ = write_spoof(&dir, &cfg)?;
+    crate::proxy::set_spoof_config(cfg).await;
+    Ok(inv.items)
+}
+
+#[tauri::command]
+pub async fn remove_network_spawned_item(
+    product_id: i32,
+    paint_id: i32,
+) -> Result<Vec<InventorySpoofItemPayload>, String> {
+    let dir = config_dir();
+    let mut cfg = read_or_default_spoof(&dir).unwrap_or_else(|_| default_spoof_payload());
+    let mut inv = cfg.inventory_spoof.unwrap_or_default();
+    inv.items.retain(|i| !(i.product_id == product_id && i.paint_id == paint_id));
+    cfg.inventory_spoof = Some(inv.clone());
+    let _ = write_spoof(&dir, &cfg)?;
+    crate::proxy::set_spoof_config(cfg).await;
+    Ok(inv.items)
+}
+
+#[tauri::command]
+pub async fn clear_network_spawned_items() -> Result<(), String> {
+    let dir = config_dir();
+    let mut cfg = read_or_default_spoof(&dir).unwrap_or_else(|_| default_spoof_payload());
+    let mut inv = cfg.inventory_spoof.unwrap_or_default();
+    inv.items.clear();
+    cfg.inventory_spoof = Some(inv);
+    let _ = write_spoof(&dir, &cfg)?;
+    crate::proxy::set_spoof_config(cfg).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn add_network_spawned_title(title_id: String) -> Result<Vec<String>, String> {
+    let dir = config_dir();
+    let mut cfg = read_or_default_spoof(&dir).unwrap_or_else(|_| default_spoof_payload());
+    let mut inv = cfg.inventory_spoof.unwrap_or_default();
+    inv.enabled = true;
+    let tid = title_id.trim().to_string();
+    if !tid.is_empty() && !inv.titles.iter().any(|t| t.eq_ignore_ascii_case(&tid)) {
+        inv.titles.push(tid);
+    }
+    cfg.inventory_spoof = Some(inv.clone());
+    let _ = write_spoof(&dir, &cfg)?;
+    crate::proxy::set_spoof_config(cfg).await;
+    Ok(inv.titles)
+}
+
+#[tauri::command]
+pub async fn remove_network_spawned_title(title_id: String) -> Result<Vec<String>, String> {
+    let dir = config_dir();
+    let mut cfg = read_or_default_spoof(&dir).unwrap_or_else(|_| default_spoof_payload());
+    let mut inv = cfg.inventory_spoof.unwrap_or_default();
+    let tid = title_id.trim();
+    inv.titles.retain(|t| !t.eq_ignore_ascii_case(tid));
+    cfg.inventory_spoof = Some(inv.clone());
+    let _ = write_spoof(&dir, &cfg)?;
+    crate::proxy::set_spoof_config(cfg).await;
+    Ok(inv.titles)
+}
+
+#[tauri::command]
+pub async fn clear_network_spawned_titles() -> Result<(), String> {
+    let dir = config_dir();
+    let mut cfg = read_or_default_spoof(&dir).unwrap_or_else(|_| default_spoof_payload());
+    let mut inv = cfg.inventory_spoof.unwrap_or_default();
+    inv.titles.clear();
+    cfg.inventory_spoof = Some(inv);
+    let _ = write_spoof(&dir, &cfg)?;
+    crate::proxy::set_spoof_config(cfg).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_network_spawned_titles() -> Result<Vec<String>, String> {
+    let dir = config_dir();
+    let cfg = read_or_default_spoof(&dir).unwrap_or_else(|_| default_spoof_payload());
+    Ok(cfg.inventory_spoof.map(|i| i.titles).unwrap_or_default())
+}
+
+// =============================================================================
+// Traffic Debug Commands
+// =============================================================================
+
+#[tauri::command]
+pub async fn start_traffic_debug() -> Result<String, String> {
+    crate::applog::reset_traffic_debug();
+    crate::applog::set_traffic_debug(true);
+    crate::applog::event("traffic_debug: capture STARTED");
+    Ok(crate::applog::traffic_debug_path().unwrap_or_else(|| "unknown".into()))
+}
+
+#[tauri::command]
+pub async fn stop_traffic_debug() -> Result<String, String> {
+    crate::applog::set_traffic_debug(false);
+    crate::applog::event("traffic_debug: capture STOPPED");
+    Ok(crate::applog::traffic_debug_path().unwrap_or_else(|| "unknown".into()))
+}
+
+#[tauri::command]
+pub async fn get_traffic_debug_log() -> Result<String, String> {
+    let path = crate::applog::traffic_debug_path()
+        .ok_or_else(|| "Log directory not initialised".to_string())?;
+    let contents = std::fs::read_to_string(&path)
+        .unwrap_or_else(|_| "(empty — no traffic captured yet)".to_string());
+    Ok(contents)
+}
+
+#[tauri::command]
+pub async fn get_traffic_debug_path() -> Result<String, String> {
+    crate::applog::traffic_debug_path()
+        .ok_or_else(|| "Log directory not initialised".to_string())
 }
 

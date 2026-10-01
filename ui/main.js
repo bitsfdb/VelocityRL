@@ -100,6 +100,7 @@ let swapBusy = false;
 
 let currentLanguage = 'en';
 let localeData = {};
+let defaultLocaleData = null;
 
 async function loadLocale(lang) {
     try {
@@ -119,7 +120,10 @@ function getNestedTranslation(obj, path) {
 }
 
 function t(key, fallback = '') {
-    const val = getNestedTranslation(localeData, key);
+    let val = getNestedTranslation(localeData, key);
+    if ((val === null || val === undefined || val === '') && defaultLocaleData) {
+        val = getNestedTranslation(defaultLocaleData, key);
+    }
     return val !== null && val !== undefined ? val : fallback;
 }
 
@@ -129,6 +133,9 @@ async function setAppLanguage(lang) {
         lang = 'en';
     }
     currentLanguage = lang;
+    if (!defaultLocaleData) {
+        defaultLocaleData = await loadLocale('en');
+    }
     const loaded = await loadLocale(lang);
     if (loaded) {
         localeData = loaded;
@@ -139,7 +146,10 @@ async function setAppLanguage(lang) {
 
     document.querySelectorAll('[data-i18n]').forEach(el => {
         const key = el.getAttribute('data-i18n');
-        const translation = getNestedTranslation(localeData, key);
+        let translation = getNestedTranslation(localeData, key);
+        if ((!translation || translation === '') && defaultLocaleData) {
+            translation = getNestedTranslation(defaultLocaleData, key);
+        }
         if (translation) {
             el.textContent = translation;
         }
@@ -147,7 +157,10 @@ async function setAppLanguage(lang) {
 
     document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
         const key = el.getAttribute('data-i18n-placeholder');
-        const translation = getNestedTranslation(localeData, key);
+        let translation = getNestedTranslation(localeData, key);
+        if ((!translation || translation === '') && defaultLocaleData) {
+            translation = getNestedTranslation(defaultLocaleData, key);
+        }
         if (translation) {
             el.setAttribute('placeholder', translation);
         }
@@ -526,63 +539,16 @@ function renderSelectedItem(container, item, onClear) {
     if (!container) return;
     if (!item) {
         container.innerHTML = emptyStateHtml();
+        container.classList.remove('selected');
         return;
     }
-    const isTarget = container.id === 'wanted-selected';
     const pName = item?.Product || item?.product || 'Unknown';
     const pQuality = item?.Quality || item?.quality || 'Common';
     const pSlot = item?.Slot || item?.slot || '';
-    const pId = item?.ID ?? item?.id;
     const pImg = item?.image_url || item?.src || '';
     const bgClass = getQualityBgClass(pQuality);
     const decalBody = getItemDecalBody(item);
     const decalBadge = decalBody ? `<span class="quality-badge" style="background:rgba(91,140,255,0.18);color:#93c5fd;border:1px solid rgba(91,140,255,0.35);">${escHtml(decalBody)} Decal</span>` : '';
-
-    const isPaintable = isTarget && itemIsPaintable(item);
-    if (!isTarget) {
-        ownedPaintId = '0';
-    } else if (!isPaintable) {
-        wantedPaintId = '0';
-    }
-    const currentPaintId = Number((isTarget ? wantedPaintId : 0) || 0);
-
-    const itemPaintsList = Array.isArray(item.Paints) && item.Paints.length > 0 
-        ? item.Paints 
-        : (Array.isArray(item.paints) && item.paints.length > 0 ? item.paints : null);
-
-    let displayPaints = [{ id: 0, name: 'None' }];
-    if (itemPaintsList) {
-        for (const p of itemPaintsList) {
-            const pid = Number(p.id ?? p.ID);
-            const pname = p.label || p.Label || p.name || p.Name || paintLabel(pid);
-            if (pid > 0 && !displayPaints.some(dp => dp.id === pid)) {
-                displayPaints.push({ id: pid, name: pname });
-            }
-        }
-    } else if (isPaintable) {
-        for (const [pid, pname] of Object.entries(PAINT_NAMES)) {
-            const numId = Number(pid);
-            if (numId > 0) {
-                displayPaints.push({ id: numId, name: pname });
-            }
-        }
-    }
-
-    const paintChipsHtml = isPaintable ? `
-        <div class="card-paint-chips-wrap">
-            <div class="card-paint-chips-scroll">
-                ${displayPaints.map(p => `
-                    <button type="button" 
-                            class="paint-chip-pill ${p.id === currentPaintId ? 'is-active' : ''}" 
-                            data-paint="${p.id}"
-                            title="${escHtml(p.name)}"
-                            style="color:${getPaintTextColor(p.id)};">
-                        ${escHtml(p.name)}
-                    </button>
-                `).join('')}
-            </div>
-        </div>
-    ` : '';
 
     const clearBtnHtml = `
         <button type="button" class="card-clear-btn" title="Clear selection" aria-label="Clear selection">
@@ -593,8 +559,6 @@ function renderSelectedItem(container, item, onClear) {
         </button>
     `;
 
-    const activeBadgeContent = renderPaintBadgeHtml(currentPaintId);
-
     container.innerHTML = `
         ${clearBtnHtml}
         ${pImg ? `<img src="${escHtml(pImg)}" class="selected-img" />` : ''}
@@ -602,40 +566,15 @@ function renderSelectedItem(container, item, onClear) {
         <div style="display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;margin:4px 0;">
             <span class="quality-badge ${bgClass}">${escHtml(pQuality)}</span>
             ${decalBadge}
-            ${isPaintable ? `<div class="selected-paint-badge-wrap">${activeBadgeContent}</div>` : ''}
         </div>
         <p class="item-slot-label">${escHtml(pSlot)}${decalBody ? ` (${escHtml(decalBody)})` : ''}</p>
-        ${paintChipsHtml}
     `;
 
     const clearBtn = container.querySelector('.card-clear-btn');
     if (clearBtn && typeof onClear === 'function') {
         clearBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            if (isTarget) {
-                wantedPaintId = '0';
-            } else {
-                ownedPaintId = '0';
-            }
             onClear();
-        });
-    }
-
-    if (isPaintable && isTarget) {
-        container.querySelectorAll('.paint-chip-pill[data-paint]').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const pid = btn.dataset.paint;
-                wantedPaintId = pid;
-                container.querySelectorAll('.paint-chip-pill').forEach(b => {
-                    b.classList.toggle('is-active', b.dataset.paint === pid);
-                });
-                const badgeWrap = container.querySelector('.selected-paint-badge-wrap');
-                if (badgeWrap) {
-                    badgeWrap.innerHTML = renderPaintBadgeHtml(Number(pid));
-                }
-                validateSwapInputs();
-            });
         });
     }
 
@@ -699,6 +638,7 @@ async function init() {
             btn.classList.add('active');
             document.getElementById(btn.dataset.tab).classList.add('active');
             if (btn.dataset.tab === 'swapper-tab') { refreshSwapRlHint(); checkMigrationPopup(); }
+            if (btn.dataset.tab === 'spawner-tab') initItemSpawner();
             if (btn.dataset.tab === 'titles-tab') initTitlesTab();
             if (btn.dataset.tab === 'customization-tab' || btn.dataset.tab === 'names-tab') initCustomizationTab();
             if (btn.dataset.tab === 'ranks-tab') initRanksTab();
@@ -744,19 +684,6 @@ async function init() {
     });
 
     applyBtn.onclick = handleApply;
-    const paintModal = document.getElementById('paint-notice-modal');
-    if (paintModal) {
-        document.getElementById('paint-notice-cancel').onclick = () => {
-            paintModal.classList.remove('active');
-        };
-        paintModal.onclick = (e) => {
-            if (e.target === paintModal) paintModal.classList.remove('active');
-        };
-        document.getElementById('paint-notice-proceed').onclick = () => {
-            paintModal.classList.remove('active');
-            executeApply();
-        };
-    }
     const migrationModal = document.getElementById('migration-modal');
     if (migrationModal) {
         document.getElementById('migration-modal-ok').onclick = () => migrationModal.classList.remove('active');
@@ -2417,15 +2344,6 @@ async function handleApply() {
         showToast('Select an owned item and a target asset first.', 'error');
         return;
     }
-    const isCarBody = normSlot(ownedItem?.Slot || ownedItem?.slot) === 'body' || normSlot(wantedItem?.Slot || wantedItem?.slot) === 'body';
-    const isPaintedCar = isCarBody && ((wantedPaintId && wantedPaintId !== '0') || (ownedPaintId && ownedPaintId !== '0'));
-    if (isPaintedCar) {
-        const paintModal = document.getElementById('paint-notice-modal');
-        if (paintModal) {
-            paintModal.classList.add('active');
-            return;
-        }
-    }
     executeApply();
 }
 
@@ -2446,14 +2364,12 @@ async function executeApply() {
         interval = setInterval(() => { if (p < 85) p += 5; showProgress(true, p); }, 400);
         const ownedId = (ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id).toString();
         const wantedId = (wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id).toString();
-        const activeOwnedPaintId = Number(ownedPaintId || 0);
-        let paintId = itemIsPaintable(wantedItem) ? Number(wantedPaintId || 0) : 0;
         const swapResult = await invoke('apply_swap', {
             ownedId,
             wantedId,
             ownedPaintId: null,
             ownedCustomHex: null,
-            paintId,
+            paintId: 0,
             customPaintHex: null,
         });
         clearInterval(interval);
@@ -2462,8 +2378,7 @@ async function executeApply() {
         updateStatus('Swap Complete', false);
         const ownedName = ownedItem?.product || ownedItem?.Product || 'item';
         const wantedName = wantedItem?.product || wantedItem?.Product || 'item';
-        const paintBit = paintId > 0 ? ` (${escHtml(paintLabel(paintId))})` : '';
-        showToast(`Swapped <strong>${escHtml(ownedName)}</strong> → <strong>${escHtml(wantedName)}</strong>${paintBit}`, 'success');
+        showToast(`Swapped <strong>${escHtml(ownedName)}</strong> → <strong>${escHtml(wantedName)}</strong>`, 'success');
 
         if (swapResult && swapResult.includes && swapResult.includes('Warnings:')) {
             const warningPart = swapResult.split('Warnings:\n')[1];
@@ -6458,27 +6373,37 @@ async function initWorkshopTab() {
 
         const dropArea = document.getElementById('workshop-drop-area');
         const pickAndInstall = async () => {
-            const picked = await open({
+            const picked = await openDialog({
                 multiple: false,
                 directory: false,
-                title: 'Pick a map .upk file',
-                filters: [{ name: 'Unreal package', extensions: ['upk'] }],
+                title: 'Pick a map (.udk, .upk, or .zip)',
+                filters: [{ name: 'Map files', extensions: ['upk', 'udk', 'zip'] }],
             });
             if (!picked) return;
+            const fileName = picked.split(/[\\/]/).pop();
+            const defaultName = fileName.replace(/\.(upk|udk|zip)$/i, '');
             const name = await appDialog({
                 title: 'Name this map',
                 message: 'What should this map show as in VelocityRL?',
-                input: picked.split(/[\\/]/).pop().replace(/\.upk$/i, ''),
+                input: defaultName,
                 okLabel: 'Install',
             });
 
             if (name === null) return;
             try {
-                const inst = await invoke('workshop_install_custom_map', {
-                    sourcePath: picked,
-                    name: (name || '').trim() || null,
-                });
-                showToast(`"${inst.map_name}" loaded! Join Underpass in Rocket League (Free Play or Exhibition) to play.`, 'success');
+                if (picked.toLowerCase().endsWith('.zip')) {
+                    const inst = await invoke('workshop_import_local_zip', {
+                        zipPath: picked,
+                        name: (name || '').trim() || null,
+                    });
+                    showToast(`Map <strong>${escHtml(inst?.name || name)}</strong> imported & installed from zip! Join Underpass to play.`, 'success');
+                } else {
+                    const inst = await invoke('workshop_install_custom_map', {
+                        sourcePath: picked,
+                        name: (name || '').trim() || null,
+                    });
+                    showToast(`"${inst.map_name || name}" loaded! Join Underpass in Rocket League (Free Play or Exhibition) to play.`, 'success');
+                }
                 await refreshWorkshopInstalled();
                 await refreshWorkshopLibrary();
             } catch (e) {
@@ -7438,5 +7363,253 @@ document.addEventListener('keydown', (e) => {
         openChangelog().catch(() => {});
     }
 }, true);
+
+let spawnerSelected = null;
+let spawnerCategory = 'All';
+let spawnerTabReady = false;
+
+function initItemSpawner() {
+    if (!spawnerTabReady) {
+        spawnerTabReady = true;
+        wireSpawnerControls();
+    }
+    refreshSpawnedItemsList();
+}
+
+function wireSpawnerControls() {
+    const searchInput = document.getElementById('spawner-search');
+    const resultsDiv = document.getElementById('spawner-results');
+    const spawnBtn = document.getElementById('btn-spawn-item');
+    const clearBtn = document.getElementById('btn-clear-spawned');
+    const catButtons = document.querySelectorAll('#spawner-category-strip .cat-btn');
+    const tagButtons = document.querySelectorAll('#spawner-tab .tag-btn');
+
+    catButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            catButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            spawnerCategory = btn.dataset.slot || 'All';
+            if (searchInput && searchInput.value.trim().length >= 1) {
+                renderSpawnerSearchResults(searchInput.value.trim());
+            }
+        });
+    });
+
+    tagButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tag = btn.dataset.tag;
+            if (searchInput) {
+                searchInput.value = tag;
+                renderSpawnerSearchResults(tag);
+            }
+        });
+    });
+
+    searchInput?.addEventListener('input', (e) => {
+        const q = e.target.value.trim();
+        if (q.length < 1) {
+            if (resultsDiv) resultsDiv.classList.remove('active');
+            return;
+        }
+        renderSpawnerSearchResults(q);
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!searchInput?.contains(e.target) && !resultsDiv?.contains(e.target)) {
+            resultsDiv?.classList.remove('active');
+        }
+    });
+
+    spawnBtn?.addEventListener('click', async () => {
+        if (!spawnerSelected) return;
+        spawnBtn.disabled = true;
+        try {
+            const id = (spawnerSelected.ID ?? spawnerSelected.id ?? '').toString();
+            const slot = normSlot(spawnerSelected.Slot || spawnerSelected.slot || '');
+            const name = spawnerSelected.Product || spawnerSelected.product || spawnerSelected.name || 'Unknown Item';
+            const quality = spawnerSelected.Quality || spawnerSelected.quality || 'Common';
+            const img = spawnerSelected.image_url || spawnerSelected.src || '';
+
+            await invoke('add_network_spawned_item', {
+                item: {
+                    id: id,
+                    slot: slot,
+                    product_id: parseInt(id, 10) || 0,
+                    name: name,
+                    quality: quality,
+                    image_url: img,
+                    paint_id: 0,
+                    series: null
+                }
+            });
+            showToast(`Spawned <strong>${escHtml(name)}</strong> into network inventory!`, 'success');
+            await refreshSpawnedItemsList();
+        } catch (err) {
+            showToast(`Failed to spawn item: ${err}`, 'error');
+        } finally {
+            if (spawnerSelected) spawnBtn.disabled = false;
+        }
+    });
+
+    clearBtn?.addEventListener('click', async () => {
+        try {
+            await invoke('clear_network_spawned_items');
+            showToast('Cleared all spawned items.', 'info');
+            await refreshSpawnedItemsList();
+        } catch (err) {
+            showToast(`Error clearing items: ${err}`, 'error');
+        }
+    });
+}
+
+function renderSpawnerSearchResults(query) {
+    const resultsDiv = document.getElementById('spawner-results');
+    if (!resultsDiv) return;
+    const q = query.toLowerCase();
+    const filtered = (items || []).filter(item => {
+        const slot = normSlot(item.Slot || item.slot || '');
+        if (spawnerCategory !== 'All' && slot.toLowerCase() !== spawnerCategory.toLowerCase()) {
+            return false;
+        }
+        const name = (item.Product || item.product || '').toLowerCase();
+        return name.includes(q);
+    }).slice(0, 30);
+
+    if (filtered.length === 0) {
+        resultsDiv.innerHTML = '<div class="flyout-item">No items found</div>';
+        resultsDiv.classList.add('active');
+        return;
+    }
+
+    resultsDiv.innerHTML = filtered.map(item => {
+        const name = item.Product || item.product || 'Unknown';
+        const quality = item.Quality || item.quality || 'Common';
+        const slot = item.Slot || item.slot || '';
+        const img = item.image_url || item.src || '';
+        const bgClass = getQualityBgClass(quality);
+        return `
+            <div class="flyout-item" data-id="${escHtml(String(item.ID ?? item.id))}">
+                ${img ? `<img src="${escHtml(img)}" class="flyout-thumb" />` : ''}
+                <div class="flyout-info">
+                    <span class="flyout-name">${escHtml(name)}</span>
+                    <span class="flyout-meta"><span class="quality-badge ${bgClass}">${escHtml(quality)}</span> ${escHtml(slot)}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+    resultsDiv.classList.add('active');
+
+    resultsDiv.querySelectorAll('.flyout-item[data-id]').forEach((el, idx) => {
+        el.addEventListener('click', () => {
+            selectSpawnerItem(filtered[idx]);
+            resultsDiv.classList.remove('active');
+        });
+    });
+}
+
+function selectSpawnerItem(item) {
+    spawnerSelected = item;
+    const container = document.getElementById('spawner-selected');
+    const spawnBtn = document.getElementById('btn-spawn-item');
+    if (!container) return;
+
+    if (!item) {
+        container.innerHTML = emptyStateHtml();
+        container.classList.remove('selected');
+        if (spawnBtn) spawnBtn.disabled = true;
+        return;
+    }
+
+    const pName = item?.Product || item?.product || 'Unknown';
+    const pQuality = item?.Quality || item?.quality || 'Common';
+    const pSlot = item?.Slot || item?.slot || '';
+    const pImg = item?.image_url || item?.src || '';
+    const bgClass = getQualityBgClass(pQuality);
+    const decalBody = getItemDecalBody(item);
+    const decalBadge = decalBody ? `<span class="quality-badge" style="background:rgba(91,140,255,0.18);color:#93c5fd;border:1px solid rgba(91,140,255,0.35);">${escHtml(decalBody)} Decal</span>` : '';
+
+    const clearBtnHtml = `
+        <button type="button" class="card-clear-btn" title="Clear selection" aria-label="Clear selection">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+        </button>
+    `;
+
+    container.innerHTML = `
+        ${clearBtnHtml}
+        ${pImg ? `<img src="${escHtml(pImg)}" class="selected-img" />` : ''}
+        <h2>${escHtml(pName)}</h2>
+        <div style="display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;margin:4px 0;">
+            <span class="quality-badge ${bgClass}">${escHtml(pQuality)}</span>
+            ${decalBadge}
+        </div>
+        <p class="item-slot-label">${escHtml(pSlot)}${decalBody ? ` (${escHtml(decalBody)})` : ''}</p>
+    `;
+
+    const clearBtn = container.querySelector('.card-clear-btn');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            selectSpawnerItem(null);
+        });
+    }
+
+    container.classList.add('selected');
+    if (spawnBtn) spawnBtn.disabled = false;
+}
+
+async function refreshSpawnedItemsList() {
+    const listEl = document.getElementById('spawner-active-list');
+    if (!listEl) return;
+    try {
+        const spawned = await invoke('get_network_spawned_items');
+        if (!spawned || spawned.length === 0) {
+            listEl.innerHTML = '<div class="backup-empty">No items spawned yet.</div>';
+            return;
+        }
+
+        listEl.innerHTML = spawned.map(item => {
+            const name = item.name || 'Unknown Item';
+            const quality = item.quality || 'Common';
+            const slot = item.slot || '';
+            const img = item.image_url || '';
+            const bgClass = getQualityBgClass(quality);
+            return `
+                <div class="backup-item" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.06);">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        ${img ? `<img src="${escHtml(img)}" style="width:36px; height:36px; object-fit:contain; border-radius:4px; background:rgba(0,0,0,0.3);" />` : ''}
+                        <div>
+                            <div style="font-weight:600; font-size:13px; color:#fff;">${escHtml(name)}</div>
+                            <div style="font-size:11px; display:flex; gap:6px; align-items:center; margin-top:2px;">
+                                <span class="quality-badge ${bgClass}" style="font-size:10px; padding:1px 5px;">${escHtml(quality)}</span>
+                                <span style="color:#888;">${escHtml(slot)}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-remove-spawned action-btn-secondary" data-id="${escHtml(String(item.id))}" style="padding:4px 8px; font-size:11px; border-radius:4px; color:#f87171; cursor:pointer;" title="Remove">Remove</button>
+                </div>
+            `;
+        }).join('');
+
+        listEl.querySelectorAll('.btn-remove-spawned[data-id]').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const id = btn.dataset.id;
+                try {
+                    await invoke('remove_network_spawned_item', { id });
+                    showToast('Removed spawned item.', 'info');
+                    await refreshSpawnedItemsList();
+                } catch (err) {
+                    showToast(`Error removing item: ${err}`, 'error');
+                }
+            });
+        });
+    } catch (err) {
+        console.error('Error fetching spawned items:', err);
+    }
+}
+
 
 
