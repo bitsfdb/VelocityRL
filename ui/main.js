@@ -2210,14 +2210,19 @@ function normSlot(s) {
     if (raw.includes('audio') || raw.includes('engine')) return 'engineaudio';
     if (raw.includes('paint') || raw.includes('finish')) return 'paintfinish';
     if (raw.includes('title')) return 'titles';
+    if (raw.includes('anthem') || raw.includes('music')) return 'playeranthem';
     return raw;
 }
 
 const UNPAINTABLE_SLOTS = new Set([
-    'playeranthem', 'anthem',
+    'playeranthem', 'anthem', 'music',
     'playertitle', 'title', 'titles',
     'crate', 'blueprint', 'currency', 'drop',
-    'engineaudio', 'playerbanner', 'avatarborder', 'antenna', 'paintfinish',
+    'engineaudio', 'audio',
+    'playerbanner', 'banner',
+    'avatarborder', 'border',
+    'antenna',
+    'paintfinish', 'finish',
 ]);
 
 const PAINT_HINT_UNPAINTABLE = "Unavailable for this item type.";
@@ -7411,56 +7416,107 @@ const SPAWNER_PAGE_SIZE = 24;
 const spawnerSelectedItems = new Map();
 let spawnerPaintsLoaded = false;
 
-async function populateSpawnerPaints() {
-    if (spawnerPaintsLoaded) return;
-    const sel = document.getElementById('spawner-paint-select');
-    const colorDot = document.getElementById('spawner-paint-color-dot');
-    if (!sel) return;
-    let paintsList = [];
+let cachedPaintsList = [];
+async function getPaintsList() {
+    if (cachedPaintsList.length > 0) return cachedPaintsList;
     try {
         const res = await fetch('paints.json');
-        if (res.ok) paintsList = await res.json();
+        if (res.ok) cachedPaintsList = await res.json();
     } catch {}
-    if (!paintsList || paintsList.length === 0) {
-        paintsList = Object.entries(PAINT_NAMES).map(([id, name]) => ({
+    if (!cachedPaintsList || cachedPaintsList.length === 0) {
+        cachedPaintsList = Object.entries(PAINT_NAMES).map(([id, name]) => ({
             id: Number(id),
             name: name,
             hex: PAINT_SWATCH_COLORS[id] || '#888888'
         }));
     }
-    sel.innerHTML = paintsList.map(p => {
-        const id = p.id ?? 0;
-        const name = p.name || `Paint ${id}`;
-        const hex = p.hex || '#888888';
-        return `<option value="${id}" data-hex="${escHtml(hex)}" style="color:${escHtml(hex)}; background:#18181b;">● ${escHtml(name)}</option>`;
-    }).join('');
-    sel.value = '0';
-    
-    const updateDot = () => {
-        const opt = sel.options[sel.selectedIndex];
-        const hex = opt?.dataset?.hex || '#4B5563';
-        if (colorDot) {
-            colorDot.style.background = hex;
-            colorDot.style.boxShadow = hex !== '#1E1E1E' && hex !== '#4B5563' ? `0 0 6px ${hex}99` : 'none';
-        }
-    };
-    
-    sel.addEventListener('change', updateDot);
-    updateDot();
-    spawnerPaintsLoaded = true;
+    return cachedPaintsList;
 }
 
-function getSelectedSpawnerPaint() {
-    const sel = document.getElementById('spawner-paint-select');
-    const val = parseInt(sel?.value || '0', 10);
-    const name = sel?.options?.[sel?.selectedIndex]?.text?.replace(/^[●\s]+/, '') || paintLabel(val);
-    return { id: isNaN(val) ? 0 : val, name };
-}
+async function promptSpawnerOptions({ title = 'Spawn Items', desc = '', canPaint = true, canCert = true } = {}) {
+    const overlay = document.getElementById('spawner-modal-overlay');
+    if (!overlay) return { confirmed: false };
 
-function getSelectedSpawnerCert() {
-    const sel = document.getElementById('spawner-cert-select');
-    const val = parseInt(sel?.value || '0', 10);
-    return isNaN(val) ? 0 : val;
+    const titleEl = document.getElementById('spawner-modal-title');
+    const descEl = document.getElementById('spawner-modal-desc');
+    const paintBlock = document.getElementById('spawner-modal-paint-block');
+    const paintSel = document.getElementById('spawner-modal-paint');
+    const paintDot = document.getElementById('spawner-modal-paint-dot');
+    const certBlock = document.getElementById('spawner-modal-cert-block');
+    const certSel = document.getElementById('spawner-modal-cert');
+    const okBtn = document.getElementById('spawner-modal-ok');
+    const cancelBtn = document.getElementById('spawner-modal-cancel');
+    const closeBtn = document.getElementById('spawner-modal-close');
+
+    if (titleEl) titleEl.textContent = title;
+    if (descEl) descEl.textContent = desc;
+
+    if (canPaint && paintBlock && paintSel) {
+        paintBlock.style.display = 'block';
+        const paints = await getPaintsList();
+        paintSel.innerHTML = `
+            <option value="0" data-hex="#4B5563">Unpainted / Default</option>
+            <option value="all" data-hex="#A855F7">★ All Paints (Spawn every paint variant)</option>
+            ${paints.filter(p => p.id > 0).map(p => {
+                const hex = p.hex || '#888888';
+                return `<option value="${p.id}" data-hex="${escHtml(hex)}">${escHtml(p.name || `Paint ${p.id}`)}</option>`;
+            }).join('')}
+        `;
+        paintSel.value = '0';
+        const updateDot = () => {
+            const opt = paintSel.options[paintSel.selectedIndex];
+            const val = opt?.value;
+            const hex = opt?.dataset?.hex || '#4B5563';
+            if (paintDot) {
+                if (val === 'all') {
+                    paintDot.style.background = 'linear-gradient(135deg, #ff0055, #00b4ff, #a7e600)';
+                } else {
+                    paintDot.style.background = hex;
+                }
+            }
+        };
+        paintSel.onchange = updateDot;
+        updateDot();
+    } else if (paintBlock) {
+        paintBlock.style.display = 'none';
+    }
+
+    if (canCert && certBlock && certSel) {
+        certBlock.style.display = 'block';
+        certSel.value = '0';
+    } else if (certBlock) {
+        certBlock.style.display = 'none';
+    }
+
+    return new Promise(resolve => {
+        overlay.classList.add('active');
+        const finish = (confirmed) => {
+            overlay.classList.remove('active');
+            if (okBtn) okBtn.onclick = null;
+            if (cancelBtn) cancelBtn.onclick = null;
+            if (closeBtn) closeBtn.onclick = null;
+            overlay.onkeydown = null;
+            if (!confirmed) {
+                resolve({ confirmed: false });
+            } else {
+                const paintVal = canPaint && paintSel ? paintSel.value : '0';
+                const certVal = canCert && certSel ? certSel.value : '0';
+                resolve({
+                    confirmed: true,
+                    paint: paintVal === 'all' ? 'all' : parseInt(paintVal, 10) || 0,
+                    cert: certVal === 'all' ? 'all' : parseInt(certVal, 10) || 0,
+                });
+            }
+        };
+
+        if (okBtn) okBtn.onclick = () => finish(true);
+        if (cancelBtn) cancelBtn.onclick = () => finish(false);
+        if (closeBtn) closeBtn.onclick = () => finish(false);
+        overlay.onkeydown = (e) => {
+            if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+            if (e.key === 'Enter' && e.target?.tagName !== 'BUTTON') { e.preventDefault(); finish(true); }
+        };
+    });
 }
 
 function updateSpawnerSelectionUi() {
@@ -7470,11 +7526,11 @@ function updateSpawnerSelectionUi() {
     const deselectBtn = document.getElementById('spawner-deselect-all-btn');
 
     if (singleBtn) {
-        singleBtn.textContent = 'Paint Individual';
+        singleBtn.textContent = 'Spawn Item';
         singleBtn.style.display = count === 1 ? 'inline-flex' : 'none';
     }
     if (bulkBtn) {
-        bulkBtn.textContent = `Paint Bulk (${count})`;
+        bulkBtn.textContent = `Spawn Selected (${count})`;
         bulkBtn.style.display = count > 1 ? 'inline-flex' : 'none';
     }
     if (deselectBtn) {
@@ -7492,7 +7548,6 @@ function initItemSpawner() {
     if (!spawnerTabReady) {
         spawnerTabReady = true;
         wireSpawnerControls();
-        populateSpawnerPaints().catch(() => {});
     }
     renderSpawnerCatalogue();
 }
@@ -7524,11 +7579,6 @@ function wireSpawnerControls() {
             btn.classList.add('active');
             spawnerCategory = btn.dataset.slot || 'All';
             spawnerPage = 1;
-            const paintWrap = document.getElementById('spawner-paint-wrap');
-            const unpaintableCats = ['titles', 'playerbanner', 'avatarborder', 'antenna', 'engineaudio', 'paintfinish'];
-            if (paintWrap) {
-                paintWrap.style.display = unpaintableCats.includes(normSlot(spawnerCategory)) ? 'none' : 'flex';
-            }
             renderSpawnerCatalogue();
         });
     });
@@ -7590,8 +7640,29 @@ function wireSpawnerControls() {
         const selected = Array.from(spawnerSelectedItems.values());
         const titlesToSpawn = selected.filter(s => s.kind === 'title').map(s => String(s.id));
         const itemsToSpawn = selected.filter(s => s.kind === 'item');
-        const paint = getSelectedSpawnerPaint();
-        const certId = getSelectedSpawnerCert();
+
+        const hasItems = itemsToSpawn.length > 0;
+        const anyPaintable = itemsToSpawn.some(entry => {
+            const fullItem = findItemByProductId(entry.id);
+            return fullItem ? itemIsPaintable(fullItem) : true;
+        });
+        const anyCertifiable = hasItems;
+
+        const titleText = selected.length === 1
+            ? `Spawn ${selected[0].name}`
+            : `Spawn ${selected.length} Selected Items`;
+        const descText = selected.length === 1
+            ? `Choose options to spawn ${selected[0].name}:`
+            : `Choose options for ${selected.length} selected items:`;
+
+        const options = await promptSpawnerOptions({
+            title: titleText,
+            desc: descText,
+            canPaint: anyPaintable,
+            canCert: anyCertifiable
+        });
+
+        if (!options.confirmed) return;
 
         if (triggerBtn) triggerBtn.disabled = true;
         try {
@@ -7599,20 +7670,35 @@ function wireSpawnerControls() {
                 await invoke('add_network_spawned_titles_bulk', { titleIds: titlesToSpawn });
             }
             if (itemsToSpawn.length > 0) {
-                const payload = itemsToSpawn.map(entry => {
+                const paints = await getPaintsList();
+                const allPaintIds = paints.map(p => p.id);
+                const allCertIds = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+
+                const payload = [];
+                for (const entry of itemsToSpawn) {
                     const fullItem = findItemByProductId(entry.id);
                     const canPaint = fullItem ? itemIsPaintable(fullItem) : true;
-                    return {
-                        product_id: parseInt(entry.id, 10) || 0,
-                        paint_id: canPaint ? paint.id : 0,
-                        series_id: 0,
-                        slot: normSlot(entry.slot || fullItem?.Slot || fullItem?.slot || ''),
-                        product_name: entry.name || fullItem?.Product || fullItem?.product || 'Unknown Item',
-                        dlc: false,
-                        certification_id: certId,
-                        certification_value: certId > 0 ? '0' : ''
-                    };
-                }).filter(i => i.product_id > 0);
+                    
+                    const paintsForThisItem = canPaint
+                        ? (options.paint === 'all' ? allPaintIds : [options.paint])
+                        : [0];
+                    const certsForThisItem = options.cert === 'all' ? allCertIds : [options.cert];
+
+                    for (const p of paintsForThisItem) {
+                        for (const c of certsForThisItem) {
+                            payload.push({
+                                product_id: parseInt(entry.id, 10) || 0,
+                                paint_id: p,
+                                series_id: 0,
+                                slot: normSlot(entry.slot || fullItem?.Slot || fullItem?.slot || ''),
+                                product_name: entry.name || fullItem?.Product || fullItem?.product || 'Unknown Item',
+                                dlc: false,
+                                certification_id: c,
+                                certification_value: c > 0 ? '0' : ''
+                            });
+                        }
+                    }
+                }
 
                 if (payload.length > 0) {
                     await invoke('add_network_spawned_items_bulk', { items: payload });
@@ -7620,14 +7706,7 @@ function wireSpawnerControls() {
             }
 
             const total = titlesToSpawn.length + itemsToSpawn.length;
-            const paintedCount = itemsToSpawn.filter(e => {
-                const fullItem = findItemByProductId(e.id);
-                return fullItem ? itemIsPaintable(fullItem) : true;
-            }).length;
-            const paintSuffix = paintedCount > 0 && paint.id > 0 ? ` (${paint.name})` : '';
-            const certNames = ['','Scorer','Striker','Goalkeeper','Playmaker','Tactician','Sweeper','Aviator','Victor'];
-            const certSuffix = certId > 0 ? ` [${certNames[certId] || 'Cert'}]` : '';
-            showToast(`Spawned ${total} selected item(s)${paintSuffix}${certSuffix} into network inventory!`, 'success');
+            showToast(`Spawned ${total} selected item(s) into network inventory!`, 'success');
             spawnerSelectedItems.clear();
             updateSpawnerSelectionUi();
             await refreshSpawnedItemsList();
@@ -7643,16 +7722,6 @@ function wireSpawnerControls() {
 
     spawnAllBtn?.addEventListener('click', async () => {
         const q = (searchInput?.value || '').trim().toLowerCase();
-        const paint = getSelectedSpawnerPaint();
-        const certId = getSelectedSpawnerCert();
-
-        const confirmed = await appDialog({
-            title: 'Spawn All Items',
-            message: 'Are you sure you want to spawn all items?',
-            okLabel: 'Spawn All',
-            cancelLabel: 'Cancel'
-        });
-        if (!confirmed) return;
 
         if (spawnerCategory === 'Titles') {
             if (!titlesDb || !titlesDb.titles || titlesDb.titles.length === 0) {
@@ -7669,6 +7738,14 @@ function wireSpawnerControls() {
                 showToast('No titles to spawn.', 'warning');
                 return;
             }
+
+            const confirmed = await appDialog({
+                title: 'Spawn All Titles',
+                message: `Are you sure you want to spawn all ${ids.length} titles?`,
+                okLabel: 'Spawn All',
+                cancelLabel: 'Cancel'
+            });
+            if (!confirmed) return;
 
             filtered.forEach(t => {
                 const tid = String(t.id || t.Id || '');
@@ -7711,20 +7788,42 @@ function wireSpawnerControls() {
             return;
         }
 
-        const payload = filtered.map(item => {
-            const canPaint = itemIsPaintable(item);
-            return {
-                product_id: parseInt(item.ID ?? item.id, 10) || 0,
-                paint_id: canPaint ? paint.id : 0,
-                series_id: 0,
-                slot: normSlot(item.Slot || item.slot || item.category || ''),
-                product_name: item.Product || item.product || item.name || 'Unknown Item',
-                dlc: false,
-                certification_id: certId,
-                certification_value: certId > 0 ? '0' : ''
-            };
-        }).filter(i => i.product_id > 0);
+        const anyPaintable = filtered.some(item => itemIsPaintable(item));
+        const options = await promptSpawnerOptions({
+            title: `Spawn All ${spawnerCategory === 'All' ? 'Catalogue' : spawnerCategory} Items`,
+            desc: `Spawning ${filtered.length} items. Select paint and certification options:`,
+            canPaint: anyPaintable,
+            canCert: true
+        });
+        if (!options.confirmed) return;
 
+        const paints = await getPaintsList();
+        const allPaintIds = paints.map(p => p.id);
+        const allCertIds = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+
+        const payload = [];
+        for (const item of filtered) {
+            const canPaint = itemIsPaintable(item);
+            const paintsForThisItem = canPaint
+                ? (options.paint === 'all' ? allPaintIds : [options.paint])
+                : [0];
+            const certsForThisItem = options.cert === 'all' ? allCertIds : [options.cert];
+
+            for (const p of paintsForThisItem) {
+                for (const c of certsForThisItem) {
+                    payload.push({
+                        product_id: parseInt(item.ID ?? item.id, 10) || 0,
+                        paint_id: p,
+                        series_id: 0,
+                        slot: normSlot(item.Slot || item.slot || item.category || ''),
+                        product_name: item.Product || item.product || item.name || 'Unknown Item',
+                        dlc: false,
+                        certification_id: c,
+                        certification_value: c > 0 ? '0' : ''
+                    });
+                }
+            }
+        }
 
         if (!payload.length) {
             showToast('No valid items found.', 'warning');
@@ -7746,8 +7845,7 @@ function wireSpawnerControls() {
         spawnAllBtn.disabled = true;
         try {
             await invoke('add_network_spawned_items_bulk', { items: payload });
-            const paintSuffix = paint.id > 0 ? ` (${paint.name})` : '';
-            showToast(`Spawned all ${payload.length} items${paintSuffix} into network inventory!`, 'success');
+            showToast(`Spawned ${payload.length} items into network inventory!`, 'success');
             await refreshSpawnedItemsList();
         } catch (err) {
             showToast(`Failed to spawn items: ${err}`, 'error');

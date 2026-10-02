@@ -84,32 +84,10 @@
                         <button type="button" id="spawner-select-page-btn" class="action-btn action-btn-secondary" style="padding:7px 12px; font-size:12px; white-space:nowrap;">Select Page</button>
                         <button type="button" id="spawner-deselect-all-btn" class="action-btn action-btn-secondary" style="padding:7px 12px; font-size:12px; white-space:nowrap; display:none;">Deselect All</button>
                         
-                        <div class="spawner-paint-wrap" id="spawner-paint-wrap" style="display:flex; align-items:center; gap:8px;">
-                            <label for="spawner-paint-select" style="font-size:12px; color:var(--text-secondary); font-weight:600; white-space:nowrap;">Paint:</label>
-                            <span id="spawner-paint-color-dot" class="spawner-paint-color-dot" style="width:12px; height:12px; border-radius:50%; background:#4B5563; display:inline-block; border:1px solid rgba(255,255,255,0.25); flex-shrink:0;"></span>
-                            <select id="spawner-paint-select" class="spawner-paint-select" style="min-width:140px;"></select>
-                        </div>
-
-                        <div class="spawner-cert-wrap" id="spawner-cert-wrap" style="display:flex; align-items:center; gap:8px;">
-                            <label for="spawner-cert-select" style="font-size:12px; color:var(--text-secondary); font-weight:600; white-space:nowrap;">Cert:</label>
-                            <select id="spawner-cert-select" class="spawner-paint-select" style="min-width:130px;">
-                                <option value="0">None</option>
-                                <option value="1">Scorer</option>
-                                <option value="2">Striker</option>
-                                <option value="3">Goalkeeper</option>
-                                <option value="4">Playmaker</option>
-                                <option value="5">Tactician</option>
-                                <option value="6">Sweeper</option>
-                                <option value="7">Aviator</option>
-                                <option value="8">Victor</option>
-                            </select>
-                        </div>
-
-                        
-                        <div class="spawner-actions-wrap" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                            <button type="button" id="spawner-spawn-single-btn" class="action-btn" style="padding:7px 14px; font-size:12px; white-space:nowrap; background:var(--accent); color:#fff; display:none;">Paint Individual</button>
-                            <button type="button" id="spawner-spawn-bulk-btn" class="action-btn" style="padding:7px 14px; font-size:12px; white-space:nowrap; background:var(--accent); color:#fff; display:none;">Paint Bulk</button>
-                            <button type="button" id="spawner-spawn-all-btn" class="action-btn" style="padding:7px 14px; font-size:12px; white-space:nowrap; background:var(--accent-blue); color:#fff;">Paint All Items</button>
+                        <div class="spawner-actions-wrap" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-left:auto;">
+                            <button type="button" id="spawner-spawn-single-btn" class="action-btn" style="padding:7px 14px; font-size:12px; white-space:nowrap; background:var(--accent); color:#fff; display:none;">Spawn Item</button>
+                            <button type="button" id="spawner-spawn-bulk-btn" class="action-btn" style="padding:7px 14px; font-size:12px; white-space:nowrap; background:var(--accent); color:#fff; display:none;">Spawn Selected</button>
+                            <button type="button" id="spawner-spawn-all-btn" class="action-btn" style="padding:7px 14px; font-size:12px; white-space:nowrap; background:var(--accent-blue); color:#fff;">Spawn All Items</button>
                         </div>
                     </div>
 
@@ -1098,6 +1076,46 @@
             </div>
         </div>
     </div>
+
+    <div id="spawner-modal-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="spawner-modal-title">
+        <div class="modal" style="max-width:440px;">
+            <div class="modal-header">
+                <h2 id="spawner-modal-title">Spawn Item</h2>
+                <div id="spawner-modal-close" class="close-modal-btn">×</div>
+            </div>
+            <p id="spawner-modal-desc" style="font-size:13px; color:var(--text-secondary); line-height:1.4; margin-bottom:14px; white-space:pre-wrap;"></p>
+            
+            <div id="spawner-modal-paint-block" class="settings-group" style="margin-bottom:12px;">
+                <label for="spawner-modal-paint" style="display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:12px; font-weight:600; color:var(--text-secondary);">
+                    <span>Paint:</span>
+                    <span id="spawner-modal-paint-dot" style="width:10px; height:10px; border-radius:50%; background:#4B5563; display:inline-block; border:1px solid rgba(255,255,255,0.2);"></span>
+                </label>
+                <select id="spawner-modal-paint" class="spawner-paint-select" style="width:100%;"></select>
+            </div>
+
+            <div id="spawner-modal-cert-block" class="settings-group" style="margin-bottom:16px;">
+                <label for="spawner-modal-cert" style="display:block; margin-bottom:6px; font-size:12px; font-weight:600; color:var(--text-secondary);">Certification:</label>
+                <select id="spawner-modal-cert" class="spawner-paint-select" style="width:100%;">
+                    <option value="0">None</option>
+                    <option value="all">★ All Certifications (Spawn every cert variant)</option>
+                    <option value="1">Scorer (Goals)</option>
+                    <option value="2">Striker (Shots)</option>
+                    <option value="3">Goalkeeper (Saves)</option>
+                    <option value="4">Playmaker (Assists)</option>
+                    <option value="5">Tactician (Centers)</option>
+                    <option value="6">Sweeper (Clears)</option>
+                    <option value="7">Aviator (Aerial Goals)</option>
+                    <option value="8">Victor (Hat Tricks)</option>
+                </select>
+            </div>
+
+            <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:8px;">
+                <button id="spawner-modal-cancel" class="action-btn action-btn-secondary" type="button">Cancel</button>
+                <button id="spawner-modal-ok" class="action-btn" type="button" style="background:var(--accent); color:#fff;">Spawn</button>
+            </div>
+        </div>
+    </div>
+
 
     <div id="preset-preview-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="preset-preview-title">
         <div class="modal" style="max-width:620px; width:92vw; max-height:86vh; display:flex; flex-direction:column; overflow:hidden;">
