@@ -1114,6 +1114,46 @@
     </div>
 
 
+    <div id="save-preset-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="save-preset-title">
+        <div class="modal" style="max-width:520px; width:92vw;">
+            <div class="modal-header">
+                <h2 id="save-preset-title">Save Preset</h2>
+                <div id="save-preset-close" class="close-modal-btn">×</div>
+            </div>
+            <div class="settings-group" style="margin-bottom:14px;">
+                <label style="font-size:12px;font-weight:600;margin-bottom:6px;display:block;">Choose Preset Type</label>
+                <div style="display:flex;gap:10px;">
+                    <label id="save-preset-type-swap-card" style="flex:1;display:flex;align-items:center;gap:10px;background:var(--input-bg);padding:10px 12px;border:1px solid var(--accent);border-radius:6px;cursor:pointer;">
+                        <input type="radio" name="preset-save-type" id="preset-type-swap" value="swap" checked style="accent-color:var(--accent);">
+                        <div>
+                            <strong style="display:block;font-size:13px;">Swapper Preset</strong>
+                            <span id="preset-save-swap-count" style="font-size:11px;color:var(--text-secondary);">Active UPK mods &amp; maps</span>
+                        </div>
+                    </label>
+                    <label id="save-preset-type-spawn-card" style="flex:1;display:flex;align-items:center;gap:10px;background:var(--input-bg);padding:10px 12px;border:1px solid var(--border);border-radius:6px;cursor:pointer;">
+                        <input type="radio" name="preset-save-type" id="preset-type-spawn" value="spawn" style="accent-color:var(--accent);">
+                        <div>
+                            <strong style="display:block;font-size:13px;">Spawner Preset</strong>
+                            <span id="preset-save-spawn-count" style="font-size:11px;color:var(--text-secondary);">Active spawned items &amp; titles</span>
+                        </div>
+                    </label>
+                </div>
+            </div>
+            <div class="settings-group" style="margin-bottom:12px;">
+                <label for="save-preset-name-input" style="font-size:12px;font-weight:600;margin-bottom:4px;display:block;">Preset Name</label>
+                <input type="text" id="save-preset-name-input" placeholder="e.g. Clean TW Octane" maxlength="64" style="width:100%;padding:8px 10px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;font-size:13px;">
+            </div>
+            <div class="settings-group" style="margin-bottom:14px;">
+                <label for="save-preset-desc-input" style="font-size:12px;font-weight:600;margin-bottom:4px;display:block;">Description / Notes (Optional)</label>
+                <textarea id="save-preset-desc-input" rows="3" placeholder="e.g. Enable color palette to achieve this preset in game, set primary to black..." style="width:100%;padding:8px 10px;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;font-size:12px;resize:vertical;"></textarea>
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;">
+                <button id="save-preset-cancel-btn" class="action-btn action-btn-secondary" type="button">Cancel</button>
+                <button id="save-preset-confirm-btn" class="action-btn" type="button" style="background:var(--accent-blue);color:#fff;">Save Preset</button>
+            </div>
+        </div>
+    </div>
+
     <div id="preset-preview-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="preset-preview-title">
         <div class="modal" style="max-width:620px; width:92vw; max-height:86vh; display:flex; flex-direction:column; overflow:hidden;">
             <div class="modal-header" style="margin-bottom:8px;">
@@ -1122,8 +1162,15 @@
             </div>
 
             <div id="preset-preview-stats" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;">
-                <span id="preset-badge-items" class="preset-stat-badge">0 / 50 Items</span>
-                <span id="preset-badge-maps" class="preset-stat-badge">0 / 30 Maps</span>
+                <span id="preset-badge-type" class="preset-stat-badge">Swapper</span>
+                <span id="preset-badge-items" class="preset-stat-badge">0 Items</span>
+                <span id="preset-badge-maps" class="preset-stat-badge">0 Maps</span>
+                <span id="preset-badge-titles" class="preset-stat-badge" style="display:none;">0 Titles</span>
+            </div>
+
+            <div id="preset-preview-desc-wrap" style="display:none; padding:10px 12px; border-radius:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); margin-bottom:12px;">
+                <strong style="display:block; font-size:11px; color:var(--text-secondary); text-transform:uppercase; margin-bottom:4px;">Preset Notes / Guide</strong>
+                <div id="preset-preview-desc-text" style="font-size:12px; color:var(--text); line-height:1.4; white-space:pre-wrap;"></div>
             </div>
 
             <div id="preset-download-banner" style="display:none; padding:10px 12px; border-radius:6px; background:rgba(33,150,243,0.1); border:1px solid rgba(33,150,243,0.3); margin-bottom:12px; font-size:12px; line-height:1.4;">
@@ -1133,6 +1180,7 @@
 
             <div class="subtab-strip" id="preset-preview-subtabs" style="margin-bottom:12px;">
                 <button type="button" class="subtab-btn active" id="preset-tab-items-btn" data-i18n="preset_modal.items_tab">Items to Swap</button>
+                <button type="button" class="subtab-btn" id="preset-tab-spawns-btn" style="display:none;">Spawned Items &amp; Titles</button>
                 <button type="button" class="subtab-btn" id="preset-tab-maps-btn" data-i18n="preset_modal.maps_tab">Workshop Maps</button>
             </div>
 
@@ -1142,6 +1190,15 @@
                     <button type="button" id="preset-items-prev" class="action-btn action-btn-secondary" style="padding:4px 12px; font-size:12px;">← Prev</button>
                     <span id="preset-items-page-info" style="font-size:12px; color:var(--text-secondary); font-weight:600;">Page 1 of 1</span>
                     <button type="button" id="preset-items-next" class="action-btn action-btn-secondary" style="padding:4px 12px; font-size:12px;">Next →</button>
+                </div>
+            </div>
+
+            <div id="preset-spawns-view" style="flex:1; min-height:0; display:none; flex-direction:column; overflow:hidden;">
+                <div id="preset-spawns-list" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:6px; padding-right:4px;"></div>
+                <div id="preset-spawns-pagination" style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; padding-top:8px; border-top:1px solid var(--border);">
+                    <button type="button" id="preset-spawns-prev" class="action-btn action-btn-secondary" style="padding:4px 12px; font-size:12px;">← Prev</button>
+                    <span id="preset-spawns-page-info" style="font-size:12px; color:var(--text-secondary); font-weight:600;">Page 1 of 1</span>
+                    <button type="button" id="preset-spawns-next" class="action-btn action-btn-secondary" style="padding:4px 12px; font-size:12px;">Next →</button>
                 </div>
             </div>
 

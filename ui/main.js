@@ -1173,22 +1173,53 @@ async function openPresetPreviewModal(preset, { isImport = false, code = null } 
     presetModalState.code = code;
     presetModalState.itemsPage = 1;
     presetModalState.mapsPage = 1;
+    presetModalState.spawnsPage = 1;
 
     const titleEl = document.getElementById('preset-preview-title');
     if (titleEl) titleEl.textContent = preset.name || 'Preset Loadout';
 
+    const isSpawn = preset.preset_type === 'spawn' || ((preset.spawned_items || []).length > 0 || (preset.spawned_titles || []).length > 0);
     const swaps = preset.swaps || [];
     const maps = preset.maps || [];
+    const spawnedItems = preset.spawned_items || [];
+    const spawnedTitles = preset.spawned_titles || [];
+
+    const badgeType = document.getElementById('preset-badge-type');
+    if (badgeType) {
+        badgeType.textContent = isSpawn ? 'Spawner' : 'Swapper';
+        badgeType.style.background = isSpawn ? 'rgba(16,185,129,0.15)' : 'rgba(99,102,241,0.15)';
+        badgeType.style.color = isSpawn ? '#10b981' : '#818cf8';
+        badgeType.style.borderColor = isSpawn ? 'rgba(16,185,129,0.3)' : 'rgba(99,102,241,0.3)';
+    }
 
     const badgeItems = document.getElementById('preset-badge-items');
     if (badgeItems) {
-        badgeItems.textContent = `${swaps.length} / 50 Items`;
-        badgeItems.style.display = swaps.length > 0 ? 'inline-flex' : 'none';
+        const count = isSpawn ? spawnedItems.length : swaps.length;
+        badgeItems.textContent = `${count} Items`;
+        badgeItems.style.display = count > 0 ? 'inline-flex' : 'none';
     }
+
     const badgeMaps = document.getElementById('preset-badge-maps');
     if (badgeMaps) {
-        badgeMaps.textContent = `${maps.length} / 30 Maps`;
+        badgeMaps.textContent = `${maps.length} Maps`;
         badgeMaps.style.display = maps.length > 0 ? 'inline-flex' : 'none';
+    }
+
+    const badgeTitles = document.getElementById('preset-badge-titles');
+    if (badgeTitles) {
+        badgeTitles.textContent = `${spawnedTitles.length} Titles`;
+        badgeTitles.style.display = spawnedTitles.length > 0 ? 'inline-flex' : 'none';
+    }
+
+    const descWrap = document.getElementById('preset-preview-desc-wrap');
+    const descText = document.getElementById('preset-preview-desc-text');
+    if (descWrap && descText) {
+        if (preset.description && preset.description.trim()) {
+            descText.textContent = preset.description.trim();
+            descWrap.style.display = 'block';
+        } else {
+            descWrap.style.display = 'none';
+        }
     }
 
     const library = await invoke('workshop_get_map_library').catch(() => []);
@@ -1224,36 +1255,51 @@ async function openPresetPreviewModal(preset, { isImport = false, code = null } 
     }
 
     const tabItemsBtn = document.getElementById('preset-tab-items-btn');
+    const tabSpawnsBtn = document.getElementById('preset-tab-spawns-btn');
     const tabMapsBtn = document.getElementById('preset-tab-maps-btn');
     const itemsView = document.getElementById('preset-items-view');
+    const spawnsView = document.getElementById('preset-spawns-view');
     const mapsView = document.getElementById('preset-maps-view');
 
     const switchTab = (tab) => {
+        tabItemsBtn?.classList.remove('active');
+        tabSpawnsBtn?.classList.remove('active');
+        tabMapsBtn?.classList.remove('active');
+        if (itemsView) itemsView.style.display = 'none';
+        if (spawnsView) spawnsView.style.display = 'none';
+        if (mapsView) mapsView.style.display = 'none';
+
         if (tab === 'maps') {
             tabMapsBtn?.classList.add('active');
-            tabItemsBtn?.classList.remove('active');
             if (mapsView) mapsView.style.display = 'flex';
-            if (itemsView) itemsView.style.display = 'none';
             renderPresetMapsPage();
+        } else if (tab === 'spawns') {
+            tabSpawnsBtn?.classList.add('active');
+            if (spawnsView) spawnsView.style.display = 'flex';
+            renderPresetSpawnsPage();
         } else {
             tabItemsBtn?.classList.add('active');
-            tabMapsBtn?.classList.remove('active');
             if (itemsView) itemsView.style.display = 'flex';
-            if (mapsView) mapsView.style.display = 'none';
             renderPresetItemsPage();
         }
     };
 
     if (tabItemsBtn) {
-        tabItemsBtn.style.display = swaps.length > 0 ? 'inline-block' : 'none';
+        tabItemsBtn.style.display = (!isSpawn && swaps.length > 0) ? 'inline-block' : 'none';
         tabItemsBtn.onclick = () => switchTab('items');
+    }
+    if (tabSpawnsBtn) {
+        tabSpawnsBtn.style.display = isSpawn ? 'inline-block' : 'none';
+        tabSpawnsBtn.onclick = () => switchTab('spawns');
     }
     if (tabMapsBtn) {
         tabMapsBtn.style.display = maps.length > 0 ? 'inline-block' : 'none';
         tabMapsBtn.onclick = () => switchTab('maps');
     }
 
-    if (swaps.length === 0 && maps.length > 0) {
+    if (isSpawn) {
+        switchTab('spawns');
+    } else if (swaps.length === 0 && maps.length > 0) {
         switchTab('maps');
     } else {
         switchTab('items');
@@ -1306,16 +1352,18 @@ async function openPresetPreviewModal(preset, { isImport = false, code = null } 
                     actionBtn.disabled = false;
                 }
             } else if (!isImport && preset.id) {
-                const safety = await promptPresetApplySafety(preset.name);
-                if (safety === 'cancel') {
-                    actionBtn.disabled = false;
-                    return;
-                }
-                if (safety === 'save_and_apply') {
-                    const name = await appDialog({ title: 'Save Current Preset', message: 'Name for your current loadout:', input: 'My Saved Loadout', okLabel: 'Save & Continue' });
-                    if (name && name.trim()) {
-                        await invoke('save_preset', { name: name.trim() }).catch(e => showToast(String(e), 'error'));
-                        await refreshPresets();
+                if (!isSpawn) {
+                    const safety = await promptPresetApplySafety(preset.name);
+                    if (safety === 'cancel') {
+                        actionBtn.disabled = false;
+                        return;
+                    }
+                    if (safety === 'save_and_apply') {
+                        const name = await appDialog({ title: 'Save Current Preset', message: 'Name for your current loadout:', input: 'My Saved Loadout', okLabel: 'Save & Continue' });
+                        if (name && name.trim()) {
+                            await invoke('save_preset', { name: name.trim() }).catch(e => showToast(String(e), 'error'));
+                            await refreshPresets();
+                        }
                     }
                 }
                 modal.classList.remove('active');
@@ -1331,6 +1379,93 @@ async function openPresetPreviewModal(preset, { isImport = false, code = null } 
     if (cancelBtn) cancelBtn.onclick = closeModal;
 
     modal.classList.add('active');
+}
+
+function renderPresetSpawnsPage() {
+    const spawns = presetModalState.preset?.spawned_items || [];
+    const titles = presetModalState.preset?.spawned_titles || [];
+    const list = document.getElementById('preset-spawns-list');
+    const pageInfo = document.getElementById('preset-spawns-page-info');
+    const prevBtn = document.getElementById('preset-spawns-prev');
+    const nextBtn = document.getElementById('preset-spawns-next');
+    if (!list) return;
+
+    const allEntries = [
+        ...spawns.map(item => ({ type: 'item', data: item })),
+        ...titles.map(title => ({ type: 'title', data: title })),
+    ];
+
+    if (!allEntries.length) {
+        list.innerHTML = '<div class="backup-empty">No spawned items or titles in this preset.</div>';
+        if (pageInfo) pageInfo.textContent = 'Page 0 of 0';
+        if (prevBtn) prevBtn.disabled = true;
+        if (nextBtn) nextBtn.disabled = true;
+        return;
+    }
+
+    const perPage = presetModalState.itemsPerPage || 8;
+    const totalPages = Math.ceil(allEntries.length / perPage) || 1;
+    presetModalState.spawnsPage = Math.max(1, Math.min(presetModalState.spawnsPage || 1, totalPages));
+    const page = presetModalState.spawnsPage;
+
+    const start = (page - 1) * perPage;
+    const entriesToShow = allEntries.slice(start, start + perPage);
+
+    list.innerHTML = entriesToShow.map(entry => {
+        if (entry.type === 'title') {
+            const titleText = typeof entry.data === 'string' ? entry.data : (entry.data?.text || entry.data?.title || 'Player Title');
+            return `
+                <div class="preset-item-row" style="display:flex; align-items:center; gap:10px; padding:8px 10px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:6px;">
+                    <div style="width:34px; height:34px; border-radius:5px; background:rgba(234,179,8,0.12); border:1px solid rgba(234,179,8,0.25); display:flex; align-items:center; justify-content:center; flex-shrink:0; color:#eab308; font-size:16px;">
+                        ★
+                    </div>
+                    <div style="flex:1; min-width:0;">
+                        <span style="font-size:10px; font-weight:700; color:#eab308; text-transform:uppercase; letter-spacing:0.04em;">Title</span>
+                        <div style="font-size:13px; font-weight:600; color:var(--text);">${escHtml(titleText)}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        const item = entry.data;
+        const pid = item.product_id || item.pid || 0;
+        const paintId = item.paint_id || item.paint || 0;
+        const itemObj = findItemByProductId(pid);
+        const pName = item.product_name || item.name || itemObj?.Product || itemObj?.product || `Item #${pid}`;
+        const slot = normItemSlot(item.slot || itemObj?.Slot || itemObj?.slot || 'Item');
+        const pImg = itemObj?.image_url || itemObj?.src || '';
+        const paintBadge = paintId > 0 ? renderPaintBadgeHtml(paintId) : '';
+
+        return `
+            <div class="preset-item-row" style="display:flex; align-items:center; gap:10px; padding:6px 10px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:6px;">
+                <div class="preset-item-thumb-wrap" style="width:34px; height:34px; border-radius:5px; background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.08); display:flex; align-items:center; justify-content:center; flex-shrink:0; overflow:hidden;">
+                    ${pImg ? `<img src="${escHtml(pImg)}" class="preset-item-thumb" alt="${escHtml(pName)}" style="width:100%; height:100%; object-fit:contain;" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />` : ''}
+                    <div class="preset-item-thumb-fallback" style="${pImg ? 'display:none;' : 'display:flex;'}; width:100%; height:100%; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:var(--text-secondary);">
+                        ${escHtml(slot.charAt(0))}
+                    </div>
+                </div>
+                <div style="flex:1; min-width:0;">
+                    <div style="display:flex; align-items:center; gap:4px; margin-bottom:2px;">
+                        <span class="preset-item-slot" style="font-size:11px; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.04em;">${escHtml(slot)}</span>
+                    </div>
+                    <div style="font-size:13px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                        ${escHtml(pName)}
+                    </div>
+                </div>
+                ${paintBadge ? `<div style="flex-shrink:0;">${paintBadge}</div>` : ''}
+            </div>
+        `;
+    }).join('');
+
+    if (pageInfo) pageInfo.textContent = `Page ${page} of ${totalPages} (${allEntries.length} items/titles)`;
+    if (prevBtn) {
+        prevBtn.disabled = page <= 1;
+        prevBtn.onclick = () => { presetModalState.spawnsPage--; renderPresetSpawnsPage(); };
+    }
+    if (nextBtn) {
+        nextBtn.disabled = page >= totalPages;
+        nextBtn.onclick = () => { presetModalState.spawnsPage++; renderPresetSpawnsPage(); };
+    }
 }
 
 function renderPresetItemsPage() {
@@ -1468,31 +1603,70 @@ async function refreshPresets() {
     try {
         const presets = await invoke('get_presets');
         if (!presets.length) {
-            list.innerHTML = '<div class="backup-empty">No presets yet. Set up swaps, then click "Save current as preset".</div>';
+            list.innerHTML = '<div class="backup-empty">No presets yet. Set up swaps or network spawns, then click "Save current as preset".</div>';
         } else {
             list.innerHTML = '';
             presets.forEach(p => {
                 const row = document.createElement('div');
                 row.className = 'backup-item';
                 row.style.display = 'flex';
-                row.style.alignItems = 'center';
-                row.style.gap = '10px';
+                row.style.flexDirection = 'column';
+                row.style.gap = '8px';
+                row.style.padding = '10px 14px';
 
+                const isSpawn = p.preset_type === 'spawn' || ((p.spawned_items || []).length > 0 || (p.spawned_titles || []).length > 0);
                 const swapCount = (p.swaps || []).length;
                 const mapCount = (p.maps || []).length;
-                const swapBadge = `<span class="preset-stat-badge" style="font-size:10px;padding:2px 6px;">${swapCount} items</span>`;
-                const mapBadge = mapCount > 0 ? `<span class="preset-stat-badge" style="font-size:10px;padding:2px 6px;background:rgba(33,150,243,0.1);color:#2196f3;border-color:rgba(33,150,243,0.3);">${mapCount} maps</span>` : '';
-                const summaryLine = (p.swaps || []).slice(0, 3).map(s => `${s.owned_name} → ${s.wanted_name}`).join(', ') + ((p.swaps || []).length > 3 ? '...' : '');
+                const spawnCount = (p.spawned_items || []).length;
+                const titleCount = (p.spawned_titles || []).length;
+
+                const typeBadge = isSpawn
+                    ? `<span class="preset-stat-badge" style="font-size:10px;padding:2px 6px;background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">Spawner</span>`
+                    : `<span class="preset-stat-badge" style="font-size:10px;padding:2px 6px;background:rgba(99,102,241,0.15);color:#818cf8;border-color:rgba(99,102,241,0.3);">Swapper</span>`;
+
+                let countBadges = '';
+                let summaryLine = '';
+
+                if (isSpawn) {
+                    countBadges += `<span class="preset-stat-badge" style="font-size:10px;padding:2px 6px;">${spawnCount} items</span>`;
+                    if (titleCount > 0) {
+                        countBadges += `<span class="preset-stat-badge" style="font-size:10px;padding:2px 6px;background:rgba(234,179,8,0.15);color:#eab308;border-color:rgba(234,179,8,0.3);">${titleCount} titles</span>`;
+                    }
+                    const itemNames = (p.spawned_items || []).slice(0, 3).map(it => it.product_name || `PID ${it.product_id || it.pid}`);
+                    if (titleCount > 0) itemNames.push(`${titleCount} title(s)`);
+                    summaryLine = itemNames.join(', ') + ((p.spawned_items || []).length > 3 ? '...' : '');
+                } else {
+                    countBadges += `<span class="preset-stat-badge" style="font-size:10px;padding:2px 6px;">${swapCount} items</span>`;
+                    if (mapCount > 0) {
+                        countBadges += `<span class="preset-stat-badge" style="font-size:10px;padding:2px 6px;background:rgba(33,150,243,0.1);color:#2196f3;border-color:rgba(33,150,243,0.3);">${mapCount} maps</span>`;
+                    }
+                    summaryLine = (p.swaps || []).slice(0, 3).map(s => `${s.owned_name || 'Stock'} → ${s.wanted_name || 'Item'}`).join(', ') + ((p.swaps || []).length > 3 ? '...' : '');
+                }
+
+                const descAccordion = (p.description && p.description.trim())
+                    ? `<details class="preset-notes-collapse" style="margin-top:2px;width:100%;">
+                        <summary style="font-size:11px;color:var(--accent-blue,#60a5fa);cursor:pointer;font-weight:600;outline:none;user-select:none;display:inline-flex;align-items:center;gap:4px;">
+                            <span>▼ Notes &amp; Guide</span>
+                        </summary>
+                        <div style="margin-top:6px;font-size:12px;line-height:1.45;color:var(--text-secondary);background:rgba(255,255,255,0.03);padding:8px 10px;border-radius:6px;border:1px solid rgba(255,255,255,0.07);white-space:pre-wrap;word-break:break-word;">${escHtml(p.description.trim())}</div>
+                    </details>`
+                    : '';
 
                 row.innerHTML = `
-                    <div style="flex:1;min-width:0;">
-                        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-                            <strong>${escHtml(p.name)}</strong>
-                            ${swapBadge}
-                            ${mapBadge}
+                    <div style="display:flex;align-items:center;gap:10px;width:100%;">
+                        <div style="flex:1;min-width:0;">
+                            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                                <strong>${escHtml(p.name)}</strong>
+                                ${typeBadge}
+                                ${countBadges}
+                            </div>
+                            <div style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;">${escHtml(summaryLine || (mapCount > 0 ? `${mapCount} map(s)` : 'Empty preset'))}</div>
                         </div>
-                        <div style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;">${escHtml(summaryLine || (mapCount > 0 ? `${mapCount} map(s)` : 'Empty preset'))}</div>
-                    </div>`;
+                        <div class="preset-row-actions" style="display:flex;gap:6px;align-items:center;flex-shrink:0;"></div>
+                    </div>
+                    ${descAccordion}`;
+
+                const actionContainer = row.querySelector('.preset-row-actions');
                 const mkBtn = (label, cls, fn) => {
                     const b = document.createElement('button');
                     b.className = `action-btn ${cls}`;
@@ -1502,10 +1676,10 @@ async function refreshPresets() {
                     b.onclick = fn;
                     return b;
                 };
-                row.appendChild(mkBtn('Apply', '', () => applyPreset(p)));
-                row.appendChild(mkBtn('View', 'action-btn-secondary', () => openPresetPreviewModal(p, { isImport: false })));
-                row.appendChild(mkBtn('Share', 'action-btn-secondary', (e) => sharePreset(p, e.currentTarget)));
-                row.appendChild(mkBtn('Delete', 'action-btn-secondary', async () => {
+                actionContainer.appendChild(mkBtn('Apply', '', () => applyPreset(p)));
+                actionContainer.appendChild(mkBtn('View', 'action-btn-secondary', () => openPresetPreviewModal(p, { isImport: false })));
+                actionContainer.appendChild(mkBtn('Share', 'action-btn-secondary', (e) => sharePreset(p, e.currentTarget)));
+                actionContainer.appendChild(mkBtn('Delete', 'action-btn-secondary', async () => {
                     await invoke('delete_preset', { id: p.id });
                     refreshPresets();
                 }));
@@ -1523,6 +1697,7 @@ async function applyPresetDirect(p) {
     updateStatus('Applying preset...', false);
     showProgress(true, 30);
     try {
+        const isSpawn = p.preset_type === 'spawn' || ((p.spawned_items || []).length > 0 || (p.spawned_titles || []).length > 0);
         const results = await invoke('apply_preset', { id: p.id });
         showProgress(true, 100);
         const fails = results.filter(r => r.startsWith('FAIL'));
@@ -1531,7 +1706,13 @@ async function applyPresetDirect(p) {
         } else {
             showToast(`Preset applied with ${fails.length} failure(s) — see swap history`, 'warning');
         }
-        await refreshBackups();
+        if (isSpawn) {
+            if (typeof loadRestoreSpawnerFromDisk === 'function') {
+                await loadRestoreSpawnerFromDisk();
+            }
+        } else {
+            await refreshBackups();
+        }
     } catch (e) {
         showToast(String(e), 'error');
     } finally {
@@ -1598,6 +1779,12 @@ async function promptPresetApplySafety(presetName) {
 }
 
 async function applyPreset(p) {
+    const isSpawn = p.preset_type === 'spawn' || ((p.spawned_items || []).length > 0 || (p.spawned_titles || []).length > 0);
+    if (isSpawn) {
+        await applyPresetDirect(p);
+        return;
+    }
+
     const maps = p.maps || [];
     const library = await invoke('workshop_get_map_library').catch(() => []);
     const missing = maps.filter(m => !library.some(e =>
@@ -1869,46 +2056,137 @@ async function refreshSwapHistory() {
     }
 }
 
+async function openSavePresetModal() {
+    const modal = document.getElementById('save-preset-modal');
+    if (!modal) return;
+
+    const swaps = await invoke('get_swaps').catch(() => []);
+    const maps = (await invoke('workshop_get_installed_map').catch(() => null)) ? [1] : [];
+    const psynetCfg = await invoke('get_psynet_config').catch(() => null);
+    const spawnedItems = psynetCfg?.inventory_spoof?.items || [];
+    const spawnedTitles = psynetCfg?.inventory_spoof?.titles || [];
+
+    const swapCountEl = document.getElementById('preset-save-swap-count');
+    const spawnCountEl = document.getElementById('preset-save-spawn-count');
+    if (swapCountEl) swapCountEl.textContent = `${(swaps || []).length} items${maps.length ? ', 1 map' : ''}`;
+    if (spawnCountEl) spawnCountEl.textContent = `${(spawnedItems || []).length} items, ${(spawnedTitles || []).length} titles`;
+
+    const radioSwap = document.getElementById('preset-type-swap');
+    const radioSpawn = document.getElementById('preset-type-spawn');
+    const cardSwap = document.getElementById('save-preset-type-swap-card');
+    const cardSpawn = document.getElementById('save-preset-type-spawn-card');
+    const nameInput = document.getElementById('save-preset-name-input');
+    const descInput = document.getElementById('save-preset-desc-input');
+
+    if (nameInput) nameInput.value = '';
+    if (descInput) descInput.value = '';
+
+    // Auto-select type based on what is active: if no swaps but has spawned items, default to spawn
+    if (swaps.length === 0 && (spawnedItems.length > 0 || spawnedTitles.length > 0)) {
+        if (radioSpawn) radioSpawn.checked = true;
+    } else {
+        if (radioSwap) radioSwap.checked = true;
+    }
+
+    const updateSelectionStyle = () => {
+        if (radioSwap?.checked) {
+            if (cardSwap) cardSwap.style.borderColor = 'var(--accent, #6366f1)';
+            if (cardSpawn) cardSpawn.style.borderColor = 'var(--border)';
+        } else {
+            if (cardSpawn) cardSpawn.style.borderColor = 'var(--accent, #6366f1)';
+            if (cardSwap) cardSwap.style.borderColor = 'var(--border)';
+        }
+    };
+
+    if (radioSwap) radioSwap.onchange = updateSelectionStyle;
+    if (radioSpawn) radioSpawn.onchange = updateSelectionStyle;
+    updateSelectionStyle();
+
+    const closeModal = () => modal.classList.remove('active');
+    const closeBtn = document.getElementById('save-preset-close');
+    const cancelBtn = document.getElementById('save-preset-cancel-btn');
+    if (closeBtn) closeBtn.onclick = closeModal;
+    if (cancelBtn) cancelBtn.onclick = closeModal;
+
+    const confirmBtn = document.getElementById('save-preset-confirm-btn');
+    if (confirmBtn) {
+        confirmBtn.onclick = async () => {
+            const name = (nameInput?.value || '').trim();
+            if (!name) {
+                showToast('Please enter a preset name.', 'warning');
+                nameInput?.focus();
+                return;
+            }
+            const description = (descInput?.value || '').trim();
+            const ptype = radioSpawn?.checked ? 'spawn' : 'swap';
+
+            confirmBtn.disabled = true;
+            try {
+                let saved;
+                if (ptype === 'spawn') {
+                    if (!spawnedItems.length && !spawnedTitles.length) {
+                        showToast('No active spawned items or titles to save as a preset. Spawn some items first.', 'warning');
+                        confirmBtn.disabled = false;
+                        return;
+                    }
+                    saved = await invoke('save_preset', {
+                        name,
+                        presetType: 'spawn',
+                        description: description || null,
+                        spawnedItems: spawnedItems,
+                        spawnedTitles: spawnedTitles,
+                    });
+                } else {
+                    let swapsToSend = null;
+                    if (ownedItem && wantedItem) {
+                        const ownedId = Number(ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id);
+                        const wantedId = Number(wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id);
+                        let paintId = itemIsPaintable(wantedItem) ? Number(wantedPaintId || 0) : 0;
+                        const oName = ownedItem.Product || ownedItem.product || '';
+                        const wName = wantedItem.Product || wantedItem.product || '';
+                        const pkg = ownedItem.AssetPackage || ownedItem.asset_package || '';
+                        const list = Array.isArray(swaps) ? swaps.filter(s => s.owned_id !== ownedId) : [];
+                        list.push({
+                            owned_id: ownedId,
+                            wanted_id: wantedId,
+                            owned_name: oName,
+                            wanted_name: wName,
+                            paint_id: paintId,
+                            custom_paint_hex: null,
+                            owned_paint_id: null,
+                            owned_custom_hex: null,
+                            asset_package: pkg,
+                        });
+                        swapsToSend = list;
+                    }
+                    saved = await invoke('save_preset', {
+                        name,
+                        presetType: 'swap',
+                        description: description || null,
+                        swaps: swapsToSend,
+                    });
+                }
+                showToast(`Preset <strong>${escHtml(saved?.name || name)}</strong> saved`, 'success');
+                closeModal();
+                await refreshPresets();
+                await refreshSwapHistory();
+            } catch (err) {
+                showToast(String(err), 'error');
+            } finally {
+                confirmBtn.disabled = false;
+            }
+        };
+    }
+
+    modal.classList.add('active');
+    setTimeout(() => nameInput?.focus(), 60);
+}
+
 function wirePresetsUI() {
     const saveBtn = document.getElementById('preset-save-btn');
     if (saveBtn && saveBtn.dataset.wired !== '1') {
         saveBtn.dataset.wired = '1';
-        saveBtn.onclick = async () => {
-            const name = await appDialog({ title: 'Save preset', message: 'Preset name:', input: 'My preset', okLabel: 'Save' });
-            if (!name || !name.trim()) return;
-            try {
-                let swapsToSend = null;
-                const existingSwaps = await invoke('get_swaps').catch(() => []);
-                if (ownedItem && wantedItem) {
-                    const ownedId = Number(ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id);
-                    const wantedId = Number(wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id);
-                    const activeOwnedPaintId = Number(ownedPaintId || 0);
-                    let paintId = itemIsPaintable(wantedItem) ? Number(wantedPaintId || 0) : 0;
-                    const oName = ownedItem.Product || ownedItem.product || '';
-                    const wName = wantedItem.Product || wantedItem.product || '';
-                    const pkg = ownedItem.AssetPackage || ownedItem.asset_package || '';
-                    const list = Array.isArray(existingSwaps) ? existingSwaps.filter(s => s.owned_id !== ownedId) : [];
-                    list.push({
-                        owned_id: ownedId,
-                        wanted_id: wantedId,
-                        owned_name: oName,
-                        wanted_name: wName,
-                        paint_id: paintId,
-                        custom_paint_hex: null,
-                        owned_paint_id: null,
-                        owned_custom_hex: null,
-                        asset_package: pkg,
-                    });
-                    swapsToSend = list;
-                }
-                const saved = await invoke('save_preset', { name: name.trim(), swaps: swapsToSend });
-                showToast(`Preset <strong>${escHtml(saved?.name || name.trim())}</strong> saved`, 'success');
-                await refreshPresets();
-                await refreshSwapHistory();
-            } catch (e) {
-                showToast(String(e), 'error');
-            }
-        };
+        saveBtn.onclick = openSavePresetModal;
     }
     document.getElementById('preset-import-btn')?.addEventListener('click', async () => {
         const code = await appDialog({ title: 'Import preset', message: 'Paste a preset code:', input: '', okLabel: 'Next' });

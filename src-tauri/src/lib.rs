@@ -358,27 +358,33 @@ struct BackupFile {
     paint_name: String,
 }
 
+fn is_zero_i32(v: &i32) -> bool {
+    *v == 0
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SwapEntry {
+    #[serde(alias = "oid")]
     pub owned_id:  i32,
+    #[serde(alias = "wid")]
     pub wanted_id: i32,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub owned_name:  String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub wanted_name: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owned_paint_id: Option<i32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owned_custom_hex: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_zero_i32", alias = "paint")]
     pub paint_id: i32,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_paint_hex: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub asset_package: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slot: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timestamp: Option<String>, // ISO 8601 UTC e.g. "2026-09-30T00:00:00Z"
 }
 

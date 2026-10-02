@@ -137,18 +137,26 @@ pub struct FakeRanksPayload {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct InventorySpoofItemPayload {
-    #[serde(default)]
+    #[serde(default, alias = "pid")]
     pub product_id: i32,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_zero_i32", alias = "paint")]
     pub paint_id: i32,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_zero_i32", alias = "series")]
     pub series_id: i32,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub slot: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[serde(default, skip_serializing_if = "String::is_empty", alias = "name")]
     pub product_name: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false_bool")]
     pub dlc: bool,
+}
+
+fn is_zero_i32(v: &i32) -> bool {
+    *v == 0
+}
+
+fn is_false_bool(v: &bool) -> bool {
+    !*v
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -539,6 +547,15 @@ pub fn read_or_default_spoof(dir: &Path) -> Result<SpoofPayload, String> {
     let def = default_spoof_payload();
     let _ = write_spoof(dir, &def);
     Ok(def)
+}
+
+pub fn read_psynet_config(_app: &tauri::AppHandle) -> SpoofPayload {
+    load_active_spoof_from_disk().unwrap_or_else(default_spoof_payload)
+}
+
+pub fn write_psynet_config(_app: &tauri::AppHandle, payload: &SpoofPayload) -> Result<PathBuf, String> {
+    let dir = config_dir();
+    write_spoof(&dir, payload)
 }
 
 fn config_path(dir: &Path) -> PathBuf {

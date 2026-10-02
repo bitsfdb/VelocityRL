@@ -29,25 +29,33 @@ pub const MAX_PRESET_MAPS: usize = 30;
 pub struct PresetMapEntry {
     pub id: String,
     pub name: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub download_url: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thumbnail_url: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_path: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Preset {
     pub id: String,
     pub name: String,
     pub created_at: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preset_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub swaps: Vec<SwapEntry>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub maps: Vec<PresetMapEntry>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_map_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spawned_items: Vec<crate::psynet::InventorySpoofItemPayload>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spawned_titles: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -152,13 +160,78 @@ pub async fn get_presets(app: tauri::AppHandle) -> Result<Vec<Preset>, String> {
 pub async fn save_preset(
     app: tauri::AppHandle,
     name: String,
+    preset_type: Option<String>,
+    description: Option<String>,
     maps: Option<Vec<PresetMapEntry>>,
     swaps: Option<Vec<SwapEntry>>,
+    spawned_items: Option<Vec<crate::psynet::InventorySpoofItemPayload>>,
+    spawned_titles: Option<Vec<String>>,
 ) -> Result<Preset, String> {
     let name = name.trim().to_string();
     if name.is_empty() || name.len() > 64 {
         return Err("Preset name must be 1–64 characters.".into());
     }
+    let desc = description.map(|d| d.trim().to_string()).filter(|d| !d.is_empty());
+    let ptype = preset_type.unwrap_or_else(|| {
+        if spawned_items.is_some() || spawned_titles.is_some() {
+            "spawn".to_string()
+        } else {
+            "swap".to_string()
+        }
+    });
+
+    let mut f = load_preset_file(&app);
+    let existing_idx = f.presets.iter().position(|p| p.name.trim().eq_ignore_ascii_case(&name));
+
+    if ptype == "spawn" {
+        let psynet_cfg = crate::psynet::read_psynet_config(&app);
+        let inv = psynet_cfg.inventory_spoof.unwrap_or_default();
+        let items_to_save = spawned_items.unwrap_or(inv.items);
+        let titles_to_save = spawned_titles.unwrap_or(inv.titles);
+
+        if items_to_save.is_empty() && titles_to_save.is_empty() {
+            return Err("No active spawned items or titles to save as a preset. Spawn some items first.".into());
+        }
+
+        if let Some(idx) = existing_idx {
+            let p = &mut f.presets[idx];
+            p.name = name.clone();
+            p.preset_type = Some("spawn".to_string());
+            p.description = desc;
+            p.spawned_items = items_to_save.clone();
+            p.spawned_titles = titles_to_save.clone();
+            p.swaps = Vec::new();
+            p.maps = Vec::new();
+            p.active_map_id = None;
+            p.created_at = crate::now_iso8601_utc();
+            let updated = p.clone();
+            save_preset_file(&app, &f);
+            append_history(&app, "preset_save", &[], &format!("updated spawner preset '{name}'"));
+            return Ok(updated);
+        }
+
+        if f.presets.len() >= MAX_PRESETS {
+            return Err(format!("Preset limit reached ({MAX_PRESETS}). Delete one first."));
+        }
+
+        let preset = Preset {
+            id: generate_preset_uuid(),
+            name: name.clone(),
+            created_at: crate::now_iso8601_utc(),
+            preset_type: Some("spawn".to_string()),
+            description: desc,
+            swaps: Vec::new(),
+            maps: Vec::new(),
+            active_map_id: None,
+            spawned_items: items_to_save,
+            spawned_titles: titles_to_save,
+        };
+        f.presets.push(preset.clone());
+        save_preset_file(&app, &f);
+        append_history(&app, "preset_save", &[], &format!("saved spawner preset '{name}'"));
+        return Ok(preset);
+    }
+
     let mut current_swaps = swaps.unwrap_or_else(|| crate::load_swaps(&app));
 
     let items = crate::get_items(app.clone(), None).await.unwrap_or_default();
@@ -206,14 +279,16 @@ pub async fn save_preset(
         return Err(format!("Preset exceeds maximum limit of {MAX_PRESET_MAPS} maps (has {}).", preset_maps.len()));
     }
 
-    let mut f = load_preset_file(&app);
-    let existing_idx = f.presets.iter().position(|p| p.name.trim().eq_ignore_ascii_case(&name));
     if let Some(idx) = existing_idx {
         let p = &mut f.presets[idx];
         p.name = name.clone();
+        p.preset_type = Some("swap".to_string());
+        p.description = desc;
         p.swaps = current_swaps.clone();
         p.maps = preset_maps;
         p.active_map_id = active_map_id;
+        p.spawned_items = Vec::new();
+        p.spawned_titles = Vec::new();
         p.created_at = crate::now_iso8601_utc();
         let updated = p.clone();
         save_preset_file(&app, &f);
@@ -229,9 +304,13 @@ pub async fn save_preset(
         id: generate_preset_uuid(),
         name: name.clone(),
         created_at: crate::now_iso8601_utc(),
+        preset_type: Some("swap".to_string()),
+        description: desc,
         swaps: current_swaps.clone(),
         maps: preset_maps,
         active_map_id,
+        spawned_items: Vec::new(),
+        spawned_titles: Vec::new(),
     };
     f.presets.push(preset.clone());
     save_preset_file(&app, &f);
@@ -255,6 +334,34 @@ pub async fn apply_preset(app: tauri::AppHandle, id: String) -> Result<Vec<Strin
         .into_iter()
         .find(|p| p.id == id)
         .ok_or_else(|| "Preset not found.".to_string())?;
+
+    let is_spawn = preset.preset_type.as_deref() == Some("spawn")
+        || (!preset.spawned_items.is_empty() || !preset.spawned_titles.is_empty());
+
+    if is_spawn {
+        let mut cfg = crate::psynet::read_psynet_config(&app);
+        let mut inv = cfg.inventory_spoof.unwrap_or_default();
+        inv.enabled = true;
+        inv.items = preset.spawned_items.clone();
+        inv.titles = preset.spawned_titles.clone();
+        cfg.inventory_spoof = Some(inv);
+        let _ = crate::psynet::write_psynet_config(&app, &cfg);
+
+        append_history(
+            &app,
+            "preset_apply_spawn",
+            &[],
+            &format!("applied spawner preset '{}'", preset.name),
+        );
+
+        return Ok(vec![format!(
+            "OK  Spawned {} item(s) and {} title(s) from preset '{}'",
+            preset.spawned_items.len(),
+            preset.spawned_titles.len(),
+            preset.name
+        )]);
+    }
+
     if preset.swaps.is_empty() && preset.maps.is_empty() {
         return Err("Preset has no swaps or maps.".into());
     }
@@ -398,7 +505,54 @@ pub fn encode_14slot_binary(swaps: &[SwapEntry]) -> String {
     B64.encode(combined)
 }
 
-fn parse_legacy_v1_code(rest: &str) -> Result<(String, Vec<SwapEntry>, Vec<PresetMapEntry>, Option<String>), String> {
+fn parse_preset_json_value(val: serde_json::Value) -> Result<Preset, String> {
+    let name = val
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Shared Preset")
+        .to_string();
+    let preset_type = val.get("preset_type").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let description = val.get("description").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let swaps: Vec<SwapEntry> = serde_json::from_value(val.get("swaps").cloned().unwrap_or_default())
+        .unwrap_or_default();
+    let maps: Vec<PresetMapEntry> = serde_json::from_value(val.get("maps").cloned().unwrap_or_default())
+        .unwrap_or_default();
+    let active_map_id: Option<String> = val.get("active_map_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let spawned_items: Vec<crate::psynet::InventorySpoofItemPayload> = serde_json::from_value(val.get("spawned_items").cloned().unwrap_or_default())
+        .unwrap_or_default();
+    let spawned_titles: Vec<String> = serde_json::from_value(val.get("spawned_titles").cloned().unwrap_or_default())
+        .unwrap_or_default();
+
+    if swaps.len() > MAX_PRESET_ITEMS {
+        return Err(format!("Invalid preset code: contains more than {MAX_PRESET_ITEMS} swaps."));
+    }
+    if maps.len() > MAX_PRESET_MAPS {
+        return Err(format!("Invalid preset code: contains more than {MAX_PRESET_MAPS} maps."));
+    }
+
+    let ptype = preset_type.or_else(|| {
+        if !spawned_items.is_empty() || !spawned_titles.is_empty() {
+            Some("spawn".to_string())
+        } else {
+            Some("swap".to_string())
+        }
+    });
+
+    Ok(Preset {
+        id: String::new(),
+        name,
+        created_at: crate::now_iso8601_utc(),
+        preset_type: ptype,
+        description,
+        swaps,
+        maps,
+        active_map_id,
+        spawned_items,
+        spawned_titles,
+    })
+}
+
+fn parse_legacy_v1_code(rest: &str) -> Result<Preset, String> {
     let (payload_b64, sig_b64) = rest
         .split_once('.')
         .ok_or("Malformed preset code: missing signature.")?;
@@ -413,26 +567,10 @@ fn parse_legacy_v1_code(rest: &str) -> Result<(String, Vec<SwapEntry>, Vec<Prese
     }
     let val: serde_json::Value =
         serde_json::from_slice(&payload).map_err(|_| "Malformed preset code payload.")?;
-    let name = val
-        .get("name")
-        .and_then(|v| v.as_str())
-        .unwrap_or("Shared preset")
-        .to_string();
-    let swaps: Vec<SwapEntry> = serde_json::from_value(val.get("swaps").cloned().unwrap_or_default())
-        .map_err(|_| "Preset code contains invalid swaps.")?;
-    let maps: Vec<PresetMapEntry> = serde_json::from_value(val.get("maps").cloned().unwrap_or_default())
-        .unwrap_or_default();
-    let active_map_id: Option<String> = val.get("active_map_id").and_then(|v| v.as_str()).map(|s| s.to_string());
-    if swaps.len() > MAX_PRESET_ITEMS {
-        return Err(format!("Invalid preset code: contains more than {MAX_PRESET_ITEMS} swaps."));
-    }
-    if maps.len() > MAX_PRESET_MAPS {
-        return Err(format!("Invalid preset code: contains more than {MAX_PRESET_MAPS} maps."));
-    }
-    Ok((name, swaps, maps, active_map_id))
+    parse_preset_json_value(val)
 }
 
-fn parse_zlib_code(rest: &str) -> Result<(String, Vec<SwapEntry>, Vec<PresetMapEntry>, Option<String>), String> {
+fn parse_zlib_code(rest: &str) -> Result<Preset, String> {
     let (payload_b64, sig_b64) = rest
         .split_once('.')
         .ok_or("Malformed zlib preset code: missing signature.")?;
@@ -447,29 +585,26 @@ fn parse_zlib_code(rest: &str) -> Result<(String, Vec<SwapEntry>, Vec<PresetMapE
     let mut decomp = Vec::new();
     dec.read_to_end(&mut decomp).map_err(|e| format!("Failed to decompress zlib preset: {e}"))?;
     let val: serde_json::Value = serde_json::from_slice(&decomp).map_err(|e| format!("Invalid JSON: {e}"))?;
-    let name = val.get("name").and_then(|v| v.as_str()).unwrap_or("Shared preset").to_string();
-    let swaps: Vec<SwapEntry> = serde_json::from_value(val.get("swaps").cloned().unwrap_or_default()).unwrap_or_default();
-    let maps: Vec<PresetMapEntry> = serde_json::from_value(val.get("maps").cloned().unwrap_or_default()).unwrap_or_default();
-    let active_map_id = val.get("active_map_id").and_then(|v| v.as_str()).map(|s| s.to_string());
-    if swaps.len() > MAX_PRESET_ITEMS {
-        return Err(format!("Invalid preset code: contains more than {MAX_PRESET_ITEMS} swaps."));
-    }
-    if maps.len() > MAX_PRESET_MAPS {
-        return Err(format!("Invalid preset code: contains more than {MAX_PRESET_MAPS} maps."));
-    }
-    Ok((name, swaps, maps, active_map_id))
+    parse_preset_json_value(val)
 }
 
 fn code_for_preset(p: &Preset) -> Result<String, String> {
-    if p.maps.is_empty() {
+    let is_spawn = p.preset_type.as_deref() == Some("spawn")
+        || (!p.spawned_items.is_empty() || !p.spawned_titles.is_empty());
+
+    if !is_spawn && p.maps.is_empty() && p.description.is_none() {
         Ok(encode_14slot_binary(&p.swaps))
     } else {
         let payload = serde_json::json!({
-            "v": 1,
+            "v": 2,
             "name": p.name,
+            "preset_type": p.preset_type.as_deref().unwrap_or(if is_spawn { "spawn" } else { "swap" }),
+            "description": p.description,
             "swaps": p.swaps,
             "maps": p.maps,
             "active_map_id": p.active_map_id,
+            "spawned_items": p.spawned_items,
+            "spawned_titles": p.spawned_titles,
         })
         .to_string();
         let sig = sign_preset_payload(payload.as_bytes());
@@ -483,21 +618,13 @@ fn code_for_preset(p: &Preset) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn peek_preset_code(code: String) -> Result<Preset, String> {
-    let (name, swaps, maps, active_map_id) = parse_code(&code)?;
-    Ok(Preset {
-        id: String::new(),
-        name,
-        created_at: String::new(),
-        swaps,
-        maps,
-        active_map_id,
-    })
+    parse_code(&code)
 }
 
-fn parse_code(code: &str) -> Result<(String, Vec<SwapEntry>, Vec<PresetMapEntry>, Option<String>), String> {
+fn parse_code(code: &str) -> Result<Preset, String> {
     let code = code.trim();
 
-    if let Some(rest) = code.strip_prefix("1.") {
+    if let Some(rest) = code.strip_prefix("1.").or_else(|| code.strip_prefix("2.")) {
         return parse_legacy_v1_code(rest);
     }
 
@@ -505,7 +632,7 @@ fn parse_code(code: &str) -> Result<(String, Vec<SwapEntry>, Vec<PresetMapEntry>
         return parse_zlib_code(rest);
     }
 
-    let clean = code.strip_prefix("2.").or_else(|| code.strip_prefix("v2.")).unwrap_or(code);
+    let clean = code.strip_prefix("v2.").unwrap_or(code);
     if let Ok(raw) = B64.decode(clean) {
         if raw.len() == 58 {
             let payload = &raw[..42];
@@ -539,7 +666,18 @@ fn parse_code(code: &str) -> Result<(String, Vec<SwapEntry>, Vec<PresetMapEntry>
                 }
             }
 
-            return Ok(("Shared Preset".to_string(), swaps, Vec::new(), None));
+            return Ok(Preset {
+                id: String::new(),
+                name: "Shared Preset".to_string(),
+                created_at: crate::now_iso8601_utc(),
+                preset_type: Some("swap".to_string()),
+                description: None,
+                swaps,
+                maps: Vec::new(),
+                active_map_id: None,
+                spawned_items: Vec::new(),
+                spawned_titles: Vec::new(),
+            });
         }
     }
 
@@ -562,37 +700,36 @@ pub async fn import_preset_code(
     app: tauri::AppHandle,
     code: String,
 ) -> Result<Preset, String> {
-    let (name, swaps, maps, active_map_id) = parse_code(&code)?;
-    if swaps.is_empty() && maps.is_empty() {
-        return Err("Preset code contains no swaps or maps.".into());
+    let parsed = parse_code(&code)?;
+    if parsed.swaps.is_empty() && parsed.maps.is_empty() && parsed.spawned_items.is_empty() && parsed.spawned_titles.is_empty() {
+        return Err("Preset code contains no items, maps, or spawns.".into());
     }
     let mut f = load_preset_file(&app);
     if f.presets.len() >= MAX_PRESETS {
         return Err(format!("Preset limit reached ({MAX_PRESETS}). Delete one first."));
     }
-    let existing = f.presets.iter_mut().find(|p| p.name == name).map(|p| {
-        p.swaps = swaps.clone();
-        p.maps = maps.clone();
-        p.active_map_id = active_map_id.clone();
+    let existing = f.presets.iter_mut().find(|p| p.name == parsed.name).map(|p| {
+        p.preset_type = parsed.preset_type.clone();
+        p.description = parsed.description.clone();
+        p.swaps = parsed.swaps.clone();
+        p.maps = parsed.maps.clone();
+        p.active_map_id = parsed.active_map_id.clone();
+        p.spawned_items = parsed.spawned_items.clone();
+        p.spawned_titles = parsed.spawned_titles.clone();
         p.created_at = crate::now_iso8601_utc();
         p.clone()
     });
     if let Some(updated) = existing {
         save_preset_file(&app, &f);
-        append_history(&app, "preset_save", &swaps, &format!("imported preset '{name}' (overwrote)"));
+        append_history(&app, "preset_save", &parsed.swaps, &format!("imported preset '{}' (overwrote)", parsed.name));
         return Ok(updated);
     }
-    let preset = Preset {
-        id: generate_preset_uuid(),
-        name,
-        created_at: crate::now_iso8601_utc(),
-        swaps: swaps.clone(),
-        maps,
-        active_map_id,
-    };
+    let mut preset = parsed;
+    preset.id = generate_preset_uuid();
+    preset.created_at = crate::now_iso8601_utc();
     f.presets.push(preset.clone());
     save_preset_file(&app, &f);
-    append_history(&app, "preset_save", &swaps, "imported preset from code");
+    append_history(&app, "preset_save", &preset.swaps, &format!("imported preset '{}'", preset.name));
     Ok(preset)
 }
 
@@ -876,17 +1013,17 @@ mod tests {
         let code = encode_14slot_binary(&swaps);
         assert_eq!(code.len(), 78, "14-slot binary base64 code must be exactly 78 characters");
 
-        let (name, decoded_swaps, maps, active_map) = parse_code(&code).expect("must parse code");
-        assert_eq!(name, "Shared Preset");
-        assert!(maps.is_empty());
-        assert!(active_map.is_none());
-        assert_eq!(decoded_swaps.len(), 2);
+        let preset = parse_code(&code).expect("must parse code");
+        assert_eq!(preset.name, "Shared Preset");
+        assert!(preset.maps.is_empty());
+        assert!(preset.active_map_id.is_none());
+        assert_eq!(preset.swaps.len(), 2);
 
-        let body_swap = decoded_swaps.iter().find(|s| s.slot.as_deref() == Some("Body")).expect("body slot");
+        let body_swap = preset.swaps.iter().find(|s| s.slot.as_deref() == Some("Body")).expect("body slot");
         assert_eq!(body_swap.wanted_id, 4284);
         assert_eq!(body_swap.paint_id, 12);
 
-        let wheel_swap = decoded_swaps.iter().find(|s| s.slot.as_deref() == Some("Wheels")).expect("wheels slot");
+        let wheel_swap = preset.swaps.iter().find(|s| s.slot.as_deref() == Some("Wheels")).expect("wheels slot");
         assert_eq!(wheel_swap.wanted_id, 1565);
         assert_eq!(wheel_swap.paint_id, 3);
     }
@@ -897,6 +1034,8 @@ mod tests {
             id: "test-id".into(),
             name: "My Legacy Preset".into(),
             created_at: "2026-09-28T00:00:00Z".into(),
+            preset_type: Some("swap".into()),
+            description: Some("Preset notes test".into()),
             swaps: vec![
                 SwapEntry {
                     owned_id: 23,
@@ -914,11 +1053,14 @@ mod tests {
             ],
             maps: vec![],
             active_map_id: None,
+            spawned_items: vec![],
+            spawned_titles: vec![],
         };
 
         let payload = serde_json::json!({
             "v": 1,
             "name": preset.name,
+            "description": preset.description,
             "swaps": preset.swaps,
             "maps": preset.maps,
             "active_map_id": preset.active_map_id,
@@ -926,10 +1068,45 @@ mod tests {
         let sig = sign_preset_payload(payload.as_bytes());
         let legacy_code = format!("1.{}.{}", B64.encode(payload.as_bytes()), B64.encode(sig));
 
-        let (name, swaps, _, _) = parse_code(&legacy_code).expect("must parse legacy code");
-        assert_eq!(name, "My Legacy Preset");
-        assert_eq!(swaps.len(), 1);
-        assert_eq!(swaps[0].wanted_id, 4284);
+        let p = parse_code(&legacy_code).expect("must parse legacy code");
+        assert_eq!(p.name, "My Legacy Preset");
+        assert_eq!(p.description.as_deref(), Some("Preset notes test"));
+        assert_eq!(p.swaps.len(), 1);
+        assert_eq!(p.swaps[0].wanted_id, 4284);
+    }
+
+    #[test]
+    fn test_spawner_preset_code() {
+        let preset = Preset {
+            id: "spawn-1".into(),
+            name: "My Spawner Preset".into(),
+            created_at: "2026-10-02T00:00:00Z".into(),
+            preset_type: Some("spawn".into()),
+            description: Some("Enable color palette to achieve this preset in game".into()),
+            swaps: vec![],
+            maps: vec![],
+            active_map_id: None,
+            spawned_items: vec![
+                crate::psynet::InventorySpoofItemPayload {
+                    product_id: 4284,
+                    paint_id: 12,
+                    series_id: 0,
+                    slot: "Body".into(),
+                    product_name: "Fennec".into(),
+                    dlc: false,
+                },
+            ],
+            spawned_titles: vec!["RLCS World Champion".into()],
+        };
+
+        let code = code_for_preset(&preset).expect("must encode");
+        let decoded = parse_code(&code).expect("must decode");
+        assert_eq!(decoded.name, "My Spawner Preset");
+        assert_eq!(decoded.preset_type.as_deref(), Some("spawn"));
+        assert_eq!(decoded.description.as_deref(), Some("Enable color palette to achieve this preset in game"));
+        assert_eq!(decoded.spawned_items.len(), 1);
+        assert_eq!(decoded.spawned_items[0].product_id, 4284);
+        assert_eq!(decoded.spawned_titles.len(), 1);
     }
 
     #[test]
