@@ -2199,13 +2199,30 @@ function renderResults(matches, resultsDiv, selectionHandler) {
     resultsDiv.style.display = 'block';
 }
 
-function normSlot(s) { return String(s || '').toLowerCase().replace(/[\s_-]+/g, ''); }
+function normSlot(s) {
+    const raw = String(s || '').toLowerCase().replace(/[\s_-]+/g, '');
+    if (!raw) return '';
+    if (raw.includes('explosion') || raw.includes('goalexplosion')) return 'goalexplosion';
+    if (raw.includes('boost')) return 'rocketboost';
+    if (raw.includes('decal') || raw.includes('skin')) return 'decal';
+    if (raw.includes('body') || raw.includes('car') || raw.includes('chassis')) return 'body';
+    if (raw.includes('wheel')) return 'wheels';
+    if (raw.includes('trail')) return 'trail';
+    if (raw.includes('banner')) return 'playerbanner';
+    if (raw.includes('border')) return 'avatarborder';
+    if (raw.includes('antenna')) return 'antenna';
+    if (raw.includes('topper') || raw.includes('hat')) return 'topper';
+    if (raw.includes('audio') || raw.includes('engine')) return 'engineaudio';
+    if (raw.includes('paint') || raw.includes('finish')) return 'paintfinish';
+    if (raw.includes('title')) return 'titles';
+    return raw;
+}
 
 const UNPAINTABLE_SLOTS = new Set([
     'playeranthem', 'anthem',
-    'playertitle', 'title',
+    'playertitle', 'title', 'titles',
     'crate', 'blueprint', 'currency', 'drop',
-    'engineaudio',
+    'engineaudio', 'playerbanner', 'avatarborder', 'antenna', 'paintfinish',
 ]);
 
 const PAINT_HINT_UNPAINTABLE = "Unavailable for this item type.";
@@ -7527,8 +7544,9 @@ function wireSpawnerControls() {
             spawnerCategory = btn.dataset.slot || 'All';
             spawnerPage = 1;
             const paintWrap = document.getElementById('spawner-paint-wrap');
+            const unpaintableCats = ['titles', 'playerbanner', 'avatarborder', 'antenna', 'engineaudio', 'paintfinish'];
             if (paintWrap) {
-                paintWrap.style.display = spawnerCategory === 'Titles' ? 'none' : 'flex';
+                paintWrap.style.display = unpaintableCats.includes(normSlot(spawnerCategory)) ? 'none' : 'flex';
             }
             renderSpawnerCatalogue();
         });
@@ -7599,14 +7617,18 @@ function wireSpawnerControls() {
                 await invoke('add_network_spawned_titles_bulk', { titleIds: titlesToSpawn });
             }
             if (itemsToSpawn.length > 0) {
-                const payload = itemsToSpawn.map(item => ({
-                    product_id: parseInt(item.id, 10) || 0,
-                    paint_id: paint.id,
-                    series_id: 0,
-                    slot: normSlot(item.slot || ''),
-                    product_name: item.name || 'Unknown Item',
-                    dlc: false
-                })).filter(i => i.product_id > 0);
+                const payload = itemsToSpawn.map(entry => {
+                    const fullItem = findItemByProductId(entry.id);
+                    const canPaint = fullItem ? itemIsPaintable(fullItem) : true;
+                    return {
+                        product_id: parseInt(entry.id, 10) || 0,
+                        paint_id: canPaint ? paint.id : 0,
+                        series_id: 0,
+                        slot: normSlot(entry.slot || fullItem?.Slot || fullItem?.slot || ''),
+                        product_name: entry.name || fullItem?.Product || fullItem?.product || 'Unknown Item',
+                        dlc: false
+                    };
+                }).filter(i => i.product_id > 0);
 
                 if (payload.length > 0) {
                     await invoke('add_network_spawned_items_bulk', { items: payload });
@@ -7614,7 +7636,11 @@ function wireSpawnerControls() {
             }
 
             const total = titlesToSpawn.length + itemsToSpawn.length;
-            const paintSuffix = itemsToSpawn.length > 0 && paint.id > 0 ? ` (${paint.name})` : '';
+            const paintedCount = itemsToSpawn.filter(e => {
+                const fullItem = findItemByProductId(e.id);
+                return fullItem ? itemIsPaintable(fullItem) : true;
+            }).length;
+            const paintSuffix = paintedCount > 0 && paint.id > 0 ? ` (${paint.name})` : '';
             showToast(`Spawned ${total} selected item(s)${paintSuffix} into network inventory!`, 'success');
             spawnerSelectedItems.clear();
             updateSpawnerSelectionUi();
@@ -7684,9 +7710,10 @@ function wireSpawnerControls() {
         }
 
         const allItems = items || [];
+        const targetSlot = normSlot(spawnerCategory);
         const filtered = allItems.filter(item => {
-            const slot = normSlot(item.Slot || item.slot || '');
-            if (spawnerCategory !== 'All' && slot.toLowerCase() !== spawnerCategory.toLowerCase()) {
+            const itemSlot = normSlot(item.Slot || item.slot || item.category || item.Category || '');
+            if (spawnerCategory !== 'All' && itemSlot !== targetSlot) {
                 return false;
             }
             const name = (item.Product || item.product || '').toLowerCase();
@@ -7698,14 +7725,17 @@ function wireSpawnerControls() {
             return;
         }
 
-        const payload = filtered.map(item => ({
-            product_id: parseInt(item.ID ?? item.id, 10) || 0,
-            paint_id: paint.id,
-            series_id: 0,
-            slot: normSlot(item.Slot || item.slot || ''),
-            product_name: item.Product || item.product || item.name || 'Unknown Item',
-            dlc: false
-        })).filter(i => i.product_id > 0);
+        const payload = filtered.map(item => {
+            const canPaint = itemIsPaintable(item);
+            return {
+                product_id: parseInt(item.ID ?? item.id, 10) || 0,
+                paint_id: canPaint ? paint.id : 0,
+                series_id: 0,
+                slot: normSlot(item.Slot || item.slot || item.category || ''),
+                product_name: item.Product || item.product || item.name || 'Unknown Item',
+                dlc: false
+            };
+        }).filter(i => i.product_id > 0);
 
         if (!payload.length) {
             showToast('No valid items found.', 'warning');
@@ -7834,9 +7864,10 @@ async function renderSpawnerCatalogue() {
     }
 
     const allItems = items || [];
+    const targetSlot = normSlot(spawnerCategory);
     const filteredItems = allItems.filter(item => {
-        const slot = normSlot(item.Slot || item.slot || '');
-        if (spawnerCategory !== 'All' && slot.toLowerCase() !== spawnerCategory.toLowerCase()) {
+        const itemSlot = normSlot(item.Slot || item.slot || item.category || item.Category || '');
+        if (spawnerCategory !== 'All' && itemSlot !== targetSlot) {
             return false;
         }
         const name = (item.Product || item.product || '').toLowerCase();
