@@ -7233,6 +7233,12 @@ async function startApp() {
     } catch (err) {
         console.warn('initTrackerModule non-fatal error:', err);
     }
+
+    try {
+        await invoke('check_and_patch_tagame_validator');
+    } catch (err) {
+        console.warn('check_and_patch_tagame_validator non-fatal error:', err);
+    }
 }
 
 if (document.readyState === 'loading') {
