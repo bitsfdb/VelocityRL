@@ -972,7 +972,7 @@ pub fn apply_tagame_modifications(
             if c_end <= file_bytes.len() {
                 if let Ok(mut decomp2) = crate::upk::compression::decompress_chunk(&file_bytes[c_start..c_end]) {
                     let targets_false = ["CorrectOnlineData"];
-                    let targets_void = ["OnLoadoutsSetInternal", "OnLoadoutsOnlineSet", "OnLoadoutsSet", "SetLoadoutOverrides"];
+                    let targets_void = ["OnLoadoutsSetInternal", "OnLoadoutsOnlineSet", "OnLoadoutsSet"];
                     let mut patched_count = 0;
 
                     for exp in exports.iter() {
