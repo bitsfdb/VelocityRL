@@ -908,26 +908,6 @@ pub fn apply_tagame_modifications(
             }
         }
 
-        // Helper to safely patch any simple function bytecode with padding and updated mem_sz
-        let patch_func = |decomp: &mut [u8], exp_name: &str, outer_name: Option<&str>, chunk_u_off: i64, bc: &[u8]| -> bool {
-            if let Some(exp) = exports.iter().find(|e| e.name == exp_name && outer_name.map_or(true, |o| e.outer_name == o)) {
-                let func_off = (exp.serial_offset - chunk_u_off) as usize;
-                if func_off + 48 <= decomp.len() {
-                    let orig_disk_sz = u32::from_le_bytes(decomp[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                    if bc.len() <= orig_disk_sz && func_off + 48 + orig_disk_sz <= decomp.len() {
-                        let pad = orig_disk_sz - bc.len();
-                        let mem_sz = (bc.len() + pad) as u32;
-                        decomp[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                        decomp[func_off + 48..func_off + 48 + bc.len()].copy_from_slice(bc);
-                        for b in &mut decomp[func_off + 48 + bc.len()..func_off + 48 + orig_disk_sz] {
-                            *b = opcodes::EX_NOTHING;
-                        }
-                        return true;
-                    }
-                }
-            }
-            false
-        };
 
         let target_ge_opt = swaps.iter()
             .find(|s| {
@@ -985,37 +965,81 @@ pub fn apply_tagame_modifications(
             }
         }
 
-        if chunks.len() > 2 {
-            let c2 = &chunks[2];
-            let c2_start = c2.comp_offset as usize;
-            let c2_end = c2_start + c2.comp_size as usize;
-            if c2_end <= file_bytes.len() {
-                if let Ok(mut decomp2) = crate::upk::compression::decompress_chunk(&file_bytes[c2_start..c2_end]) {
-                    if let Some(exp) = exports.iter().find(|e| e.name == "CorrectOnlineData") {
-                        let func_off = (exp.serial_offset - c2.uncomp_offset) as usize;
-                        if func_off + 48 <= decomp2.len() {
-                            let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                            if orig_disk_sz >= 10 {
+        // 1. Patch LoadoutValidation_TA::CorrectOnlineData -> return false; (bypasses "Replacing prohibited product")
+        if let Some(exp) = exports.iter().find(|e| {
+            e.name == "CorrectOnlineData" || (e.name.contains("CorrectOnlineData") && (e.outer_name == "LoadoutValidation_TA" || e.outer_name.is_empty()))
+        }) {
+            if let Some(ch) = chunks.iter().find(|ch| {
+                exp.serial_offset >= ch.uncomp_offset && exp.serial_offset < ch.uncomp_offset + ch.uncomp_size as i64
+            }) {
+                let c_start = ch.comp_offset as usize;
+                let c_end = c_start + ch.comp_size as usize;
+                if c_end <= file_bytes.len() {
+                    if let Ok(mut decomp) = crate::upk::compression::decompress_chunk(&file_bytes[c_start..c_end]) {
+                        let func_off = (exp.serial_offset - ch.uncomp_offset) as usize;
+                        if func_off + 48 <= decomp.len() {
+                            let orig_disk_sz = u32::from_le_bytes(decomp[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                            if orig_disk_sz >= 3 && func_off + 48 + orig_disk_sz <= decomp.len() {
                                 let mut bc = Vec::new();
-                                bc.push(opcodes::EX_RETURN); // 0x04
-                                bc.push(0x28); // 0x28 = EX_FALSE (valid loadout, no correction needed)
-                                bc.push(opcodes::EX_END_OF_SCRIPT); // 0x4C
-
+                                bc.push(opcodes::EX_RETURN);
+                                bc.push(0x28); // EX_FALSE_CONST
+                                bc.push(opcodes::EX_END_OF_SCRIPT);
                                 let pad = orig_disk_sz.saturating_sub(bc.len());
                                 bc.resize(orig_disk_sz, opcodes::EX_NOTHING);
-                                let mem_sz = (3 + pad) as u32;
+                                let new_mem = (1 + 1 + 1 + pad) as u32;
+                                decomp[func_off + 40..func_off + 44].copy_from_slice(&new_mem.to_le_bytes());
+                                decomp[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&bc);
 
-                                decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&bc);
+                                if let Ok(mut recomp) = crate::upk::compression::compress_chunk(&decomp) {
+                                    let orig_c_sz = ch.comp_size as usize;
+                                    if recomp.len() <= orig_c_sz {
+                                        recomp.resize(orig_c_sz, 0);
+                                        file_bytes[c_start..c_start + orig_c_sz].copy_from_slice(&recomp);
+                                        crate::applog::event("tagame_swapper: patched LoadoutValidation_TA::CorrectOnlineData -> return false");
+                                    }
+                                }
                             }
                         }
                     }
+                }
+            }
+        }
 
-                    if let Ok(mut recomp2) = crate::upk::compression::compress_chunk(&decomp2) {
-                        let orig_c2_sz = c2.comp_size as usize;
-                        if recomp2.len() <= orig_c2_sz {
-                            recomp2.resize(orig_c2_sz, 0);
-                            file_bytes[c2_start..c2_start + orig_c2_sz].copy_from_slice(&recomp2);
+        // 2. Patch PRI_TA::OnLoadoutsSetInternal -> return; (prevents server loadout replication from resetting local car components)
+        if let Some(exp) = exports.iter().find(|e| {
+            (e.name == "OnLoadoutsSetInternal" || e.name.contains("OnLoadoutsSetInternal") || e.name.contains("OnLoadoutsSet"))
+                && (e.outer_name == "PRI_TA" || e.outer_name.is_empty())
+        }) {
+            if let Some(ch) = chunks.iter().find(|ch| {
+                exp.serial_offset >= ch.uncomp_offset && exp.serial_offset < ch.uncomp_offset + ch.uncomp_size as i64
+            }) {
+                let c_start = ch.comp_offset as usize;
+                let c_end = c_start + ch.comp_size as usize;
+                if c_end <= file_bytes.len() {
+                    if let Ok(mut decomp) = crate::upk::compression::decompress_chunk(&file_bytes[c_start..c_end]) {
+                        let func_off = (exp.serial_offset - ch.uncomp_offset) as usize;
+                        if func_off + 48 <= decomp.len() {
+                            let orig_disk_sz = u32::from_le_bytes(decomp[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                            if orig_disk_sz >= 3 && func_off + 48 + orig_disk_sz <= decomp.len() {
+                                let mut bc = Vec::new();
+                                bc.push(opcodes::EX_RETURN);
+                                bc.push(opcodes::EX_NOTHING);
+                                bc.push(opcodes::EX_END_OF_SCRIPT);
+                                let pad = orig_disk_sz.saturating_sub(bc.len());
+                                bc.resize(orig_disk_sz, opcodes::EX_NOTHING);
+                                let new_mem = (1 + 1 + 1 + pad) as u32;
+                                decomp[func_off + 40..func_off + 44].copy_from_slice(&new_mem.to_le_bytes());
+                                decomp[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&bc);
+
+                                if let Ok(mut recomp) = crate::upk::compression::compress_chunk(&decomp) {
+                                    let orig_c_sz = ch.comp_size as usize;
+                                    if recomp.len() <= orig_c_sz {
+                                        recomp.resize(orig_c_sz, 0);
+                                        file_bytes[c_start..c_start + orig_c_sz].copy_from_slice(&recomp);
+                                        crate::applog::event("tagame_swapper: patched PRI_TA::OnLoadoutsSetInternal -> return");
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1113,232 +1137,7 @@ pub fn restore_tagame_upk(cooked_dir: &Path) -> Result<TagameSwapperStatus, Taga
     })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TagameValidatorCheckResult {
-    pub tagame_exists: bool,
-    pub was_expanded: bool,
-    pub was_validator_patched: bool,
-    pub patched_now: bool,
-    pub message: String,
-}
 
-pub fn check_and_ensure_tagame_validator_patched(
-    cooked_dir: &Path,
-) -> Result<TagameValidatorCheckResult, TagameSwapError> {
-    let tagame_path = cooked_dir.join("TAGame.upk");
-    let backup_path = cooked_dir.join(TAGAME_BACKUP_NAME);
-
-    if !tagame_path.is_file() {
-        return Ok(TagameValidatorCheckResult {
-            tagame_exists: false,
-            was_expanded: false,
-            was_validator_patched: false,
-            patched_now: false,
-            message: format!("TAGame.upk not found at {}", tagame_path.display()),
-        });
-    }
-
-    if !backup_path.is_file() {
-        let _ = fs::copy(&tagame_path, &backup_path);
-    }
-
-    // Always start from backup_path if available to avoid stacking modified chunks
-    let source_path = if backup_path.is_file() { &backup_path } else { &tagame_path };
-    let mut file_bytes = fs::read(source_path).map_err(|e| {
-        TagameSwapError::Msg(format!("Failed to read {}: {e}", source_path.display()))
-    })?;
-
-    if file_bytes.len() < 32 {
-        return Err(TagameSwapError::Msg("TAGame.upk too small".into()));
-    }
-
-    let total_header_size = u32::from_le_bytes(file_bytes[8..12].try_into().unwrap()) as usize;
-    let mut p = 12;
-    let flen = i32::from_le_bytes(file_bytes[p..p + 4].try_into().unwrap());
-    p += 4 + if flen > 0 { flen as usize } else { (-flen * 2) as usize };
-    p += 4;
-    let name_count = i32::from_le_bytes(file_bytes[p..p + 4].try_into().unwrap());
-    p += 4;
-    let name_offset = u32::from_le_bytes(file_bytes[p..p + 4].try_into().unwrap()) as usize;
-
-    let enc_size = (total_header_size - name_offset + 15) & !15;
-    let enc_end = name_offset + enc_size;
-    if enc_end > file_bytes.len() {
-        return Err(TagameSwapError::Msg("Encrypted header bounds invalid".into()));
-    }
-
-    let mut plain_header = crypto::decrypt_ecb(&TAGAME_KEY, &file_bytes[name_offset..enc_end]);
-    let names = crate::upk::palette::parse_names_in_block(&plain_header, name_count)
-        .map_err(|e| TagameSwapError::Msg(e.to_string()))?;
-
-    let p_sum = 12 + 4 + (if flen > 0 { flen as usize } else { (-flen * 2) as usize }) + 4 + 8;
-    let export_count = i32::from_le_bytes(file_bytes[p_sum..p_sum + 4].try_into().unwrap()) as usize;
-    let export_offset = i32::from_le_bytes(file_bytes[p_sum + 4..p_sum + 8].try_into().unwrap()) as usize;
-    let depends_offset = i32::from_le_bytes(file_bytes[p_sum + 16..p_sum + 20].try_into().unwrap()) as usize;
-
-    let export_rel = export_offset - name_offset;
-    let depends_rel = depends_offset - name_offset;
-
-    #[allow(dead_code)]
-    struct ExportItem {
-        idx: usize,
-        pos: usize,
-        name: String,
-        outer_idx: i32,
-        outer_name: String,
-        serial_size: i32,
-        serial_offset: i64,
-    }
-
-    let mut exports: Vec<ExportItem> = Vec::new();
-    let mut pos = export_rel;
-
-    while pos + 72 <= depends_rel && pos + 72 <= plain_header.len() && exports.len() < export_count {
-        let i32_at = |a: usize| i32::from_le_bytes(plain_header[pos + a..pos + a + 4].try_into().unwrap());
-        let outer_idx = i32_at(8);
-        let name_idx = i32_at(12);
-        let serial_size = i32_at(32);
-        let serial_offset = i64::from_le_bytes(plain_header[pos + 36..pos + 44].try_into().unwrap());
-        let noc = i32_at(48);
-
-        let nm = if name_idx >= 0 && (name_idx as usize) < names.len() {
-            names[name_idx as usize].clone()
-        } else {
-            String::new()
-        };
-
-        let cur_idx = exports.len() + 1;
-        exports.push(ExportItem {
-            idx: cur_idx,
-            pos,
-            name: nm,
-            outer_idx,
-            outer_name: String::new(),
-            serial_size,
-            serial_offset,
-        });
-
-        pos += 72 + (noc.max(0) as usize) * 4;
-    }
-
-    for i in 0..exports.len() {
-        let out_idx = exports[i].outer_idx;
-        if out_idx > 0 && (out_idx as usize) <= exports.len() {
-            exports[i].outer_name = exports[out_idx as usize - 1].name.clone();
-        }
-    }
-
-    #[allow(dead_code)]
-    struct ChunkItem {
-        pos: usize,
-        uncomp_offset: i64,
-        uncomp_size: i32,
-        comp_offset: i64,
-        comp_size: i32,
-    }
-
-    let mut c_pos = depends_rel;
-    if c_pos + 4 > plain_header.len() {
-        return Err(TagameSwapError::Msg("Chunk table offset out of bounds".into()));
-    }
-    let chunk_count = i32::from_le_bytes(plain_header[c_pos..c_pos + 4].try_into().unwrap()) as usize;
-    c_pos += 4;
-
-    let mut chunks = Vec::with_capacity(chunk_count);
-    for _ in 0..chunk_count {
-        if c_pos + 36 > plain_header.len() {
-            break;
-        }
-        let uncomp_offset = i64::from_le_bytes(plain_header[c_pos..c_pos + 8].try_into().unwrap());
-        let uncomp_size = i32::from_le_bytes(plain_header[c_pos + 8..c_pos + 12].try_into().unwrap());
-        let comp_offset = i64::from_le_bytes(plain_header[c_pos + 12..c_pos + 20].try_into().unwrap());
-        let comp_size = i32::from_le_bytes(plain_header[c_pos + 20..c_pos + 24].try_into().unwrap());
-        chunks.push(ChunkItem {
-            pos: c_pos,
-            uncomp_offset,
-            uncomp_size,
-            comp_offset,
-            comp_size,
-        });
-        c_pos += 36;
-    }
-
-    let was_expanded = true;
-    let mut was_validator_patched = false;
-    let mut needs_write = false;
-
-    // Patch Chunk 2 validator (LoadoutValidation_TA::CorrectOnlineData)
-    if chunks.len() > 2 {
-        let c2 = &chunks[2];
-        let c2_start = c2.comp_offset as usize;
-        let c2_end = c2_start + c2.comp_size as usize;
-        if c2_end <= file_bytes.len() {
-            if let Ok(mut decomp2) = crate::upk::compression::decompress_chunk(&file_bytes[c2_start..c2_end]) {
-                if let Some(exp) = exports.iter().find(|e| e.name == "CorrectOnlineData") {
-                    let func_off = (exp.serial_offset - c2.uncomp_offset) as usize;
-                    if func_off + 48 <= decomp2.len() {
-                        let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                        if orig_disk_sz >= 3 && func_off + 48 + orig_disk_sz <= decomp2.len() {
-                            let script = &decomp2[func_off + 48..func_off + 48 + orig_disk_sz];
-                            let is_already_patched = script.len() >= 3
-                                && script[0] == opcodes::EX_RETURN
-                                && script[1] == 0x28 // EX_FALSE
-                                && script[2] == opcodes::EX_END_OF_SCRIPT;
-
-                            if is_already_patched && source_path == &tagame_path {
-                                was_validator_patched = true;
-                            } else {
-                                was_validator_patched = false;
-
-                                let mut bc = Vec::new();
-                                bc.push(opcodes::EX_RETURN); // 0x04
-                                bc.push(0x28); // 0x28 = EX_FALSE (valid loadout, no DLC stripping)
-                                bc.push(opcodes::EX_END_OF_SCRIPT); // 0x4C
-
-                                let pad = orig_disk_sz.saturating_sub(bc.len());
-                                bc.resize(orig_disk_sz, opcodes::EX_NOTHING);
-                                let mem_sz = (3 + pad) as u32;
-
-                                decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&bc);
-
-                                if let Ok(mut recomp2) = crate::upk::compression::compress_chunk(&decomp2) {
-                                    let orig_c2_sz = c2.comp_size as usize;
-                                    if recomp2.len() <= orig_c2_sz {
-                                        recomp2.resize(orig_c2_sz, 0);
-                                        file_bytes[c2_start..c2_start + orig_c2_sz].copy_from_slice(&recomp2);
-                                        needs_write = true;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if needs_write || source_path != &tagame_path {
-        let re_enc = crypto::encrypt_ecb(&TAGAME_KEY, &plain_header);
-        file_bytes[name_offset..enc_end].copy_from_slice(&re_enc);
-        fs::write(&tagame_path, &file_bytes)?;
-        Ok(TagameValidatorCheckResult {
-            tagame_exists: true,
-            was_expanded,
-            was_validator_patched,
-            patched_now: true,
-            message: "TAGame.upk validator bypass patched successfully.".to_string(),
-        })
-    } else {
-        Ok(TagameValidatorCheckResult {
-            tagame_exists: true,
-            was_expanded: true,
-            was_validator_patched: true,
-            patched_now: false,
-            message: "TAGame.upk validator is already patched.".to_string(),
-        })
-    }
-}
 
 #[cfg(test)]
 mod tests {

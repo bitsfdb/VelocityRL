@@ -22,6 +22,7 @@ pub mod tracker;
 mod winprobe;
 pub mod proxy;
 pub mod features;
+pub mod traffic_server;
 
 
 #[allow(dead_code)]
@@ -1962,27 +1963,7 @@ async fn get_tagame_swapper_status(app: tauri::AppHandle) -> Result<upk::TagameS
     })
 }
 
-#[tauri::command]
-async fn check_and_patch_tagame_validator(app: tauri::AppHandle) -> Result<upk::TagameValidatorCheckResult, String> {
-    let config_opt = get_config(app).await.ok();
-    let detected_opt = detect_game_dir().await.ok().and_then(|v| v.into_iter().next().map(|p| PathBuf::from(p.path)));
-    let game_dir_opt = if let Some(ref c) = config_opt {
-        if !c.game_dir.trim().is_empty() {
-            Some(PathBuf::from(c.game_dir.trim()))
-        } else {
-            detected_opt
-        }
-    } else {
-        detected_opt
-    };
 
-    let game_dir = game_dir_opt.ok_or_else(|| "No Rocket League game directory configured or detected.".to_string())?;
-    let cooked = upk::tagame_swapper::resolve_cooked_dir(&game_dir)
-        .map_err(|e| e.to_string())?;
-
-    upk::tagame_swapper::check_and_ensure_tagame_validator_patched(&cooked)
-        .map_err(|e| e.to_string())
-}
 
 #[tauri::command]
 async fn get_detected_car_body(app: tauri::AppHandle) -> Result<upk::DetectedCarInfo, String> {
@@ -3137,43 +3118,15 @@ pub fn run() {
                 dir.display()
             ));
 
+            traffic_server::start_traffic_web_server();
+
             let ttl_app = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(3)).await; // brief delay after boot
                 maybe_refresh_catalog_by_ttl(ttl_app).await;
             });
 
-            let tagame_check_app = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_millis(600)).await;
-                let config_opt = get_config(tagame_check_app.clone()).await.ok();
-                let detected_opt = detect_game_dir().await.ok().and_then(|v| v.into_iter().next().map(|p| PathBuf::from(p.path)));
-                let game_dir_opt = if let Some(ref c) = config_opt {
-                    if !c.game_dir.trim().is_empty() {
-                        Some(PathBuf::from(c.game_dir.trim()))
-                    } else {
-                        detected_opt
-                    }
-                } else {
-                    detected_opt
-                };
 
-                if let Some(game_dir) = game_dir_opt {
-                    if let Ok(cooked) = upk::tagame_swapper::resolve_cooked_dir(&game_dir) {
-                        match upk::tagame_swapper::check_and_ensure_tagame_validator_patched(&cooked) {
-                            Ok(res) => {
-                                applog::event(&format!(
-                                    "startup: TAGame check -> exists={}, expanded={}, validator_patched={}, patched_now={}, msg={}",
-                                    res.tagame_exists, res.was_expanded, res.was_validator_patched, res.patched_now, res.message
-                                ));
-                            }
-                            Err(e) => {
-                                applog::event(&format!("startup: TAGame validator check error: {e}"));
-                            }
-                        }
-                    }
-                }
-            });
 
             std::thread::spawn(|| {
                 if let Ok(()) = ctrlc::set_handler(|| {
@@ -3428,6 +3381,10 @@ pub fn run() {
             psynet::stop_traffic_debug,
             psynet::get_traffic_debug_log,
             psynet::get_traffic_debug_path,
+            applog::get_traffic_events,
+            applog::clear_traffic_events,
+            applog::set_traffic_capture_enabled,
+            applog::get_traffic_capture_enabled,
             export_diagnostics,
             copy_to_clipboard,
             force_exit,
@@ -3437,7 +3394,6 @@ pub fn run() {
             apply_tagame_swaps,
             restore_tagame_swaps,
             get_tagame_swapper_status,
-            check_and_patch_tagame_validator,
             get_detected_car_body,
             get_custom_decal_config,
             save_custom_decal_config,

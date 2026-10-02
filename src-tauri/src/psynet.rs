@@ -3145,6 +3145,9 @@ pub async fn set_network_spawn_enabled(enabled: bool) -> Result<bool, String> {
     Ok(enabled)
 }
 
+pub const MAX_SPAWNED_ITEMS: usize = 1000;
+pub const MAX_SPAWNED_TITLES: usize = 1000;
+
 #[tauri::command]
 pub async fn add_network_spawned_item(
     product_id: i32,
@@ -3161,6 +3164,9 @@ pub async fn add_network_spawned_item(
         inv.items.retain(|i| i.slot.trim().to_ascii_lowercase() != norm_slot && !(i.product_id == product_id && i.paint_id == paint_id));
     } else {
         inv.items.retain(|i| !(i.product_id == product_id && i.paint_id == paint_id));
+    }
+    if inv.items.len() >= MAX_SPAWNED_ITEMS {
+        return Err("Spawn limit reached (maximum 1,000 items). Please remove some spawned items first.".into());
     }
     inv.items.push(InventorySpoofItemPayload {
         product_id,
@@ -3214,7 +3220,9 @@ pub async fn add_network_spawned_items_bulk(
     inv.enabled = true;
     for it in items {
         inv.items.retain(|i| !(i.product_id == it.product_id && i.paint_id == it.paint_id));
-        inv.items.push(it);
+        if inv.items.len() < MAX_SPAWNED_ITEMS {
+            inv.items.push(it);
+        }
     }
     cfg.inventory_spoof = Some(inv.clone());
     let _ = write_spoof(&dir, &cfg)?;
@@ -3230,6 +3238,9 @@ pub async fn add_network_spawned_title(title_id: String) -> Result<Vec<String>, 
     inv.enabled = true;
     let tid = title_id.trim().to_string();
     if !tid.is_empty() && !inv.titles.iter().any(|t| t.eq_ignore_ascii_case(&tid)) {
+        if inv.titles.len() >= MAX_SPAWNED_TITLES {
+            return Err("Spawn limit reached (maximum 1,000 titles). Please remove some spawned titles first.".into());
+        }
         inv.titles.push(tid);
     }
     cfg.inventory_spoof = Some(inv.clone());
@@ -3249,7 +3260,9 @@ pub async fn add_network_spawned_titles_bulk(
     for tid in title_ids {
         let tid_trim = tid.trim().to_string();
         if !tid_trim.is_empty() && !inv.titles.iter().any(|t| t.eq_ignore_ascii_case(&tid_trim)) {
-            inv.titles.push(tid_trim);
+            if inv.titles.len() < MAX_SPAWNED_TITLES {
+                inv.titles.push(tid_trim);
+            }
         }
     }
     cfg.inventory_spoof = Some(inv.clone());

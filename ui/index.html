@@ -84,10 +84,14 @@
                         <button type="button" id="spawner-select-page-btn" class="action-btn action-btn-secondary" style="padding:7px 12px; font-size:12px; white-space:nowrap;">Select Page</button>
                         <button type="button" id="spawner-deselect-all-btn" class="action-btn action-btn-secondary" style="padding:7px 12px; font-size:12px; white-space:nowrap; display:none;">Deselect All</button>
                         
-                        <div class="spawner-actions-wrap" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-left:auto;">
+                        <div class="spawner-actions-wrap" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-left:auto;">
+                            <div id="spawner-limit-indicator" style="font-size:11px; font-weight:600; padding:5px 10px; border-radius:6px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); color:var(--muted); display:inline-flex; align-items:center; gap:4px;">
+                                <span>Spawned:</span>
+                                <span id="spawner-limit-count" style="color:#4a9eff; font-weight:700;">0</span>
+                                <span>/ 1,000</span>
+                            </div>
                             <button type="button" id="spawner-spawn-single-btn" class="action-btn" style="padding:7px 14px; font-size:12px; white-space:nowrap; background:var(--accent); color:#fff; display:none;">Spawn Item</button>
                             <button type="button" id="spawner-spawn-bulk-btn" class="action-btn" style="padding:7px 14px; font-size:12px; white-space:nowrap; background:var(--accent); color:#fff; display:none;">Spawn Selected</button>
-                            <button type="button" id="spawner-spawn-all-btn" class="action-btn" style="padding:7px 14px; font-size:12px; white-space:nowrap; background:var(--accent-blue); color:#fff;">Spawn All Items</button>
                         </div>
                     </div>
 
@@ -182,7 +186,14 @@
 
                     <div id="restore-spawner-view" style="display:none;">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 10px; flex-wrap:wrap; gap:8px;">
-                            <h3 style="margin:0; font-size:14px;" data-i18n="spawner.active_title">Active Spawned Items &amp; Titles</h3>
+                            <div style="display:flex; align-items:center; gap:10px;">
+                                <h3 style="margin:0; font-size:14px;" data-i18n="spawner.active_title">Active Spawned Items &amp; Titles</h3>
+                                <div id="restore-limit-indicator" style="font-size:11px; font-weight:600; padding:4px 8px; border-radius:6px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); color:var(--muted); display:inline-flex; align-items:center; gap:4px;">
+                                    <span>Spawned:</span>
+                                    <span id="restore-spawned-count" style="color:#4a9eff; font-weight:700;">0</span>
+                                    <span>/ 1,000</span>
+                                </div>
+                            </div>
                             <button id="btn-clear-spawned" class="action-btn action-btn-secondary" style="padding:4px 12px; font-size:11px;" data-i18n="spawner.clear_all">Clear All</button>
                         </div>
 
@@ -912,6 +923,7 @@
                     <div style="font-weight:600; font-size:12px;" data-i18n="settings.diagnostics_title">Troubleshooting</div>
                 </div>
                 <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                    <button type="button" id="settings-traffic-viewer-btn" class="path-btn" style="color:var(--accent-blue);"><span data-i18n="settings.traffic_viewer">Proxy Traffic Viewer</span></button>
                     <button type="button" id="settings-dev-panel-btn" class="path-btn"><span data-i18n="settings.debug_panel">Debug Panel</span></button>
                     <button type="button" id="settings-export-diag-btn" class="path-btn"><span data-i18n="settings.export_diagnostics">Export Diagnostics</span></button>
                     <button type="button" id="settings-refresh-catalog-btn" class="path-btn"><span data-i18n="settings.refresh_catalog">Refresh Item Catalogue</span></button>
@@ -1008,6 +1020,7 @@
                 <button id="dev-restart-proxy-btn" class="path-btn"><span>Restart Proxy</span></button>
                 <button id="dev-stop-proxy-btn" class="path-btn"><span>Stop Proxy</span></button>
                 <button id="dev-delete-certs-btn" class="path-btn" style="color:var(--danger, #ff5252);"><span>Delete Certificates</span></button>
+                <button id="dev-open-traffic-btn" class="path-btn" style="color:var(--accent-blue);"><span>Proxy Traffic Viewer</span></button>
                 <button id="dev-open-log-btn" class="path-btn"><span>Open Log Folder</span></button>
                 <button id="dev-export-diag-btn" class="path-btn"><span>Export Diagnostics</span></button>
             </div>

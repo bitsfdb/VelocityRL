@@ -3514,9 +3514,6 @@ select option {
     line-height: 1.25;
     text-align: center;
     word-break: break-word;
-    text-shadow: none !important;
-    box-shadow: none !important;
-    filter: none !important;
 }
 
 .spawner-paint-select {
@@ -3568,8 +3565,4 @@ select option {
     color: #f4f4f5;
     font-weight: 600;
     min-width: 90px;
-    text-align: center;
 }
-
-
-

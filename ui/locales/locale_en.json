@@ -272,6 +272,7 @@
         "minimize_tray_title": "Minimize to system tray",
         "minimize_tray_desc": "Keep VelocityRL running in background when closed",
         "diagnostics_title": "Troubleshooting",
+        "traffic_viewer": "Proxy Traffic Viewer",
         "debug_panel": "Debug Panel",
         "export_diagnostics": "Export Diagnostics",
         "refresh_catalog": "Refresh Item Catalogue",

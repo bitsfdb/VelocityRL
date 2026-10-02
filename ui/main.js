@@ -996,6 +996,7 @@ async function init() {
         }
     });
 
+    initTrafficViewerModule();
     await loadData();
 }
 
@@ -7235,9 +7236,9 @@ async function startApp() {
     }
 
     try {
-        await invoke('check_and_patch_tagame_validator');
+        initTrafficViewerModule();
     } catch (err) {
-        console.warn('check_and_patch_tagame_validator non-fatal error:', err);
+        console.warn('initTrafficViewerModule non-fatal error:', err);
     }
 }
 
@@ -7545,6 +7546,7 @@ function initItemSpawner() {
         wireSpawnerControls();
     }
     renderSpawnerCatalogue();
+    refreshSpawnedItemsList().catch(() => {});
 }
 
 function scrollToSpawnerTop() {
@@ -7562,7 +7564,6 @@ function wireSpawnerControls() {
     const prevBtn = document.getElementById('spawner-prev-btn');
     const nextBtn = document.getElementById('spawner-next-btn');
     const lastBtn = document.getElementById('spawner-last-btn');
-    const spawnAllBtn = document.getElementById('spawner-spawn-all-btn');
     const selectPageBtn = document.getElementById('spawner-select-page-btn');
     const deselectBtn = document.getElementById('spawner-deselect-all-btn');
     const singleBtn = document.getElementById('spawner-spawn-single-btn');
@@ -7659,9 +7660,15 @@ function wireSpawnerControls() {
         if (triggerBtn) triggerBtn.disabled = true;
         try {
             if (titlesToSpawn.length > 0) {
+                const currentTitlesCount = (cachedSpawnedTitles || []).length;
+                if (currentTitlesCount + titlesToSpawn.length > 1000) {
+                    showToast(`Title spawn limit reached (maximum 1,000 titles). Current: ${currentTitlesCount}.`, 'warning');
+                    return;
+                }
                 await invoke('add_network_spawned_titles_bulk', { titleIds: titlesToSpawn });
             }
             if (itemsToSpawn.length > 0) {
+                const currentItemsCount = (cachedSpawnedItems || []).length;
                 const paints = await getPaintsList();
                 const allPaintIds = paints.map(p => p.id);
 
@@ -7686,6 +7693,11 @@ function wireSpawnerControls() {
                     }
                 }
 
+                if (currentItemsCount + payload.length > 1000) {
+                    showToast(`Item spawn limit reached (maximum 1,000 items). Current: ${currentItemsCount}, attempting to add: ${payload.length}.`, 'warning');
+                    return;
+                }
+
                 if (payload.length > 0) {
                     await invoke('add_network_spawned_items_bulk', { items: payload });
                 }
@@ -7704,133 +7716,6 @@ function wireSpawnerControls() {
 
     singleBtn?.addEventListener('click', () => spawnSelectedHandler(singleBtn));
     bulkBtn?.addEventListener('click', () => spawnSelectedHandler(bulkBtn));
-
-    spawnAllBtn?.addEventListener('click', async () => {
-        const q = (searchInput?.value || '').trim().toLowerCase();
-
-        if (spawnerCategory === 'Titles') {
-            if (!titlesDb || !titlesDb.titles || titlesDb.titles.length === 0) {
-                await loadTitlesDatabase().catch(() => {});
-            }
-            const allTitles = titlesDb.titles || [];
-            const filtered = allTitles.filter(t => {
-                const text = (t.text || t.Text || t.id || '').toLowerCase();
-                const cat = (t.category || t.Category || '').toLowerCase();
-                return !q || text.includes(q) || cat.includes(q);
-            });
-            const ids = filtered.map(t => String(t.id || t.Id || '')).filter(Boolean);
-            if (!ids.length) {
-                showToast('No titles to spawn.', 'warning');
-                return;
-            }
-
-            const confirmed = await appDialog({
-                title: 'Spawn All Titles',
-                message: `Are you sure you want to spawn all ${ids.length} titles?`,
-                okLabel: 'Spawn All',
-                cancelLabel: 'Cancel'
-            });
-            if (!confirmed) return;
-
-            filtered.forEach(t => {
-                const tid = String(t.id || t.Id || '');
-                const key = `title_${tid}`;
-                spawnerSelectedItems.set(key, {
-                    kind: 'title',
-                    id: tid,
-                    name: t.text || t.Text || tid,
-                    slot: 'Titles'
-                });
-            });
-            updateSpawnerSelectionUi();
-
-            spawnAllBtn.disabled = true;
-            try {
-                await invoke('add_network_spawned_titles_bulk', { titleIds: ids });
-                showToast('Spawned!', 'success');
-                await refreshSpawnedItemsList();
-            } catch (err) {
-                showToast(`Failed to spawn titles: ${err}`, 'error');
-            } finally {
-                spawnAllBtn.disabled = false;
-            }
-            return;
-        }
-
-        const allItems = items || [];
-        const targetSlot = normSlot(spawnerCategory);
-        const filtered = allItems.filter(item => {
-            const itemSlot = normSlot(item.Slot || item.slot || item.category || item.Category || '');
-            if (spawnerCategory !== 'All' && itemSlot !== targetSlot) {
-                return false;
-            }
-            const name = (item.Product || item.product || '').toLowerCase();
-            return !q || name.includes(q);
-        });
-
-        if (!filtered.length) {
-            showToast('No items to spawn in this category.', 'warning');
-            return;
-        }
-
-        const anyPaintable = filtered.some(item => itemIsPaintable(item));
-        const options = await promptSpawnerOptions({
-            title: `Spawn All ${spawnerCategory === 'All' ? 'Catalogue' : spawnerCategory} Items`,
-            desc: `Spawning ${filtered.length} items. Select paint option:`,
-            canPaint: anyPaintable
-        });
-        if (!options.confirmed) return;
-
-        const paints = await getPaintsList();
-        const allPaintIds = paints.map(p => p.id);
-
-        const payload = [];
-        for (const item of filtered) {
-            const canPaint = itemIsPaintable(item);
-            const paintsForThisItem = canPaint
-                ? (options.paint === 'all' ? allPaintIds : [options.paint])
-                : [0];
-
-            for (const p of paintsForThisItem) {
-                payload.push({
-                    product_id: parseInt(item.ID ?? item.id, 10) || 0,
-                    paint_id: p,
-                    series_id: 0,
-                    slot: normSlot(item.Slot || item.slot || item.category || ''),
-                    product_name: item.Product || item.product || item.name || 'Unknown Item',
-                    dlc: false
-                });
-            }
-        }
-
-        if (!payload.length) {
-            showToast('No valid items found.', 'warning');
-            return;
-        }
-
-        filtered.forEach(item => {
-            const iid = String(item.ID ?? item.id ?? '');
-            const key = `item_${iid}`;
-            spawnerSelectedItems.set(key, {
-                kind: 'item',
-                id: iid,
-                name: item.Product || item.product || 'Unknown',
-                slot: item.Slot || item.slot || ''
-            });
-        });
-        updateSpawnerSelectionUi();
-
-        spawnAllBtn.disabled = true;
-        try {
-            await invoke('add_network_spawned_items_bulk', { items: payload });
-            showToast('Spawned!', 'success');
-            await refreshSpawnedItemsList();
-        } catch (err) {
-            showToast(`Failed to spawn items: ${err}`, 'error');
-        } finally {
-            spawnAllBtn.disabled = false;
-        }
-    });
 
     clearBtn?.addEventListener('click', async () => {
         try {
@@ -7862,24 +7747,16 @@ async function renderSpawnerCatalogue() {
     const prevBtn = document.getElementById('spawner-prev-btn');
     const nextBtn = document.getElementById('spawner-next-btn');
     const lastBtn = document.getElementById('spawner-last-btn');
-    const spawnAllBtn = document.getElementById('spawner-spawn-all-btn');
     const paginationBar = document.getElementById('spawner-pagination-bar');
     const q = (searchInput?.value || '').trim().toLowerCase();
     if (!grid) return;
-
-    if (spawnAllBtn) {
-        if (spawnerCategory === 'All') {
-            spawnAllBtn.textContent = 'Spawn All Items';
-        } else {
-            spawnAllBtn.textContent = `Spawn All ${spawnerCategory}`;
-        }
-    }
 
     if (spawnerCategory === 'Titles') {
         if (!titlesDb || !titlesDb.titles || titlesDb.titles.length === 0) {
             await loadTitlesDatabase().catch(() => {});
         }
-        const allTitles = titlesDb.titles || [];
+
+        const allTitles = titlesDb?.titles || [];
         const filteredTitles = allTitles.filter(t => {
             const text = (t.text || t.Text || t.id || '').toLowerCase();
             const cat = (t.category || t.Category || '').toLowerCase();
@@ -7913,10 +7790,11 @@ async function renderSpawnerCatalogue() {
             const text = t.text || t.Text || id;
             const key = `title_${id}`;
             const isSel = spawnerSelectedItems.has(key);
+            const style = titleInlineStyle(t);
             return `
                 <div class="spawner-card is-title-card${isSel ? ' is-selected' : ''}" data-card-key="${escHtml(key)}" data-card-kind="title" data-card-raw-id="${escHtml(id)}" data-card-name="${escHtml(text)}" title="${escHtml(text)}">
                     <div class="spawner-title-preview-box">
-                        <div class="spawner-title-text">${formatTitleHtml(text)}</div>
+                        <div class="spawner-title-text" style="${style}">${formatTitleHtml(text)}</div>
                     </div>
                 </div>
             `;
@@ -8089,8 +7967,9 @@ function renderRestoreSpawnerPage() {
     });
 
     (cachedSpawnedTitles || []).forEach(t => {
-        const text = typeof t === 'string' ? t : (t.text || t.id || '');
         const tid = typeof t === 'string' ? t : (t.id || t.text || '');
+        const found = findTitleById(tid);
+        const text = found ? (found.text || found.Text || tid) : (typeof t === 'string' ? t : (t.text || t.id || ''));
         unifiedList.push({
             kind: 'title',
             text,
@@ -8142,12 +8021,14 @@ function renderRestoreSpawnerPage() {
                 </div>
             `;
         } else {
+            const resolvedTitle = findTitleById(entry.tid) || { id: entry.tid, text: entry.text };
+            const titleStyle = titleInlineStyle(resolvedTitle);
             return `
                 <div class="backup-item" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.06);">
                     <div style="display:flex; align-items:center; gap:10px;">
                         <div style="width:36px; height:36px; display:flex; align-items:center; justify-content:center; border-radius:4px; background:rgba(99,102,241,0.15); color:#818cf8; font-size:14px; font-weight:bold;">T</div>
                         <div>
-                            <div style="font-weight:600; font-size:13px; color:#38bdf8;">${escHtml(entry.text)}</div>
+                            <div style="font-weight:600; font-size:13px; ${titleStyle}">${formatTitleHtml(entry.text)}</div>
                             <div style="font-size:11px; display:flex; gap:6px; align-items:center; margin-top:2px;">
                                 <span class="quality-badge bg-premium" style="font-size:10px; padding:1px 5px;">Spawned Title</span>
                             </div>
@@ -8189,6 +8070,41 @@ function renderRestoreSpawnerPage() {
     });
 }
 
+function updateSpawnerLimitBadges() {
+    const totalSpawned = (cachedSpawnedItems?.length || 0) + (cachedSpawnedTitles?.length || 0);
+    const countEl = document.getElementById('spawner-limit-count');
+    const restoreCountEl = document.getElementById('restore-spawned-count');
+    const indicatorEl = document.getElementById('spawner-limit-indicator');
+    const restoreIndicatorEl = document.getElementById('restore-limit-indicator');
+
+    if (countEl) {
+        countEl.textContent = totalSpawned.toLocaleString();
+        countEl.style.color = totalSpawned >= 1000 ? '#ef4444' : (totalSpawned >= 800 ? '#f59e0b' : '#4a9eff');
+    }
+    if (restoreCountEl) {
+        restoreCountEl.textContent = totalSpawned.toLocaleString();
+        restoreCountEl.style.color = totalSpawned >= 1000 ? '#ef4444' : (totalSpawned >= 800 ? '#f59e0b' : '#4a9eff');
+    }
+    if (indicatorEl) {
+        if (totalSpawned >= 1000) {
+            indicatorEl.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+            indicatorEl.style.background = 'rgba(239, 68, 68, 0.12)';
+        } else {
+            indicatorEl.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+            indicatorEl.style.background = 'rgba(255, 255, 255, 0.06)';
+        }
+    }
+    if (restoreIndicatorEl) {
+        if (totalSpawned >= 1000) {
+            restoreIndicatorEl.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+            restoreIndicatorEl.style.background = 'rgba(239, 68, 68, 0.12)';
+        } else {
+            restoreIndicatorEl.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+            restoreIndicatorEl.style.background = 'rgba(255, 255, 255, 0.06)';
+        }
+    }
+}
+
 async function refreshSpawnedItemsList() {
     wireRestoreSpawnerControls();
     try {
@@ -8199,11 +8115,30 @@ async function refreshSpawnedItemsList() {
 
         cachedSpawnedItems = Array.isArray(spawnedItems) ? spawnedItems : [];
         cachedSpawnedTitles = Array.isArray(spawnedTitles) ? spawnedTitles : [];
+        updateSpawnerLimitBadges();
         renderRestoreSpawnerPage();
     } catch (err) {
         console.error('Error fetching spawned items/titles:', err);
     }
 }
+
+/* ==========================================================================
+   Proxy Traffic Viewer Module (Web Browser on 127.0.0.1:1289)
+   ========================================================================== */
+function initTrafficViewerModule() {
+    const openTrafficWeb = () => {
+        document.getElementById('settings-modal')?.classList.remove('active');
+        document.getElementById('dev-modal')?.classList.remove('active');
+        invoke('open_external_url', { url: 'http://127.0.0.1:1289' }).catch(() => {
+            window.open('http://127.0.0.1:1289', '_blank');
+        });
+    };
+
+    document.getElementById('settings-traffic-viewer-btn')?.addEventListener('click', openTrafficWeb);
+    document.getElementById('dev-open-traffic-btn')?.addEventListener('click', openTrafficWeb);
+}
+
+
 
 
 

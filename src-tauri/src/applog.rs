@@ -5,18 +5,20 @@
  * Licensed under the GNU General Public License v3.0.
  * unauthorized rebranding or stripping of this copyright notice is strictly prohibited.
  */
+use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use tauri::{AppHandle, Manager, RunEvent};
+use tauri::{AppHandle, Emitter, Manager, RunEvent};
 
 const LAUNCH_KEEP: usize = 5;
 const CRASH_KEEP: usize = 5;
 
 static LOG_DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
+static APP_HANDLE: Mutex<Option<AppHandle>> = Mutex::new(None);
 
 type PanicHook = Box<dyn Fn(&std::panic::PanicHookInfo<'_>) + Send + Sync + 'static>;
 static PREVIOUS_HOOK: Mutex<Option<PanicHook>> = Mutex::new(None);
@@ -107,8 +109,8 @@ fn prune_crash_logs(dir: &Path, keep: usize) {
 }
 
 pub fn prune_old_logs(dir: &Path) {
-    const THREE_DAYS_SECS: u64 = 3 * 24 * 60 * 60;
-    let max_age = std::time::Duration::from_secs(THREE_DAYS_SECS);
+    const TWO_DAYS_SECS: u64 = 2 * 24 * 60 * 60;
+    let max_age = std::time::Duration::from_secs(TWO_DAYS_SECS);
     let now = SystemTime::now();
 
     if let Ok(entries) = fs::read_dir(dir) {
@@ -168,6 +170,16 @@ fn session_marker(dir: &Path) -> PathBuf {
 }
 
 fn append_raw(path: &Path, line: &str) {
+    if let Ok(meta) = fs::metadata(path) {
+        if meta.len() > 2 * 1024 * 1024 {
+            if let Ok(content) = fs::read_to_string(path) {
+                let lines: Vec<&str> = content.lines().collect();
+                let start_idx = lines.len().saturating_sub(1000);
+                let trimmed = lines[start_idx..].join("\n");
+                let _ = fs::write(path, format!("[log truncated to stay under 2MB]\n{trimmed}\n"));
+            }
+        }
+    }
     if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(path) {
         let _ = writeln!(f, "{line}");
         let _ = f.flush();
@@ -242,6 +254,10 @@ pub fn init(app: &AppHandle) -> PathBuf {
 
     if let Ok(mut guard) = LOG_DIR.lock() {
         *guard = Some(dir.clone());
+    }
+
+    if let Ok(mut guard) = APP_HANDLE.lock() {
+        *guard = Some(app.clone());
     }
 
     install_panic_hook();
@@ -373,24 +389,32 @@ pub fn get_log_tail(app: AppHandle, lines: Option<usize>) -> Result<String, Stri
     let dir = resolve_logs_dir(&app);
     let _ = fs::create_dir_all(&dir);
 
-    let mut newest: Option<(PathBuf, std::time::SystemTime)> = None;
-    if let Ok(entries) = fs::read_dir(&dir) {
-        for entry in entries.filter_map(|e| e.ok()) {
-            let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "log") {
-                let mtime = entry.metadata().and_then(|m| m.modified()).unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-                if newest.as_ref().map_or(true, |(_, best)| mtime > *best) {
-                    newest = Some((path, mtime));
+    let target_path = dir.join("launch.log");
+    let actual_path = if target_path.is_file() {
+        target_path
+    } else {
+        let mut newest: Option<(PathBuf, std::time::SystemTime)> = None;
+        if let Ok(entries) = fs::read_dir(&dir) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if path.extension().map_or(false, |ext| ext == "log")
+                    && !file_name.starts_with("traffic_debug")
+                {
+                    let mtime = entry.metadata().and_then(|m| m.modified()).unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                    if newest.as_ref().map_or(true, |(_, best)| mtime > *best) {
+                        newest = Some((path, mtime));
+                    }
                 }
             }
         }
-    }
-
-    let Some((newest_path, _)) = newest else {
-        return Ok(String::from("(no log files found)"));
+        let Some((newest_path, _)) = newest else {
+            return Ok(String::from("(no log files found)"));
+        };
+        newest_path
     };
 
-    let mut file = fs::File::open(&newest_path).map_err(|e| format!("open failed: {e}"))?;
+    let mut file = fs::File::open(&actual_path).map_err(|e| format!("open failed: {e}"))?;
     let metadata = file.metadata().map_err(|e| format!("metadata failed: {e}"))?;
     let len = metadata.len();
     let max_read = 64 * 1024;
@@ -404,7 +428,7 @@ pub fn get_log_tail(app: AppHandle, lines: Option<usize>) -> Result<String, Stri
 
     let n = lines.unwrap_or(200);
     let tail: String = content.lines().rev().take(n).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n");
-    Ok(format!("--- {} ---\n{}", newest_path.file_name().unwrap_or_default().to_string_lossy(), tail))
+    Ok(format!("--- {} ---\n{}", actual_path.file_name().unwrap_or_default().to_string_lossy(), tail))
 }
 
 #[tauri::command]
@@ -462,9 +486,28 @@ pub fn open_log_folder(app: AppHandle) -> Result<(), String> {
     }
 }
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct TrafficEvent {
+    pub id: u64,
+    pub timestamp: String,
+    pub category: String,  // "WS-FRAME", "FWD-HTTP", "BROKER-HTTP", "RAW-WS", "CONFIG-HTTP"
+    pub direction: String, // "CLIENT->SRV", "SRV->CLIENT", "TUNNEL"
+    pub service: String,   // e.g. "Loadout/SaveLoadout", "Products/GetLoadoutProducts", "POST /api/v1/..."
+    pub status: Option<String>,
+    pub patched: bool,
+    pub req_id: Option<String>,
+    pub resp_id: Option<String>,
+    pub body_len: usize,
+    pub body: String,
+    pub summary: String,
+}
 
 static TRAFFIC_DEBUG_ENABLED: AtomicBool = AtomicBool::new(true);
+static TRAFFIC_EVENTS: Mutex<Vec<TrafficEvent>> = Mutex::new(Vec::new());
+static NEXT_TRAFFIC_ID: AtomicU64 = AtomicU64::new(1);
+const MAX_TRAFFIC_EVENTS: usize = 1200;
 
 pub fn set_traffic_debug(enabled: bool) {
     TRAFFIC_DEBUG_ENABLED.store(enabled, Ordering::Relaxed);
@@ -474,7 +517,92 @@ pub fn is_traffic_debug() -> bool {
     TRAFFIC_DEBUG_ENABLED.load(Ordering::Relaxed)
 }
 
-/// Write a line to traffic_debug.log.  Designed to be called at high frequency
+pub fn hex_encode(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        use std::fmt::Write;
+        let _ = write!(s, "{:02x}", b);
+    }
+    s
+}
+
+/// Record a structured traffic event for live UI viewing and log writing.
+pub fn record_traffic_event(
+    category: &str,
+    direction: &str,
+    service: &str,
+    status: Option<&str>,
+    patched: bool,
+    req_id: Option<&str>,
+    resp_id: Option<&str>,
+    body: &[u8],
+    custom_summary: Option<&str>,
+) {
+    let enabled = TRAFFIC_DEBUG_ENABLED.load(Ordering::Relaxed);
+    let stamp = now_stamp();
+    let is_binary = category.eq_ignore_ascii_case("UDP")
+        || body.iter().any(|&b| b < 0x09 || (b > 0x0D && b < 0x20) || b == 0x00);
+    let body_str = if is_binary {
+        hex_encode(body)
+    } else {
+        String::from_utf8_lossy(body).into_owned()
+    };
+    let body_len = body.len();
+    let id = NEXT_TRAFFIC_ID.fetch_add(1, Ordering::Relaxed);
+
+    let summary = if let Some(s) = custom_summary {
+        s.to_string()
+    } else {
+        format!("{category} {direction} {service} ({} bytes)", body_len)
+    };
+
+    let event = TrafficEvent {
+        id,
+        timestamp: stamp.clone(),
+        category: category.to_string(),
+        direction: direction.to_string(),
+        service: service.to_string(),
+        status: status.map(str::to_string),
+        patched,
+        req_id: req_id.map(str::to_string),
+        resp_id: resp_id.map(str::to_string),
+        body_len,
+        body: body_str,
+        summary,
+    };
+
+    // 1. Ring buffer for UI inspection
+    if let Ok(mut g) = TRAFFIC_EVENTS.lock() {
+        if g.len() >= MAX_TRAFFIC_EVENTS {
+            let excess = g.len() - MAX_TRAFFIC_EVENTS + 1;
+            g.drain(0..excess);
+        }
+        g.push(event.clone());
+    }
+
+    // 2. Append to traffic_debug.log if enabled (clean summary without bloating)
+    if enabled {
+        let status_str = status.unwrap_or("-");
+        let log_line = format!(
+            "[{stamp}] [{category}] {direction} | svc={service} | status={status_str} | len={body_len}"
+        );
+        if let Ok(guard) = LOG_DIR.lock() {
+            if let Some(ref dir) = *guard {
+                let path = dir.join("traffic_debug.log");
+                append_raw(&path, &log_line);
+            }
+        }
+    }
+
+    // 3. Emit Tauri event to frontend if UI is listening
+    if let Ok(guard) = APP_HANDLE.lock() {
+        if let Some(ref handle) = *guard {
+            let _ = handle.emit("proxy_traffic_event", &event);
+        }
+    }
+}
+
+/// Write a line to traffic_debug.log. Designed to be called at high frequency
 /// from the proxy hot-path, so it silently drops on any IO error.
 pub fn traffic_debug(message: &str) {
     if !TRAFFIC_DEBUG_ENABLED.load(Ordering::Relaxed) {
@@ -500,8 +628,11 @@ pub fn traffic_debug_path() -> Option<String> {
     None
 }
 
-/// Truncate/reset the traffic debug log for a fresh capture session.
+/// Truncate/reset the traffic debug log and buffer for a fresh capture session.
 pub fn reset_traffic_debug() {
+    if let Ok(mut g) = TRAFFIC_EVENTS.lock() {
+        g.clear();
+    }
     if let Ok(guard) = LOG_DIR.lock() {
         if let Some(ref dir) = *guard {
             let path = dir.join("traffic_debug.log");
@@ -511,11 +642,56 @@ pub fn reset_traffic_debug() {
 }
 
 /// Helper: produce a truncated body snippet for logging (max 800 chars).
+#[allow(dead_code)]
 pub fn body_snippet(body: &[u8], max_len: usize) -> String {
-    let s = String::from_utf8_lossy(body);
-    if s.len() <= max_len {
-        s.to_string()
+    let is_binary = body.iter().any(|&b| b < 0x09 || (b > 0x0D && b < 0x20) || b == 0x00);
+    if is_binary {
+        let hex = hex_encode(body);
+        if hex.len() <= max_len {
+            hex
+        } else {
+            format!("{}...[hex truncated, total {} bytes]", &hex[..max_len], body.len())
+        }
     } else {
-        format!("{}...[truncated, total {} bytes]", &s[..max_len], body.len())
+        let s = String::from_utf8_lossy(body);
+        if s.len() <= max_len {
+            s.to_string()
+        } else {
+            format!("{}...[truncated, total {} bytes]", &s[..max_len], body.len())
+        }
     }
+}
+
+#[tauri::command]
+pub fn get_traffic_events(since_id: Option<u64>, limit: Option<usize>) -> Result<Vec<TrafficEvent>, String> {
+    let g = TRAFFIC_EVENTS.lock().map_err(|e| e.to_string())?;
+    let since = since_id.unwrap_or(0);
+    let max = limit.unwrap_or(500);
+    let events: Vec<TrafficEvent> = g.iter()
+        .filter(|e| e.id > since)
+        .rev()
+        .take(max)
+        .cloned()
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    Ok(events)
+}
+
+#[tauri::command]
+pub fn clear_traffic_events() -> Result<(), String> {
+    reset_traffic_debug();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_traffic_capture_enabled(enabled: bool) -> Result<bool, String> {
+    set_traffic_debug(enabled);
+    Ok(enabled)
+}
+
+#[tauri::command]
+pub fn get_traffic_capture_enabled() -> Result<bool, String> {
+    Ok(is_traffic_debug())
 }

@@ -693,6 +693,11 @@ fn is_loadout_sensitive(svc: &str, body: &[u8]) -> bool {
         "rocketpass/getrewardcontent",
         "microtransaction/claimentitlements",
         "microtransaction/getcatalog",
+        "microtransaction",
+        "getcatalog",
+        "catalog",
+        "itemshop",
+        "store",
         // AuthPlayer must never be patched with name spoofing
         "authplayer",
         "tournaments/getbracket",
@@ -714,6 +719,10 @@ fn is_loadout_sensitive(svc: &str, body: &[u8]) -> bool {
         b"ProductsSave_TA",
         b"ExhibitionMatchSettingsSave_TA",
         b"PrivateMatchSettingsSave_TA",
+        b"GetCatalog",
+        b"Catalog",
+        b"Microtransaction",
+        b"GetPlayerCatalog",
         // Presence and party frames — these carry friends' online state and must not be modified
         b"PresenceState",
         b"PartyMember",
@@ -1525,6 +1534,17 @@ async fn handle_forward_websocket(
         "[FWD-WS] ⚠ RAW TUNNEL (no frame patching!) to {} | path={} | status={}",
         upstream_host, path_and_query, status_code
     ));
+    crate::applog::record_traffic_event(
+        "RAW-WS",
+        "TUNNEL",
+        &format!("https://{upstream_host}{path_and_query}"),
+        Some(&status_code.to_string()),
+        false,
+        None,
+        None,
+        &[],
+        None,
+    );
 
     tokio::spawn(async move {
         match hyper::upgrade::on(req).await {
@@ -1573,7 +1593,7 @@ async fn handle_forward_intercepted_request(
     let url = format!("https://{upstream_host}:{upstream_port}{path}{query}");
 
     crate::applog::traffic_debug(&format!(
-        "[FWD-HTTP] >>> REQUEST {method} {url}"
+        "[FWD-HTTP] CLIENT->SRV | {method} {url}"
     ));
 
     let headers = req.headers().clone();
@@ -1586,6 +1606,18 @@ async fn handle_forward_intercepted_request(
                 .unwrap());
         }
     };
+
+    crate::applog::record_traffic_event(
+        "FWD-HTTP",
+        "CLIENT->SRV",
+        &format!("{method} {url}"),
+        None,
+        false,
+        None,
+        None,
+        &req_body_bytes,
+        None,
+    );
 
     let mut up_req = client.request(method, &url);
     for (k, v) in headers.iter() {
@@ -1644,11 +1676,10 @@ async fn handle_forward_intercepted_request(
                     .unwrap());
             }
         };
+        let orig_resp_len = resp_bytes.len();
 
         crate::applog::traffic_debug(&format!(
-            "[FWD-HTTP] <<< RESPONSE {status} {path}{query} from {upstream_host} | {} bytes | body: {}",
-            resp_bytes.len(),
-            crate::applog::body_snippet(&resp_bytes, 600)
+            "[FWD-HTTP] SRV->CLIENT | {status} https://{upstream_host}{path}{query}"
         ));
 
         let spoof_cfg = match crate::psynet::load_active_spoof_from_disk() {
@@ -1759,15 +1790,21 @@ async fn handle_forward_intercepted_request(
                 }
             }
 
-            let is_inventory = path_lower.contains("products")
+            let is_inventory = path_lower.contains("getplayerproducts")
                 || path_lower.contains("getloadoutproducts")
-                || path_lower.contains("getplayerproducts")
-                || find_bytes(&final_body, b"\"ProductData\"").is_some();
+                || path_lower.contains("getplayerinventory");
+            let is_excluded = path_lower.contains("crossentitlement")
+                || path_lower.contains("droptable")
+                || path_lower.contains("challenge")
+                || path_lower.contains("rocketpass")
+                || path_lower.contains("tradein")
+                || path_lower.contains("entitlement")
+                || path_lower.contains("unlockcontainer");
 
             let has_titles = !inv.titles.is_empty()
                 || spoof_cfg.as_ref().map(|c| !c.equip_title_id.trim().is_empty()).unwrap_or(false);
 
-            if (is_inventory || is_loadout) && (!inv.items.is_empty() || has_titles) {
+            if (is_inventory || is_loadout) && !is_excluded && (!inv.items.is_empty() || has_titles) {
                 let (new_body, did_patch) = patch_player_inventory_json(&final_body, inv);
                 if did_patch {
                     crate::applog::event(&format!(
@@ -1778,7 +1815,30 @@ async fn handle_forward_intercepted_request(
                     final_body = new_body;
                 }
             }
+
+            if path_lower.contains("crossentitlement") && !inv.items.is_empty() {
+                let (new_body, did_patch) = patch_cross_entitlement_json(&final_body, inv);
+                if did_patch {
+                    crate::applog::event(&format!(
+                        "forward proxy: appended {} spawned product IDs to CrossEntitlement response from {upstream_host}",
+                        inv.items.len()
+                    ));
+                    final_body = new_body;
+                }
+            }
         }
+
+        crate::applog::record_traffic_event(
+            "FWD-HTTP",
+            "SRV->CLIENT",
+            &format!("{path}{query}"),
+            Some(&status.to_string()),
+            final_body.len() != orig_resp_len,
+            None,
+            None,
+            &final_body,
+            None,
+        );
 
         let mut resp_builder = Response::builder().status(status);
         for (k, v) in resp_headers.iter() {
@@ -2007,6 +2067,17 @@ async fn handle_broker_request(
     };
 
     let mut up_builder = client.request(method.clone(), &upstream_url);
+    crate::applog::record_traffic_event(
+        "BROKER-HTTP",
+        "CLIENT->SRV",
+        &format!("{method} {path_and_query}"),
+        None,
+        false,
+        None,
+        None,
+        &body_bytes,
+        None,
+    );
     for (k, v) in req_headers.iter() {
         let k_str = k.as_str().to_ascii_lowercase();
         if k_str != "host"
@@ -2056,12 +2127,7 @@ async fn handle_broker_request(
     let mut patched = false;
 
     crate::applog::traffic_debug(&format!(
-        "[BROKER-HTTP] {} {} | status={} | resp_len={} | body: {}",
-        method,
-        path_and_query,
-        status,
-        out_body.len(),
-        crate::applog::body_snippet(&out_body, 600)
+        "[BROKER-HTTP] SRV->CLIENT | {status} {method} {path_and_query}"
     ));
 
     let path_lower = path_and_query.to_ascii_lowercase();
@@ -2161,20 +2227,26 @@ async fn handle_broker_request(
             }
         }
     } else if let Some(cfg) = &cfg_opt {
+        let is_inventory_rpc = path_lower.contains("getplayerproducts")
+            || path_lower.contains("getloadoutproducts")
+            || path_lower.contains("getplayerinventory");
         let is_loadout_rpc = path_lower.contains("loadout")
-            || path_lower.contains("products")
             || path_lower.contains("genericstorage")
             || find_bytes(&out_body, b"PlayerLoadout").is_some()
             || find_bytes(&out_body, b"playerLoadout").is_some()
             || find_bytes(&out_body, b"LoadoutResponse").is_some()
             || find_bytes(&out_body, b"loadoutResponse").is_some()
             || find_bytes(&out_body, b"CustomLoadouts").is_some()
-            || find_bytes(&out_body, b"ProfileLoadoutSave_TA").is_some()
-            || find_bytes(&out_body, b"ProductData").is_some()
-            || find_bytes(&out_body, b"productData").is_some()
-            || find_bytes(&out_body, b"Products").is_some();
+            || find_bytes(&out_body, b"ProfileLoadoutSave_TA").is_some();
+        let is_excluded_rpc = path_lower.contains("crossentitlement")
+            || path_lower.contains("droptable")
+            || path_lower.contains("challenge")
+            || path_lower.contains("rocketpass")
+            || path_lower.contains("tradein")
+            || path_lower.contains("entitlement")
+            || path_lower.contains("unlockcontainer");
 
-        if is_loadout_rpc {
+        if (is_loadout_rpc || is_inventory_rpc) && !is_excluded_rpc {
             if let Some(inv) = &cfg.inventory_spoof {
                 let has_titles = !inv.titles.is_empty()
                     || !cfg.equip_title_id.trim().is_empty()
@@ -2201,6 +2273,20 @@ async fn handle_broker_request(
                             inv.titles.len()
                         ));
                     }
+                }
+            }
+        }
+
+        if path_lower.contains("crossentitlement") {
+            if let Some(inv) = cfg.inventory_spoof.as_ref().filter(|i| i.enabled && !i.items.is_empty()) {
+                let (new_body, did_patch) = patch_cross_entitlement_json(&out_body, inv);
+                if did_patch {
+                    out_body = new_body;
+                    patched = true;
+                    crate::applog::event(&format!(
+                        "broker: appended {} spawned product IDs to CrossEntitlement response",
+                        inv.items.len()
+                    ));
                 }
             }
         }
@@ -2253,6 +2339,18 @@ async fn handle_broker_request(
             }
         }
     }
+
+    crate::applog::record_traffic_event(
+        "BROKER-HTTP",
+        "SRV->CLIENT",
+        &format!("{method} {path_and_query}"),
+        Some(&status.to_string()),
+        patched,
+        None,
+        None,
+        &out_body,
+        None,
+    );
 
     let mut resp_builder = Response::builder().status(status.as_u16());
     let mut psy_time = String::new();
@@ -2634,7 +2732,7 @@ pub fn remember_psy_request(req_id: &str, service: &str) {
     if req_id.is_empty() || service.is_empty() { return; }
     if let Ok(mut guard) = PSY_PENDING_REQUESTS.lock() {
         let map = guard.get_or_insert_with(std::collections::HashMap::new);
-        if map.len() > 1000 {
+        if map.len() > 2000 {
             map.clear();
         }
         map.insert(req_id.to_string(), service.to_ascii_lowercase());
@@ -2643,9 +2741,9 @@ pub fn remember_psy_request(req_id: &str, service: &str) {
 
 pub fn get_psy_service_for_response(resp_id: &str) -> Option<String> {
     if resp_id.is_empty() { return None; }
-    if let Ok(mut guard) = PSY_PENDING_REQUESTS.lock() {
-        if let Some(map) = guard.as_mut() {
-            return map.remove(resp_id);
+    if let Ok(guard) = PSY_PENDING_REQUESTS.lock() {
+        if let Some(map) = guard.as_ref() {
+            return map.get(resp_id).cloned();
         }
     }
     None
@@ -2669,44 +2767,55 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
     let headers_part = &frame[..hdr_end];
     let body_part = &frame[hdr_end + 4..];
 
-    let conn_id = get_ws_header_value(headers_part, "PsyConnectionID");
+    let conn_id = get_ws_header_any(headers_part, &["PsyConnectionID", "ConnectionID", "ConnectionId", "ConnID"]);
     if !conn_id.is_empty() {
         set_learned_player_id(&conn_id);
     }
 
-    let req_id = get_ws_header_value(headers_part, "PsyRequestID");
-    let req_svc = get_ws_header_value(headers_part, "PsyService");
+    let req_id = get_ws_header_any(headers_part, &["PsyRequestID", "RequestID", "PsyReqID", "RequestId", "ReqID", "id"]);
+    let req_svc = get_ws_header_any(headers_part, &["PsyService", "Service", "psy-service", "service", "RPC", "rpc", "Method"]);
     if !req_id.is_empty() && !req_svc.is_empty() {
         remember_psy_request(&req_id, &req_svc);
     }
 
-    let resp_id = get_ws_header_value(headers_part, "PsyResponseID");
+    let resp_id = get_ws_header_any(headers_part, &["PsyResponseID", "ResponseID", "PsyRespID", "ResponseId", "RespID"]);
     let correlated_svc = if !resp_id.is_empty() {
         get_psy_service_for_response(&resp_id)
     } else {
         None
     };
 
-    let svc = if !req_svc.is_empty() {
+    let mut svc = if !req_svc.is_empty() {
         req_svc
     } else if let Some(ref cs) = correlated_svc {
         cs.clone()
     } else {
-        get_ws_header_value(headers_part, "PsyService")
+        get_ws_header_any(headers_part, &["PsyService", "Service", "psy-service", "service", "RPC", "rpc", "Method"])
     };
+
+    // Fallback: If service is still empty, inspect body for known signatures
+    if svc.is_empty() && !body_part.is_empty() {
+        if let Ok(val) = serde_json::from_slice::<serde_json::Value>(body_part) {
+            if let Some(s) = val.get("Service").or_else(|| val.get("RPC")).or_else(|| val.get("Method")).and_then(|v| v.as_str()) {
+                svc = s.to_string();
+            } else if val.get("Skills").is_some() || val.get("Players").and_then(|p| p.as_array()).and_then(|a| a.first()).and_then(|f| f.get("Skills")).is_some() {
+                svc = "skills/getplayerskills".to_string();
+            } else if val.get("PlayerLoadout").is_some() || val.get("LoadoutResponse").is_some() || val.get("CustomLoadouts").is_some() {
+                svc = "loadout/getplayerloadout".to_string();
+            } else if val.get("Currencies").is_some() || val.get("Wallet").is_some() {
+                svc = "shops/getplayerwallet".to_string();
+            }
+        }
+    }
 
     let svc_lower = svc.to_ascii_lowercase();
 
     {
         let direction = if !req_id.is_empty() { "CLIENT->SRV" } else { "SRV->CLIENT" };
         crate::applog::traffic_debug(&format!(
-            "[WS-FRAME] {} | svc={} | req_id={} | resp_id={} | body_len={} | body: {}",
+            "[WS-FRAME] {} | svc={}",
             direction,
             if svc.is_empty() { "(none)" } else { &svc },
-            if req_id.is_empty() { "-" } else { &req_id },
-            if resp_id.is_empty() { "-" } else { &resp_id },
-            body_part.len(),
-            crate::applog::body_snippet(body_part, 800)
         ));
     }
 
@@ -2721,12 +2830,25 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         extract_and_save_real_skills(body_part);
     }
 
+    let direction = if !req_id.is_empty() { "CLIENT->SRV" } else { "SRV->CLIENT" };
+
     let cfg_opt = match crate::psynet::load_active_spoof_from_disk() {
         Some(c) => Some(c),
         None => get_spoof_config().await,
     };
 
     let Some(cfg) = cfg_opt else {
+        crate::applog::record_traffic_event(
+            "WS-FRAME",
+            direction,
+            if svc.is_empty() { "(none)" } else { &svc },
+            None,
+            false,
+            if req_id.is_empty() { None } else { Some(&req_id) },
+            if resp_id.is_empty() { None } else { Some(&resp_id) },
+            body_part,
+            None,
+        );
         return (frame.to_vec(), false);
     };
 
@@ -2764,9 +2886,12 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
     }
 
     // DSR/RelayToServer is handled separately below.
-    let is_loadout_ws = svc_lower.contains("loadout")
+    // Strictly identify loadout RPC frames
+    let is_loadout_ws = svc_lower.contains("loadout/getplayerloadout")
+        || svc_lower.contains("loadout/getplayerloadouts")
+        || svc_lower.contains("loadout/saveloadout")
         || svc_lower.contains("authplayer")
-        || svc_lower.contains("genericstorage")
+        || svc_lower.contains("genericstorage/getplayergenericstorage")
         || svc_lower.contains("playerhasloadout")
         || find_bytes(body_part, b"PlayerLoadout").is_some()
         || find_bytes(body_part, b"playerLoadout").is_some()
@@ -2777,15 +2902,24 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         || find_bytes(body_part, b"ProfileLoadoutSave_TA").is_some()
         || find_bytes(body_part, b"ProductsSave_TA").is_some()
         || find_bytes(body_part, b"PartyMessage_Loadout").is_some()
-        || find_bytes(body_part, b"ReplicatedLoadout").is_some()
-        || (find_bytes(body_part, b"\"Loadout\"").is_some() && (find_bytes(body_part, b"\"Slot\"").is_some() || find_bytes(body_part, b"\"ProductID\"").is_some()));
+        || find_bytes(body_part, b"ReplicatedLoadout").is_some();
 
-    let is_inventory_ws = svc_lower.contains("products")
-        || svc_lower.contains("getloadoutproducts")
-        || svc_lower.contains("getplayerproducts")
-        || (find_bytes(body_part, b"\"ProductData\"").is_some() && (find_bytes(body_part, b"\"InstanceID\"").is_some() || find_bytes(body_part, b"\"ProductID\"").is_some()))
-        || (find_bytes(body_part, b"\"Products\"").is_some() && find_bytes(body_part, b"\"InstanceID\"").is_some())
-        || (find_bytes(body_part, b"\"ProductID\"").is_some() && find_bytes(body_part, b"\"InstanceID\"").is_some());
+    let is_excluded_ws = svc_lower.contains("crossentitlement")
+        || svc_lower.contains("droptable")
+        || svc_lower.contains("challenge")
+        || svc_lower.contains("rocketpass")
+        || svc_lower.contains("tradein")
+        || svc_lower.contains("entitlement")
+        || svc_lower.contains("unlockcontainer");
+
+    // Strictly whitelist inventory product RPC frames to prevent over-patching drops/entitlements/destruction
+    let is_inventory_ws = !is_excluded_ws && (
+        svc_lower.contains("products/getplayerproducts")
+        || svc_lower.contains("products/getloadoutproducts")
+        || svc_lower.contains("products/getplayerinventory")
+        || svc_lower.contains("products/getplayerproductstemplated")
+        || (svc_lower.is_empty() && find_bytes(body_part, b"\"ProductData\"").is_some() && (find_bytes(body_part, b"\"InstanceID\"").is_some() || find_bytes(body_part, b"\"ProductInstanceID\"").is_some()))
+    );
 
     if svc_lower.contains("playerhasloadout") {
         if let Ok(mut val) = serde_json::from_slice::<serde_json::Value>(&current_body) {
@@ -2793,19 +2927,6 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
                 obj.insert("Result".into(), serde_json::json!(true));
                 obj.insert("HasTemplate".into(), serde_json::json!(true));
                 if let Ok(new_body) = serde_json::to_vec(&val) {
-                    current_body = new_body;
-                    any_changed = true;
-                }
-            }
-        }
-    }
-
-    // On matchcomplete, re-inject spawned items so they survive the return-to-lobby transition.
-    if (svc_lower.contains("matchcomplete") || svc_lower.contains("matchcompletefte")) && is_response_frame {
-        if let Some(inv) = &cfg.inventory_spoof {
-            if inv.enabled && !inv.items.is_empty() {
-                let (new_body, changed) = patch_player_inventory_json(&current_body, inv);
-                if changed {
                     current_body = new_body;
                     any_changed = true;
                 }
@@ -2830,7 +2951,7 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
                         ws_patched = true;
                     }
                 }
-                if is_inventory_ws || find_bytes(&current_body, b"\"ProductData\"").is_some() {
+                if is_inventory_ws {
                     let (new_body, changed) = patch_player_inventory_json(&current_body, inv);
                     if changed {
                         current_body = new_body;
@@ -2846,6 +2967,24 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
                         inv.titles.len(),
                         frame.len(),
                         current_body.len()
+                    ));
+                }
+            }
+        }
+    }
+
+    let is_cross_entitlement_ws = svc_lower.contains("crossentitlement");
+    if is_cross_entitlement_ws && (is_response_frame || is_dsr) {
+        if let Some(inv) = &cfg.inventory_spoof {
+            if inv.enabled && !inv.items.is_empty() {
+                let (new_body, changed) = patch_cross_entitlement_json(&current_body, inv);
+                if changed {
+                    current_body = new_body;
+                    any_changed = true;
+                    crate::applog::event(&format!(
+                        "proxy: appended {} spawned product IDs to WS CrossEntitlement [{}]",
+                        inv.items.len(),
+                        svc
                     ));
                 }
             }
@@ -2913,16 +3052,35 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
             "[WS-FRAME] ↩ NOT PATCHED | svc={}",
             if svc.is_empty() { "(none)" } else { &svc }
         ));
+        crate::applog::record_traffic_event(
+            "WS-FRAME",
+            direction,
+            if svc.is_empty() { "(none)" } else { &svc },
+            None,
+            false,
+            if req_id.is_empty() { None } else { Some(&req_id) },
+            if resp_id.is_empty() { None } else { Some(&resp_id) },
+            body_part,
+            None,
+        );
         return (frame.to_vec(), false);
     }
 
     crate::applog::traffic_debug(&format!(
-        "[WS-FRAME] ✅ PATCHED | svc={} | orig_body_len={} | new_body_len={} | new_body: {}",
+        "[WS-FRAME] ✅ PATCHED | svc={}",
         if svc.is_empty() { "(none)" } else { &svc },
-        body_part.len(),
-        current_body.len(),
-        crate::applog::body_snippet(&current_body, 800)
     ));
+    crate::applog::record_traffic_event(
+        "WS-FRAME",
+        direction,
+        if svc.is_empty() { "(none)" } else { &svc },
+        None,
+        true,
+        if req_id.is_empty() { None } else { Some(&req_id) },
+        if resp_id.is_empty() { None } else { Some(&resp_id) },
+        &current_body,
+        None,
+    );
 
     let new_headers = resign_ws_headers(headers_part, &current_body);
     let mut out = Vec::with_capacity(new_headers.len() + 4 + current_body.len());
@@ -2941,6 +3099,16 @@ fn get_ws_header_value(headers: &[u8], key: &str) -> String {
             if k.trim().eq_ignore_ascii_case(&key_lower) {
                 return v.trim().to_string();
             }
+        }
+    }
+    String::new()
+}
+
+fn get_ws_header_any(headers: &[u8], keys: &[&str]) -> String {
+    for k in keys {
+        let val = get_ws_header_value(headers, k);
+        if !val.is_empty() {
+            return val;
         }
     }
     String::new()
@@ -3965,6 +4133,11 @@ fn patch_inventory_array(
                 changed = true;
             }
         } else {
+            let now_ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(1755399374i64);
+
             let mut new_prod = serde_json::json!({
                 "ProductID": item.product_id,
                 "productId": item.product_id,
@@ -3972,8 +4145,8 @@ fn patch_inventory_array(
                 "ProductInstanceID": instance_val,
                 "SeriesID": item.series_id,
                 "Attributes": attributes,
-                "AddedTimestamp": 1755399374i64,
-                "UpdatedTimestamp": 1755399374i64,
+                "AddedTimestamp": now_ts,
+                "UpdatedTimestamp": now_ts,
                 "TradeHold": -2,
             });
             if item.paint_id > 0 {
@@ -3986,6 +4159,38 @@ fn patch_inventory_array(
             changed = true;
         }
     }
+
+    // Always ensure base stock/legacy IDs exist so client never detects missing IDs or resets sync timestamp
+    for &base_pid in &[1i64, 11560, 6215, 6219, 6222, 6232] {
+        let has_base = arr.iter().any(|p| {
+            p.get("ProductID")
+                .or_else(|| p.get("productId"))
+                .or_else(|| p.get("product_id"))
+                .and_then(|id| id.as_i64().or_else(|| id.as_str().and_then(|s| s.parse::<i64>().ok())))
+                == Some(base_pid)
+        });
+        if !has_base {
+            let instance_id_num = 998_900_000i64 + base_pid;
+            let instance_val = if use_string_id {
+                serde_json::json!(instance_id_num.to_string())
+            } else {
+                serde_json::json!(instance_id_num)
+            };
+            arr.push(serde_json::json!({
+                "ProductID": base_pid,
+                "productId": base_pid,
+                "InstanceID": instance_val.clone(),
+                "ProductInstanceID": instance_val,
+                "SeriesID": 0,
+                "Attributes": [],
+                "AddedTimestamp": 1755399374i64,
+                "UpdatedTimestamp": 1755399374i64,
+                "TradeHold": -2,
+            }));
+            changed = true;
+        }
+    }
+
     changed
 }
 
@@ -3998,7 +4203,7 @@ fn patch_inventory_containers(
     if let Some(obj) = val.as_object_mut() {
         let keys = [
             "ProductData", "productData", "Products", "products",
-            "ProductList", "Inventory", "Drops", "UnlockedItems", "ReceivedItems",
+            "ProductList", "Inventory",
         ];
 
         let mut found_any_key = false;
@@ -4013,29 +4218,23 @@ fn patch_inventory_containers(
 
         for rk in &["Result", "result"] {
             if let Some(res_val) = obj.get_mut(*rk) {
-                changed |= patch_inventory_containers(res_val, inventory_spoof);
+                if res_val.is_object() || res_val.is_array() {
+                    found_any_key = true;
+                    changed |= patch_inventory_containers(res_val, inventory_spoof);
+                }
             }
         }
 
         if !found_any_key {
-            let is_result_obj = obj.contains_key("ProductData")
-                || obj.contains_key("Products")
-                || obj.contains_key("PlayerID")
-                || obj.contains_key("Loadout");
+            let is_inventory_response = obj.contains_key("PlayerID")
+                || obj.contains_key("PlayerId")
+                || obj.contains_key("AccountID");
 
-            if is_result_obj {
+            if is_inventory_response {
                 let mut new_arr = Vec::new();
                 patch_inventory_array(&mut new_arr, inventory_spoof);
                 obj.insert("ProductData".into(), serde_json::json!(new_arr));
                 changed = true;
-            } else if let Some(res_obj) = obj.get_mut("Result").and_then(|r| r.as_object_mut()) {
-                let has_prod = keys.iter().any(|k| res_obj.contains_key(*k));
-                if !has_prod {
-                    let mut new_arr = Vec::new();
-                    patch_inventory_array(&mut new_arr, inventory_spoof);
-                    res_obj.insert("ProductData".into(), serde_json::json!(new_arr));
-                    changed = true;
-                }
             }
         }
     } else if let Some(arr) = val.as_array_mut() {
@@ -4053,6 +4252,114 @@ fn patch_inventory_containers(
     }
 
     changed
+}
+
+fn patch_cross_entitlement_json(
+    body: &[u8],
+    inventory_spoof: &crate::psynet::InventorySpoofPayload,
+) -> (Vec<u8>, bool) {
+    if !inventory_spoof.enabled && inventory_spoof.items.is_empty() {
+        return (body.to_vec(), false);
+    }
+    let mut root: serde_json::Value = match serde_json::from_slice(body) {
+        Ok(v) => v,
+        Err(_) => return (body.to_vec(), false),
+    };
+
+    let mut spawned_pids: Vec<i64> = vec![1i64, 11560, 6215, 6219, 6222, 6232];
+    for it in &inventory_spoof.items {
+        if it.product_id > 0 && !spawned_pids.contains(&(it.product_id as i64)) {
+            spawned_pids.push(it.product_id as i64);
+        }
+    }
+
+    fn append_pids_to_array(arr: &mut Vec<serde_json::Value>, pids: &[i64]) -> bool {
+        let mut modified = false;
+        let is_object_array = arr.iter().any(|v| v.is_object());
+        if is_object_array {
+            for &pid in pids {
+                let exists = arr.iter().any(|elem| {
+                    elem.get("ProductID")
+                        .or_else(|| elem.get("productId"))
+                        .or_else(|| elem.get("ID"))
+                        .or_else(|| elem.get("id"))
+                        .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok())))
+                        == Some(pid)
+                });
+                if !exists {
+                    arr.push(serde_json::json!({
+                        "ProductID": pid,
+                        "productId": pid,
+                        "Entitled": true,
+                    }));
+                    modified = true;
+                }
+            }
+        } else {
+            let has_string_ids = arr.iter().any(|v| v.is_string());
+            for &pid in pids {
+                let exists = arr.iter().any(|elem| {
+                    if let Some(n) = elem.as_i64() {
+                        n == pid
+                    } else if let Some(s) = elem.as_str() {
+                        s.parse::<i64>().ok() == Some(pid)
+                    } else {
+                        false
+                    }
+                });
+                if !exists {
+                    if has_string_ids {
+                        arr.push(serde_json::json!(pid.to_string()));
+                    } else {
+                        arr.push(serde_json::json!(pid));
+                    }
+                    modified = true;
+                }
+            }
+        }
+        modified
+    }
+
+    fn search_and_append_cross(val: &mut serde_json::Value, pids: &[i64]) -> bool {
+        let mut modded = false;
+        if let Some(arr) = val.as_array_mut() {
+            modded |= append_pids_to_array(arr, pids);
+        } else if let Some(obj) = val.as_object_mut() {
+            let target_keys = [
+                "ProductIDs", "productIds", "ProductIds", "productIDs",
+                "Entitlements", "entitlements", "EntitledProducts", "entitledProducts",
+                "Products", "products", "CrossEntitlements", "crossEntitlements",
+                "Result", "result",
+            ];
+            let mut found = false;
+            for k in &target_keys {
+                if let Some(sub) = obj.get_mut(*k) {
+                    if sub.is_array() {
+                        found = true;
+                        modded |= search_and_append_cross(sub, pids);
+                    } else if sub.is_object() {
+                        modded |= search_and_append_cross(sub, pids);
+                    }
+                }
+            }
+            if !found && !obj.is_empty() {
+                let mut new_arr = Vec::new();
+                append_pids_to_array(&mut new_arr, pids);
+                obj.insert("ProductIDs".into(), serde_json::json!(new_arr));
+                modded = true;
+            }
+        }
+        modded
+    }
+
+    let changed = search_and_append_cross(&mut root, &spawned_pids);
+
+    if !changed {
+        return (body.to_vec(), false);
+    }
+
+    let out = serde_json::to_vec(&root).unwrap_or_else(|_| body.to_vec());
+    (out, true)
 }
 
 fn patch_player_inventory_json(
@@ -4430,12 +4737,11 @@ async fn handle_http_config(
     req: Request<Incoming>,
     client: reqwest::Client,
 ) -> Result<Response<ResponseBoxBody>, hyper::Error> {
-    let uri = req.uri();
-    let path = uri.path();
-    let query = uri.query().map(|q| format!("?{q}")).unwrap_or_default();
+    let path = req.uri().path().to_string();
+    let query = req.uri().query().map(|q| format!("?{q}")).unwrap_or_default();
     let upstream_url = format!("https://config.psynet.gg{path}{query}");
 
-    if let Some(bid) = parse_build_id(path) {
+    if let Some(bid) = parse_build_id(&path) {
         let mut lock = LAST_GAME_BUILD_ID.lock().unwrap();
         if lock.as_deref() != Some(&bid) {
             crate::applog::event(&format!("proxy: detected game build ID: {bid}"));
@@ -4464,7 +4770,19 @@ async fn handle_http_config(
         }
     };
 
-    let mut up_builder = client.request(method, &upstream_url);
+    crate::applog::record_traffic_event(
+        "CONFIG-HTTP",
+        "CLIENT->SRV",
+        &format!("{method} {upstream_url}"),
+        None,
+        false,
+        None,
+        None,
+        &req_body_bytes,
+        None,
+    );
+
+    let mut up_builder = client.request(method.clone(), &upstream_url);
     for (k, v) in headers.iter() {
         let k_lower = k.as_str().to_ascii_lowercase();
         if k_lower != "host"
@@ -4591,6 +4909,18 @@ async fn handle_http_config(
     resp_builder = resp_builder.header("PsySig", &sig);
 
     resp_builder = resp_builder.header("Content-Length", out_body.len().to_string());
+    crate::applog::record_traffic_event(
+        "CONFIG-HTTP",
+        "SRV->CLIENT",
+        &format!("{method} {path}{query}"),
+        Some(&status.to_string()),
+        patched,
+        None,
+        None,
+        &out_body,
+        None,
+    );
+
     let resp = resp_builder.body(full_body(out_body)).unwrap();
     Ok(resp)
 }
@@ -6049,6 +6379,35 @@ mod tests {
         let prod_arr = val["Result"]["ProductData"].as_array().unwrap();
         assert!(prod_arr.len() >= 1);
         assert!(prod_arr.iter().any(|p| p["ProductID"] == 4284));
+    }
+
+    #[test]
+    fn test_patch_cross_entitlement_appends_without_wiping() {
+        let body = br#"{"Result":{"ProductIDs":[1, 11560, 6219]}}"#;
+        let inv = crate::psynet::InventorySpoofPayload {
+            enabled: true,
+            items: vec![crate::psynet::InventorySpoofItemPayload {
+                product_id: 4284,
+                paint_id: 0,
+                series_id: 0,
+                slot: "Body".to_string(),
+                product_name: "Fennec".to_string(),
+                dlc: false,
+                ..Default::default()
+            }],
+            titles: vec![],
+        };
+
+        let (patched, changed) = patch_cross_entitlement_json(body, &inv);
+        assert!(changed);
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        let ids: Vec<i64> = val["Result"]["ProductIDs"].as_array().unwrap().iter().map(|v| v.as_i64().unwrap()).collect();
+        // Original IDs must be 100% preserved
+        assert!(ids.contains(&1));
+        assert!(ids.contains(&11560));
+        assert!(ids.contains(&6219));
+        // Spawned ID must be appended
+        assert!(ids.contains(&4284));
     }
 }
 
