@@ -724,17 +724,15 @@ fn write_spoof(dir: &Path, payload: &SpoofPayload) -> Result<PathBuf, String> {
     if let Some(obj) = body.as_object_mut() {
         obj.insert("method".into(), serde_json::json!(method));
 
-        obj.remove("observe_only");
         if let Some(inv) = &payload.inventory_spoof {
             obj.insert(
                 "inventory_spoof".into(),
                 serde_json::to_value(inv).unwrap_or(serde_json::json!({
                     "enabled": false,
-                    "items": []
+                    "items": [],
+                    "titles": []
                 })),
             );
-        } else {
-            obj.remove("inventory_spoof");
         }
         obj.remove("ping_spoof");
         if !payload.custom_name.is_empty() {
@@ -2497,11 +2495,17 @@ pub async fn save_psynet_spoof(
         return Err("VelocityRL build is outdated. Please update to the latest version.".into());
     }
     let _guard = PROXY_LIFECYCLE.lock().await;
+    let mut final_payload = payload;
+    if final_payload.inventory_spoof.is_none() {
+        if let Some(disk_cfg) = load_active_spoof_from_disk() {
+            final_payload.inventory_spoof = disk_cfg.inventory_spoof;
+        }
+    }
     let dir = config_dir();
-    let path = write_spoof(&dir, &payload)?;
-    let name_spoof_on = payload.name_spoof.as_ref().map(|n| n.enabled).unwrap_or(false);
+    let path = write_spoof(&dir, &final_payload)?;
+    let name_spoof_on = final_payload.name_spoof.as_ref().map(|n| n.enabled).unwrap_or(false);
     set_system_proxy_enabled(name_spoof_on);
-    if let Some(ns) = &payload.name_spoof {
+    if let Some(ns) = &final_payload.name_spoof {
         if let Some(pid) = &ns.player_id {
             let clean = crate::proxy::normalize_player_id(pid);
             if !clean.is_empty() && !clean.contains("temp") {
@@ -2509,7 +2513,7 @@ pub async fn save_psynet_spoof(
             }
         }
     }
-    crate::proxy::set_spoof_config(payload).await;
+    crate::proxy::set_spoof_config(final_payload).await;
     if psynet_hosts_redirected() {
         let _ = ensure_config_hosts();
         let _ = crate::winprobe::flush_dns_cache();

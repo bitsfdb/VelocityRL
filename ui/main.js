@@ -3380,6 +3380,9 @@ function payloadFromHydratedLocal() {
 
 function preserveEnabledLogoBlogFromDisk(payload, disk) {
     const out = { ...payload };
+    if (disk?.inventory_spoof) {
+        out.inventory_spoof = disk.inventory_spoof;
+    }
     if (disk?.logo_spoof?.enabled) {
         const diskUrl = String(disk.logo_spoof.logo_url || '').trim();
         const outUrl = String(out.logo_spoof?.logo_url || '').trim();
@@ -3404,6 +3407,7 @@ function preserveEnabledLogoBlogFromDisk(payload, disk) {
 
 async function anySpoofToolEnabled(payload) {
     const p = payload || payloadFromHydratedLocal();
+    if (p.inventory_spoof?.enabled && (p.inventory_spoof.items?.length || p.inventory_spoof.titles?.length)) return true;
     if (p.enabled && p.swaps?.length) return true;
     if (p.fake_ranks?.enabled) return true;
     if (p.camera_spoof?.enabled) return true;
