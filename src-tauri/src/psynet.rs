@@ -1241,13 +1241,11 @@ fn find_candidate_wine_user_regs() -> Vec<PathBuf> {
     }
 
     for h in &homes {
-        // Heroic Launcher prefixes
         add_if_exists(&mut cands, h.join("Games/Heroic/Prefixes/Rocket League/user.reg"));
         add_if_exists(&mut cands, h.join("Games/Heroic/Prefixes/default/Rocket League/user.reg"));
         add_if_exists(&mut cands, h.join(".var/app/com.heroicgameslauncher.hgl/config/heroic/Prefixes/Rocket League/user.reg"));
         add_if_exists(&mut cands, h.join(".var/app/com.heroicgameslauncher.hgl/Prefixes/Rocket League/user.reg"));
 
-        // Heroic GamesConfig winePrefix (any install path)
         for cfg_dir in &[
             h.join(".config/heroic/GamesConfig"),
             h.join(".var/app/com.heroicgameslauncher.hgl/config/heroic/GamesConfig"),
@@ -1269,14 +1267,11 @@ fn find_candidate_wine_user_regs() -> Vec<PathBuf> {
             }
         }
 
-        // Lutris prefixes
         add_if_exists(&mut cands, h.join("Games/rocket-league/user.reg"));
         add_if_exists(&mut cands, h.join("Games/rocketleague/user.reg"));
 
-        // Default Wine
         add_if_exists(&mut cands, h.join(".wine/user.reg"));
 
-        // Steam Proton prefixes (app 252950)
         let steam_roots = [
             h.join(".local/share/Steam"),
             h.join(".steam/steam"),
@@ -1298,7 +1293,6 @@ fn find_candidate_wine_user_regs() -> Vec<PathBuf> {
             }
         }
 
-        // Bottles
         for bottles_dir in &[
             h.join(".local/share/bottles/bottles"),
             h.join(".var/app/com.usebottles.bottles/data/bottles/bottles"),
@@ -2222,10 +2216,8 @@ pub fn setup_linux_system(need_ca: bool, need_hosts: bool) -> Result<(), String>
 
     let mut parts: Vec<String> = Vec::new();
 
-    // 1. Unprivileged port start
     parts.push("sysctl -w net.ipv4.ip_unprivileged_port_start=80 2>/dev/null; echo 'net.ipv4.ip_unprivileged_port_start = 80' > /etc/sysctl.d/50-velocityrl.conf 2>/dev/null".into());
 
-    // 2. CA certificate
     let pid = std::process::id();
     let tmp_ca = std::env::temp_dir().join(format!("velocityrl_ca_{pid}.crt"));
     if need_ca {
@@ -2247,7 +2239,6 @@ pub fn setup_linux_system(need_ca: bool, need_hosts: bool) -> Result<(), String>
         }
     }
 
-    // 3. /etc/hosts
     let tmp_hosts = std::env::temp_dir().join(format!("vrl_hosts_{pid}"));
     if need_hosts {
         let p = hosts_path();
@@ -2468,7 +2459,6 @@ try {{
             ));
             return Ok(false);
         }
-        // Hosts without the matching CA → RL TLS fails → "Epic Online Services" dialog.
         let _ = revert_config_hosts();
         if !ca_ok {
             return Err(format!(
@@ -2557,13 +2547,11 @@ pub async fn get_learned_identity() -> Result<LearnedIdentity, String> {
 pub async fn verify_config_psynet_live() -> ConfigPsynetHealth {
     use std::net::ToSocketAddrs;
 
-    // 1. Check DNS resolution of config.psynet.gg
     let dns_resolved_to_loopback = match ("config.psynet.gg", 443).to_socket_addrs() {
         Ok(addrs) => addrs.into_iter().any(|a| a.ip().is_loopback()),
         Err(_) => false,
     };
 
-    // 2. Check if proxy is listening on loopback 443 with TLS
     let insecure_client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
         .no_proxy()
@@ -2581,7 +2569,6 @@ pub async fn verify_config_psynet_live() -> ConfigPsynetHealth {
         }
     }
 
-    // 3. Check OS native TLS trust (without danger_accept_invalid_certs)
     let mut tls_cert_trusted = false;
     if proxy_responding {
         let native_client = reqwest::Client::builder()
@@ -2600,7 +2587,6 @@ pub async fn verify_config_psynet_live() -> ConfigPsynetHealth {
         }
     }
 
-    // 4. Check upstream PsyNet connectivity
     let upstream_client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
         .no_proxy()
@@ -2616,7 +2602,6 @@ pub async fn verify_config_psynet_live() -> ConfigPsynetHealth {
         }
     }
 
-    // 5. Build summary
     let ok = dns_resolved_to_loopback && proxy_responding && tls_cert_trusted;
     let details = if ok {
         if upstream_psynet_reachable {
@@ -2695,8 +2680,6 @@ pub async fn start_psynet_proxy(
         return Ok(status_for(Some(dir), true));
     }
 
-    // Bind :443 BEFORE rewriting hosts. If listen fails, never leave
-    // config.psynet.gg → loopback (that presents as RL/EOS online failure).
     if let Some(pid) = crate::winprobe::loopback_443_owner() {
         if pid != std::process::id() {
             let name = crate::winprobe::process_name(pid).unwrap_or_else(|| "unknown".to_string());
@@ -2731,8 +2714,6 @@ pub async fn start_psynet_proxy(
     }
 
     // Broker is required: config MITM rewrites PsyNetUrl → 127.0.0.1:<ephemeral>.
-    // If broker is down, browser/config still "works" but in-game Auth/WS die
-    // (looks like EOS/online failure). Never leave hosts pointing at loopback.
     match crate::proxy::start_ws_broker().await {
         Ok(port) => {
             crate::applog::event(&format!("psynet: WS broker on 127.0.0.1:{port}"));
@@ -2745,7 +2726,6 @@ pub async fn start_psynet_proxy(
         }
     }
 
-    // Health probe: verify that port 443 communicates via TLS and processes requests before modifying hosts
     if let Err(e) = crate::proxy::verify_proxy_loopback_health().await {
         crate::applog::event(&format!("psynet: loopback health check failed: {e}"));
         crate::proxy::stop_native_proxy(true);
@@ -3317,9 +3297,6 @@ pub async fn get_network_spawned_titles() -> Result<Vec<String>, String> {
     Ok(cfg.inventory_spoof.map(|i| i.titles).unwrap_or_default())
 }
 
-// =============================================================================
-// Traffic Debug Commands
-// =============================================================================
 
 #[tauri::command]
 pub async fn start_traffic_debug() -> Result<String, String> {

@@ -278,7 +278,6 @@ pub fn apply_header_renames(
         if end > old_name_table.len() { break; }
         let Ok(flags) = u64_at(old_name_table, end - 8) else { break; };
 
-        // Check if this slot should be renamed
         if let Some((_, new_str)) = effective_pairs.iter().find(|(old_str, _)| slot.name.eq_ignore_ascii_case(old_str)) {
             new_name_table.extend_from_slice(&serialize_name_entry(new_str, flags));
         } else {
@@ -417,10 +416,6 @@ mod tests {
 
     #[test]
     fn test_shortening_rename_does_not_corrupt_nametable() {
-        // Build a mock header with 3 entries:
-        // 0: "Wheel_SoccerBall" (17 bytes with \0)
-        // 1: "Wheel_SoccerBall_SF" (20 bytes with \0)
-        // 2: "SomeOtherName" (14 bytes with \0)
         let mut header = Vec::new();
         header.extend_from_slice(&serialize_name_entry("Wheel_SoccerBall", 0x11223344));
         header.extend_from_slice(&serialize_name_entry("Wheel_SoccerBall_SF", 0x55667788));
@@ -445,7 +440,6 @@ mod tests {
             &pairs,
         ).expect("rebuild succeeds");
 
-        // Verify parsing new_header succeeds without FString length errors
         let parsed = crate::upk::parser::parse_name_table(&new_header, 0, 3)
             .expect("parse name table succeeds");
         assert_eq!(parsed.len(), 3);

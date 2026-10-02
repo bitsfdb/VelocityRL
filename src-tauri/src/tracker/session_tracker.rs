@@ -140,7 +140,6 @@ impl SessionTracker {
     }
 
     pub fn is_training_or_offline_state(data: &UpdateStateData) -> bool {
-        // Online matches always have an authentic non-empty server match GUID.
         let has_valid_guid = data
             .match_guid
             .as_ref()
@@ -263,7 +262,6 @@ impl SessionTracker {
             .filter(|g| !g.trim().is_empty() && !g.starts_with("session_match_"));
 
         let Some(guid) = guid else {
-            // No authentic match GUID was active; ignore menu transitions or offline events.
             self.is_match_active = false;
             self.active_match_guid = None;
             return;

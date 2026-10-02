@@ -695,12 +695,10 @@ fn is_loadout_sensitive(svc: &str, body: &[u8]) -> bool {
         "microtransaction/getcatalog",
         // AuthPlayer must never be patched with name spoofing
         "authplayer",
-        // Only tournament brackets and tournament listings - preserve authentic names
         "tournaments/getbracket",
         "tournaments/getactivebracket",
         "tournaments/gettournament",
         "tournaments/gettournaments",
-        // Leaderboard services - preserve authentic names
         "skills/getskillleaderboard",
         "stats/getstatleaderboard",
         "leaderboards/getleaderboard",
@@ -722,7 +720,6 @@ fn is_loadout_sensitive(svc: &str, body: &[u8]) -> bool {
         b"RichPresence",
         b"SocialBeacon",
         b"FriendStatus",
-        // Tournament brackets and leaderboard payloads - preserve authentic names
         b"TournamentBracket",
         b"Tournament_TA",
         b"GetSkillLeaderboard",
@@ -1336,7 +1333,6 @@ async fn handle_forward_proxy_connection(
                 }
             }
         } else {
-            // Tunnel raw TCP bytes bidirectionally to destination
             let mut upstream_conn = match tokio::net::TcpStream::connect((host, port)).await {
                 Ok(c) => c,
                 Err(e) => {
@@ -1353,7 +1349,6 @@ async fn handle_forward_proxy_connection(
             let _ = tokio::io::copy_bidirectional(&mut client_stream, &mut upstream_conn).await;
         }
     } else {
-        // Plain HTTP proxy request (e.g. GET http://api.velocityrl.tech/ HTTP/1.1)
         let io = TokioIo::new(client_stream);
         let service = service_fn(move |mut req: Request<Incoming>| {
             let client = client.clone();
@@ -1833,7 +1828,6 @@ pub async fn check_loopback_health() -> Result<(), String> {
         .build()
         .map_err(|e| format!("failed to build loopback probe client: {e}"))?;
 
-    // Give the spawned TLS accept loop a moment to start before first probe.
     tokio::time::sleep(std::time::Duration::from_millis(80)).await;
 
     for attempt in 1..=8 {
@@ -1894,7 +1888,6 @@ pub async fn start_ws_broker() -> Result<u16, String> {
         return Ok(existing);
     }
 
-    // Try standard port 27505 first (matches Go proxy architecture), fallback to ephemeral if occupied.
     let listener = match tokio::net::TcpListener::bind("127.0.0.1:27505").await {
         Ok(l) => l,
         Err(_) => match tokio::net::TcpListener::bind("127.0.0.1:0").await {
@@ -2016,7 +2009,6 @@ async fn handle_broker_request(
     let mut up_builder = client.request(method.clone(), &upstream_url);
     for (k, v) in req_headers.iter() {
         let k_str = k.as_str().to_ascii_lowercase();
-        // Skip hop-by-hop headers and headers that reqwest manages
         if k_str != "host"
             && k_str != "content-length"
             && k_str != "accept-encoding"
@@ -2705,7 +2697,6 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
 
     let svc_lower = svc.to_ascii_lowercase();
 
-    // ---- Traffic Debug: log every WS frame ----
     {
         let direction = if !req_id.is_empty() { "CLIENT->SRV" } else { "SRV->CLIENT" };
         crate::applog::traffic_debug(&format!(
@@ -2742,7 +2733,6 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
     let mut current_body = body_part.to_vec();
     let mut any_changed = false;
 
-    // Only match actual wallet/currency RPCs — NOT tournament schedule/status/etc.
     let is_wallet = svc_lower.contains("shops/getplayerwallet")
         || svc_lower.contains("getplayerwallet")
         || (svc_lower.contains("wallet") && !svc_lower.contains("tournament"))
@@ -2752,7 +2742,6 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
             && !svc_lower.contains("schedule")
             && !svc_lower.contains("cycle"));
 
-    // Determine direction early for all patching decisions
     let is_response_frame = !resp_id.is_empty();
 
     if is_wallet && is_response_frame {
@@ -2774,7 +2763,6 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         }
     }
 
-    // Only match actual loadout RPCs — NOT matchmaking or generic party/server/session RPCs.
     // DSR/RelayToServer is handled separately below.
     let is_loadout_ws = svc_lower.contains("loadout")
         || svc_lower.contains("authplayer")
@@ -2864,7 +2852,6 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         }
     }
 
-    // Leaderboard spoofing disabled per user request
     let is_leaderboard = false;
 
     if is_leaderboard {
@@ -3110,11 +3097,9 @@ fn patch_leaderboard_json(
     let target_mu = mu_from_display(target_display_mmr);
     let disp_int = target_display_mmr.round() as i64;
 
-    // Calculate auto rank if custom rank is not explicitly set
     let assigned_rank = if let Some(cr) = custom_rank {
         cr
     } else {
-        // Inspect Platforms, Players, or Rows in leaderboard to find where target ranks
         let mut computed_rank = 1;
         let mut found_slot = false;
 
@@ -3191,7 +3176,6 @@ fn patch_leaderboard_json(
 
     let mut changed = false;
 
-    // 1. Official Skills/GetSkillLeaderboard v1 & Stats/GetStatLeaderboard v1 schema (Platforms -> Players)
     let platforms_key = if result_obj.get("Platforms").is_some() {
         Some("Platforms")
     } else if result_obj.get("platforms").is_some() {
@@ -3244,7 +3228,6 @@ fn patch_leaderboard_json(
         }
     }
 
-    // 2. Direct Players array (e.g. Stats/GetStatLeaderboardRankForUsers or flat list)
     let players_key = if result_obj.get("Players").is_some() {
         Some("Players")
     } else if result_obj.get("players").is_some() {
@@ -3285,7 +3268,6 @@ fn patch_leaderboard_json(
 
     let has_platforms = platforms_key.is_some();
 
-    // 3. Official Skills/GetSkillLeaderboardValueForUser v1 & Stats/GetStatLeaderboardValueForUser v1 (single user value queries or legacy format)
     if !has_platforms {
         let is_skill_lb = result_obj.get("LeaderboardID").and_then(|v| v.as_str()).map(|s| s.starts_with("Skill") || s.starts_with("skill")).unwrap_or(true) || result_obj.get("bHasSkill").is_some();
         if is_skill_lb {
@@ -3305,7 +3287,6 @@ fn patch_leaderboard_json(
         changed = true;
     }
 
-    // 4. Rows / Entries array (legacy or custom format)
     for key in &["Rows", "rows", "Entries", "entries", "LeaderboardRows", "leaderboardRows"] {
         if let Some(rows_arr) = result_obj.get_mut(*key).and_then(|r| r.as_array_mut()) {
             if !rows_arr.is_empty() {
@@ -3370,7 +3351,6 @@ fn patch_leaderboard_json(
         }
     }
 
-    // 5. UserRow / userRow (legacy user-specific row object)
     for ukey in &["UserRow", "userRow", "UserEntry", "userEntry"] {
         if let Some(user_row) = result_obj.get_mut(*ukey).and_then(|u| u.as_object_mut()) {
             user_row.insert("PlayerID".to_string(), serde_json::json!(user_pid_str));
@@ -3601,7 +3581,6 @@ fn update_slot_entry(elem: &mut serde_json::Value, item: &crate::psynet::Invento
         }
     }
 
-    // Inject or update the Certified attribute
     if let Some(stat_type) = cert_stat_type(item.certification_id) {
         let cert_val = if item.certification_value.is_empty() {
             "0".to_string()
@@ -3645,7 +3624,6 @@ fn patch_loadout_container(
             return false;
         }
 
-        // 1. Array of teams or presets containing Loadout/Products
         let has_teams_or_presets = arr.iter().any(|e| {
             e.get("TeamIndex").is_some()
                 || e.get("Loadout").is_some()
@@ -3664,7 +3642,6 @@ fn patch_loadout_container(
             return changed;
         }
 
-        // 2. Array of integer product IDs: [23, 0, 1565, ...] (standard Rocket League Products array)
         let is_number_array = arr.iter().all(|e| e.is_number());
         if is_number_array {
             for item in items {
@@ -3683,7 +3660,6 @@ fn patch_loadout_container(
             return changed;
         }
 
-        // 3. Array of slot entries: [ { "Slot": 0, "ProductID": 23 }, ... ]
         for item in items {
             let target_slot = slot_index_for_item(item);
             let aliases = slot_aliases(target_slot);
@@ -3723,7 +3699,6 @@ fn patch_loadout_container(
     }
 
     if let Some(obj) = val.as_object_mut() {
-        // 1. Recurse into all nested objects, arrays, and stringified JSON (Data, Categories, Objects, SaveData, etc.)
         for (_, sub_val) in obj.iter_mut() {
             if sub_val.is_object() || sub_val.is_array() {
                 changed |= patch_loadout_container(sub_val, items);
@@ -3890,7 +3865,6 @@ fn patch_inventory_array(
         .map(|v| v.is_string())
         .unwrap_or(true);
 
-    // Collect all titles to inject:
     let mut titles_to_spawn: Vec<String> = inventory_spoof.titles.clone();
     if let Some(cfg) = crate::psynet::load_active_spoof_from_disk() {
         let eq = cfg.equip_title_id.trim();
@@ -4072,8 +4046,6 @@ fn patch_inventory_containers(
             }
         }
 
-        // If this object is or contains Result, and no product list was found:
-        // Automatically inject ProductData into it so empty GetLoadoutProducts / GetPlayerProducts responses are populated!
         if !found_any_key {
             let is_result_obj = obj.contains_key("ProductData")
                 || obj.contains_key("Products")
@@ -4639,12 +4611,10 @@ async fn handle_http_config(
         }
     }
 
-    // Prevent client-side caching of config responses
     resp_builder = resp_builder.header("Cache-Control", "no-cache, no-store, must-revalidate");
     resp_builder = resp_builder.header("Pragma", "no-cache");
     resp_builder = resp_builder.header("Expires", "0");
 
-    // Always provide both Psysignature and PsySig (signed with PSY_CDN_KEY) so Rocket League always accepts the config
     let sig = resign_config_cdn(&out_body);
     resp_builder = resp_builder.header("Psysignature", &sig);
     resp_builder = resp_builder.header("PsySig", &sig);
@@ -4704,7 +4674,6 @@ fn patch_psynet_url(body: &[u8]) -> Option<Vec<u8>> {
 /// Replace the value of a JSON string field `"key":"<old_value>"` inside `body`.
 /// Returns `Some(new_body)` if the field was found and the value differed, `None` otherwise.
 fn replace_json_string_field(body: &[u8], key: &str, new_value: &str) -> Option<Vec<u8>> {
-    // Encode new_value as a JSON string (without surrounding quotes).
     let encoded_json = serde_json::to_string(new_value).ok()?;
     if encoded_json.len() < 2 {
         return None;
@@ -4917,7 +4886,6 @@ fn upsert_title_category(body: &[u8], cat_id: &str, color: &str, glow_color: &st
         return (body.to_vec(), false);
     };
 
-    // Check if category already exists in Categories array
     let id_needle = format!("\"ID\":\"{cat_id}\"");
     let arr_slice = &body[arr_start..=arr_end];
     if let Some(id_at) = find_bytes(arr_slice, id_needle.as_bytes()) {
@@ -4938,7 +4906,6 @@ fn upsert_title_category(body: &[u8], cat_id: &str, color: &str, glow_color: &st
         }
     }
 
-    // Insert at beginning of array [ {def}, ... ]
     let insert_at = arr_start + 1;
     let inner_is_empty = body[arr_start + 1..arr_end].iter().all(|c| c.is_ascii_whitespace());
     let frag = if inner_is_empty {
@@ -5239,7 +5206,6 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
         }
     }
 
-    // Always override FirstTimeExperienceManager_TA bEnabled = "false"
     let (next, changed) = upsert_class_property_override(
         &out,
         "FirstTimeExperienceManager_TA",
@@ -5251,7 +5217,6 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
         any_change = true;
     }
 
-    // Always rewrite PsyNetUrl to local broker (matches Go proxy architecture:
     // AuthPlayer and game RPC flow through 127.0.0.1 broker, eliminating external TLS/pinning issues)
     if let Some(next) = patch_psynet_url(&out) {
         out = next;
@@ -5273,7 +5238,6 @@ fn patch_menu_bg(body: &[u8], bg: &str) -> (Vec<u8>, bool) {
     let mut out = body.to_vec();
     let mut any_changed = false;
 
-    // 1. Override in ClassPropertyConfig for UIConfig_TA
     let (next1, changed1) = upsert_class_property_override(
         &out,
         "UIConfig_TA",
@@ -5285,7 +5249,6 @@ fn patch_menu_bg(body: &[u8], bg: &str) -> (Vec<u8>, bool) {
         any_changed = true;
     }
 
-    // 2. Override in ClassPropertyConfig for GFxData_MainMenu_TA
     let (next2, changed2) = upsert_class_property_override(
         &out,
         "GFxData_MainMenu_TA",
@@ -5297,7 +5260,6 @@ fn patch_menu_bg(body: &[u8], bg: &str) -> (Vec<u8>, bool) {
         any_changed = true;
     }
 
-    // 3. Direct UIConfig_TA JSON object if present
     if let Some((obj_start, obj_end)) = find_named_object(&out, "UIConfig_TA")
         .or_else(|| find_named_object(&out, "UIConfig"))
     {
@@ -5336,7 +5298,6 @@ fn patch_logo(body: &[u8], url: &str) -> (Vec<u8>, bool) {
     };
 
     let Some((start, end)) = find_named_object(&out, "DynamicLogosConfig") else {
-        // Inject DynamicLogosConfig before the last '}'
         let Some(close_idx) = out.iter().rposition(|&c| c == b'}') else {
             return (out, false);
         };
@@ -5352,7 +5313,6 @@ fn patch_logo(body: &[u8], url: &str) -> (Vec<u8>, bool) {
 
     let mut changed = false;
 
-    // Force bUseDynamicLogos: true
     let obj = out[start..end].to_vec();
     if let Some(b_at) = find_bytes(&obj, b"\"bUseDynamicLogos\":") {
         let val_start = start + b_at + b"\"bUseDynamicLogos\":".len();
@@ -5370,7 +5330,6 @@ fn patch_logo(body: &[u8], url: &str) -> (Vec<u8>, bool) {
         }
     }
 
-    // Replace LogoURL
     let (cur_start, cur_end) = match find_named_object(&out, "DynamicLogosConfig") {
         Some(b) => b,
         None => return (out, changed),
@@ -5427,7 +5386,6 @@ fn patch_blog_motd(body: &[u8], motd: &str) -> (Vec<u8>, bool) {
         return (out, false);
     };
     let Some((start, end)) = find_named_object(&out, "BlogConfig") else {
-        // Inject BlogConfig before the last '}'
         let Some(close_idx) = out.iter().rposition(|&c| c == b'}') else {
             return (out, false);
         };
@@ -5609,7 +5567,6 @@ fn upsert_class_property_override(
     let (cfg_start, cfg_end) = match find_class_property_config(body) {
         Some(bounds) => bounds,
         None => {
-            // ClassPropertyConfig wasn't shipped in this origin build payload; synthesize it.
             let Some(tail_brace) = body.iter().rposition(|&b| b == b'}') else {
                 return (body.to_vec(), false);
             };
@@ -5635,7 +5592,6 @@ fn upsert_class_property_override(
         return (body.to_vec(), false);
     }
 
-    // Inspect existing array elements for matching Class + Property
     let mut scan_offset = inner_open;
     while scan_offset < inner_close {
         let Some(rel_hit) = find_bytes(&body[scan_offset..inner_close], b"\"Class\"") else {
@@ -5662,7 +5618,6 @@ fn upsert_class_property_override(
         if find_bytes(elem_slice, class_pattern.as_bytes()).is_some()
             && find_bytes(elem_slice, prop_pattern.as_bytes()).is_some()
         {
-            // Found target override entry. Replace Value string slice in place.
             let val_tag = b"\"Value\":\"";
             let Some(val_tag_offset) = find_bytes(elem_slice, val_tag) else {
                 return (body.to_vec(), false);
@@ -5686,7 +5641,6 @@ fn upsert_class_property_override(
         scan_offset = entry_close + 1;
     }
 
-    // Target override not present in existing array — insert new entry object.
     let item_json = format!(
         "{{\"Class\":\"{class_target}\",\"Property\":\"{prop_target}\",\"Value\":\"{target_value}\"}}"
     );
@@ -5739,7 +5693,6 @@ mod tests {
         let body = b"test payload";
         let sig = resign_config_cdn(body);
         assert!(!sig.is_empty());
-        // Verify deterministic output
         assert_eq!(sig, resign_config_cdn(body));
     }
 
@@ -5971,7 +5924,6 @@ mod tests {
         let c15 = currencies.iter().find(|c| c["ID"] == 15).unwrap();
         assert_eq!(c15["Amount"], 500000);
 
-        // Ensure season variants 14..=26 were injected
         for tid in 14..=26 {
             let c = currencies.iter().find(|c| c["ID"] == tid);
             assert!(c.is_some(), "Currency ID {tid} must be present for season compatibility");
@@ -6012,16 +5964,13 @@ mod tests {
         let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
         let loadout = val["Result"]["PlayerLoadout"].as_array().unwrap();
 
-        // Slot 0 (Body) must be updated to 4284 (Fennec) with paint 3
         let body_slot = loadout.iter().find(|e| e["Slot"] == 0).unwrap();
         assert_eq!(body_slot["ProductID"], 4284);
         assert_eq!(body_slot["Paint"], 3);
 
-        // Slot 2 (Wheels) unchanged
         let wheel_slot = loadout.iter().find(|e| e["Slot"] == 2).unwrap();
         assert_eq!(wheel_slot["ProductID"], 1565);
 
-        // Slot 3 (Boost) appended with 45 (Gold Rush)
         let boost_slot = loadout.iter().find(|e| e["Slot"] == 3).unwrap();
         assert_eq!(boost_slot["ProductID"], 45);
     }

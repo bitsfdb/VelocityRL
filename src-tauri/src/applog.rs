@@ -462,9 +462,6 @@ pub fn open_log_folder(app: AppHandle) -> Result<(), String> {
     }
 }
 
-// =============================================================================
-// Traffic Debug Logger
-// =============================================================================
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static TRAFFIC_DEBUG_ENABLED: AtomicBool = AtomicBool::new(true);

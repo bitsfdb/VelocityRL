@@ -537,9 +537,7 @@ pub fn ensure_stats_api_files(game_dir: &str) -> bool {
         }
     };
 
-    // Clean up any alien TAStatsAPI.ini from the game installation directory.
     // Easy Anti-Cheat (EAC) hashes and verifies all files in <install>/TAGame/Config/
-    // against the store manifest. Any unexpected or modified files in that directory
     // cause EAC to abort the EOS authentication ticket and lock out online play.
     if let Some(tagame) = find_tagame_dir(game_dir) {
         let alien_stats = tagame.join("Config").join("TAStatsAPI.ini");
@@ -552,8 +550,6 @@ pub fn ensure_stats_api_files(game_dir: &str) -> bool {
         }
     }
 
-    // Stats API files belong exclusively in the user Documents directory:
-    // Documents\My Games\Rocket League\TAGame\Config\
     // EAC does not monitor user Documents, and UE3 prioritizes Documents config overrides.
     if let Some(user_config) = user_rl_config_dir() {
         crate::applog::event(&format!("tracker: checking Documents user config -> {}", user_config.display()));

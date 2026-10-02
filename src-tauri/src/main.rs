@@ -72,13 +72,10 @@ fn main() {
       return;
     }
 
-    // Automatically configure system settings (port 443, root CA, /etc/hosts)
     run_cli_setup();
 
-    // Prepare GUI environment for desktop session
     setup_gui_environment();
 
-    // Drop root privileges back to the desktop user so GTK/WebKit/Glycin/bwrap run safely
     drop_privileges_to_user();
   }
 
@@ -115,7 +112,6 @@ fn setup_gui_environment() {
     std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
   }
 
-  // WebKitGTK sandbox (bubblewrap) cannot create unprivileged user namespaces when running as root
   if std::env::var_os("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS").is_none() {
     std::env::set_var("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1");
   }
@@ -164,7 +160,6 @@ fn setup_gui_environment() {
     }
   }
 
-  // Scan user processes in /proc to pick up session environment variables if still missing
   if std::env::var_os("WAYLAND_DISPLAY").is_none() || std::env::var_os("DISPLAY").is_none() {
     if let Ok(entries) = std::fs::read_dir("/proc") {
       for entry in entries.flatten() {
@@ -208,7 +203,6 @@ fn setup_gui_environment() {
     }
   }
 
-  // Restore user home & directories
   if let Some(ref u) = sudo_user_opt {
     let user_home = std::path::PathBuf::from("/home").join(u.trim());
     if user_home.exists() {
@@ -234,7 +228,6 @@ fn setup_gui_environment() {
         std::env::set_var("XDG_DATA_HOME", user_home.join(".local/share"));
       }
 
-      // If X11 / Xwayland is used, authorize root via xhost
       let _ = std::process::Command::new("su")
         .args([u.trim(), "-c", "xhost +si:localuser:root 2>/dev/null"])
         .stderr(std::process::Stdio::null())
@@ -243,7 +236,6 @@ fn setup_gui_environment() {
     }
   }
 
-  // Fallback for DISPLAY if still unset
   if std::env::var_os("DISPLAY").is_none() {
     if std::path::Path::new("/tmp/.X11-unix/X0").exists() {
       std::env::set_var("DISPLAY", ":0");
@@ -252,7 +244,6 @@ fn setup_gui_environment() {
     }
   }
 
-  // Instruct GDK to prioritize Wayland when available
   if std::env::var_os("GDK_BACKEND").is_none() && std::env::var_os("WAYLAND_DISPLAY").is_some() {
     std::env::set_var("GDK_BACKEND", "wayland,x11");
   }
@@ -451,7 +442,6 @@ fn drop_privileges_to_user() {
       return;
     }
   } else {
-    // If running under pure root shell with no SUDO_USER, check for active desktop user in /run/user
     if let Ok(entries) = std::fs::read_dir("/run/user") {
       let mut found = None;
       for entry in entries.flatten() {
@@ -509,8 +499,6 @@ fn run_watchdog(target_pid: u32) {
     }
   }
 
-  // Parent process terminated (graceful, crash, or forceful termination).
-  // Immediately clean up all proxy redirections and hosts entries.
   let _ = app_lib::psynet::revert_config_hosts();
   app_lib::psynet::set_system_proxy_enabled(false);
   let _ = std::process::Command::new("ipconfig").arg("/flushdns").status();

@@ -287,7 +287,6 @@ pub fn resolve_package_path(game_dir: &Path, raw_pkg: &str) -> Option<(PathBuf, 
         }
     }
 
-    // 1. Direct filesystem check
     for cand in &cands {
         let p = game_dir.join(cand);
         if p.is_file() {
@@ -295,7 +294,6 @@ pub fn resolve_package_path(game_dir: &Path, raw_pkg: &str) -> Option<(PathBuf, 
         }
     }
 
-    // 2. Case-insensitive filesystem check in game_dir
     if let Ok(entries) = std::fs::read_dir(game_dir) {
         let cand_lowers: Vec<String> = cands.iter().map(|c| c.to_ascii_lowercase()).collect();
         for entry in entries.flatten() {
@@ -363,7 +361,6 @@ fn load_items(json: &str) -> Result<Vec<Item>, SwapError> {
         ));
     }
 
-    // Compute package cardinality across dataset
     let mut package_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     for item in &items {
         let base = package_base(&file_stem(&item.asset_package)).to_ascii_lowercase();
@@ -435,7 +432,6 @@ pub fn generate_paint_remap_pairs(base: &str, paint_id: i32) -> Vec<(String, Str
         bases.push(pascal_base);
     }
 
-    // Strip common slot prefixes: body_, skin_, wheel_, hat_, boost_, antenna_, goalexplosion_, trails_
     for prefix in &["body_", "Body_", "skin_", "Skin_", "wheel_", "Wheel_", "hat_", "Hat_", "boost_", "Boost_"] {
         if let Some(stripped) = base.strip_prefix(prefix) {
             if !stripped.is_empty() {
@@ -447,7 +443,6 @@ pub fn generate_paint_remap_pairs(base: &str, paint_id: i32) -> Vec<(String, Str
         }
     }
 
-    // Auto-expand internal engine codename aliases so painted trim stays applied with decals
     let lower_base = base.to_ascii_lowercase();
     if lower_base.contains("fennec") || lower_base.contains("grain") {
         for alias in &["Grain", "grain", "Body_Grain", "body_grain", "Fennec", "fennec", "Body_Fennec", "body_fennec"] {
@@ -560,15 +555,12 @@ fn infer_name_pairs(target: &Item, donor: &Item) -> Vec<(String, String)> {
         && donor_base.eq_ignore_ascii_case(target_base);
 
     if is_intra_package {
-        // Intra-package swapping: donor and target share the same UPK container.
         if !donor_obj.eq_ignore_ascii_case(&target_obj) {
-            // 1. Move target object to a backup slot so references don't conflict
             add_pair(&mut pairs, target_obj.clone(), format!("{target_obj}_Orig"));
             add_pair(&mut pairs, format!("{target_obj}_TA"), format!("{target_obj}_Orig_TA"));
             add_pair(&mut pairs, format!("{target_obj}_archetype"), format!("{target_obj}_Orig_archetype"));
             add_pair(&mut pairs, format!("MIC_{target_obj}"), format!("MIC_{target_obj}_Orig"));
 
-            // 2. Map donor object to target object
             add_pair(&mut pairs, donor_obj.clone(), target_obj.clone());
             add_pair(&mut pairs, format!("{donor_obj}_TA"), format!("{target_obj}_TA"));
             add_pair(&mut pairs, format!("{donor_obj}_archetype"), format!("{target_obj}_archetype"));
@@ -577,15 +569,12 @@ fn infer_name_pairs(target: &Item, donor: &Item) -> Vec<(String, String)> {
         return pairs;
     }
 
-    // Cross-package swapping:
-    // 1. Map the specific donor export object to target export object
     add_pair(&mut pairs, donor_obj.clone(), target_obj.clone());
     add_pair(&mut pairs, format!("{donor_obj}_TA"), format!("{target_obj}_TA"));
     add_pair(&mut pairs, format!("{donor_obj}_archetype"), format!("{target_obj}_archetype"));
     add_pair(&mut pairs, format!("MIC_{donor_obj}"), format!("MIC_{target_obj}"));
     add_pair(&mut pairs, format!("MIC_WHEEL_{donor_obj}"), format!("MIC_WHEEL_{target_obj}"));
 
-    // Goal explosion & particle actor archetype mappings (e.g. Sub-Zero -> Poof)
     add_pair(&mut pairs, format!("FXActor_{donor_obj}"), format!("FXActor_{target_obj}"));
     add_pair(&mut pairs, format!("FXActor_Explosion_{donor_obj}"), format!("FXActor_Explosion_{target_obj}"));
     add_pair(&mut pairs, format!("Explosion_{donor_obj}"), format!("Explosion_{target_obj}"));
@@ -599,7 +588,6 @@ fn infer_name_pairs(target: &Item, donor: &Item) -> Vec<(String, String)> {
     add_pair(&mut pairs, format!("FXActor_{donor_obj_pascal}"), format!("FXActor_{target_obj_pascal}"));
     add_pair(&mut pairs, format!("Explosion_{donor_obj_pascal}"), format!("Explosion_{target_obj_pascal}"));
 
-    // 2. Handle package-level remapping and multi-asset sibling isolation
     if !donor_base.is_empty() && !target_base.is_empty() {
         let donor_pascal = to_pascal_case(donor_base);
         let target_pascal = to_pascal_case(target_base);
@@ -608,15 +596,12 @@ fn infer_name_pairs(target: &Item, donor: &Item) -> Vec<(String, String)> {
             || !donor_obj.eq_ignore_ascii_case(donor_base);
 
         if is_donor_multi_asset {
-            // Sibling isolation: Move the default container object (e.g. Show-Cal "skin_strokes")
-            // to an inactive slot so it won't be matched when the game looks for target_obj.
             if !donor_base.eq_ignore_ascii_case(&donor_obj) {
                 add_pair(&mut pairs, donor_base.to_string(), format!("{donor_base}_Sibling"));
                 add_pair(&mut pairs, donor_pascal.clone(), format!("{donor_pascal}_Sibling"));
                 add_pair(&mut pairs, format!("MIC_{donor_base}"), format!("MIC_{donor_base}_Sibling"));
             }
         } else {
-            // Standard single-asset package: map base package names
             add_pair(&mut pairs, donor_base.to_string(), target_base.to_string());
             add_pair(&mut pairs, donor_base.to_string(), target_pascal.clone());
             add_pair(&mut pairs, donor_pascal.clone(), target_base.to_string());
@@ -630,7 +615,6 @@ fn infer_name_pairs(target: &Item, donor: &Item) -> Vec<(String, String)> {
             add_pair(&mut pairs, format!("MIC_WHEEL_{donor_base}"), format!("MIC_WHEEL_{target_base}"));
             add_pair(&mut pairs, format!("MIC_WHEEL_{donor_pascal}"), format!("MIC_WHEEL_{target_pascal}"));
 
-            // Goal explosion archetype package level mappings
             add_pair(&mut pairs, format!("FXActor_{donor_base}"), format!("FXActor_{target_base}"));
             add_pair(&mut pairs, format!("FXActor_{donor_pascal}"), format!("FXActor_{target_pascal}"));
             add_pair(&mut pairs, format!("FXActor_Explosion_{donor_base}"), format!("FXActor_Explosion_{target_base}"));
@@ -641,7 +625,6 @@ fn infer_name_pairs(target: &Item, donor: &Item) -> Vec<(String, String)> {
             add_pair(&mut pairs, format!("Archetypes.{donor_pascal}"), format!("Archetypes.{target_pascal}"));
         }
 
-        // Package companions (_SF, _sf, _Thumbnail, _SM)
         add_pair(&mut pairs, format!("{donor_base}_SF"), format!("{target_base}_SF"));
         add_pair(&mut pairs, format!("{donor_base}_sf"), format!("{target_base}_sf"));
         add_pair(&mut pairs, format!("{donor_pascal}_SF"), format!("{target_pascal}_SF"));
@@ -1510,7 +1493,6 @@ pub fn swap_asset(
         false,
     )?;
 
-    // Swap companion thumbnail UPK if available
     let target_stem = file_stem(&target.asset_package);
     let target_base = package_base(&target_stem);
     let donor_stem = file_stem(&donor.asset_package);
@@ -1610,7 +1592,6 @@ pub fn restore_single(path: &str) -> Result<(), SwapError> {
         ))
     })?;
 
-    // Also check for companion thumbnail backup:
     let orig_stem = file_stem(&orig.to_string_lossy());
     let orig_base = package_base(&orig_stem);
     let thumb_bak = orig.with_file_name(format!("{orig_base}_T_SF.upk.bak"));
@@ -1769,26 +1750,21 @@ mod tests {
         let sample_sf = temp_dir.join("Wheel_SoccerBall_SF.upk");
         std::fs::write(&sample_sf, b"dummy").unwrap();
 
-        // 1. Exact match
         let res = resolve_package_path(&temp_dir, "Wheel_SoccerBall_SF.upk");
         assert!(res.is_some());
         assert_eq!(res.unwrap().1, "Wheel_SoccerBall_SF.upk");
 
-        // 2. Bare stem without _SF and without .upk
         let res = resolve_package_path(&temp_dir, "Wheel_SoccerBall");
         assert!(res.is_some());
         assert_eq!(res.unwrap().1, "Wheel_SoccerBall_SF.upk");
 
-        // 3. Stem with .upk but without _SF
         let res = resolve_package_path(&temp_dir, "Wheel_SoccerBall.upk");
         assert!(res.is_some());
         assert_eq!(res.unwrap().1, "Wheel_SoccerBall_SF.upk");
 
-        // 4. Case-insensitive
         let res = resolve_package_path(&temp_dir, "wheel_soccerball");
         assert!(res.is_some());
 
-        // 5. Non-existent
         let res = resolve_package_path(&temp_dir, "NonExistentPackage_12345");
         assert!(res.is_none());
 
@@ -1798,7 +1774,6 @@ mod tests {
     #[test]
     fn test_shortening_swap_preserves_aligned_block_size() {
         let enc_size_aligned = 2048usize;
-        // Mock a remapped header that is shorter than original
         let shorter_plain = vec![0u8; 1900];
         let raw_enc_aligned = (shorter_plain.len() + 15) & !15;
         let new_enc_size_aligned = if raw_enc_aligned <= enc_size_aligned {
@@ -1841,11 +1816,8 @@ mod tests {
         };
 
         let pairs = infer_name_pairs(&target, &donor);
-        // Target should be moved to Orig
         assert!(pairs.iter().any(|(o, n)| o == "Skin_Octane_Dragon" && n == "Skin_Octane_Dragon_Orig"));
-        // Donor should be mapped to Target
         assert!(pairs.iter().any(|(o, n)| o == "skin_octane_jetstream" && n == "Skin_Octane_Dragon"));
-        // Should NOT remap the whole package name
         assert!(!pairs.iter().any(|(o, n)| o == "body_octane_premium_skins" && n != "body_octane_premium_skins"));
     }
 
@@ -1874,14 +1846,11 @@ mod tests {
     fn test_paint_remap_pairs_generation() {
         let pairs = generate_paint_remap_pairs("Body_Octane", 12);
         assert!(!pairs.is_empty());
-        // Unpainted to Titanium White
         assert!(pairs.iter().any(|(o, n)| o == "Body_Octane_Default" && n == "Body_Octane_TitaniumWhite"));
         assert!(pairs.iter().any(|(o, n)| o == "MIC_Body_Octane" && n == "MIC_Body_Octane_TitaniumWhite"));
         assert!(pairs.iter().any(|(o, n)| o == "Body_Octane_Painted" && n == "Body_Octane_TitaniumWhite"));
-        // Crimson (1) to Titanium White (12)
         assert!(pairs.iter().any(|(o, n)| o == "Body_Octane_Crimson" && n == "Body_Octane_TitaniumWhite"));
         assert!(pairs.iter().any(|(o, n)| o == "MIC_Body_Octane_Crimson" && n == "MIC_Body_Octane_TitaniumWhite"));
-        // Black (3) to Titanium White (12)
         assert!(pairs.iter().any(|(o, n)| o == "Body_Octane_Black" && n == "Body_Octane_TitaniumWhite"));
     }
 
@@ -1937,21 +1906,15 @@ mod tests {
             compatible_body_name: None,
         };
 
-        // 1. Swap Heatwave -> Shodo:
-        // Must map skin_strokes_manga -> skin_heatwave
-        // Must isolate skin_strokes -> skin_strokes_Sibling
         // Must NOT map skin_strokes -> skin_heatwave
         let pairs_shodo = infer_name_pairs(&heatwave, &shodo);
         assert!(pairs_shodo.iter().any(|(o, n)| o == "skin_strokes_manga" && n == "skin_heatwave"));
         assert!(pairs_shodo.iter().any(|(o, n)| o == "skin_strokes" && n == "skin_strokes_Sibling"));
         assert!(!pairs_shodo.iter().any(|(o, n)| o == "skin_strokes" && n == "skin_heatwave"));
 
-        // 2. Swap Heatwave -> Show-Cal:
-        // Must map skin_strokes -> skin_heatwave
         let pairs_showcal = infer_name_pairs(&heatwave, &show_cal);
         assert!(pairs_showcal.iter().any(|(o, n)| o == "skin_strokes" && n == "skin_heatwave"));
 
-        // 3. Intra-package swap Show-Cal -> Shodo:
         let pairs_intra = infer_name_pairs(&show_cal, &shodo);
         assert!(pairs_intra.iter().any(|(o, n)| o == "skin_strokes" && n == "skin_strokes_Orig"));
         assert!(pairs_intra.iter().any(|(o, n)| o == "skin_strokes_manga" && n == "skin_strokes"));

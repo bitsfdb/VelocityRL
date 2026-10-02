@@ -395,7 +395,6 @@ pub fn encode_to_dxt5_dds(img: &RgbaImage) -> Vec<u8> {
     let mips = generate_mipmap_chain(img);
     let mut dds_bytes = Vec::new();
 
-    // DDS Header (128 bytes)
     dds_bytes.extend_from_slice(b"DDS ");
     dds_bytes.extend_from_slice(&124u32.to_le_bytes()); // dwSize
     dds_bytes.extend_from_slice(&(0x1 | 0x2 | 0x4 | 0x8 | 0x1000 | 0x20000u32).to_le_bytes()); // dwFlags (CAPS|HEIGHT|WIDTH|PITCH|PIXELFORMAT|MIPMAPCOUNT)
@@ -406,7 +405,6 @@ pub fn encode_to_dxt5_dds(img: &RgbaImage) -> Vec<u8> {
     dds_bytes.extend_from_slice(&(mips.len() as u32).to_le_bytes()); // dwMipMapCount
     dds_bytes.extend_from_slice(&[0u8; 44]); // dwReserved1
 
-    // DDS_PIXELFORMAT (32 bytes)
     dds_bytes.extend_from_slice(&32u32.to_le_bytes()); // dwSize
     dds_bytes.extend_from_slice(&0x4u32.to_le_bytes()); // dwFlags (DDPF_FOURCC)
     dds_bytes.extend_from_slice(b"DXT5"); // dwFourCC
@@ -416,7 +414,6 @@ pub fn encode_to_dxt5_dds(img: &RgbaImage) -> Vec<u8> {
     dds_bytes.extend_from_slice(&0u32.to_le_bytes()); // dwBBitMask
     dds_bytes.extend_from_slice(&0u32.to_le_bytes()); // dwABitMask
 
-    // dwCaps, dwCaps2, dwCaps3, dwCaps4, dwReserved2 (20 bytes)
     dds_bytes.extend_from_slice(&(0x1000 | 0x400000 | 0x8u32).to_le_bytes()); // dwCaps
     dds_bytes.extend_from_slice(&0u32.to_le_bytes()); // dwCaps2
     dds_bytes.extend_from_slice(&0u32.to_le_bytes()); // dwCaps3
@@ -447,7 +444,6 @@ pub fn encode_to_dxt5_dds(img: &RgbaImage) -> Vec<u8> {
 }
 
 fn encode_dxt5_block(pixels: &[[u8; 4]; 16], out: &mut Vec<u8>) {
-    // 1. Alpha block (8 bytes)
     let min_a = pixels.iter().map(|p| p[3]).min().unwrap_or(0);
     let max_a = pixels.iter().map(|p| p[3]).max().unwrap_or(255);
 
@@ -470,7 +466,6 @@ fn encode_dxt5_block(pixels: &[[u8; 4]; 16], out: &mut Vec<u8>) {
         out.push(((a_indices >> (b * 8)) & 0xFF) as u8);
     }
 
-    // 2. Color block (DXT1, 8 bytes)
     let c0 = rgb888_to_rgb565(pixels[0][0], pixels[0][1], pixels[0][2]);
     let c1 = rgb888_to_rgb565(pixels[15][0], pixels[15][1], pixels[15][2]);
 
@@ -528,7 +523,6 @@ mod tests {
         assert_eq!(img.width(), 64);
         assert_eq!(img.height(), 64);
         let pixel = img.get_pixel(0, 0);
-        // Red = Metallic (0), Green = Roughness (128), Blue = AO (255), Alpha = Decal Mask (255)
         assert_eq!(pixel.0[0], 0);
         assert_eq!(pixel.0[1], 128);
         assert_eq!(pixel.0[2], 255);

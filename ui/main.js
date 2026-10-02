@@ -591,7 +591,6 @@ async function initVersionBadge() {
             btn.title = `VelocityRL ${label} (${info.build_hash})`;
         }
     } catch (_) {
-        // fallback: keep the hardcoded text from index.html
     }
 }
 
@@ -672,7 +671,6 @@ async function init() {
         };
     });
 
-    // Restore Dual Tabs (Swapper Backups vs Spawned Items)
     document.querySelectorAll('[data-restore-tab]').forEach(btn => {
         btn.onclick = () => {
             document.querySelectorAll('[data-restore-tab]').forEach(b => b.classList.remove('active'));
@@ -692,7 +690,6 @@ async function init() {
         };
     });
 
-    // Title Spawner Link in Titles Tab
     document.getElementById('btn-goto-title-spawner')?.addEventListener('click', () => {
         document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -1090,8 +1087,6 @@ async function loadData() {
         invoke('cleanup_temp_files').catch(() => {});
 
         updateLoadingText('Starting proxy server...');
-        // Do NOT call ensure_psynet_hosts before the native proxy is listening —
-        // that orphans config.psynet.gg → 127.0.0.1 and breaks RL/EOS online.
         autoStartPsyNetProxy().catch(async (e) => {
             console.warn('proxy autostart:', e);
             try { await invoke('stop_psynet_proxy', { revertHosts: true }); } catch (_) {}
@@ -2266,7 +2261,6 @@ function itemIsPaintable(item) {
     const slot = normSlot(item.Slot || item.slot || item.Type || item.type);
     if (UNPAINTABLE_SLOTS.has(slot)) return false;
 
-    // Check explicit Paintable boolean/flag on item
     if (item.Paintable !== undefined) {
         const flag = coercePaintableFlag(item.Paintable);
         if (flag !== null) return flag;
@@ -2276,7 +2270,6 @@ function itemIsPaintable(item) {
         if (flag !== null) return flag;
     }
 
-    // Check Paints array
     if (Array.isArray(item.Paints)) {
         return item.Paints.length > 0;
     }
@@ -2284,7 +2277,6 @@ function itemIsPaintable(item) {
         return item.paints.length > 0;
     }
 
-    // Check Attributes list if present
     for (const entry of itemAttrEntries(item)) {
         const k = attrKey(entry);
         if (k === 'paintable' || k === 'ispaintable') {
@@ -3079,8 +3071,6 @@ function pickerSwapEntry() {
     const entry = normalizeSwapEntry({
         equip_title_id: document.getElementById('title-equip-id')?.value?.trim() || '',
         display_title_id: displayId,
-        // Persist empty custom_text when falling back to catalog look text so the
-        // proxy copies the live config Text for display_title_id.
         custom_text: custom,
         category: lookCategory(),
         title_color: readTitleColorFromForm(),
@@ -4835,7 +4825,6 @@ function initDecalsTab() {
         if (!file) return;
         flashButtonLabel(swapBtn, 'Analyzing…', 10000);
 
-        // Try path first if present
         if (file.path) {
             try {
                 const isZip = file.name.toLowerCase().endsWith('.zip');
@@ -4860,7 +4849,6 @@ function initDecalsTab() {
             }
         }
 
-        // Always read bytes directly (works for all drop and file-picker scenarios)
         const reader = new FileReader();
         reader.onload = async (ev) => {
             const dataUrl = ev.target?.result;
@@ -4910,7 +4898,6 @@ function initDecalsTab() {
         });
     }
 
-    // Swap Custom Decal over Donor Decal
     swapBtn.addEventListener('click', async () => {
         const donorId = parseInt(donorSelect?.value || '0', 10);
         if (!donorId) {
@@ -5549,7 +5536,6 @@ function formatTitleHtml(text) {
         .replace(/\{flag_([a-z]{2})\}/gi, (m, cc) => (APPLE_FLAG_PNG.has(String(cc).toLowerCase()) ? flagEmoji(cc) : m))
         .replace(/\bFLAG_([A-Z]{2})\b/gi, (m, cc) => (APPLE_FLAG_PNG.has(String(cc).toLowerCase()) ? flagEmoji(cc) : m));
 
-    // Tokenize rank placeholders before char-by-char loop
     const rankTokens = [
         { regex: /\{(?:super\s*sonic\s*)?legend\}/gi, token: '___RANK_22___', tier: 22, label: 'Supersonic Legend' },
         { regex: /\{grand\s*champion\}/gi, token: '___RANK_19___', tier: 19, label: 'Grand Champion' },
@@ -5961,8 +5947,6 @@ async function saveTitleSpoof() {
         showToast('Pick a donor title first.', 'error');
         return;
     }
-    // Empty custom text → use the look title's normal catalog text (proxy also
-    // copies Text from display_title_id in BattleCars config when custom is blank).
     if (!entry.custom_text) {
         const lookText = effectiveLookText('', entry.display_title_id);
         if (lookText) {
@@ -6231,7 +6215,6 @@ async function loadWorkshopCatalog(page = 1, query = '') {
             grid.appendChild(card);
         });
 
-        // Wire install buttons
         grid.querySelectorAll('.map-catalog-install-btn').forEach(btn => {
             btn.onclick = async (e) => {
                 e.preventDefault();
@@ -7265,7 +7248,6 @@ async function initFeatures() {
 
         const mainWrap = document.querySelector('.main-wrap');
 
-        // Cleanup any legacy banners erroneously attached directly to body
         document.body.querySelectorAll(':scope > #maintenance-banner, :scope > #announcement-banner').forEach(el => el.remove());
 
         const existingMBanner = document.getElementById('maintenance-banner');
@@ -7297,7 +7279,6 @@ async function initFeatures() {
         }
 
         if (feat.flags) {
-            // Fake Ranks
             const ranksNav = document.querySelector('.nav-item[data-tab="ranks-tab"]');
             if (ranksNav) {
                 ranksNav.style.display = feat.flags.fake_ranks === false ? 'none' : '';
@@ -7309,31 +7290,26 @@ async function initFeatures() {
                 }
             }
 
-            // Custom Titles
             const titlesNav = document.querySelector('.nav-item[data-tab="titles-tab"]');
             if (titlesNav) {
                 titlesNav.style.display = feat.flags.custom_titles === false ? 'none' : '';
             }
 
-            // Camera Spoof
             const cameraNav = document.querySelector('.nav-item[data-tab="camera-tab"]');
             if (cameraNav) {
                 cameraNav.style.display = feat.flags.camera_spoof === false ? 'none' : '';
             }
 
-            // Live Tracker Overlay
             const trackerNav = document.querySelector('.nav-item[data-tab="tracker-tab"]');
             if (trackerNav) {
                 trackerNav.style.display = feat.flags.live_tracker_overlay === false ? 'none' : '';
             }
 
-            // Item Swapper
             const swapperNav = document.querySelector('.nav-item[data-tab="swapper-tab"]');
             if (swapperNav) {
                 swapperNav.style.display = feat.flags.item_swapper === false ? 'none' : '';
             }
 
-            // Workshop upload
             if (feat.flags.workshop_upload_enabled === false) {
                 const uploadTab = document.getElementById('workshop-upload-tab');
                 if (uploadTab) uploadTab.style.display = 'none';
@@ -7402,7 +7378,6 @@ function showOutdatedBuildModal(feat) {
         };
     }
 }
-// Dedicated capture handlers for version-btn so click and shift-click always work
 document.addEventListener('click', (e) => {
     const btn = e.target?.closest?.('#version-btn');
     if (!btn) return;
@@ -7695,7 +7670,6 @@ function wireSpawnerControls() {
                 return;
             }
 
-            // Visually select all matching titles across all pages
             filtered.forEach(t => {
                 const tid = String(t.id || t.Id || '');
                 const key = `title_${tid}`;
@@ -7757,7 +7731,6 @@ function wireSpawnerControls() {
             return;
         }
 
-        // Visually select all matching items across all pages
         filtered.forEach(item => {
             const iid = String(item.ID ?? item.id ?? '');
             const key = `item_${iid}`;

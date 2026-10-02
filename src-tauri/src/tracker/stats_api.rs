@@ -126,7 +126,6 @@ fn process_event(app: &AppHandle, tracker: &Arc<Mutex<SessionTracker>>, raw: &st
     let mut t = tracker.lock().unwrap();
     match envelope.event.as_str() {
         "MatchCreated" | "MatchInitialized" => {
-            // Wait for UpdateState with valid online match GUID before activating match state.
         }
         "RoundStarted" => {
             if t.active_match_guid.is_some() {

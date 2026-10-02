@@ -137,7 +137,6 @@ pub fn emit_convert_to_client_loadout_bytecode(
     let mut bc = Vec::new();
     let mut mem_sz: u32 = 0;
 
-    // 1. NewLoadout.Products = FromData.Products;
     bc.push(opcodes::EX_LET);
     bc.push(opcodes::EX_STRUCT_MEMBER);
     bc.extend_from_slice(&1871i32.to_le_bytes());
@@ -238,7 +237,6 @@ pub fn emit_convert_to_client_loadout_bytecode(
         }
     }
 
-    // 3. return NewLoadout;
     bc.push(opcodes::EX_RETURN);
     bc.push(opcodes::EX_INSTANCE_VARIABLE);
     bc.extend_from_slice(&75i32.to_le_bytes());
@@ -258,7 +256,6 @@ pub fn emit_car_set_loadout_bytecode(
     let mut bc = Vec::new();
     let mut mem_sz: u32 = 0;
 
-    // 1. Slot assignments on Data (local #16586)
     for rule in slot_overrides {
         let cond_disk_len = if rule.slot_idx == 0 { 56 } else { 58 };
         let uncond_disk_len = if rule.slot_idx == 0 { 26 } else { 27 };
@@ -343,8 +340,6 @@ pub fn emit_car_set_loadout_bytecode(
         }
     }
 
-    // 2. Exact vanilla execution body:
-    // bLoadoutSet = true; Loadout.EventAssetLoaded = ...; Loadout.EventAllAssetsLoaded = ...; ProductLoader.LoadClientLoadout(Data); return;
     let vanilla_body: [u8; 97] = [
         0x14, 0x2D, 0x01, 0x8D, 0x40, 0x00, 0x00, 0x27,
         0x52, 0x5E, 0x19, 0x00, 0x01, 0x8E, 0x40, 0x00, 0x00, 0x09, 0x00, 0xF8, 0x3E, 0x00, 0x00, 0x00, 0x01, 0xF8, 0x3E, 0x00, 0x00, 0x49, 0x8B, 0x5C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -558,13 +553,9 @@ pub fn apply_body_paint_modification(
         get_paint_rgba(paint_id)
     };
 
-    // Replace all material instance vector parameter patterns across decompressed chunk
     let patterns = [
-        // 0.0663 f32 (CustomColor stock on Fennec/Dominus/Octane)
         [0x25, 0xc6, 0x87, 0x3d, 0x25, 0xc6, 0x87, 0x3d, 0x25, 0xc6, 0x87, 0x3d, 0x00, 0x00, 0x80, 0x3f],
-        // 0.12 f32 (TrimColor stock)
         [0x8f, 0xc2, 0xf5, 0x3d, 0x8f, 0xc2, 0xf5, 0x3d, 0x8f, 0xc2, 0xf5, 0x3d, 0x00, 0x00, 0x80, 0x3f],
-        // 0.05 f32
         [0xcd, 0xcc, 0x4c, 0x3d, 0xcd, 0xcc, 0x4c, 0x3d, 0xcd, 0xcc, 0x4c, 0x3d, 0x00, 0x00, 0x80, 0x3f],
     ];
 
@@ -578,7 +569,6 @@ pub fn apply_body_paint_modification(
     }
 
 
-    // Recompress Chunk 0
     let mut recomp = crate::upk::compression::compress_chunk(&decomp)
         .map_err(|e| TagameSwapError::Msg(format!("Compress chunk failed: {e}")))?;
 
@@ -797,14 +787,12 @@ pub fn apply_tagame_modifications(
             if is_ge {
                 let target_ge = if s.product_id > 0 { s.product_id } else { 2044 };
 
-                // Goal Explosions map to Slot 10 (garage/legacy) and Slot 15 (in-match/replication)
                 slot_overrides.push(SlotSwapRule {
                     slot_idx: 15,
                     owned_id: s.owned_id,
                     target_id: target_ge,
                 });
 
-                // If owned is 0, 1903, or None (default), cover both 0 and 1903 on both slot 10 and slot 15
                 if s.owned_id == Some(1903) || s.owned_id == Some(0) || s.owned_id.is_none() {
                     slot_overrides.push(SlotSwapRule {
                         slot_idx: 10,
@@ -830,7 +818,6 @@ pub fn apply_tagame_modifications(
             }
         }
 
-        // 1. Patch Chunk 0: ConvertToClientLoadout (#78) & Car_TA::SetLoadout (#16587)
         if !chunks.is_empty() {
             let c0_pos = chunks[0].pos;
             let c0_uncomp_offset = chunks[0].uncomp_offset;
@@ -875,7 +862,6 @@ pub fn apply_tagame_modifications(
                                     decomp0[func_off + 44..func_off + 48].copy_from_slice(&(EXPANDED_SIZE as u32).to_le_bytes());
                                     decomp0[func_off + 48..func_off + 48 + EXPANDED_SIZE].copy_from_slice(&payload);
 
-                                    // Update export table in plain_header and in memory
                                     let new_serial_sz = exp_serial_size + delta as i32;
                                     plain_header[target_pos + 32..target_pos + 36].copy_from_slice(&new_serial_sz.to_le_bytes());
                                     exports[exp_idx].serial_size = new_serial_sz;
@@ -943,7 +929,6 @@ pub fn apply_tagame_modifications(
             false
         };
 
-        // 2. Patch Chunk 1: ExplosionPreviewer_TA::SetLoadout (#23226) for Garage 3D Stage Preview
         let target_ge_opt = swaps.iter()
             .find(|s| {
                 let norm = s.slot.to_lowercase().replace([' ', '_', '-'], "");
@@ -1000,14 +985,12 @@ pub fn apply_tagame_modifications(
             }
         }
 
-        // 3. Patch Chunk 2: LoadoutValidation_TA & PRI_TA functions for In-Game / Online Matches
         if chunks.len() > 2 && !slot_overrides.is_empty() {
             let c2 = &chunks[2];
             let c2_start = c2.comp_offset as usize;
             let c2_end = c2_start + c2.comp_size as usize;
             if c2_end <= file_bytes.len() {
                 if let Ok(mut decomp2) = crate::upk::compression::decompress_chunk(&file_bytes[c2_start..c2_end]) {
-                    // 3a. CorrectOnlineData (#47859) -> set OutLoadout.Products[slot] = target_id
                     if let Some(exp) = exports.iter().find(|e| e.name == "CorrectOnlineData") {
                         let func_off = (exp.serial_offset - c2.uncomp_offset) as usize;
                         if func_off + 48 <= decomp2.len() {
@@ -1016,7 +999,6 @@ pub fn apply_tagame_modifications(
                                 let mut bc = Vec::new();
                                 let mut mem_sz: u32 = 0;
 
-                                // 1. OutLoadout = InProductsConfig;
                                 bc.push(opcodes::EX_LET);
                                 bc.push(opcodes::EX_LOCAL_VARIABLE);
                                 bc.extend_from_slice(&47858i32.to_le_bytes()); // OutLoadout (#47858)
@@ -1024,7 +1006,6 @@ pub fn apply_tagame_modifications(
                                 bc.extend_from_slice(&47853i32.to_le_bytes()); // InProductsConfig (#47853)
                                 mem_sz += 11;
 
-                                // 2. Override specific slots on OutLoadout
                                 for rule in &slot_overrides {
                                     if bc.len() + 30 > orig_disk_sz {
                                         break;
@@ -1085,7 +1066,6 @@ pub fn apply_tagame_modifications(
         }
     }
 
-    // Apply body trim paint overrides (e.g. Fennec Black / custom trim hex)
     for s in swaps {
         let is_body = s.slot.to_lowercase().contains("body")
             || s.package_name.as_deref().map_or(false, |p| p.to_lowercase().starts_with("body_"));
