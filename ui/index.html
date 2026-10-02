@@ -89,6 +89,22 @@
                             <span id="spawner-paint-color-dot" class="spawner-paint-color-dot" style="width:12px; height:12px; border-radius:50%; background:#4B5563; display:inline-block; border:1px solid rgba(255,255,255,0.25); flex-shrink:0;"></span>
                             <select id="spawner-paint-select" class="spawner-paint-select" style="min-width:140px;"></select>
                         </div>
+
+                        <div class="spawner-cert-wrap" id="spawner-cert-wrap" style="display:flex; align-items:center; gap:8px;">
+                            <label for="spawner-cert-select" style="font-size:12px; color:var(--text-secondary); font-weight:600; white-space:nowrap;">Cert:</label>
+                            <select id="spawner-cert-select" class="spawner-paint-select" style="min-width:130px;">
+                                <option value="0">None</option>
+                                <option value="1">Scorer</option>
+                                <option value="2">Striker</option>
+                                <option value="3">Goalkeeper</option>
+                                <option value="4">Playmaker</option>
+                                <option value="5">Tactician</option>
+                                <option value="6">Sweeper</option>
+                                <option value="7">Aviator</option>
+                                <option value="8">Victor</option>
+                            </select>
+                        </div>
+
                         
                         <div class="spawner-actions-wrap" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
                             <button type="button" id="spawner-spawn-single-btn" class="action-btn" style="padding:7px 14px; font-size:12px; white-space:nowrap; background:var(--accent); color:#fff; display:none;">Paint Individual</button>

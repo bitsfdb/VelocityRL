@@ -7482,6 +7482,12 @@ function getSelectedSpawnerPaint() {
     return { id: isNaN(val) ? 0 : val, name };
 }
 
+function getSelectedSpawnerCert() {
+    const sel = document.getElementById('spawner-cert-select');
+    const val = parseInt(sel?.value || '0', 10);
+    return isNaN(val) ? 0 : val;
+}
+
 function updateSpawnerSelectionUi() {
     const count = spawnerSelectedItems.size;
     const singleBtn = document.getElementById('spawner-spawn-single-btn');
@@ -7610,6 +7616,7 @@ function wireSpawnerControls() {
         const titlesToSpawn = selected.filter(s => s.kind === 'title').map(s => String(s.id));
         const itemsToSpawn = selected.filter(s => s.kind === 'item');
         const paint = getSelectedSpawnerPaint();
+        const certId = getSelectedSpawnerCert();
 
         if (triggerBtn) triggerBtn.disabled = true;
         try {
@@ -7626,7 +7633,9 @@ function wireSpawnerControls() {
                         series_id: 0,
                         slot: normSlot(entry.slot || fullItem?.Slot || fullItem?.slot || ''),
                         product_name: entry.name || fullItem?.Product || fullItem?.product || 'Unknown Item',
-                        dlc: false
+                        dlc: false,
+                        certification_id: certId,
+                        certification_value: certId > 0 ? '0' : ''
                     };
                 }).filter(i => i.product_id > 0);
 
@@ -7641,7 +7650,9 @@ function wireSpawnerControls() {
                 return fullItem ? itemIsPaintable(fullItem) : true;
             }).length;
             const paintSuffix = paintedCount > 0 && paint.id > 0 ? ` (${paint.name})` : '';
-            showToast(`Spawned ${total} selected item(s)${paintSuffix} into network inventory!`, 'success');
+            const certNames = ['','Scorer','Striker','Goalkeeper','Playmaker','Tactician','Sweeper','Aviator','Victor'];
+            const certSuffix = certId > 0 ? ` [${certNames[certId] || 'Cert'}]` : '';
+            showToast(`Spawned ${total} selected item(s)${paintSuffix}${certSuffix} into network inventory!`, 'success');
             spawnerSelectedItems.clear();
             updateSpawnerSelectionUi();
             await refreshSpawnedItemsList();
@@ -7658,6 +7669,7 @@ function wireSpawnerControls() {
     spawnAllBtn?.addEventListener('click', async () => {
         const q = (searchInput?.value || '').trim().toLowerCase();
         const paint = getSelectedSpawnerPaint();
+        const certId = getSelectedSpawnerCert();
 
         const confirmed = await appDialog({
             title: 'Spawn All Items',
@@ -7733,9 +7745,12 @@ function wireSpawnerControls() {
                 series_id: 0,
                 slot: normSlot(item.Slot || item.slot || item.category || ''),
                 product_name: item.Product || item.product || item.name || 'Unknown Item',
-                dlc: false
+                dlc: false,
+                certification_id: certId,
+                certification_value: certId > 0 ? '0' : ''
             };
         }).filter(i => i.product_id > 0);
+
 
         if (!payload.length) {
             showToast('No valid items found.', 'warning');

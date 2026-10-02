@@ -2033,25 +2033,8 @@ async fn handle_broker_request(
         }
     }
     up_builder = up_builder.header("Host", "api.rlpp.psynet.gg");
-    let mut outgoing_body = body_bytes.clone();
-    if !outgoing_body.is_empty() {
-        if let Some(cfg) = crate::psynet::load_active_spoof_from_disk() {
-            if let Some(inv) = &cfg.inventory_spoof {
-                if inv.enabled && !inv.items.is_empty() {
-                    let (new_body, did_patch) = patch_loadout_rpc_json(&outgoing_body, inv, false);
-                    if did_patch {
-                        outgoing_body = new_body;
-                        let mut m = Hmac::<Sha256>::new_from_slice(PSY_REQ_KEY).expect("valid hmac key");
-                        m.update(b"-");
-                        m.update(&outgoing_body);
-                        let sig = base64::engine::general_purpose::STANDARD.encode(m.finalize().into_bytes());
-                        up_builder = up_builder.header("PsySig", sig);
-                        crate::applog::event("broker: patched outgoing client HTTP loadout RPC and re-signed PsySig");
-                    }
-                }
-            }
-        }
-        up_builder = up_builder.body(outgoing_body);
+    if !body_bytes.is_empty() {
+        up_builder = up_builder.body(body_bytes.clone());
     }
 
     let up_resp = match up_builder.send().await {
@@ -2829,6 +2812,19 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         }
     }
 
+    // On matchcomplete, re-inject spawned items so they survive the return-to-lobby transition.
+    if (svc_lower.contains("matchcomplete") || svc_lower.contains("matchcompletefte")) && is_response_frame {
+        if let Some(inv) = &cfg.inventory_spoof {
+            if inv.enabled && !inv.items.is_empty() {
+                let (new_body, changed) = patch_player_inventory_json(&current_body, inv);
+                if changed {
+                    current_body = new_body;
+                    any_changed = true;
+                }
+            }
+        }
+    }
+
     // Only patch loadout/inventory in SRV->CLIENT (response) direction, except DSR relay.
     let is_dsr = svc_lower.contains("dsr/") || svc_lower.contains("relaytoserver");
     if (is_loadout_ws || is_inventory_ws) && (is_response_frame || is_dsr) {
@@ -3482,6 +3478,21 @@ fn slot_aliases(slot_idx: usize) -> &'static [&'static str] {
     }
 }
 
+/// Maps certification_id (1-8) to the PsyNet StatType string.
+fn cert_stat_type(id: i32) -> Option<&'static str> {
+    match id {
+        1 => Some("Stat_Goals"),
+        2 => Some("Stat_Shots"),
+        3 => Some("Stat_Saves"),
+        4 => Some("Stat_Assists"),
+        5 => Some("Stat_Center"),
+        6 => Some("Stat_Clear"),
+        7 => Some("Stat_AerialGoals"),
+        8 => Some("Stat_HatTricks"),
+        _ => None,
+    }
+}
+
 fn new_slot_entry(slot_idx: usize, item: &crate::psynet::InventorySpoofItemPayload) -> serde_json::Value {
     let mut attributes = Vec::new();
     if item.paint_id > 0 {
@@ -3492,6 +3503,19 @@ fn new_slot_entry(slot_idx: usize, item: &crate::psynet::InventorySpoofItemPaylo
         attributes.push(serde_json::json!({
             "Key": "Paint",
             "Value": item.paint_id
+        }));
+    }
+    if let Some(stat_type) = cert_stat_type(item.certification_id) {
+        let cert_val = if item.certification_value.is_empty() {
+            "0".to_string()
+        } else {
+            item.certification_value.clone()
+        };
+        attributes.push(serde_json::json!({
+            "Key": "Certified",
+            "StatType": stat_type,
+            "Value": cert_val,
+            "TypeName": "ProductAttribute_Certified_TA"
         }));
     }
     let instance_id_num = 998_000_000i64 + (slot_idx as i64);
@@ -3576,7 +3600,39 @@ fn update_slot_entry(elem: &mut serde_json::Value, item: &crate::psynet::Invento
             ]));
         }
     }
+
+    // Inject or update the Certified attribute
+    if let Some(stat_type) = cert_stat_type(item.certification_id) {
+        let cert_val = if item.certification_value.is_empty() {
+            "0".to_string()
+        } else {
+            item.certification_value.clone()
+        };
+        let cert_attr = serde_json::json!({
+            "Key": "Certified",
+            "StatType": stat_type,
+            "Value": cert_val,
+            "TypeName": "ProductAttribute_Certified_TA"
+        });
+        if let Some(attrs) = obj.get_mut("Attributes").and_then(|a| a.as_array_mut()) {
+            let mut cert_found = false;
+            for attr in attrs.iter_mut() {
+                let key_name = attr.get("Key").and_then(|k| k.as_str()).unwrap_or("");
+                if key_name.eq_ignore_ascii_case("certified") {
+                    *attr = cert_attr.clone();
+                    cert_found = true;
+                    break;
+                }
+            }
+            if !cert_found {
+                attrs.push(cert_attr);
+            }
+        } else {
+            obj.insert("Attributes".into(), serde_json::json!([cert_attr]));
+        }
+    }
 }
+
 
 fn patch_loadout_container(
     val: &mut serde_json::Value,
@@ -5936,6 +5992,7 @@ mod tests {
                     slot: "Body".to_string(),
                     product_name: "Fennec".to_string(),
                     dlc: false,
+                    ..Default::default()
                 },
                 crate::psynet::InventorySpoofItemPayload {
                     product_id: 45,
@@ -5944,6 +6001,7 @@ mod tests {
                     slot: "Boost".to_string(),
                     product_name: "Gold Rush (Alpha Boost)".to_string(),
                     dlc: false,
+                    ..Default::default()
                 },
             ],
             titles: vec![],
@@ -5980,6 +6038,7 @@ mod tests {
                 slot: "Body".to_string(),
                 product_name: "Fennec".to_string(),
                 dlc: false,
+                ..Default::default()
             }],
             titles: vec![],
         };
@@ -6003,6 +6062,7 @@ mod tests {
                 slot: "Body".to_string(),
                 product_name: "Fennec".to_string(),
                 dlc: false,
+                ..Default::default()
             }],
             titles: vec![],
         };
@@ -6030,6 +6090,7 @@ mod tests {
                 slot: "Body".to_string(),
                 product_name: "Fennec".to_string(),
                 dlc: false,
+                ..Default::default()
             }],
             titles: vec![],
         };
@@ -6057,6 +6118,7 @@ mod tests {
                 slot: "Body".to_string(),
                 product_name: "Fennec".to_string(),
                 dlc: false,
+                ..Default::default()
             }],
             titles: vec![],
         };

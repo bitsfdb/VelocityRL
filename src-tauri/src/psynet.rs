@@ -149,6 +149,13 @@ pub struct InventorySpoofItemPayload {
     pub product_name: String,
     #[serde(default)]
     pub dlc: bool,
+    /// 0 = no cert; 1=Scorer, 2=Striker, 3=Goalkeeper, 4=Playmaker,
+    /// 5=Tactician, 6=Sweeper, 7=Aviator, 8=Victor
+    #[serde(default)]
+    pub certification_id: i32,
+    /// Tracked stat value shown on the item (e.g. "100"). Defaults to "0".
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub certification_value: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -3189,6 +3196,7 @@ pub async fn add_network_spawned_item(
         slot,
         product_name,
         dlc: false,
+        ..Default::default()
     });
     cfg.inventory_spoof = Some(inv.clone());
     let _ = write_spoof(&dir, &cfg)?;
