@@ -971,8 +971,19 @@ pub fn apply_tagame_modifications(
             let c_end = c_start + ch2.comp_size as usize;
             if c_end <= file_bytes.len() {
                 if let Ok(mut decomp2) = crate::upk::compression::decompress_chunk(&file_bytes[c_start..c_end]) {
-                    let targets_false = ["CorrectOnlineData"];
-                    let targets_void = ["OnLoadoutsOnlineSet", "OnLoadoutsSet"];
+                    let targets_false = [
+                        "CorrectOnlineData",
+                        "ValidateLoadoutSlots",
+                    ];
+                    let targets_void = [
+                        "OnLoadoutsOnlineSet",
+                        "OnLoadoutsSet",
+                        "CorrectDLCOwnership",
+                        "ValidateLoadoutDLC",
+                        "CorrectLoadoutFromValidationError",
+                        "CorrectLoadoutData",
+                        "OnLoadoutValidationError",
+                    ];
                     let mut patched_count = 0;
 
                     for exp in exports.iter() {
