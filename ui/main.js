@@ -7705,8 +7705,7 @@ function wireSpawnerControls() {
                 }
             }
 
-            const total = titlesToSpawn.length + itemsToSpawn.length;
-            showToast(`Spawned ${total} selected item(s) into network inventory!`, 'success');
+            showToast('Spawned!', 'success');
             spawnerSelectedItems.clear();
             updateSpawnerSelectionUi();
             await refreshSpawnedItemsList();
@@ -7762,7 +7761,7 @@ function wireSpawnerControls() {
             spawnAllBtn.disabled = true;
             try {
                 await invoke('add_network_spawned_titles_bulk', { titleIds: ids });
-                showToast(`Spawned all ${ids.length} titles into network inventory!`, 'success');
+                showToast('Spawned!', 'success');
                 await refreshSpawnedItemsList();
             } catch (err) {
                 showToast(`Failed to spawn titles: ${err}`, 'error');
@@ -7845,7 +7844,7 @@ function wireSpawnerControls() {
         spawnAllBtn.disabled = true;
         try {
             await invoke('add_network_spawned_items_bulk', { items: payload });
-            showToast(`Spawned ${payload.length} items into network inventory!`, 'success');
+            showToast('Spawned!', 'success');
             await refreshSpawnedItemsList();
         } catch (err) {
             showToast(`Failed to spawn items: ${err}`, 'error');
