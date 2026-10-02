@@ -7433,7 +7433,7 @@ async function getPaintsList() {
     return cachedPaintsList;
 }
 
-async function promptSpawnerOptions({ title = 'Spawn Items', desc = '', canPaint = true, canCert = true } = {}) {
+async function promptSpawnerOptions({ title = 'Spawn Items', desc = '', canPaint = true } = {}) {
     const overlay = document.getElementById('spawner-modal-overlay');
     if (!overlay) return { confirmed: false };
 
@@ -7442,8 +7442,6 @@ async function promptSpawnerOptions({ title = 'Spawn Items', desc = '', canPaint
     const paintBlock = document.getElementById('spawner-modal-paint-block');
     const paintSel = document.getElementById('spawner-modal-paint');
     const paintDot = document.getElementById('spawner-modal-paint-dot');
-    const certBlock = document.getElementById('spawner-modal-cert-block');
-    const certSel = document.getElementById('spawner-modal-cert');
     const okBtn = document.getElementById('spawner-modal-ok');
     const cancelBtn = document.getElementById('spawner-modal-cancel');
     const closeBtn = document.getElementById('spawner-modal-close');
@@ -7481,13 +7479,6 @@ async function promptSpawnerOptions({ title = 'Spawn Items', desc = '', canPaint
         paintBlock.style.display = 'none';
     }
 
-    if (canCert && certBlock && certSel) {
-        certBlock.style.display = 'block';
-        certSel.value = '0';
-    } else if (certBlock) {
-        certBlock.style.display = 'none';
-    }
-
     return new Promise(resolve => {
         overlay.classList.add('active');
         const finish = (confirmed) => {
@@ -7500,11 +7491,9 @@ async function promptSpawnerOptions({ title = 'Spawn Items', desc = '', canPaint
                 resolve({ confirmed: false });
             } else {
                 const paintVal = canPaint && paintSel ? paintSel.value : '0';
-                const certVal = canCert && certSel ? certSel.value : '0';
                 resolve({
                     confirmed: true,
                     paint: paintVal === 'all' ? 'all' : parseInt(paintVal, 10) || 0,
-                    cert: certVal === 'all' ? 'all' : parseInt(certVal, 10) || 0,
                 });
             }
         };
@@ -7641,25 +7630,22 @@ function wireSpawnerControls() {
         const titlesToSpawn = selected.filter(s => s.kind === 'title').map(s => String(s.id));
         const itemsToSpawn = selected.filter(s => s.kind === 'item');
 
-        const hasItems = itemsToSpawn.length > 0;
         const anyPaintable = itemsToSpawn.some(entry => {
             const fullItem = findItemByProductId(entry.id);
             return fullItem ? itemIsPaintable(fullItem) : true;
         });
-        const anyCertifiable = hasItems;
 
         const titleText = selected.length === 1
             ? `Spawn ${selected[0].name}`
             : `Spawn ${selected.length} Selected Items`;
         const descText = selected.length === 1
-            ? `Choose options to spawn ${selected[0].name}:`
-            : `Choose options for ${selected.length} selected items:`;
+            ? `Choose paint option to spawn ${selected[0].name}:`
+            : `Choose paint option for ${selected.length} selected items:`;
 
         const options = await promptSpawnerOptions({
             title: titleText,
             desc: descText,
-            canPaint: anyPaintable,
-            canCert: anyCertifiable
+            canPaint: anyPaintable
         });
 
         if (!options.confirmed) return;
@@ -7672,7 +7658,6 @@ function wireSpawnerControls() {
             if (itemsToSpawn.length > 0) {
                 const paints = await getPaintsList();
                 const allPaintIds = paints.map(p => p.id);
-                const allCertIds = [0, 1, 2, 3, 4, 5, 6, 7, 8];
 
                 const payload = [];
                 for (const entry of itemsToSpawn) {
@@ -7682,21 +7667,16 @@ function wireSpawnerControls() {
                     const paintsForThisItem = canPaint
                         ? (options.paint === 'all' ? allPaintIds : [options.paint])
                         : [0];
-                    const certsForThisItem = options.cert === 'all' ? allCertIds : [options.cert];
 
                     for (const p of paintsForThisItem) {
-                        for (const c of certsForThisItem) {
-                            payload.push({
-                                product_id: parseInt(entry.id, 10) || 0,
-                                paint_id: p,
-                                series_id: 0,
-                                slot: normSlot(entry.slot || fullItem?.Slot || fullItem?.slot || ''),
-                                product_name: entry.name || fullItem?.Product || fullItem?.product || 'Unknown Item',
-                                dlc: false,
-                                certification_id: c,
-                                certification_value: c > 0 ? '0' : ''
-                            });
-                        }
+                        payload.push({
+                            product_id: parseInt(entry.id, 10) || 0,
+                            paint_id: p,
+                            series_id: 0,
+                            slot: normSlot(entry.slot || fullItem?.Slot || fullItem?.slot || ''),
+                            product_name: entry.name || fullItem?.Product || fullItem?.product || 'Unknown Item',
+                            dlc: false
+                        });
                     }
                 }
 
@@ -7790,15 +7770,13 @@ function wireSpawnerControls() {
         const anyPaintable = filtered.some(item => itemIsPaintable(item));
         const options = await promptSpawnerOptions({
             title: `Spawn All ${spawnerCategory === 'All' ? 'Catalogue' : spawnerCategory} Items`,
-            desc: `Spawning ${filtered.length} items. Select paint and certification options:`,
-            canPaint: anyPaintable,
-            canCert: true
+            desc: `Spawning ${filtered.length} items. Select paint option:`,
+            canPaint: anyPaintable
         });
         if (!options.confirmed) return;
 
         const paints = await getPaintsList();
         const allPaintIds = paints.map(p => p.id);
-        const allCertIds = [0, 1, 2, 3, 4, 5, 6, 7, 8];
 
         const payload = [];
         for (const item of filtered) {
@@ -7806,21 +7784,16 @@ function wireSpawnerControls() {
             const paintsForThisItem = canPaint
                 ? (options.paint === 'all' ? allPaintIds : [options.paint])
                 : [0];
-            const certsForThisItem = options.cert === 'all' ? allCertIds : [options.cert];
 
             for (const p of paintsForThisItem) {
-                for (const c of certsForThisItem) {
-                    payload.push({
-                        product_id: parseInt(item.ID ?? item.id, 10) || 0,
-                        paint_id: p,
-                        series_id: 0,
-                        slot: normSlot(item.Slot || item.slot || item.category || ''),
-                        product_name: item.Product || item.product || item.name || 'Unknown Item',
-                        dlc: false,
-                        certification_id: c,
-                        certification_value: c > 0 ? '0' : ''
-                    });
-                }
+                payload.push({
+                    product_id: parseInt(item.ID ?? item.id, 10) || 0,
+                    paint_id: p,
+                    series_id: 0,
+                    slot: normSlot(item.Slot || item.slot || item.category || ''),
+                    product_name: item.Product || item.product || item.name || 'Unknown Item',
+                    dlc: false
+                });
             }
         }
 

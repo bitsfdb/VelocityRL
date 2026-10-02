@@ -3458,44 +3458,17 @@ fn slot_aliases(slot_idx: usize) -> &'static [&'static str] {
     }
 }
 
-/// Maps certification_id (1-8) to the PsyNet StatType string.
-fn cert_stat_type(id: i32) -> Option<&'static str> {
-    match id {
-        1 => Some("Stat_Goals"),
-        2 => Some("Stat_Shots"),
-        3 => Some("Stat_Saves"),
-        4 => Some("Stat_Assists"),
-        5 => Some("Stat_Center"),
-        6 => Some("Stat_Clear"),
-        7 => Some("Stat_AerialGoals"),
-        8 => Some("Stat_HatTricks"),
-        _ => None,
-    }
-}
-
 fn new_slot_entry(slot_idx: usize, item: &crate::psynet::InventorySpoofItemPayload) -> serde_json::Value {
     let mut attributes = Vec::new();
     if item.paint_id > 0 {
         attributes.push(serde_json::json!({
             "Key": "Painted",
-            "Value": item.paint_id
+            "Value": item.paint_id,
+            "TypeName": "ProductAttribute_Painted_TA"
         }));
         attributes.push(serde_json::json!({
             "Key": "Paint",
             "Value": item.paint_id
-        }));
-    }
-    if let Some(stat_type) = cert_stat_type(item.certification_id) {
-        let cert_val = if item.certification_value.is_empty() {
-            "0".to_string()
-        } else {
-            item.certification_value.clone()
-        };
-        attributes.push(serde_json::json!({
-            "Key": "Certified",
-            "StatType": stat_type,
-            "Value": cert_val,
-            "TypeName": "ProductAttribute_Certified_TA"
         }));
     }
     let instance_id_num = 998_000_000i64 + (slot_idx as i64);
@@ -3552,62 +3525,27 @@ fn update_slot_entry(elem: &mut serde_json::Value, item: &crate::psynet::Invento
             obj.insert("Paint".into(), serde_json::json!(item.paint_id));
         }
 
+        let paint_attr = serde_json::json!({
+            "Key": "Painted",
+            "Value": item.paint_id,
+            "TypeName": "ProductAttribute_Painted_TA"
+        });
+
         if let Some(attrs) = obj.get_mut("Attributes").and_then(|a| a.as_array_mut()) {
             let mut paint_found = false;
             for attr in attrs.iter_mut() {
                 let key_name = attr.get("Key").and_then(|k| k.as_str()).unwrap_or("");
                 if key_name.eq_ignore_ascii_case("paint") || key_name.eq_ignore_ascii_case("painted") {
-                    if let Some(attr_obj) = attr.as_object_mut() {
-                        attr_obj.insert("Value".into(), serde_json::json!(item.paint_id));
-                        paint_found = true;
-                    }
-                }
-            }
-            if !paint_found {
-                attrs.push(serde_json::json!({
-                    "Key": "Painted",
-                    "Value": item.paint_id
-                }));
-                attrs.push(serde_json::json!({
-                    "Key": "Paint",
-                    "Value": item.paint_id
-                }));
-            }
-        } else {
-            obj.insert("Attributes".into(), serde_json::json!([
-                { "Key": "Painted", "Value": item.paint_id },
-                { "Key": "Paint", "Value": item.paint_id }
-            ]));
-        }
-    }
-
-    if let Some(stat_type) = cert_stat_type(item.certification_id) {
-        let cert_val = if item.certification_value.is_empty() {
-            "0".to_string()
-        } else {
-            item.certification_value.clone()
-        };
-        let cert_attr = serde_json::json!({
-            "Key": "Certified",
-            "StatType": stat_type,
-            "Value": cert_val,
-            "TypeName": "ProductAttribute_Certified_TA"
-        });
-        if let Some(attrs) = obj.get_mut("Attributes").and_then(|a| a.as_array_mut()) {
-            let mut cert_found = false;
-            for attr in attrs.iter_mut() {
-                let key_name = attr.get("Key").and_then(|k| k.as_str()).unwrap_or("");
-                if key_name.eq_ignore_ascii_case("certified") {
-                    *attr = cert_attr.clone();
-                    cert_found = true;
+                    *attr = paint_attr.clone();
+                    paint_found = true;
                     break;
                 }
             }
-            if !cert_found {
-                attrs.push(cert_attr);
+            if !paint_found {
+                attrs.push(paint_attr);
             }
         } else {
-            obj.insert("Attributes".into(), serde_json::json!([cert_attr]));
+            obj.insert("Attributes".into(), serde_json::json!([paint_attr]));
         }
     }
 }
@@ -3953,8 +3891,8 @@ fn patch_inventory_array(
             continue;
         }
 
-        let target_slot = slot_index_for_item(item);
-        let instance_id_num = 998_000_000i64 + (target_slot as i64);
+        let hash_seed = ((item.product_id as u64) << 16) | ((item.paint_id as u64) & 0xFFFF);
+        let instance_id_num = 998_000_000i64 + ((hash_seed % 1_000_000) as i64);
         let instance_val = if use_string_id {
             serde_json::json!(instance_id_num.to_string())
         } else {
@@ -3965,7 +3903,8 @@ fn patch_inventory_array(
         if item.paint_id > 0 {
             attributes.push(serde_json::json!({
                 "Key": "Painted",
-                "Value": item.paint_id
+                "Value": item.paint_id,
+                "TypeName": "ProductAttribute_Painted_TA"
             }));
             attributes.push(serde_json::json!({
                 "Key": "Paint",
@@ -3974,7 +3913,7 @@ fn patch_inventory_array(
         }
 
         let existing_entry = arr.iter_mut().find(|p| {
-            p.get("ProductID")
+            let pid_match = p.get("ProductID")
                 .or_else(|| p.get("productId"))
                 .or_else(|| p.get("product_id"))
                 .and_then(|id| {
@@ -3986,7 +3925,33 @@ fn patch_inventory_array(
                         None
                     }
                 })
-                == Some(item.product_id as i64)
+                == Some(item.product_id as i64);
+
+            if !pid_match {
+                return false;
+            }
+
+            let p_paint = p.get("Paint")
+                .or_else(|| p.get("paint"))
+                .or_else(|| p.get("PaintID"))
+                .or_else(|| p.get("paint_id"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or_else(|| {
+                    if let Some(attrs) = p.get("Attributes").or_else(|| p.get("attributes")).and_then(|a| a.as_array()) {
+                        attrs.iter().find_map(|attr| {
+                            let k = attr.get("Key").or_else(|| attr.get("key")).and_then(|v| v.as_str()).unwrap_or("");
+                            if k.eq_ignore_ascii_case("painted") || k.eq_ignore_ascii_case("paint") {
+                                attr.get("Value").or_else(|| attr.get("value")).and_then(|v| v.as_i64())
+                            } else {
+                                None
+                            }
+                        }).unwrap_or(0)
+                    } else {
+                        0
+                    }
+                });
+
+            p_paint == (item.paint_id as i64)
         });
 
         if let Some(existing) = existing_entry {
@@ -3995,11 +3960,12 @@ fn patch_inventory_array(
                 obj.insert("ProductInstanceID".into(), instance_val);
                 if item.paint_id > 0 {
                     obj.insert("Attributes".into(), serde_json::json!(attributes));
+                    obj.insert("Paint".into(), serde_json::json!(item.paint_id));
                 }
                 changed = true;
             }
         } else {
-            let new_prod = serde_json::json!({
+            let mut new_prod = serde_json::json!({
                 "ProductID": item.product_id,
                 "productId": item.product_id,
                 "InstanceID": instance_val.clone(),
@@ -4010,6 +3976,11 @@ fn patch_inventory_array(
                 "UpdatedTimestamp": 1755399374i64,
                 "TradeHold": -2,
             });
+            if item.paint_id > 0 {
+                if let Some(obj) = new_prod.as_object_mut() {
+                    obj.insert("Paint".into(), serde_json::json!(item.paint_id));
+                }
+            }
 
             arr.push(new_prod);
             changed = true;
