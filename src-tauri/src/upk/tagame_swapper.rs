@@ -722,9 +722,7 @@ fn parse_upk_index(file_bytes: &[u8]) -> Result<UpkIndex, TagameSwapError> {
 
 const VALIDATION_TARGETS_FALSE: [&str; 2] = ["CorrectOnlineData", "ValidateLoadoutSlots"];
 
-const VALIDATION_TARGETS_VOID: [&str; 7] = [
-    "OnLoadoutsOnlineSet",
-    "OnLoadoutsSet",
+const VALIDATION_TARGETS_VOID: [&str; 5] = [
     "CorrectDLCOwnership",
     "ValidateLoadoutDLC",
     "CorrectLoadoutFromValidationError",
