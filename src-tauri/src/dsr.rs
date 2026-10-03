@@ -176,7 +176,14 @@ pub fn session_for(address: &str) -> Option<DsrSession> {
 }
 
 pub fn start_udp_relay(session: DsrSession) -> Option<u16> {
-    let target_addr: SocketAddr = session.server_address.parse().ok()?;
+    let target_addr: SocketAddr = session
+        .server_address
+        .parse()
+        .ok()
+        .or_else(|| {
+            use std::net::ToSocketAddrs;
+            session.server_address.to_socket_addrs().ok()?.next()
+        })?;
 
     let client_socket = match UdpSocket::bind("127.0.0.1:0") {
         Ok(s) => Arc::new(s),
@@ -374,6 +381,22 @@ pub fn decrypt_datagram(datagram: &[u8], session: &DsrSession) -> Result<Vec<u8>
 
     // Standard DSR UDP datagram: AES-256-CBC with NO HMAC!
     let ciphertext = &datagram[HEADER_LEN..];
+    if !ciphertext.is_empty() && ciphertext.len() % BLOCK == 0 {
+        if let Ok(res) = aes256_cbc_decrypt(&session.key, iv, ciphertext) {
+            return Ok(res);
+        }
+    }
+
+    // Fallback: If session.iv is provided and datagram format is SessionID(16) + Seq(4) + Ciphertext
+    if session.iv.len() == IV_LEN && datagram.len() >= SESSION_ID_LEN + SEQ_LEN + BLOCK {
+        let alt_ciphertext = &datagram[SESSION_ID_LEN + SEQ_LEN..];
+        if alt_ciphertext.len() % BLOCK == 0 {
+            if let Ok(res) = aes256_cbc_decrypt(&session.key, &session.iv, alt_ciphertext) {
+                return Ok(res);
+            }
+        }
+    }
+
     if ciphertext.is_empty() || ciphertext.len() % BLOCK != 0 {
         return Err(DsrError::BadCipherLen);
     }
