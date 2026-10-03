@@ -415,7 +415,12 @@ pub fn decrypt_datagram(datagram: &[u8], session: &DsrSession) -> Result<Vec<u8>
         return Err(DsrError::TooShort);
     }
 
-    // Layout 1: With HMAC-SHA256 trailer (Priority: if HMAC matches, layout is authenticated)
+    // TAGame spec: All encrypted DSR datagrams strictly begin with the 16-byte SessionID
+    if !session.session_id.is_empty() && !datagram.starts_with(&session.session_id) {
+        return Err(DsrError::BadCipherLen);
+    }
+
+    // Layout 1: With HMAC-SHA256 trailer (TAGame default: SessionID(16) + Seq(4) + IV(16) + Ciphertext + HMAC(32))
     if !session.hmac_key.is_empty() && datagram.len() >= HEADER_LEN + BLOCK + HMAC_LEN {
         let ciphertext_end = datagram.len() - HMAC_LEN;
         let ct = &datagram[HEADER_LEN..ciphertext_end];
