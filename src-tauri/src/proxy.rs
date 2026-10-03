@@ -2788,42 +2788,47 @@ fn patch_dsr_reservation_ws(
 
     let mut changed = false;
 
-    if let Some(local_port) = crate::dsr::start_udp_relay(session) {
-        let local_addr = format!("127.0.0.1:{local_port}");
-        if let Some(payload_str) = outer.get("MessagePayload").and_then(|v| v.as_str()) {
-            if let Ok(mut payload_obj) = serde_json::from_str::<serde_json::Value>(payload_str) {
-                if let Some(obj) = payload_obj.as_object_mut() {
-                    obj.insert("ServerAddress".into(), serde_json::json!(local_addr));
-                    if let Some(inv) = inv_opt {
-                        if inv.enabled && !inv.items.is_empty() {
-                            if let Some(arr) = obj.get_mut("ProductIDs").and_then(|v| v.as_array_mut()) {
-                                for item in &inv.items {
-                                    if item.product_id > 0 && !arr.iter().any(|v| v.as_i64() == Some(item.product_id as i64)) {
-                                        arr.push(serde_json::json!(item.product_id));
-                                    }
-                                }
-                            }
+    // Start or bind UDP relay listener for this match
+    let local_port_opt = crate::dsr::start_udp_relay(session);
+
+    let inject_products = |obj: &mut serde_json::Map<String, serde_json::Value>| -> bool {
+        let mut did_modify = false;
+        if let Some(port) = local_port_opt {
+            let local_addr = format!("127.0.0.1:{port}");
+            obj.insert("ServerAddress".into(), serde_json::json!(local_addr));
+            did_modify = true;
+        }
+        if let Some(inv) = inv_opt {
+            if inv.enabled && !inv.items.is_empty() {
+                if !obj.contains_key("ProductIDs") {
+                    obj.insert("ProductIDs".into(), serde_json::json!([]));
+                }
+                if let Some(arr) = obj.get_mut("ProductIDs").and_then(|v| v.as_array_mut()) {
+                    for item in &inv.items {
+                        if item.product_id > 0 && !arr.iter().any(|v| v.as_i64() == Some(item.product_id as i64)) {
+                            arr.push(serde_json::json!(item.product_id));
+                            did_modify = true;
                         }
                     }
+                }
+            }
+        }
+        did_modify
+    };
+
+    if let Some(payload_str) = outer.get("MessagePayload").and_then(|v| v.as_str()) {
+        if let Ok(mut payload_obj) = serde_json::from_str::<serde_json::Value>(payload_str) {
+            if let Some(obj) = payload_obj.as_object_mut() {
+                if inject_products(obj) {
                     if let Ok(new_payload_str) = serde_json::to_string(&payload_obj) {
                         outer["MessagePayload"] = serde_json::json!(new_payload_str);
                         changed = true;
                     }
                 }
             }
-        } else if let Some(payload_obj) = outer.get_mut("MessagePayload").and_then(|v| v.as_object_mut()) {
-            payload_obj.insert("ServerAddress".into(), serde_json::json!(local_addr));
-            if let Some(inv) = inv_opt {
-                if inv.enabled && !inv.items.is_empty() {
-                    if let Some(arr) = payload_obj.get_mut("ProductIDs").and_then(|v| v.as_array_mut()) {
-                        for item in &inv.items {
-                            if item.product_id > 0 && !arr.iter().any(|v| v.as_i64() == Some(item.product_id as i64)) {
-                                arr.push(serde_json::json!(item.product_id));
-                            }
-                        }
-                    }
-                }
-            }
+        }
+    } else if let Some(payload_obj) = outer.get_mut("MessagePayload").and_then(|v| v.as_object_mut()) {
+        if inject_products(payload_obj) {
             changed = true;
         }
     }
@@ -4071,12 +4076,17 @@ fn patch_loadout_rpc_json(
 
     let mut changed = false;
 
+    let is_preset_loadout = items_ref.len() <= 14 && {
+        let mut slots = std::collections::HashSet::new();
+        items_ref.iter().all(|i| slots.insert(slot_index_for_item(i)))
+    };
+
     changed |= patch_loadout_container(&mut root, &items_ref);
     if let Some(res) = root.get_mut("Result") {
         changed |= patch_loadout_container(res, &items_ref);
     }
 
-    if is_auth_player {
+    if is_auth_player && is_preset_loadout {
         if let Some(obj) = root.as_object_mut() {
             let loadout_arr: Vec<serde_json::Value> = items_ref.iter().map(|item| {
                 let slot_idx = slot_index_for_item(item);

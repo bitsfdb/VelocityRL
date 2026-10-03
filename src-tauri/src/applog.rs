@@ -567,12 +567,15 @@ pub fn record_traffic_event(
 ) {
     let enabled = TRAFFIC_DEBUG_ENABLED.load(Ordering::Relaxed);
     let stamp = now_stamp();
-    let is_binary = (category.eq_ignore_ascii_case("UDP") && !custom_summary.map_or(false, |s| s.contains("Decrypted")))
-        || body.iter().any(|&b| b < 0x09 || (b > 0x0D && b < 0x20) || b == 0x00);
-    let body_str = if is_binary {
-        hex_encode(body)
+    let is_text = if let Ok(s) = std::str::from_utf8(body) {
+        !s.chars().any(|c| c.is_control() && c != '\n' && c != '\r' && c != '\t')
     } else {
+        false
+    };
+    let body_str = if is_text {
         String::from_utf8_lossy(body).into_owned()
+    } else {
+        hex_encode(body)
     };
     let body_len = body.len();
     let id = NEXT_TRAFFIC_ID.fetch_add(1, Ordering::Relaxed);

@@ -364,11 +364,14 @@ pub fn start_udp_relay(session: DsrSession) -> Option<u16> {
                                 );
                             }
 
+                            let patched_opt = patch_udp_server_datagram(packet, &sess);
+                            let packet_to_send = patched_opt.as_deref().unwrap_or(packet);
+
                             let target_client = {
                                 c_addr.lock().ok().and_then(|g| *g)
                             };
                             if let Some(to) = target_client {
-                                let _ = c_sock.send_to(packet, to);
+                                let _ = c_sock.send_to(packet_to_send, to);
                             }
                         }
                         Ok(_) => {}
@@ -412,28 +415,44 @@ pub fn decrypt_datagram(datagram: &[u8], session: &DsrSession) -> Result<Vec<u8>
         return Err(DsrError::TooShort);
     }
 
-    // Layout 1: SessionID(16) + Ciphertext(multiple of 16) using session.iv from reservation
-    if session.iv.len() == IV_LEN && datagram.len() >= SESSION_ID_LEN + BLOCK {
-        let ct = &datagram[SESSION_ID_LEN..];
+    // Layout 1: With HMAC-SHA256 trailer (Priority: if HMAC matches, layout is authenticated)
+    if !session.hmac_key.is_empty() && datagram.len() >= HEADER_LEN + BLOCK + HMAC_LEN {
+        let ciphertext_end = datagram.len() - HMAC_LEN;
+        let ct = &datagram[HEADER_LEN..ciphertext_end];
+        let mac = &datagram[ciphertext_end..];
         if ct.len() % BLOCK == 0 {
-            if let Ok(res) = aes256_cbc_decrypt(&session.key, &session.iv, ct) {
-                return Ok(res);
+            use hmac::{Hmac, Mac};
+            use sha2::Sha256;
+
+            // Check standard HMAC over Header (36B) + Ciphertext
+            let mut matched = false;
+            if let Ok(mut mac_ctx) = Hmac::<Sha256>::new_from_slice(&session.hmac_key) {
+                mac_ctx.update(&datagram[..ciphertext_end]);
+                if mac_ctx.finalize().into_bytes().as_slice() == mac {
+                    matched = true;
+                }
+            }
+
+            // Check HMAC over Seq+IV+Ciphertext (excluding SessionID)
+            if !matched {
+                if let Ok(mut mac_ctx) = Hmac::<Sha256>::new_from_slice(&session.hmac_key) {
+                    mac_ctx.update(&datagram[SESSION_ID_LEN..ciphertext_end]);
+                    if mac_ctx.finalize().into_bytes().as_slice() == mac {
+                        matched = true;
+                    }
+                }
+            }
+
+            if matched {
+                let iv = &datagram[SESSION_ID_LEN + SEQ_LEN..HEADER_LEN];
+                if let Ok(res) = aes256_cbc_decrypt(&session.key, iv, ct) {
+                    return Ok(res);
+                }
             }
         }
     }
 
-    // Layout 2: SessionID(16) + Per-packet IV(16) + Ciphertext(multiple of 16)
-    if datagram.len() >= SESSION_ID_LEN + IV_LEN + BLOCK {
-        let iv = &datagram[SESSION_ID_LEN..SESSION_ID_LEN + IV_LEN];
-        let ct = &datagram[SESSION_ID_LEN + IV_LEN..];
-        if ct.len() % BLOCK == 0 {
-            if let Ok(res) = aes256_cbc_decrypt(&session.key, iv, ct) {
-                return Ok(res);
-            }
-        }
-    }
-
-    // Layout 3: SessionID(16) + Seq(4) + Per-packet IV(16) + Ciphertext (Header=36)
+    // Layout 2: SessionID(16) + Seq(4) + Per-packet IV(16) + Ciphertext (Header=36)
     if datagram.len() >= HEADER_LEN + BLOCK {
         let iv = &datagram[SESSION_ID_LEN + SEQ_LEN..HEADER_LEN];
         let ct = &datagram[HEADER_LEN..];
@@ -444,27 +463,31 @@ pub fn decrypt_datagram(datagram: &[u8], session: &DsrSession) -> Result<Vec<u8>
         }
     }
 
-    // Layout 4: With HMAC-SHA256 trailer
-    if !session.hmac_key.is_empty() && datagram.len() >= HEADER_LEN + BLOCK + HMAC_LEN {
-        let ciphertext_end = datagram.len() - HMAC_LEN;
-        let ct = &datagram[HEADER_LEN..ciphertext_end];
-        let mac = &datagram[ciphertext_end..];
+    // Layout 3: SessionID(16) + Per-packet IV(16) + Ciphertext(multiple of 16)
+    if datagram.len() >= SESSION_ID_LEN + IV_LEN + BLOCK {
+        let iv = &datagram[SESSION_ID_LEN..SESSION_ID_LEN + IV_LEN];
+        let ct = &datagram[SESSION_ID_LEN + IV_LEN..];
         if ct.len() % BLOCK == 0 {
-            use hmac::{Hmac, Mac};
-            use sha2::Sha256;
-            if let Ok(mut mac_ctx) = Hmac::<Sha256>::new_from_slice(&session.hmac_key) {
-                mac_ctx.update(&datagram[..SESSION_ID_LEN]);
-                mac_ctx.update(&datagram[SESSION_ID_LEN..SESSION_ID_LEN + SEQ_LEN]);
-                mac_ctx.update(&datagram[SESSION_ID_LEN + SEQ_LEN..HEADER_LEN]);
-                mac_ctx.update(ct);
-                let expected = mac_ctx.finalize().into_bytes();
-                if expected.as_slice() == mac {
-                    let iv = &datagram[SESSION_ID_LEN + SEQ_LEN..HEADER_LEN];
-                    if let Ok(res) = aes256_cbc_decrypt(&session.key, iv, ct) {
-                        return Ok(res);
-                    }
-                }
+            if let Ok(res) = aes256_cbc_decrypt(&session.key, iv, ct) {
+                return Ok(res);
             }
+        }
+    }
+
+    // Layout 4: SessionID(16) + Ciphertext(multiple of 16) using session.iv from reservation
+    if session.iv.len() == IV_LEN && datagram.len() >= SESSION_ID_LEN + BLOCK {
+        let ct = &datagram[SESSION_ID_LEN..];
+        if ct.len() % BLOCK == 0 {
+            if let Ok(res) = aes256_cbc_decrypt(&session.key, &session.iv, ct) {
+                return Ok(res);
+            }
+        }
+    }
+
+    // Layout 5: Entire datagram is AES-256-CBC with session.iv (if len % 16 == 0)
+    if session.iv.len() == IV_LEN && datagram.len() % BLOCK == 0 {
+        if let Ok(res) = aes256_cbc_decrypt(&session.key, &session.iv, datagram) {
+            return Ok(res);
         }
     }
 
@@ -552,6 +575,127 @@ pub fn encrypt_datagram(
         }
     }
     datagram
+}
+
+pub fn reencrypt_patched_datagram(
+    orig_datagram: &[u8],
+    new_plaintext: &[u8],
+    session: &DsrSession,
+) -> Option<Vec<u8>> {
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+
+    // Layout 1: With HMAC-SHA256 trailer
+    if !session.hmac_key.is_empty() && orig_datagram.len() >= HEADER_LEN + BLOCK + HMAC_LEN {
+        let seq = u32::from_le_bytes(
+            orig_datagram[SESSION_ID_LEN..SESSION_ID_LEN + SEQ_LEN]
+                .try_into()
+                .ok()?,
+        );
+        let iv = &orig_datagram[SESSION_ID_LEN + SEQ_LEN..HEADER_LEN];
+        let new_ct = cbc_encrypt(&session.key, iv, new_plaintext);
+
+        let mut new_datagram = Vec::with_capacity(HEADER_LEN + new_ct.len() + HMAC_LEN);
+        new_datagram.extend_from_slice(&orig_datagram[..HEADER_LEN]);
+        new_datagram.extend_from_slice(&new_ct);
+
+        if let Ok(mut mac_ctx) = Hmac::<Sha256>::new_from_slice(&session.hmac_key) {
+            mac_ctx.update(&new_datagram[..HEADER_LEN + new_ct.len()]);
+            new_datagram.extend_from_slice(&mac_ctx.finalize().into_bytes());
+            return Some(new_datagram);
+        }
+    }
+
+    // Layout 2: Header (36B) + Ciphertext without HMAC
+    if orig_datagram.len() >= HEADER_LEN + BLOCK {
+        let seq = u32::from_le_bytes(
+            orig_datagram[SESSION_ID_LEN..SESSION_ID_LEN + SEQ_LEN]
+                .try_into()
+                .ok()?,
+        );
+        let iv = &orig_datagram[SESSION_ID_LEN + SEQ_LEN..HEADER_LEN];
+        let new_ct = cbc_encrypt(&session.key, iv, new_plaintext);
+        let mut new_datagram = Vec::with_capacity(HEADER_LEN + new_ct.len());
+        new_datagram.extend_from_slice(&orig_datagram[..HEADER_LEN]);
+        new_datagram.extend_from_slice(&new_ct);
+        return Some(new_datagram);
+    }
+
+    None
+}
+
+pub fn patch_udp_server_datagram(
+    packet: &[u8],
+    sess: &DsrSession,
+) -> Option<Vec<u8>> {
+    let mut pt = decrypt_datagram(packet, sess).ok()?;
+
+    let spoof_cfg = crate::psynet::load_active_spoof_from_disk()?;
+    let inv = spoof_cfg.inventory_spoof.as_ref()?;
+    if !inv.enabled || inv.items.is_empty() {
+        return None;
+    }
+
+    let mut changed = false;
+
+    for item in &inv.items {
+        if item.product_id <= 0 {
+            continue;
+        }
+        let target_pid = item.product_id as u32;
+        let target_bytes = target_pid.to_le_bytes();
+
+        let norm_slot = item.slot.to_lowercase().replace([' ', '_', '-'], "");
+        let (default_pids, is_body): (&[u32], bool) = if norm_slot.contains("wheel") {
+            (&[27, 28, 1580, 376, 1948], false)
+        } else if norm_slot.contains("boost") || norm_slot.contains("rocket_trail") {
+            (&[64, 63, 33, 3763], false)
+        } else if norm_slot.contains("trail") {
+            (&[1907], false)
+        } else if norm_slot.contains("explosion") || norm_slot.contains("goal") {
+            (&[7726], false)
+        } else if norm_slot.contains("body") {
+            (&[23], true)
+        } else {
+            (&[], false)
+        };
+
+        let mut to_replace = default_pids.to_vec();
+        for &sess_pid in &sess.product_ids {
+            let sess_u32 = sess_pid as u32;
+            if sess_u32 > 0 && sess_u32 != target_pid && !to_replace.contains(&sess_u32) {
+                if default_pids.contains(&sess_u32) {
+                    to_replace.push(sess_u32);
+                }
+            }
+        }
+
+        for def_pid in to_replace {
+            if def_pid == target_pid {
+                continue;
+            }
+            if is_body && target_pid == 23 {
+                continue;
+            }
+            let def_bytes = def_pid.to_le_bytes();
+            let mut offset = 0;
+            while offset + 4 <= pt.len() {
+                if pt[offset..offset + 4] == def_bytes {
+                    pt[offset..offset + 4].copy_from_slice(&target_bytes);
+                    changed = true;
+                    offset += 4;
+                } else {
+                    offset += 1;
+                }
+            }
+        }
+    }
+
+    if !changed {
+        return None;
+    }
+
+    reencrypt_patched_datagram(packet, &pt, sess)
 }
 
 
