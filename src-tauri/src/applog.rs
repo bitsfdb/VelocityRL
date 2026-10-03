@@ -108,10 +108,33 @@ fn prune_crash_logs(dir: &Path, keep: usize) {
     }
 }
 
+fn prune_bak_collisions(dir: &Path, keep: usize) {
+    let mut baks: Vec<PathBuf> = fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.to_ascii_lowercase().ends_with(".log.bak"))
+                .unwrap_or(false)
+        })
+        .collect();
+    baks.sort();
+    let excess = baks.len().saturating_sub(keep);
+    for p in baks.into_iter().take(excess) {
+        let _ = fs::remove_file(p);
+    }
+}
+
 pub fn prune_old_logs(dir: &Path) {
     const TWO_DAYS_SECS: u64 = 2 * 24 * 60 * 60;
+    const BAK_KEEP: usize = 5;
     let max_age = std::time::Duration::from_secs(TWO_DAYS_SECS);
     let now = SystemTime::now();
+
+    prune_bak_collisions(dir, BAK_KEEP);
 
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
@@ -126,7 +149,11 @@ pub fn prune_old_logs(dir: &Path) {
 
             let is_log_file = path.extension().map_or(false, |ext| {
                 ext.eq_ignore_ascii_case("log") || ext.eq_ignore_ascii_case("zip")
-            });
+            }) || path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.to_ascii_lowercase().ends_with(".log.bak"))
+                .unwrap_or(false);
 
             if is_log_file {
                 if let Ok(metadata) = entry.metadata() {
@@ -323,13 +350,14 @@ pub fn event(message: &str) {
 }
 
 pub fn mark_clean_exit() {
-    if let Ok(guard) = LOG_DIR.lock() {
-        if let Some(ref dir) = *guard {
-            event("clean exit");
-            prune_old_logs(dir);
-            let _ = fs::remove_file(session_marker(dir));
-        }
-    }
+
+
+
+    let dir = LOG_DIR.lock().ok().and_then(|g| g.clone());
+    let Some(dir) = dir else { return };
+    event("clean exit");
+    prune_old_logs(&dir);
+    let _ = fs::remove_file(session_marker(&dir));
 }
 
 pub fn on_run_event(_app: &AppHandle, ev: &RunEvent) {
@@ -492,9 +520,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 pub struct TrafficEvent {
     pub id: u64,
     pub timestamp: String,
-    pub category: String,  // "WS-FRAME", "FWD-HTTP", "BROKER-HTTP", "RAW-WS", "CONFIG-HTTP"
-    pub direction: String, // "CLIENT->SRV", "SRV->CLIENT", "TUNNEL"
-    pub service: String,   // e.g. "Loadout/SaveLoadout", "Products/GetLoadoutProducts", "POST /api/v1/..."
+    pub category: String,
+    pub direction: String,
+    pub service: String,
     pub status: Option<String>,
     pub patched: bool,
     pub req_id: Option<String>,
@@ -526,7 +554,6 @@ pub fn hex_encode(bytes: &[u8]) -> String {
     s
 }
 
-/// Record a structured traffic event for live UI viewing and log writing.
 pub fn record_traffic_event(
     category: &str,
     direction: &str,
@@ -571,7 +598,7 @@ pub fn record_traffic_event(
         summary,
     };
 
-    // 1. Ring buffer for UI inspection
+
     if let Ok(mut g) = TRAFFIC_EVENTS.lock() {
         if g.len() >= MAX_TRAFFIC_EVENTS {
             let excess = g.len() - MAX_TRAFFIC_EVENTS + 1;
@@ -580,7 +607,7 @@ pub fn record_traffic_event(
         g.push(event.clone());
     }
 
-    // 2. Append to traffic_debug.log if enabled (clean summary without bloating)
+
     if enabled {
         let status_str = status.unwrap_or("-");
         let log_line = format!(
@@ -594,7 +621,7 @@ pub fn record_traffic_event(
         }
     }
 
-    // 3. Emit Tauri event to frontend if UI is listening
+
     if let Ok(guard) = APP_HANDLE.lock() {
         if let Some(ref handle) = *guard {
             let _ = handle.emit("proxy_traffic_event", &event);
@@ -602,8 +629,6 @@ pub fn record_traffic_event(
     }
 }
 
-/// Write a line to traffic_debug.log. Designed to be called at high frequency
-/// from the proxy hot-path, so it silently drops on any IO error.
 pub fn traffic_debug(message: &str) {
     if !TRAFFIC_DEBUG_ENABLED.load(Ordering::Relaxed) {
         return;
@@ -617,8 +642,6 @@ pub fn traffic_debug(message: &str) {
     }
 }
 
-/// Return the absolute path to the traffic debug log file (or None if logging
-/// hasn't been initialised yet).
 pub fn traffic_debug_path() -> Option<String> {
     if let Ok(guard) = LOG_DIR.lock() {
         if let Some(ref dir) = *guard {
@@ -628,7 +651,6 @@ pub fn traffic_debug_path() -> Option<String> {
     None
 }
 
-/// Truncate/reset the traffic debug log and buffer for a fresh capture session.
 pub fn reset_traffic_debug() {
     if let Ok(mut g) = TRAFFIC_EVENTS.lock() {
         g.clear();
@@ -641,7 +663,6 @@ pub fn reset_traffic_debug() {
     }
 }
 
-/// Helper: produce a truncated body snippet for logging (max 800 chars).
 #[allow(dead_code)]
 pub fn body_snippet(body: &[u8], max_len: usize) -> String {
     let is_binary = body.iter().any(|&b| b < 0x09 || (b > 0x0D && b < 0x20) || b == 0x00);
@@ -695,3 +716,4 @@ pub fn set_traffic_capture_enabled(enabled: bool) -> Result<bool, String> {
 pub fn get_traffic_capture_enabled() -> Result<bool, String> {
     Ok(is_traffic_debug())
 }
+

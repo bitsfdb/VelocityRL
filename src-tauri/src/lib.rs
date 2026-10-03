@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use tauri::Manager;
 
 mod applog;
+pub mod dsr;
 mod integrity;
 mod jobobject;
 mod presets;
@@ -385,7 +386,7 @@ pub struct SwapEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slot: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub timestamp: Option<String>, // ISO 8601 UTC e.g. "2026-09-30T00:00:00Z"
+    pub timestamp: Option<String>,
 }
 
 static ITEMS_CACHE: std::sync::RwLock<Option<std::collections::HashMap<u32, Vec<Item>>>> = std::sync::RwLock::new(None);
@@ -403,7 +404,7 @@ pub fn rl_lang_id(lang: &str) -> u32 {
         "pt" | "ptb" | "portuguese" | "portugues" | "português" => 9,
         "ru" | "rus" | "russian" => 10,
         "tr" | "trk" | "turkish" | "turkce" | "türkçe" => 11,
-        _ => 0, // "INT" / "en" / English default
+        _ => 0,
     }
 }
 
@@ -1489,13 +1490,31 @@ async fn get_swaps(app: tauri::AppHandle) -> Result<Vec<SwapEntry>, String> {
     Ok(load_swaps(&app))
 }
 
+pub(crate) fn reset_tagame_keep_palette_and_validator(cooked: &Path, palette_was_applied: bool) {
+    let _ = upk::tagame_swapper::restore_tagame_upk(cooked);
+    if palette_was_applied {
+        let _ = upk::palette::apply_rich_palette_to_file(
+            cooked,
+            include_str!("../resources/keys.txt"),
+            include_str!("../resources/keys_map.json"),
+        );
+    }
+
+
+
+    let _ = upk::tagame_swapper::apply_validation_patches(cooked);
+}
+
 pub(crate) async fn sync_all_swaps_to_tagame(
     app: &tauri::AppHandle,
     cooked: &Path,
     swaps: &[SwapEntry],
 ) -> Result<(), String> {
     if swaps.is_empty() {
-        let _ = upk::tagame_swapper::restore_tagame_upk(cooked);
+
+
+        let palette_was_applied = upk::palette::read_palette_status(cooked, None).applied;
+        reset_tagame_keep_palette_and_validator(cooked, palette_was_applied);
         return Ok(());
     }
 
@@ -1543,12 +1562,18 @@ pub(crate) async fn sync_all_swaps_to_tagame(
     let keys_txt = include_str!("../resources/keys.txt");
     let keys_map_json = include_str!("../resources/keys_map.json");
 
-    upk::tagame_swapper::apply_tagame_modifications(
+    let status = upk::tagame_swapper::apply_tagame_modifications(
         cooked,
         &tagame_items,
         keys_txt,
         keys_map_json,
     ).map_err(|e| e.to_string())?;
+
+    applog::event(&format!(
+        "tagame_swapper: applied {} of {} requested swap(s) to TAGame.upk",
+        status.applied_patches,
+        tagame_items.len()
+    ));
 
     Ok(())
 }
@@ -1737,7 +1762,8 @@ async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<()
     if swaps.len() != orig_len || swaps.is_empty() {
         save_swaps(&app, &swaps);
         if swaps.is_empty() {
-            let _ = upk::tagame_swapper::restore_tagame_upk(&cooked);
+            let palette_was_applied = upk::palette::read_palette_status(&cooked, None).applied;
+            reset_tagame_keep_palette_and_validator(&cooked, palette_was_applied);
         } else {
             let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
         }
@@ -1823,6 +1849,7 @@ fn copy_to_clipboard(text: String) -> Result<(), String> {
 #[tauri::command]
 fn force_exit(_app: tauri::AppHandle) {
     applog::event("exit: force_exit invoked — killing proxy and exiting process");
+    applog::mark_clean_exit();
     psynet::kill_proxy_on_exit();
     std::process::exit(0);
 }
@@ -1966,6 +1993,7 @@ async fn get_tagame_swapper_status(app: tauri::AppHandle) -> Result<upk::TagameS
         tagame_path,
         active_swaps: Vec::new(),
         message: "Ready".to_string(),
+        applied_patches: 0,
     })
 }
 
@@ -2997,6 +3025,7 @@ pub fn run() {
                         file_name: Some("velocityrl".into()),
                     }),
                 ])
+                .max_file_size(5 * 1024 * 1024)
                 .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(5))
                 .build(),
         )
@@ -3038,6 +3067,7 @@ pub fn run() {
                 crate::proxy::stop_native_proxy(true);
                 psynet::set_system_proxy_enabled(false);
                 let _ = psynet::revert_config_hosts();
+                applog::mark_clean_exit();
                 std::process::exit(0);
             });
 
@@ -3074,6 +3104,20 @@ pub fn run() {
             let app_handle = app.handle().clone();
             let applied = if let Ok(config) = tauri::async_runtime::block_on(get_config(app_handle.clone())) {
                 if !config.game_dir.is_empty() {
+
+
+
+                    let validator_game_dir = config.game_dir.clone();
+                    std::thread::spawn(move || {
+                        match upk::tagame_swapper::resolve_cooked_dir(Path::new(&validator_game_dir)) {
+                            Ok(cooked) => match upk::tagame_swapper::apply_validation_patches(&cooked) {
+                                Ok(_) => {}
+                                Err(e) => applog::event(&format!("startup: validator patch failed: {e}")),
+                            },
+                            Err(e) => applog::event(&format!("startup: validator patch skipped: {e}")),
+                        }
+                    });
+
                     if integrity.palette_active && !integrity.rl_update_fingerprint.is_empty() {
                         if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
                             let current_rl_fp = integrity::rl_update_fingerprint_for(&cooked);
@@ -3128,7 +3172,7 @@ pub fn run() {
 
             let ttl_app = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_secs(3)).await; // brief delay after boot
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
                 maybe_refresh_catalog_by_ttl(ttl_app).await;
             });
 
@@ -3136,6 +3180,7 @@ pub fn run() {
 
             std::thread::spawn(|| {
                 if let Ok(()) = ctrlc::set_handler(|| {
+                    applog::mark_clean_exit();
                     psynet::kill_proxy_on_exit();
                     std::process::exit(0);
                 }) {}
@@ -3257,6 +3302,7 @@ pub fn run() {
                                         }
                                     }
                                     "quit" => {
+                                        applog::mark_clean_exit();
                                         psynet::kill_proxy_on_exit();
                                         std::process::exit(0);
                                     }
@@ -3297,6 +3343,7 @@ pub fn run() {
                             let _ = window.hide();
                         } else {
                             applog::event("exit: main window close requested — terminating application");
+                            applog::mark_clean_exit();
                             psynet::kill_proxy_on_exit();
                             std::process::exit(0);
                         }
@@ -3307,6 +3354,7 @@ pub fn run() {
                 }
                 tauri::WindowEvent::Destroyed => {
                     if window.label() == "main" {
+                        applog::mark_clean_exit();
                         psynet::kill_proxy_on_exit();
                         std::process::exit(0);
                     }
@@ -3391,6 +3439,8 @@ pub fn run() {
             applog::clear_traffic_events,
             applog::set_traffic_capture_enabled,
             applog::get_traffic_capture_enabled,
+            dsr::get_dsr_sessions,
+            dsr::decrypt_dsr_datagram,
             export_diagnostics,
             copy_to_clipboard,
             force_exit,
@@ -3465,3 +3515,4 @@ pub fn run() {
             }
         });
 }
+

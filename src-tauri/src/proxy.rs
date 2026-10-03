@@ -44,8 +44,6 @@ pub fn leaf_epic_cert_bytes() -> &'static [u8] {
 
 pub const SYSTEM_PROXY_PORT: u16 = 8080;
 
-/// EOS account/profile API hosts. On Linux these are hosts-redirected to the
-/// local :443 MITM (Wine WinINET proxies are ignored by Proton/EOS).
 pub const EOS_ACCOUNT_HOSTS: &[&str] = &["api.epicgames.dev"];
 
 pub fn hostname_only(host: &str) -> &str {
@@ -89,8 +87,6 @@ pub fn is_intercept_target(host: &str) -> bool {
 
 static RESOLVED_IPS_CACHE: std::sync::Mutex<Option<std::collections::HashMap<String, std::net::SocketAddr>>> = std::sync::Mutex::new(None);
 
-/// Resolve an A record via public DNS, bypassing /etc/hosts (so MITM loopback
-/// entries cannot poison our upstream client).
 pub fn resolve_ipv4_public(host: &str) -> Option<std::net::SocketAddr> {
     let host = hostname_only(host);
     if host.is_empty() || host == "localhost" {
@@ -698,7 +694,7 @@ fn is_loadout_sensitive(svc: &str, body: &[u8]) -> bool {
         "catalog",
         "itemshop",
         "store",
-        // AuthPlayer must never be patched with name spoofing
+
         "authplayer",
         "tournaments/getbracket",
         "tournaments/getactivebracket",
@@ -723,7 +719,7 @@ fn is_loadout_sensitive(svc: &str, body: &[u8]) -> bool {
         b"Catalog",
         b"Microtransaction",
         b"GetPlayerCatalog",
-        // Presence and party frames — these carry friends' online state and must not be modified
+
         b"PresenceState",
         b"PartyMember",
         b"RichPresence",
@@ -802,9 +798,6 @@ fn find_json_value(body: &[u8], key: &str) -> Option<String> {
     String::from_utf8(body[val_start..j].to_vec()).ok()
 }
 
-/// OS-assigned port for the plain-HTTP WS/RPC broker (`0` = not listening).
-/// Config MITM + AuthPlayer rewrites point Rocket League here so we never need
-/// a fixed port like 27505 (avoids conflicts / "broker already in use").
 static BROKER_PORT: AtomicU16 = AtomicU16::new(0);
 
 pub fn broker_port() -> Option<u16> {
@@ -1871,10 +1864,6 @@ async fn handle_forward_intercepted_request(
     }
 }
 
-/// Active loopback health probe: initiates a TLS handshake and HTTP/1.1 request to
-/// https://127.0.0.1:443/health (with SNI config.psynet.gg).
-/// Verifies that port 443 is bound, accepting TLS connections, using the VelocityRL certificate,
-/// and successfully processing requests before hosts redirection occurs.
 pub async fn check_loopback_health() -> Result<(), String> {
     if !is_proxy_running() {
         return Err("Proxy is not marked running".into());
@@ -1937,9 +1926,6 @@ pub fn stop_native_proxy(_revert_hosts_file: bool) {
     crate::applog::event("proxy: stopped");
 }
 
-/// Start a plain-HTTP broker on `127.0.0.1:<ephemeral>`.
-/// Rocket League connects here after `PsyNetUrl` / `PerConURL*` are rewritten to
-/// that host:port. Returns the bound port.
 pub async fn start_ws_broker() -> Result<u16, String> {
     if let Some(existing) = broker_port() {
         crate::applog::event(&format!(
@@ -2024,8 +2010,6 @@ pub async fn start_ws_broker() -> Result<u16, String> {
     Ok(port)
 }
 
-/// Handle incoming requests on the plain-HTTP broker (ephemeral local port).
-/// Upgrades WebSocket connections to the game server, and proxies HTTP RPC/Services calls to api.rlpp.psynet.gg.
 async fn handle_broker_request(
     req: Request<Incoming>,
     client: reqwest::Client,
@@ -2749,6 +2733,40 @@ pub fn get_psy_service_for_response(resp_id: &str) -> Option<String> {
     None
 }
 
+fn record_dsr_reservation_event(body: &[u8], svc: &str, direction: &str) {
+    let Some(session) = crate::dsr::parse_reservation(body) else {
+        return;
+    };
+
+    let complete = crate::dsr::register(session.clone());
+    let out = session.summary();
+    if out.is_empty() {
+        return;
+    }
+
+    let server_addr = session.server_address.as_str();
+    crate::applog::event(&format!(
+        "proxy: DSR reservation decoded (svc={svc} server={} ping={} keys={})",
+        if server_addr.is_empty() { "?" } else { server_addr },
+        if session.ping_address.is_empty() { "?" } else { session.ping_address.as_str() },
+        if complete { "ready" } else { "incomplete" },
+    ));
+    crate::applog::record_traffic_event(
+        "DSR",
+        direction,
+        if svc.is_empty() { "dsr/reservations" } else { svc },
+        if server_addr.is_empty() { None } else { Some(server_addr) },
+        false,
+        None,
+        None,
+        out.as_bytes(),
+        Some(&format!(
+            "DSR reservation — {} UDP keys for {server_addr}",
+            if complete { "decryption-ready" } else { "incomplete" }
+        )),
+    );
+}
+
 async fn patch_ws_frame_text(text: &str) -> (String, bool) {
     let (patched_bytes, changed) = patch_ws_frame_binary(text.as_bytes()).await;
     if changed {
@@ -2793,7 +2811,7 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         get_ws_header_any(headers_part, &["PsyService", "Service", "psy-service", "service", "RPC", "rpc", "Method"])
     };
 
-    // Fallback: If service is still empty, inspect body for known signatures
+
     if svc.is_empty() && !body_part.is_empty() {
         if let Ok(val) = serde_json::from_slice::<serde_json::Value>(body_part) {
             if let Some(s) = val.get("Service").or_else(|| val.get("RPC")).or_else(|| val.get("Method")).and_then(|v| v.as_str()) {
@@ -2809,6 +2827,22 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
     }
 
     let svc_lower = svc.to_ascii_lowercase();
+
+
+
+
+
+
+    if find_bytes(body_part, b"MessagePayload").is_some()
+        || find_bytes(body_part, b"ReservationsReadyMessage").is_some()
+        || find_bytes(body_part, b"ReservationID").is_some()
+    {
+        record_dsr_reservation_event(
+            body_part,
+            &svc,
+            if !req_id.is_empty() { "CLIENT->SRV" } else { "SRV->CLIENT" },
+        );
+    }
 
     {
         let direction = if !req_id.is_empty() { "CLIENT->SRV" } else { "SRV->CLIENT" };
@@ -2885,8 +2919,8 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         }
     }
 
-    // DSR/RelayToServer is handled separately below.
-    // Strictly identify loadout RPC frames
+
+
     let is_loadout_ws = svc_lower.contains("loadout/getplayerloadout")
         || svc_lower.contains("loadout/getplayerloadouts")
         || svc_lower.contains("loadout/saveloadout")
@@ -2912,7 +2946,7 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         || svc_lower.contains("entitlement")
         || svc_lower.contains("unlockcontainer");
 
-    // Strictly whitelist inventory product RPC frames to prevent over-patching drops/entitlements/destruction
+
     let is_inventory_ws = !is_excluded_ws && (
         svc_lower.contains("products/getplayerproducts")
         || svc_lower.contains("products/getloadoutproducts")
@@ -2934,7 +2968,7 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         }
     }
 
-    // Only patch loadout/inventory in SRV->CLIENT (response) direction, except DSR relay.
+
     let is_dsr = svc_lower.contains("dsr/") || svc_lower.contains("relaytoserver");
     if (is_loadout_ws || is_inventory_ws) && (is_response_frame || is_dsr) {
         if let Some(inv) = &cfg.inventory_spoof {
@@ -3211,7 +3245,7 @@ fn patch_leaderboard_json(
         &mut root
     };
 
-    let mut pl = 11; // Default to Doubles 2v2
+    let mut pl = 11;
     if let Some(id_str) = result_obj.get("LeaderboardID").and_then(|v| v.as_str()) {
         let num_str = id_str.trim_start_matches("Skill").trim_start_matches("skill");
         if let Ok(n) = num_str.parse::<i32>() {
@@ -3228,7 +3262,7 @@ fn patch_leaderboard_json(
     }
 
     let mut target_display_mmr = 2150.0;
-    let mut target_tier = 22; // Supersonic Legend default
+    let mut target_tier = 22;
     let mut custom_rank: Option<i64> = None;
     let mut found_override = false;
 
@@ -4160,7 +4194,7 @@ fn patch_inventory_array(
         }
     }
 
-    // Always ensure base stock/legacy IDs exist so client never detects missing IDs or resets sync timestamp
+
     for &base_pid in &[1i64, 11560, 6215, 6219, 6222, 6232] {
         let has_base = arr.iter().any(|p| {
             p.get("ProductID")
@@ -4938,8 +4972,6 @@ fn resign_rpc_response(psy_time: &str, body: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes())
 }
 
-/// Rewrite `PsyNetUrl.URL` and `PsyNetUrl.URLv2` in the battlecars config body
-/// to route WebSocket connections and RPC requests through our local broker.
 fn patch_psynet_url(body: &[u8]) -> Option<Vec<u8>> {
     let http_base = broker_http_base()?;
     let (obj_start, obj_end) = find_named_object(body, "PsyNetUrl")?;
@@ -4972,8 +5004,6 @@ fn patch_psynet_url(body: &[u8]) -> Option<Vec<u8>> {
     Some(out)
 }
 
-/// Replace the value of a JSON string field `"key":"<old_value>"` inside `body`.
-/// Returns `Some(new_body)` if the field was found and the value differed, `None` otherwise.
 fn replace_json_string_field(body: &[u8], key: &str, new_value: &str) -> Option<Vec<u8>> {
     let encoded_json = serde_json::to_string(new_value).ok()?;
     if encoded_json.len() < 2 {
@@ -4988,7 +5018,7 @@ fn replace_json_string_field(body: &[u8], key: &str, new_value: &str) -> Option<
     let j = json_string_end(body, val_start)?;
 
     if &body[val_start..j] == encoded {
-        return None; // already set to the desired value
+        return None;
     }
 
     let mut out = Vec::with_capacity(body.len() + encoded.len());
@@ -5518,7 +5548,7 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
         any_change = true;
     }
 
-    // AuthPlayer and game RPC flow through 127.0.0.1 broker, eliminating external TLS/pinning issues)
+
     if let Some(next) = patch_psynet_url(&out) {
         out = next;
         any_change = true;
@@ -5772,9 +5802,6 @@ fn patch_palette(body: &[u8]) -> (Vec<u8>, bool) {
     upsert_class_property_override(body, "Team_Soccar_TA", "CarColorSet", val_str)
 }
 
-/// Locate the byte span for the root `"ClassPropertyConfig"` JSON object.
-/// Note: We avoid serde_json deserialization across the full 500KB+ CDN config payload
-/// to guarantee zero key-reordering (which trips EAC/Psynet packet checksum validation).
 fn find_class_property_config(body: &[u8]) -> Option<(usize, usize)> {
     let key = b"\"ClassPropertyConfig\"";
     let pos = find_bytes(body, key)?;
@@ -5856,9 +5883,6 @@ fn scan_array_end(body: &[u8], start: usize) -> Option<usize> {
     None
 }
 
-/// Modifies or inserts a single class-property override in the CDN payload.
-/// Psynet config CDN responses (`/v2/Config/BattleCars/...`) supply UE3 class properties
-/// via an `Overrides` list of `{ "Class": "...", "Property": "...", "Value": "..." }`.
 fn upsert_class_property_override(
     body: &[u8],
     class_target: &str,
@@ -6218,7 +6242,7 @@ mod tests {
         assert!(changed);
         let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
         let currencies = val["Result"]["Currencies"].as_array().unwrap();
-        
+
         let c13 = currencies.iter().find(|c| c["ID"] == 13).unwrap();
         assert_eq!(c13["Amount"], 999999);
 
@@ -6402,13 +6426,14 @@ mod tests {
         assert!(changed);
         let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
         let ids: Vec<i64> = val["Result"]["ProductIDs"].as_array().unwrap().iter().map(|v| v.as_i64().unwrap()).collect();
-        // Original IDs must be 100% preserved
+
         assert!(ids.contains(&1));
         assert!(ids.contains(&11560));
         assert!(ids.contains(&6219));
-        // Spawned ID must be appended
+
         assert!(ids.contains(&4284));
     }
 }
+
 
 

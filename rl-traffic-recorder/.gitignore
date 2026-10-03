@@ -1,7 +1,0 @@
-build/
-cmake-build-*/
-*.vcxproj*
-*.sln
-*.user
-.cache/
-CMakeUserPresets.json

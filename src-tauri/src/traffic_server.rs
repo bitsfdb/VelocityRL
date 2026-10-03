@@ -628,7 +628,7 @@ const INDEX_HTML: &str = r###"<!DOCTYPE html>
             if (cat === 'ws' && !catUpper.includes('WS')) return false;
             if (cat === 'loadout' && !(svcLower.includes('loadout') || svcLower.includes('product') || svcLower.includes('inventory') || svcLower.includes('authplayer'))) return false;
             if (cat === 'skills' && !(svcLower.includes('skill') || svcLower.includes('rank') || svcLower.includes('leaderboard'))) return false;
-            if (cat === 'udp' && !catUpper.includes('UDP')) return false;
+            if (cat === 'udp' && !(catUpper.includes('UDP') || catUpper.includes('DSR'))) return false;
             if (cat === 'http' && !(catUpper.includes('HTTP') || catUpper.includes('CONFIG') || catUpper.includes('BROKER'))) return false;
             if (cat === 'patched' && !ev.patched) return false;
 
