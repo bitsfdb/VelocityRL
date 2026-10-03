@@ -479,53 +479,100 @@ const PAINT_TEXT_COLORS = {
     29: '#ca8a04',
 };
 
-function getPaintTextColor(paint) {
-    if (paint === null || paint === undefined) return '#09090b';
-    if (typeof paint === 'number') {
-        return PAINT_TEXT_COLORS[paint] || '#09090b';
-    }
-    const str = String(paint).trim();
-    if (!isNaN(Number(str))) {
-        return PAINT_TEXT_COLORS[Number(str)] || '#09090b';
-    }
-    for (const [id, name] of Object.entries(PAINT_NAMES)) {
-        if (name.toLowerCase() === str.toLowerCase()) {
-            return PAINT_TEXT_COLORS[Number(id)] || '#09090b';
-        }
-    }
-    return '#09090b';
-}
-
-function renderPaintBadgeHtml(paintIdOrName) {
-    const raw = paintIdOrName;
-    let label = 'None';
-    let color = '#09090b';
-    if (typeof raw === 'number') {
-        label = raw === 0 ? 'None' : paintLabel(raw);
-        color = getPaintTextColor(raw);
-    } else if (raw) {
-        const str = String(raw).trim();
-        if (str.startsWith('#')) {
-            label = str.toUpperCase();
-            color = str;
-        } else if (!isNaN(Number(str))) {
-            const num = Number(str);
-            label = num === 0 ? 'None' : paintLabel(num);
-            color = getPaintTextColor(num);
-        } else if (str.toLowerCase() === 'default' || str.toLowerCase() === 'none') {
-            label = 'None';
-            color = '#09090b';
-        } else {
-            label = str;
-            color = getPaintTextColor(str);
-        }
-    }
-    return `<span class="paint-white-pill" style="background:#ffffff; color:${color}; font-weight:700;">${escHtml(label)}</span>`;
-}
-
 function paintLabel(id) {
     if (Number(id) === 0) return 'None';
     return PAINT_NAMES[id] || PAINT_NAMES[String(id)] || `Paint ${id}`;
+}
+
+const PAINT_BADGE_STYLES = {
+    0: { bg: 'rgba(255, 255, 255, 0.08)', color: '#94a3b8', border: 'rgba(255, 255, 255, 0.15)', dot: '#64748b' },
+    1: { bg: 'rgba(239, 68, 68, 0.16)', color: '#f87171', border: 'rgba(239, 68, 68, 0.35)', dot: '#ef4444' }, // Crimson (Red)
+    2: { bg: 'rgba(163, 230, 53, 0.16)', color: '#a3e635', border: 'rgba(163, 230, 53, 0.35)', dot: '#84cc16' }, // Lime (Lime Green)
+    3: { bg: 'rgba(15, 23, 42, 0.65)', color: '#e2e8f0', border: 'rgba(148, 163, 184, 0.3)', dot: '#0f172a' }, // Black
+    4: { bg: 'rgba(56, 189, 248, 0.16)', color: '#38bdf8', border: 'rgba(56, 189, 248, 0.35)', dot: '#0ea5e9' }, // Sky Blue
+    5: { bg: 'rgba(59, 130, 246, 0.16)', color: '#60a5fa', border: 'rgba(59, 130, 246, 0.35)', dot: '#3b82f6' }, // Cobalt (Cobalt Blue)
+    6: { bg: 'rgba(180, 83, 9, 0.18)', color: '#f59e0b', border: 'rgba(180, 83, 9, 0.35)', dot: '#d97706' }, // Burnt Sienna
+    7: { bg: 'rgba(34, 197, 94, 0.16)', color: '#22c55e', border: 'rgba(34, 197, 94, 0.35)', dot: '#16a34a' }, // Forest Green
+    8: { bg: 'rgba(168, 85, 247, 0.16)', color: '#c084fc', border: 'rgba(168, 85, 247, 0.35)', dot: '#a855f7' }, // Purple
+    9: { bg: 'rgba(244, 114, 182, 0.16)', color: '#f472b6', border: 'rgba(244, 114, 182, 0.35)', dot: '#ec4899' }, // Pink
+    10: { bg: 'rgba(249, 115, 22, 0.16)', color: '#fb923c', border: 'rgba(249, 115, 22, 0.35)', dot: '#f97316' }, // Orange
+    11: { bg: 'rgba(148, 163, 184, 0.16)', color: '#cbd5e1', border: 'rgba(148, 163, 184, 0.35)', dot: '#94a3b8' }, // Grey
+    12: { bg: 'rgba(255, 255, 255, 0.15)', color: '#ffffff', border: 'rgba(255, 255, 255, 0.4)', dot: '#f8fafc' }, // Titanium White
+    13: { bg: 'rgba(234, 179, 8, 0.16)', color: '#facc15', border: 'rgba(234, 179, 8, 0.35)', dot: '#eab308' }, // Saffron (Yellow)
+    14: { bg: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', border: 'rgba(245, 158, 11, 0.45)', dot: '#f59e0b' }, // Gold
+    15: { bg: 'rgba(244, 63, 94, 0.16)', color: '#fb7185', border: 'rgba(244, 63, 94, 0.35)', dot: '#f43f5e' }, // Rose Gold
+    16: { bg: 'rgba(254, 240, 138, 0.16)', color: '#fef08a', border: 'rgba(254, 240, 138, 0.35)', dot: '#eab308' }, // White Gold
+    17: { bg: 'rgba(30, 41, 59, 0.5)', color: '#94a3b8', border: 'rgba(71, 85, 105, 0.4)', dot: '#334155' }, // Onyx
+    18: { bg: 'rgba(226, 232, 240, 0.16)', color: '#e2e8f0', border: 'rgba(226, 232, 240, 0.35)', dot: '#cbd5e1' }, // Platinum
+    19: { bg: 'rgba(56, 189, 248, 0.22)', color: '#7dd3fc', border: 'rgba(56, 189, 248, 0.55)', dot: '#38bdf8' }, // Sky Blue Glow
+    20: { bg: 'rgba(59, 130, 246, 0.22)', color: '#93c5fd', border: 'rgba(59, 130, 246, 0.55)', dot: '#60a5fa' }, // Cobalt Glow
+    21: { bg: 'rgba(180, 83, 9, 0.25)', color: '#fbbf24', border: 'rgba(180, 83, 9, 0.55)', dot: '#f59e0b' }, // Burnt Sienna Glow
+    22: { bg: 'rgba(34, 197, 94, 0.22)', color: '#86efac', border: 'rgba(34, 197, 94, 0.55)', dot: '#4ade80' }, // Forest Green Glow
+    23: { bg: 'rgba(163, 230, 53, 0.22)', color: '#bef264', border: 'rgba(163, 230, 53, 0.55)', dot: '#a3e635' }, // Lime Glow
+    24: { bg: 'rgba(249, 115, 22, 0.22)', color: '#fdba74', border: 'rgba(249, 115, 22, 0.55)', dot: '#fb923c' }, // Orange Glow
+    25: { bg: 'rgba(244, 114, 182, 0.22)', color: '#f9a8d4', border: 'rgba(244, 114, 182, 0.55)', dot: '#f472b6' }, // Pink Glow
+    26: { bg: 'rgba(168, 85, 247, 0.22)', color: '#d8b4fe', border: 'rgba(168, 85, 247, 0.55)', dot: '#c084fc' }, // Purple Glow
+    27: { bg: 'rgba(239, 68, 68, 0.22)', color: '#fca5a5', border: 'rgba(239, 68, 68, 0.55)', dot: '#f87171' }, // Crimson Glow
+    28: { bg: 'rgba(255, 255, 255, 0.28)', color: '#ffffff', border: 'rgba(255, 255, 255, 0.65)', dot: '#ffffff' }, // TW Glow
+    29: { bg: 'rgba(234, 179, 8, 0.22)', color: '#fde047', border: 'rgba(234, 179, 8, 0.55)', dot: '#facc15' }, // Saffron Glow
+};
+
+function getPaintBadgeStyle(paint) {
+    if (paint === null || paint === undefined) return PAINT_BADGE_STYLES[0];
+    if (typeof paint === 'number') {
+        return PAINT_BADGE_STYLES[paint] || PAINT_BADGE_STYLES[0];
+    }
+    const str = String(paint).trim();
+    if (str.startsWith('#')) {
+        return {
+            bg: `${str}25`,
+            color: str,
+            border: `${str}55`,
+            dot: str
+        };
+    }
+    const num = Number(str);
+    if (!isNaN(num)) {
+        return PAINT_BADGE_STYLES[num] || PAINT_BADGE_STYLES[0];
+    }
+    for (const [id, name] of Object.entries(PAINT_NAMES)) {
+        if (name.toLowerCase() === str.toLowerCase()) {
+            return PAINT_BADGE_STYLES[Number(id)] || PAINT_BADGE_STYLES[0];
+        }
+    }
+    return PAINT_BADGE_STYLES[0];
+}
+
+function renderPaintBadge(paintIdOrName, customLabel, showNone = false) {
+    let pid = paintIdOrName;
+    let label = customLabel;
+    if (typeof pid === 'string' && !isNaN(Number(pid))) {
+        pid = Number(pid);
+    }
+    const isNone = pid === 0 || pid === '0' || pid === 'None' || pid === 'none' || pid === 'default' || pid === null || pid === undefined;
+    if (isNone) {
+        if (!showNone) return '';
+        label = label || 'None';
+        return `<span class="quality-badge paint-badge" style="background:rgba(255,255,255,0.06); color:#94a3b8; border:1px solid rgba(255,255,255,0.12);"><span class="paint-dot" style="background:#64748b;"></span>${escHtml(label)}</span>`;
+    }
+    if (!label) {
+        if (typeof pid === 'number') {
+            label = paintLabel(pid);
+        } else if (pid) {
+            label = String(pid);
+        }
+    }
+    if (!label || label === 'None' || label === 'Default') {
+        if (!showNone) return '';
+        return `<span class="quality-badge paint-badge" style="background:rgba(255,255,255,0.06); color:#94a3b8; border:1px solid rgba(255,255,255,0.12);"><span class="paint-dot" style="background:#64748b;"></span>${escHtml(label)}</span>`;
+    }
+
+    const style = getPaintBadgeStyle(pid);
+    return `<span class="quality-badge paint-badge" style="background:${style.bg}; color:${style.color}; border:1px solid ${style.border};"><span class="paint-dot" style="background:${style.dot}; box-shadow:0 0 4px ${style.dot}aa;"></span>${escHtml(label)}</span>`;
+}
+
+function renderPaintBadgeHtml(paintIdOrName) {
+    return renderPaintBadge(paintIdOrName, null, true);
 }
 
 let ownedPaintId = '0';
@@ -8286,14 +8333,14 @@ function renderRestoreSpawnerPage() {
 
     listEl.innerHTML = pageEntries.map(entry => {
         if (entry.kind === 'item') {
-            const paintBadge = entry.paintId > 0 ? `<span class="quality-badge bg-premium" style="font-size:10px; padding:1px 5px;">${escHtml(entry.paintLabelStr)}</span>` : '';
+            const paintBadge = entry.paintId > 0 ? renderPaintBadge(entry.paintId, entry.paintLabelStr) : '';
             return `
                 <div class="backup-item" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-bottom:1px solid rgba(255,255,255,0.06);">
                     <div style="display:flex; align-items:center; gap:10px;">
                         <div>
                             <div style="font-weight:600; font-size:13px; color:#fff;">${escHtml(entry.name)}</div>
                             <div style="font-size:11px; display:flex; gap:6px; align-items:center; margin-top:2px;">
-                                <span class="quality-badge bg-premium" style="font-size:10px; padding:1px 5px;">ID: ${escHtml(String(entry.pid))}</span>
+                                <span class="quality-badge" style="background:rgba(255,255,255,0.08); color:#cbd5e1; border:1px solid rgba(255,255,255,0.15); font-size:10px; padding:1px 5px;">ID: ${escHtml(String(entry.pid))}</span>
                                 ${paintBadge}
                                 <span style="color:#888;">${escHtml(entry.slot)}</span>
                             </div>
@@ -8312,7 +8359,7 @@ function renderRestoreSpawnerPage() {
                         <div>
                             <div style="font-weight:600; font-size:13px; ${titleStyle}">${formatTitleHtml(entry.text)}</div>
                             <div style="font-size:11px; display:flex; gap:6px; align-items:center; margin-top:2px;">
-                                <span class="quality-badge bg-premium" style="font-size:10px; padding:1px 5px;">Spawned Title</span>
+                                <span class="quality-badge" style="background:rgba(99,102,241,0.15); color:#a5b4fc; border:1px solid rgba(99,102,241,0.3); font-size:10px; padding:1px 5px;">Spawned Title</span>
                             </div>
                         </div>
                     </div>
