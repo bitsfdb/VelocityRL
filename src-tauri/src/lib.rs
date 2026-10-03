@@ -24,6 +24,7 @@ mod winprobe;
 pub mod proxy;
 pub mod features;
 pub mod traffic_server;
+pub mod savedata;
 
 
 #[allow(dead_code)]
