@@ -2767,6 +2767,68 @@ fn record_dsr_reservation_event(body: &[u8], svc: &str, direction: &str) {
     );
 }
 
+fn patch_dsr_reservation_ws(
+    body: &[u8],
+    inv_opt: Option<&crate::psynet::InventorySpoofPayload>,
+) -> (Vec<u8>, bool) {
+    let Ok(mut outer) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return (body.to_vec(), false);
+    };
+
+    let Some(session) = crate::dsr::parse_reservation(body) else {
+        return (body.to_vec(), false);
+    };
+
+    let mut changed = false;
+
+    if let Some(local_port) = crate::dsr::start_udp_relay(session) {
+        let local_addr = format!("127.0.0.1:{local_port}");
+        if let Some(payload_str) = outer.get("MessagePayload").and_then(|v| v.as_str()) {
+            if let Ok(mut payload_obj) = serde_json::from_str::<serde_json::Value>(payload_str) {
+                if let Some(obj) = payload_obj.as_object_mut() {
+                    obj.insert("ServerAddress".into(), serde_json::json!(local_addr));
+                    if let Some(inv) = inv_opt {
+                        if inv.enabled && !inv.items.is_empty() {
+                            if let Some(arr) = obj.get_mut("ProductIDs").and_then(|v| v.as_array_mut()) {
+                                for item in &inv.items {
+                                    if item.product_id > 0 && !arr.iter().any(|v| v.as_i64() == Some(item.product_id as i64)) {
+                                        arr.push(serde_json::json!(item.product_id));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if let Ok(new_payload_str) = serde_json::to_string(&payload_obj) {
+                        outer["MessagePayload"] = serde_json::json!(new_payload_str);
+                        changed = true;
+                    }
+                }
+            }
+        } else if let Some(payload_obj) = outer.get_mut("MessagePayload").and_then(|v| v.as_object_mut()) {
+            payload_obj.insert("ServerAddress".into(), serde_json::json!(local_addr));
+            if let Some(inv) = inv_opt {
+                if inv.enabled && !inv.items.is_empty() {
+                    if let Some(arr) = payload_obj.get_mut("ProductIDs").and_then(|v| v.as_array_mut()) {
+                        for item in &inv.items {
+                            if item.product_id > 0 && !arr.iter().any(|v| v.as_i64() == Some(item.product_id as i64)) {
+                                arr.push(serde_json::json!(item.product_id));
+                            }
+                        }
+                    }
+                }
+            }
+            changed = true;
+        }
+    }
+
+    if changed {
+        if let Ok(out) = serde_json::to_vec(&outer) {
+            return (out, true);
+        }
+    }
+    (body.to_vec(), false)
+}
+
 async fn patch_ws_frame_text(text: &str) -> (String, bool) {
     let (patched_bytes, changed) = patch_ws_frame_binary(text.as_bytes()).await;
     if changed {
@@ -2970,7 +3032,20 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
 
 
     let is_dsr = svc_lower.contains("dsr/") || svc_lower.contains("relaytoserver");
-    if (is_loadout_ws || is_inventory_ws) && (is_response_frame || is_dsr) {
+    let is_dsr_reservation = find_bytes(body_part, b"MessagePayload").is_some()
+        || find_bytes(body_part, b"ReservationsReadyMessage").is_some()
+        || find_bytes(body_part, b"ReservationID").is_some();
+
+    if is_dsr_reservation && req_id.is_empty() {
+        let (new_body, did_patch) = patch_dsr_reservation_ws(&current_body, cfg.inventory_spoof.as_ref());
+        if did_patch {
+            current_body = new_body;
+            any_changed = true;
+            crate::applog::event("proxy: patched DSR reservation to route via local UDP relay");
+        }
+    }
+
+    if is_loadout_ws || (is_inventory_ws && (is_response_frame || is_dsr)) {
         if let Some(inv) = &cfg.inventory_spoof {
             let has_titles = !inv.titles.is_empty()
                 || !cfg.equip_title_id.trim().is_empty()

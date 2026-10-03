@@ -5,7 +5,9 @@
  * Licensed under the GNU General Public License v3.0.
  * unauthorized rebranding or stripping of this copyright notice is strictly prohibited.
  */
+use std::net::{SocketAddr, UdpSocket};
 use std::sync::Mutex;
+use std::time::Duration;
 
 pub const SESSION_ID_LEN: usize = 16;
 pub const SEQ_LEN: usize = 4;
@@ -170,6 +172,104 @@ pub fn session_for(address: &str) -> Option<DsrSession> {
             })
             .cloned()
     })
+}
+
+pub fn start_udp_relay(session: DsrSession) -> Option<u16> {
+    if session.server_address.is_empty() {
+        return None;
+    }
+    let target_addr: SocketAddr = session.server_address.parse().ok()?;
+
+    let client_socket = match UdpSocket::bind("127.0.0.1:0") {
+        Ok(s) => s,
+        Err(e) => {
+            crate::applog::event(&format!("dsr_relay: failed to bind local UDP listener: {e}"));
+            return None;
+        }
+    };
+    let local_port = client_socket.local_addr().ok()?.port();
+    let _ = client_socket.set_read_timeout(Some(Duration::from_millis(50)));
+
+    let server_socket = match UdpSocket::bind("0.0.0.0:0") {
+        Ok(s) => s,
+        Err(e) => {
+            crate::applog::event(&format!("dsr_relay: failed to bind upstream UDP socket: {e}"));
+            return None;
+        }
+    };
+    let _ = server_socket.set_read_timeout(Some(Duration::from_millis(50)));
+
+    let sess_clone = session.clone();
+    std::thread::Builder::new()
+        .name("velocity-udp-relay".into())
+        .spawn(move || {
+            crate::applog::event(&format!(
+                "dsr_relay: active on 127.0.0.1:{local_port} -> {target_addr}"
+            ));
+            let mut client_addr: Option<SocketAddr> = None;
+            let mut buf_c2s = [0u8; 65536];
+            let mut buf_s2c = [0u8; 65536];
+
+            loop {
+                // Client -> Server
+                if let Ok((n, from)) = client_socket.recv_from(&mut buf_c2s) {
+                    if n > 0 {
+                        client_addr = Some(from);
+                        let packet = &buf_c2s[..n];
+
+                        let summary = match decrypt_datagram(packet, &sess_clone) {
+                            Ok(pt) => format!("DSR Decrypted ({}B -> {}B)", n, pt.len()),
+                            Err(_) => format!("DSR Raw UDP ({}B)", n),
+                        };
+
+                        crate::applog::record_traffic_event(
+                            "UDP",
+                            "CLIENT->SRV",
+                            &format!("dsr:{}", target_addr.port()),
+                            Some(&target_addr.to_string()),
+                            false,
+                            None,
+                            None,
+                            packet,
+                            Some(&summary),
+                        );
+
+                        let _ = server_socket.send_to(packet, target_addr);
+                    }
+                }
+
+                // Server -> Client
+                if let Ok((n, _from)) = server_socket.recv_from(&mut buf_s2c) {
+                    if n > 0 {
+                        let packet = &buf_s2c[..n];
+
+                        let summary = match decrypt_datagram(packet, &sess_clone) {
+                            Ok(pt) => format!("DSR Decrypted ({}B -> {}B)", n, pt.len()),
+                            Err(_) => format!("DSR Raw UDP ({}B)", n),
+                        };
+
+                        crate::applog::record_traffic_event(
+                            "UDP",
+                            "SRV->CLIENT",
+                            &format!("dsr:{}", target_addr.port()),
+                            Some(&target_addr.to_string()),
+                            false,
+                            None,
+                            None,
+                            packet,
+                            Some(&summary),
+                        );
+
+                        if let Some(to) = client_addr {
+                            let _ = client_socket.send_to(packet, to);
+                        }
+                    }
+                }
+            }
+        })
+        .ok()?;
+
+    Some(local_port)
 }
 
 #[derive(Debug, PartialEq, Eq)]
