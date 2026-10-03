@@ -243,7 +243,7 @@ pub fn start_udp_relay(session: DsrSession) -> Option<u16> {
                                                 text.clone()
                                             } else {
                                                 format!(
-                                                    "--- DECRYPTED PLAINTEXT ({} bytes) ---\nHex: {}\n\n--- RAW CIPHERTEXT ({} bytes) ---\nHex: {}",
+                                                    "--- DECRYPTED PLAINTEXT ({} bytes) ---\nHex: {}\n\n--- ORIGINAL ENCRYPTED DATAGRAM ({} bytes) ---\nHex: {}",
                                                     pt.len(),
                                                     crate::applog::hex_encode(&pt),
                                                     packet.len(),
@@ -252,7 +252,7 @@ pub fn start_udp_relay(session: DsrSession) -> Option<u16> {
                                             }
                                         } else {
                                             format!(
-                                                "--- DECRYPTED PLAINTEXT ({} bytes) ---\nHex: {}\n\n--- RAW CIPHERTEXT ({} bytes) ---\nHex: {}",
+                                                "--- DECRYPTED PLAINTEXT ({} bytes) ---\nHex: {}\n\n--- ORIGINAL ENCRYPTED DATAGRAM ({} bytes) ---\nHex: {}",
                                                 pt.len(),
                                                 crate::applog::hex_encode(&pt),
                                                 packet.len(),
@@ -324,7 +324,7 @@ pub fn start_udp_relay(session: DsrSession) -> Option<u16> {
                                                 text.clone()
                                             } else {
                                                 format!(
-                                                    "--- DECRYPTED PLAINTEXT ({} bytes) ---\nHex: {}\n\n--- RAW CIPHERTEXT ({} bytes) ---\nHex: {}",
+                                                    "--- DECRYPTED PLAINTEXT ({} bytes) ---\nHex: {}\n\n--- ORIGINAL ENCRYPTED DATAGRAM ({} bytes) ---\nHex: {}",
                                                     pt.len(),
                                                     crate::applog::hex_encode(&pt),
                                                     packet.len(),
@@ -333,7 +333,7 @@ pub fn start_udp_relay(session: DsrSession) -> Option<u16> {
                                             }
                                         } else {
                                             format!(
-                                                "--- DECRYPTED PLAINTEXT ({} bytes) ---\nHex: {}\n\n--- RAW CIPHERTEXT ({} bytes) ---\nHex: {}",
+                                                "--- DECRYPTED PLAINTEXT ({} bytes) ---\nHex: {}\n\n--- ORIGINAL ENCRYPTED DATAGRAM ({} bytes) ---\nHex: {}",
                                                 pt.len(),
                                                 crate::applog::hex_encode(&pt),
                                                 packet.len(),
@@ -587,38 +587,66 @@ pub fn reencrypt_patched_datagram(
 
     // Layout 1: With HMAC-SHA256 trailer
     if !session.hmac_key.is_empty() && orig_datagram.len() >= HEADER_LEN + BLOCK + HMAC_LEN {
-        let seq = u32::from_le_bytes(
-            orig_datagram[SESSION_ID_LEN..SESSION_ID_LEN + SEQ_LEN]
-                .try_into()
-                .ok()?,
-        );
-        let iv = &orig_datagram[SESSION_ID_LEN + SEQ_LEN..HEADER_LEN];
-        let new_ct = cbc_encrypt(&session.key, iv, new_plaintext);
+        let ciphertext_end = orig_datagram.len() - HMAC_LEN;
+        let ct_len = ciphertext_end.saturating_sub(HEADER_LEN);
+        if ct_len % BLOCK == 0 {
+            let iv = &orig_datagram[SESSION_ID_LEN + SEQ_LEN..HEADER_LEN];
+            let new_ct = cbc_encrypt(&session.key, iv, new_plaintext);
 
-        let mut new_datagram = Vec::with_capacity(HEADER_LEN + new_ct.len() + HMAC_LEN);
-        new_datagram.extend_from_slice(&orig_datagram[..HEADER_LEN]);
-        new_datagram.extend_from_slice(&new_ct);
+            let mut new_datagram = Vec::with_capacity(HEADER_LEN + new_ct.len() + HMAC_LEN);
+            new_datagram.extend_from_slice(&orig_datagram[..HEADER_LEN]);
+            new_datagram.extend_from_slice(&new_ct);
 
-        if let Ok(mut mac_ctx) = Hmac::<Sha256>::new_from_slice(&session.hmac_key) {
-            mac_ctx.update(&new_datagram[..HEADER_LEN + new_ct.len()]);
-            new_datagram.extend_from_slice(&mac_ctx.finalize().into_bytes());
-            return Some(new_datagram);
+            if let Ok(mut mac_ctx) = Hmac::<Sha256>::new_from_slice(&session.hmac_key) {
+                mac_ctx.update(&new_datagram[..HEADER_LEN + new_ct.len()]);
+                new_datagram.extend_from_slice(&mac_ctx.finalize().into_bytes());
+                return Some(new_datagram);
+            }
         }
     }
 
     // Layout 2: Header (36B) + Ciphertext without HMAC
     if orig_datagram.len() >= HEADER_LEN + BLOCK {
-        let seq = u32::from_le_bytes(
-            orig_datagram[SESSION_ID_LEN..SESSION_ID_LEN + SEQ_LEN]
-                .try_into()
-                .ok()?,
-        );
-        let iv = &orig_datagram[SESSION_ID_LEN + SEQ_LEN..HEADER_LEN];
-        let new_ct = cbc_encrypt(&session.key, iv, new_plaintext);
-        let mut new_datagram = Vec::with_capacity(HEADER_LEN + new_ct.len());
-        new_datagram.extend_from_slice(&orig_datagram[..HEADER_LEN]);
-        new_datagram.extend_from_slice(&new_ct);
-        return Some(new_datagram);
+        let ct_len = orig_datagram.len() - HEADER_LEN;
+        if ct_len % BLOCK == 0 {
+            let iv = &orig_datagram[SESSION_ID_LEN + SEQ_LEN..HEADER_LEN];
+            let new_ct = cbc_encrypt(&session.key, iv, new_plaintext);
+            let mut new_datagram = Vec::with_capacity(HEADER_LEN + new_ct.len());
+            new_datagram.extend_from_slice(&orig_datagram[..HEADER_LEN]);
+            new_datagram.extend_from_slice(&new_ct);
+            return Some(new_datagram);
+        }
+    }
+
+    // Layout 3: SessionID(16) + Per-packet IV(16) + Ciphertext
+    if orig_datagram.len() >= SESSION_ID_LEN + IV_LEN + BLOCK {
+        let ct_len = orig_datagram.len() - (SESSION_ID_LEN + IV_LEN);
+        if ct_len % BLOCK == 0 {
+            let iv = &orig_datagram[SESSION_ID_LEN..SESSION_ID_LEN + IV_LEN];
+            let new_ct = cbc_encrypt(&session.key, iv, new_plaintext);
+            let mut new_datagram = Vec::with_capacity(SESSION_ID_LEN + IV_LEN + new_ct.len());
+            new_datagram.extend_from_slice(&orig_datagram[..SESSION_ID_LEN + IV_LEN]);
+            new_datagram.extend_from_slice(&new_ct);
+            return Some(new_datagram);
+        }
+    }
+
+    // Layout 4: SessionID(16) + Ciphertext with session.iv
+    if session.iv.len() == IV_LEN && orig_datagram.len() >= SESSION_ID_LEN + BLOCK {
+        let ct_len = orig_datagram.len() - SESSION_ID_LEN;
+        if ct_len % BLOCK == 0 {
+            let new_ct = cbc_encrypt(&session.key, &session.iv, new_plaintext);
+            let mut new_datagram = Vec::with_capacity(SESSION_ID_LEN + new_ct.len());
+            new_datagram.extend_from_slice(&orig_datagram[..SESSION_ID_LEN]);
+            new_datagram.extend_from_slice(&new_ct);
+            return Some(new_datagram);
+        }
+    }
+
+    // Layout 5: Entire datagram is AES-256-CBC with session.iv
+    if session.iv.len() == IV_LEN && orig_datagram.len() % BLOCK == 0 {
+        let new_ct = cbc_encrypt(&session.key, &session.iv, new_plaintext);
+        return Some(new_ct);
     }
 
     None
@@ -651,11 +679,11 @@ pub fn patch_udp_server_datagram(
         } else if norm_slot.contains("boost") || norm_slot.contains("rocket_trail") {
             (&[64, 63, 33, 3763], false)
         } else if norm_slot.contains("trail") {
-            (&[1907], false)
+            (&[1907, 1948], false)
         } else if norm_slot.contains("explosion") || norm_slot.contains("goal") {
             (&[7726], false)
         } else if norm_slot.contains("body") {
-            (&[23], true)
+            (&[23, 403, 404, 4284, 1171, 1172], true)
         } else {
             (&[], false)
         };
@@ -664,9 +692,8 @@ pub fn patch_udp_server_datagram(
         for &sess_pid in &sess.product_ids {
             let sess_u32 = sess_pid as u32;
             if sess_u32 > 0 && sess_u32 != target_pid && !to_replace.contains(&sess_u32) {
-                if default_pids.contains(&sess_u32) {
-                    to_replace.push(sess_u32);
-                }
+                // If it's not the target spawned item, include it in candidate replacement list
+                to_replace.push(sess_u32);
             }
         }
 
@@ -674,7 +701,7 @@ pub fn patch_udp_server_datagram(
             if def_pid == target_pid {
                 continue;
             }
-            if is_body && target_pid == 23 {
+            if is_body && target_pid == 23 && def_pid == 23 {
                 continue;
             }
             let def_bytes = def_pid.to_le_bytes();
