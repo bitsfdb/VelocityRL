@@ -296,12 +296,11 @@ pub fn start_udp_relay(session: DsrSession) -> Option<u16> {
             .ok()?;
     }
 
-    // Thread 2: Server -> Client
+    // Thread 2: Server -> Client (Strictly transparent pass-through; never tamper with or decrypt server data)
     {
         let c_sock = client_socket.clone();
         let s_sock = server_socket.clone();
         let c_addr = client_addr_holder.clone();
-        let sess = session.clone();
         let l_log = last_log_s2c.clone();
         std::thread::Builder::new()
             .name("velocity-udp-s2c".into())
@@ -316,41 +315,12 @@ pub fn start_udp_relay(session: DsrSession) -> Option<u16> {
                             let prev = l_log.load(Ordering::Relaxed);
                             if now_ms.saturating_sub(prev) >= 500 {
                                 l_log.store(now_ms, Ordering::Relaxed);
-                                let (summary, body_bytes) = match decrypt_datagram(packet, &sess) {
-                                    Ok(pt) => {
-                                        let text_opt = String::from_utf8(pt.clone()).ok();
-                                        let content = if let Some(ref text) = text_opt {
-                                            if text.chars().all(|c| !c.is_control() || c == '\n' || c == '\r' || c == '\t') {
-                                                text.clone()
-                                            } else {
-                                                format!(
-                                                    "--- DECRYPTED PLAINTEXT ({} bytes) ---\nHex: {}\n\n--- ORIGINAL ENCRYPTED DATAGRAM ({} bytes) ---\nHex: {}",
-                                                    pt.len(),
-                                                    crate::applog::hex_encode(&pt),
-                                                    packet.len(),
-                                                    crate::applog::hex_encode(packet)
-                                                )
-                                            }
-                                        } else {
-                                            format!(
-                                                "--- DECRYPTED PLAINTEXT ({} bytes) ---\nHex: {}\n\n--- ORIGINAL ENCRYPTED DATAGRAM ({} bytes) ---\nHex: {}",
-                                                pt.len(),
-                                                crate::applog::hex_encode(&pt),
-                                                packet.len(),
-                                                crate::applog::hex_encode(packet)
-                                            )
-                                        };
-                                        (format!("DSR Decrypted ({}B -> {}B)", n, pt.len()), content.into_bytes())
-                                    }
-                                    Err(_) => (
-                                        format!("DSR Raw UDP ({}B)", n),
-                                        format!(
-                                            "--- RAW DATAGRAM ({} bytes) ---\nHex: {}",
-                                            packet.len(),
-                                            crate::applog::hex_encode(packet)
-                                        ).into_bytes(),
-                                    ),
-                                };
+                                let summary = format!("DSR UDP Server ({}B)", n);
+                                let body_bytes = format!(
+                                    "--- RAW SERVER DATAGRAM ({} bytes) ---\nHex: {}",
+                                    packet.len(),
+                                    crate::applog::hex_encode(packet)
+                                ).into_bytes();
                                 crate::applog::record_traffic_event(
                                     "UDP",
                                     "SRV->CLIENT",
@@ -364,14 +334,11 @@ pub fn start_udp_relay(session: DsrSession) -> Option<u16> {
                                 );
                             }
 
-                            let patched_opt = patch_udp_server_datagram(packet, &sess);
-                            let packet_to_send = patched_opt.as_deref().unwrap_or(packet);
-
                             let target_client = {
                                 c_addr.lock().ok().and_then(|g| *g)
                             };
                             if let Some(to) = target_client {
-                                let _ = c_sock.send_to(packet_to_send, to);
+                                let _ = c_sock.send_to(packet, to);
                             }
                         }
                         Ok(_) => {}
@@ -576,6 +543,7 @@ pub fn encrypt_datagram(
     datagram
 }
 
+#[allow(dead_code)]
 pub fn reencrypt_patched_datagram(
     orig_datagram: &[u8],
     new_plaintext: &[u8],
@@ -644,6 +612,7 @@ pub fn reencrypt_patched_datagram(
     None
 }
 
+#[allow(dead_code)]
 pub fn patch_udp_server_datagram(
     packet: &[u8],
     sess: &DsrSession,

@@ -2798,6 +2798,16 @@ fn patch_dsr_reservation_ws(
         }
         if let Some(inv) = inv_opt {
             if inv.enabled && !inv.items.is_empty() {
+                let items_ref: Vec<&crate::psynet::InventorySpoofItemPayload> = inv.items.iter().collect();
+
+                let mut temp_val = serde_json::Value::Object(obj.clone());
+                if patch_loadout_container(&mut temp_val, &items_ref) {
+                    if let serde_json::Value::Object(new_obj) = temp_val {
+                        *obj = new_obj;
+                        did_modify = true;
+                    }
+                }
+
                 if !obj.contains_key("ProductIDs") {
                     obj.insert("ProductIDs".into(), serde_json::json!([]));
                 }
@@ -2811,6 +2821,9 @@ fn patch_dsr_reservation_ws(
                 }
                 if let Some(players) = obj.get_mut("Players").and_then(|v| v.as_array_mut()) {
                     for player in players.iter_mut() {
+                        if patch_loadout_container(player, &items_ref) {
+                            did_modify = true;
+                        }
                         if let Some(p_obj) = player.as_object_mut() {
                             if !p_obj.contains_key("ProductIDs") {
                                 p_obj.insert("ProductIDs".into(), serde_json::json!([]));
@@ -2845,6 +2858,12 @@ fn patch_dsr_reservation_ws(
     } else if let Some(payload_obj) = outer.get_mut("MessagePayload").and_then(|v| v.as_object_mut()) {
         if inject_products(payload_obj) {
             changed = true;
+        }
+    } else if let Some(obj) = outer.as_object_mut() {
+        if obj.contains_key("Players") || obj.contains_key("ProductIDs") || obj.contains_key("ServerAddress") {
+            if inject_products(obj) {
+                changed = true;
+            }
         }
     }
 
@@ -3014,7 +3033,7 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         || svc_lower.contains("loadout/getplayerloadouts")
         || svc_lower.contains("loadout/saveloadout")
         || svc_lower.contains("authplayer")
-        || svc_lower.contains("genericstorage/getplayergenericstorage")
+        || svc_lower.contains("genericstorage")
         || svc_lower.contains("playerhasloadout")
         || find_bytes(body_part, b"PlayerLoadout").is_some()
         || find_bytes(body_part, b"playerLoadout").is_some()
@@ -6595,6 +6614,64 @@ mod tests {
         assert!(ids.contains(&6219));
 
         assert!(ids.contains(&4284));
+    }
+
+    #[test]
+    fn test_patch_dsr_reservation_ws_injects_products_and_players() {
+        let inner = serde_json::json!({
+            "ServerAddress": "18.156.221.11:9093",
+            "ProductIDs": [1, 23],
+            "Players": [
+                {
+                    "PlayerID": "Epic|123|0",
+                    "PlayerName": "TestPlayer",
+                    "ProductIDs": [1, 23],
+                    "Loadout": {
+                        "Body": 23,
+                        "Wheels": 27
+                    }
+                }
+            ]
+        });
+        let outer = serde_json::json!({
+            "MessageType": "AddReservationMessagePrivate_X",
+            "MessagePayload": inner.to_string()
+        });
+        let raw = serde_json::to_vec(&outer).unwrap();
+
+        let inv = crate::psynet::InventorySpoofPayload {
+            enabled: true,
+            items: vec![
+                crate::psynet::InventorySpoofItemPayload {
+                    product_id: 4284,
+                    slot: "Body".to_string(),
+                    ..Default::default()
+                },
+                crate::psynet::InventorySpoofItemPayload {
+                    product_id: 1565,
+                    slot: "Wheels".to_string(),
+                    ..Default::default()
+                }
+            ],
+            titles: vec![],
+        };
+
+        let (patched, changed) = patch_dsr_reservation_ws(&raw, Some(&inv));
+        assert!(changed);
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        let payload_str = val["MessagePayload"].as_str().unwrap();
+        let payload: serde_json::Value = serde_json::from_str(payload_str).unwrap();
+
+        let pids: Vec<i64> = payload["ProductIDs"].as_array().unwrap().iter().map(|v| v.as_i64().unwrap()).collect();
+        assert!(pids.contains(&4284));
+        assert!(pids.contains(&1565));
+
+        let player = &payload["Players"][0];
+        let player_pids: Vec<i64> = player["ProductIDs"].as_array().unwrap().iter().map(|v| v.as_i64().unwrap()).collect();
+        assert!(player_pids.contains(&4284));
+        assert!(player_pids.contains(&1565));
+        assert_eq!(player["Loadout"]["Body"], 4284);
+        assert_eq!(player["Loadout"]["Wheels"], 1565);
     }
 }
 
