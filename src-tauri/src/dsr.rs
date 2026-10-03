@@ -516,15 +516,7 @@ pub fn aes256_cbc_decrypt(key: &[u8], iv: &[u8], ciphertext: &[u8]) -> Result<Ve
         }
         prev.copy_from_slice(chunk);
     }
-
-    // If valid PKCS#7 padding, strip it; otherwise return raw plaintext
-    if let Some(&pad_byte) = out.last() {
-        let pad = pad_byte as usize;
-        let n = out.len();
-        if pad > 0 && pad <= BLOCK && pad <= n && out[n - pad..].iter().all(|&b| b as usize == pad) {
-            out.truncate(n - pad);
-        }
-    }
+    // Unreal Engine DSR NetConnection uses raw block encryption with bit-padding, NO PKCS#7 padding
     Ok(out)
 }
 
@@ -533,10 +525,12 @@ pub fn cbc_encrypt(key: &[u8], iv: &[u8], plaintext: &[u8]) -> Vec<u8> {
     use aes::cipher::generic_array::GenericArray;
     use aes::cipher::{BlockEncrypt, KeyInit};
 
+    if key.len() != KEY_LEN || iv.len() != IV_LEN || plaintext.is_empty() || plaintext.len() % BLOCK != 0 {
+        return Vec::new();
+    }
+
     let cipher = Aes256::new(GenericArray::from_slice(key));
     let mut data = plaintext.to_vec();
-    let pad = BLOCK - data.len() % BLOCK;
-    data.extend(std::iter::repeat(pad as u8).take(pad));
 
     let mut prev = [0u8; BLOCK];
     prev.copy_from_slice(iv);
@@ -588,65 +582,58 @@ pub fn reencrypt_patched_datagram(
     // Layout 1: With HMAC-SHA256 trailer
     if !session.hmac_key.is_empty() && orig_datagram.len() >= HEADER_LEN + BLOCK + HMAC_LEN {
         let ciphertext_end = orig_datagram.len() - HMAC_LEN;
-        let ct_len = ciphertext_end.saturating_sub(HEADER_LEN);
-        if ct_len % BLOCK == 0 {
+        let orig_ct_len = ciphertext_end.saturating_sub(HEADER_LEN);
+        if orig_ct_len % BLOCK == 0 && new_plaintext.len() == orig_ct_len {
             let iv = &orig_datagram[SESSION_ID_LEN + SEQ_LEN..HEADER_LEN];
             let new_ct = cbc_encrypt(&session.key, iv, new_plaintext);
+            if new_ct.len() == orig_ct_len {
+                let mut new_datagram = Vec::with_capacity(orig_datagram.len());
+                new_datagram.extend_from_slice(&orig_datagram[..HEADER_LEN]);
+                new_datagram.extend_from_slice(&new_ct);
 
-            let mut new_datagram = Vec::with_capacity(HEADER_LEN + new_ct.len() + HMAC_LEN);
-            new_datagram.extend_from_slice(&orig_datagram[..HEADER_LEN]);
-            new_datagram.extend_from_slice(&new_ct);
-
-            if let Ok(mut mac_ctx) = Hmac::<Sha256>::new_from_slice(&session.hmac_key) {
-                mac_ctx.update(&new_datagram[..HEADER_LEN + new_ct.len()]);
-                new_datagram.extend_from_slice(&mac_ctx.finalize().into_bytes());
-                return Some(new_datagram);
+                if let Ok(mut mac_ctx) = Hmac::<Sha256>::new_from_slice(&session.hmac_key) {
+                    mac_ctx.update(&new_datagram[..HEADER_LEN + new_ct.len()]);
+                    new_datagram.extend_from_slice(&mac_ctx.finalize().into_bytes());
+                    if new_datagram.len() == orig_datagram.len() {
+                        return Some(new_datagram);
+                    }
+                }
             }
         }
     }
 
     // Layout 2: Header (36B) + Ciphertext without HMAC
     if orig_datagram.len() >= HEADER_LEN + BLOCK {
-        let ct_len = orig_datagram.len() - HEADER_LEN;
-        if ct_len % BLOCK == 0 {
+        let orig_ct_len = orig_datagram.len() - HEADER_LEN;
+        if orig_ct_len % BLOCK == 0 && new_plaintext.len() == orig_ct_len {
             let iv = &orig_datagram[SESSION_ID_LEN + SEQ_LEN..HEADER_LEN];
             let new_ct = cbc_encrypt(&session.key, iv, new_plaintext);
-            let mut new_datagram = Vec::with_capacity(HEADER_LEN + new_ct.len());
-            new_datagram.extend_from_slice(&orig_datagram[..HEADER_LEN]);
-            new_datagram.extend_from_slice(&new_ct);
-            return Some(new_datagram);
+            if new_ct.len() == orig_ct_len {
+                let mut new_datagram = Vec::with_capacity(orig_datagram.len());
+                new_datagram.extend_from_slice(&orig_datagram[..HEADER_LEN]);
+                new_datagram.extend_from_slice(&new_ct);
+                if new_datagram.len() == orig_datagram.len() {
+                    return Some(new_datagram);
+                }
+            }
         }
     }
 
     // Layout 3: SessionID(16) + Per-packet IV(16) + Ciphertext
     if orig_datagram.len() >= SESSION_ID_LEN + IV_LEN + BLOCK {
-        let ct_len = orig_datagram.len() - (SESSION_ID_LEN + IV_LEN);
-        if ct_len % BLOCK == 0 {
+        let orig_ct_len = orig_datagram.len() - (SESSION_ID_LEN + IV_LEN);
+        if orig_ct_len % BLOCK == 0 && new_plaintext.len() == orig_ct_len {
             let iv = &orig_datagram[SESSION_ID_LEN..SESSION_ID_LEN + IV_LEN];
             let new_ct = cbc_encrypt(&session.key, iv, new_plaintext);
-            let mut new_datagram = Vec::with_capacity(SESSION_ID_LEN + IV_LEN + new_ct.len());
-            new_datagram.extend_from_slice(&orig_datagram[..SESSION_ID_LEN + IV_LEN]);
-            new_datagram.extend_from_slice(&new_ct);
-            return Some(new_datagram);
+            if new_ct.len() == orig_ct_len {
+                let mut new_datagram = Vec::with_capacity(orig_datagram.len());
+                new_datagram.extend_from_slice(&orig_datagram[..SESSION_ID_LEN + IV_LEN]);
+                new_datagram.extend_from_slice(&new_ct);
+                if new_datagram.len() == orig_datagram.len() {
+                    return Some(new_datagram);
+                }
+            }
         }
-    }
-
-    // Layout 4: SessionID(16) + Ciphertext with session.iv
-    if session.iv.len() == IV_LEN && orig_datagram.len() >= SESSION_ID_LEN + BLOCK {
-        let ct_len = orig_datagram.len() - SESSION_ID_LEN;
-        if ct_len % BLOCK == 0 {
-            let new_ct = cbc_encrypt(&session.key, &session.iv, new_plaintext);
-            let mut new_datagram = Vec::with_capacity(SESSION_ID_LEN + new_ct.len());
-            new_datagram.extend_from_slice(&orig_datagram[..SESSION_ID_LEN]);
-            new_datagram.extend_from_slice(&new_ct);
-            return Some(new_datagram);
-        }
-    }
-
-    // Layout 5: Entire datagram is AES-256-CBC with session.iv
-    if session.iv.len() == IV_LEN && orig_datagram.len() % BLOCK == 0 {
-        let new_ct = cbc_encrypt(&session.key, &session.iv, new_plaintext);
-        return Some(new_ct);
     }
 
     None
@@ -656,6 +643,11 @@ pub fn patch_udp_server_datagram(
     packet: &[u8],
     sess: &DsrSession,
 ) -> Option<Vec<u8>> {
+    // Only inspect packets of size >= 120 to guarantee we never corrupt handshake, ACKs, or control channel
+    if packet.len() < 120 {
+        return None;
+    }
+
     let mut pt = decrypt_datagram(packet, sess).ok()?;
 
     let spoof_cfg = crate::psynet::load_active_spoof_from_disk()?;
@@ -688,16 +680,7 @@ pub fn patch_udp_server_datagram(
             (&[], false)
         };
 
-        let mut to_replace = default_pids.to_vec();
-        for &sess_pid in &sess.product_ids {
-            let sess_u32 = sess_pid as u32;
-            if sess_u32 > 0 && sess_u32 != target_pid && !to_replace.contains(&sess_u32) {
-                // If it's not the target spawned item, include it in candidate replacement list
-                to_replace.push(sess_u32);
-            }
-        }
-
-        for def_pid in to_replace {
+        for &def_pid in default_pids {
             if def_pid == target_pid {
                 continue;
             }

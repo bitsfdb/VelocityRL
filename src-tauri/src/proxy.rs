@@ -2780,16 +2780,14 @@ fn patch_dsr_reservation_ws(
         return (body.to_vec(), false);
     };
 
-    let Some(session) = crate::dsr::parse_reservation(body) else {
-        return (body.to_vec(), false);
-    };
-
-    crate::dsr::register(session.clone());
+    let session_opt = crate::dsr::parse_reservation(body);
+    let mut local_port_opt = None;
+    if let Some(session) = session_opt {
+        crate::dsr::register(session.clone());
+        local_port_opt = crate::dsr::start_udp_relay(session);
+    }
 
     let mut changed = false;
-
-    // Start or bind UDP relay listener for this match
-    let local_port_opt = crate::dsr::start_udp_relay(session);
 
     let inject_products = |obj: &mut serde_json::Map<String, serde_json::Value>| -> bool {
         let mut did_modify = false;
@@ -2808,6 +2806,23 @@ fn patch_dsr_reservation_ws(
                         if item.product_id > 0 && !arr.iter().any(|v| v.as_i64() == Some(item.product_id as i64)) {
                             arr.push(serde_json::json!(item.product_id));
                             did_modify = true;
+                        }
+                    }
+                }
+                if let Some(players) = obj.get_mut("Players").and_then(|v| v.as_array_mut()) {
+                    for player in players.iter_mut() {
+                        if let Some(p_obj) = player.as_object_mut() {
+                            if !p_obj.contains_key("ProductIDs") {
+                                p_obj.insert("ProductIDs".into(), serde_json::json!([]));
+                            }
+                            if let Some(arr) = p_obj.get_mut("ProductIDs").and_then(|v| v.as_array_mut()) {
+                                for item in &inv.items {
+                                    if item.product_id > 0 && !arr.iter().any(|v| v.as_i64() == Some(item.product_id as i64)) {
+                                        arr.push(serde_json::json!(item.product_id));
+                                        did_modify = true;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
