@@ -1201,7 +1201,7 @@ pub async fn start_native_proxy() -> Result<(), String> {
                 break;
             };
 
-            crate::applog::event(&format!("proxy: accepted connection from {peer_addr}"));
+            log::debug!("proxy: accepted connection from {peer_addr}");
 
             let acceptor = acceptor.clone();
             let client = client.clone();
@@ -1210,11 +1210,11 @@ pub async fn start_native_proxy() -> Result<(), String> {
             tokio::spawn(async move {
                 let tls_stream = match acceptor.accept(stream).await {
                     Ok(s) => {
-                        crate::applog::event(&format!("proxy: TLS handshake OK from {peer_addr}"));
+                        log::debug!("proxy: TLS handshake OK from {peer_addr}");
                         s
                     }
                     Err(e) => {
-                        crate::applog::event(&format!("proxy: TLS handshake FAILED from {peer_addr}: {e}"));
+                        log::debug!("proxy: TLS handshake FAILED from {peer_addr}: {e}");
                         return;
                     }
                 };
@@ -1235,9 +1235,14 @@ pub async fn start_native_proxy() -> Result<(), String> {
                 {
                     let err_str = e.to_string();
                     let is_benign = err_str.contains("unexpected EOF")
-                        || err_str.contains("error shutting down connection");
+                        || err_str.contains("error shutting down connection")
+                        || err_str.contains("connection reset")
+                        || err_str.contains("broken pipe")
+                        || err_str.contains("connection closed")
+                        || err_str.contains("early end of stream")
+                        || err_str.contains("reset by peer");
                     if !is_benign {
-                        crate::applog::event(&format!("proxy connection error from {peer_addr}: {e}"));
+                        log::debug!("proxy connection error from {peer_addr}: {e}");
                     }
                 }
             });
@@ -1301,7 +1306,7 @@ async fn handle_forward_proxy_connection(
         };
 
         if is_intercept_target(host) {
-            crate::applog::event(&format!("forward proxy: intercepting CONNECT {host}:{port} from {peer_addr}"));
+            log::debug!("forward proxy: intercepting CONNECT {host}:{port} from {peer_addr}");
             if client_stream.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n").await.is_err() {
                 return;
             }
@@ -1309,7 +1314,7 @@ async fn handle_forward_proxy_connection(
             let tls_stream = match tls_acceptor.accept(client_stream).await {
                 Ok(s) => s,
                 Err(e) => {
-                    crate::applog::event(&format!("forward proxy: TLS handshake failed for {host}: {e}"));
+                    log::debug!("forward proxy: TLS handshake failed for {host}: {e}");
                     return;
                 }
             };
@@ -2779,6 +2784,8 @@ fn patch_dsr_reservation_ws(
         return (body.to_vec(), false);
     };
 
+    crate::dsr::register(session.clone());
+
     let mut changed = false;
 
     if let Some(local_port) = crate::dsr::start_udp_relay(session) {
@@ -3036,7 +3043,7 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         || find_bytes(body_part, b"ReservationsReadyMessage").is_some()
         || find_bytes(body_part, b"ReservationID").is_some();
 
-    if is_dsr_reservation && req_id.is_empty() {
+    if is_dsr_reservation {
         let (new_body, did_patch) = patch_dsr_reservation_ws(&current_body, cfg.inventory_spoof.as_ref());
         if did_patch {
             current_body = new_body;
