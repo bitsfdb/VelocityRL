@@ -927,33 +927,7 @@ pub fn apply_tagame_modifications(
 
     let mut applied_patches = 0usize;
 
-    let mut all_swaps = swaps.to_vec();
-    if let Some(cfg) = crate::psynet::load_active_spoof_from_disk() {
-        if let Some(inv) = cfg.inventory_spoof {
-            if inv.enabled {
-                for it in inv.items {
-                    if it.product_id > 0 && !all_swaps.iter().any(|s| s.product_id == it.product_id) {
-                        let slot_str = if !it.slot.is_empty() {
-                            it.slot.clone()
-                        } else {
-                            "body".to_string()
-                        };
-                        all_swaps.push(TagameSwapItem {
-                            slot: slot_str,
-                            slot_index: None,
-                            owned_id: None,
-                            product_id: it.product_id,
-                            paint_id: if it.paint_id > 0 { Some(it.paint_id) } else { None },
-                            custom_paint_hex: None,
-                            package_name: None,
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    if !all_swaps.is_empty() {
+    if !swaps.is_empty() {
         let UpkIndex {
             mut plain_header,
             mut exports,
@@ -964,7 +938,7 @@ pub fn apply_tagame_modifications(
 
         let mut slot_overrides = Vec::new();
 
-        for s in &all_swaps {
+        for s in swaps {
             let pid = if s.product_id > 0 { s.product_id } else { 4284 };
             let norm = s.slot.to_lowercase().replace([' ', '_', '-'], "");
             let slot_idx: u8 = if norm.contains("body") || s.slot_index == Some(0) {
@@ -1271,7 +1245,7 @@ pub fn apply_tagame_modifications(
         let _ = apply_validation_patches(cooked_dir);
     }
 
-    for s in &all_swaps {
+    for s in swaps {
         let is_body = s.slot.to_lowercase().contains("body")
             || s.package_name.as_deref().map_or(false, |p| p.to_lowercase().starts_with("body_"));
         if !is_body {

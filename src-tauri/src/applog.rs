@@ -567,7 +567,7 @@ pub fn record_traffic_event(
 ) {
     let enabled = TRAFFIC_DEBUG_ENABLED.load(Ordering::Relaxed);
     let stamp = now_stamp();
-    let is_binary = category.eq_ignore_ascii_case("UDP")
+    let is_binary = (category.eq_ignore_ascii_case("UDP") && !custom_summary.map_or(false, |s| s.contains("Decrypted")))
         || body.iter().any(|&b| b < 0x09 || (b > 0x0D && b < 0x20) || b == 0x00);
     let body_str = if is_binary {
         hex_encode(body)
@@ -594,7 +594,7 @@ pub fn record_traffic_event(
         req_id: req_id.map(str::to_string),
         resp_id: resp_id.map(str::to_string),
         body_len,
-        body: body_str,
+        body: body_str.clone(),
         summary,
     };
 
@@ -610,13 +610,21 @@ pub fn record_traffic_event(
 
     if enabled {
         let status_str = status.unwrap_or("-");
-        let log_line = format!(
-            "[{stamp}] [{category}] {direction} | svc={service} | status={status_str} | len={body_len}"
+        let req_str = req_id.map(|r| format!(" | req={r}")).unwrap_or_default();
+        let resp_str = resp_id.map(|r| format!(" | resp={r}")).unwrap_or_default();
+        let patch_str = if patched { " [PATCHED]" } else { "" };
+        let mut log_block = format!(
+            "[{stamp}] [{category}]{patch_str} {direction} | svc={service} | status={status_str}{req_str}{resp_str} | len={body_len}\n"
         );
+        if !body_str.is_empty() {
+            log_block.push_str("    Body: ");
+            log_block.push_str(&body_str);
+            log_block.push('\n');
+        }
         if let Ok(guard) = LOG_DIR.lock() {
             if let Some(ref dir) = *guard {
                 let path = dir.join("traffic_debug.log");
-                append_raw(&path, &log_line);
+                append_raw(&path, &log_block);
             }
         }
     }
@@ -627,6 +635,74 @@ pub fn record_traffic_event(
             let _ = handle.emit("proxy_traffic_event", &event);
         }
     }
+}
+
+pub fn format_full_traffic_export() -> String {
+    let events = if let Ok(g) = TRAFFIC_EVENTS.lock() {
+        g.clone()
+    } else {
+        Vec::new()
+    };
+
+    if events.is_empty() {
+        if let Some(path) = traffic_debug_path() {
+            return std::fs::read_to_string(&path).unwrap_or_else(|_| "(no traffic captured)".to_string());
+        }
+        return "(no traffic captured)".to_string();
+    }
+
+    let mut out = String::new();
+    out.push_str("================================================================================\n");
+    out.push_str("                   VELOCITYRL NETWORK TRAFFIC EXPORT LOG                       \n");
+    out.push_str(&format!("                   Exported at: {} ({} events)\n", now_stamp(), events.len()));
+    out.push_str("================================================================================\n\n");
+
+    for ev in &events {
+        let is_req = ev.direction.contains("CLIENT->SRV") || ev.direction == "REQ";
+        let is_resp = ev.direction.contains("SRV->CLIENT") || ev.direction == "RESP";
+        let type_label = if is_req {
+            "REQUEST"
+        } else if is_resp {
+            "RESPONSE"
+        } else {
+            "DATA"
+        };
+        let patch_tag = if ev.patched { " [PATCHED]" } else { "" };
+        let status_str = ev.status.as_deref().unwrap_or("-");
+
+        out.push_str(&format!(
+            "--------------------------------------------------------------------------------\n\
+             EVENT #{}: [{}] [{}] {} ({}){}\n\
+             Service: {}\n\
+             Status:  {} | Size: {} bytes\n",
+            ev.id, ev.timestamp, ev.category, ev.direction, type_label, patch_tag,
+            ev.service,
+            status_str, ev.body_len
+        ));
+
+        if let Some(ref rid) = ev.req_id {
+            out.push_str(&format!("ReqID:   {rid}\n"));
+        }
+        if let Some(ref rid) = ev.resp_id {
+            out.push_str(&format!("RespID:  {rid}\n"));
+        }
+        if !ev.summary.is_empty() {
+            out.push_str(&format!("Summary: {}\n", ev.summary));
+        }
+
+        out.push_str(&format!("--- {} BODY ---\n", type_label));
+        if ev.body.is_empty() {
+            out.push_str("(empty body)\n");
+        } else {
+            out.push_str(&ev.body);
+            if !ev.body.ends_with('\n') {
+                out.push('\n');
+            }
+        }
+        out.push('\n');
+    }
+
+    out
 }
 
 pub fn traffic_debug(message: &str) {

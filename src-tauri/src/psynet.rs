@@ -3154,36 +3154,6 @@ pub async fn get_network_spawned_items() -> Result<Vec<InventorySpoofItemPayload
     Ok(items)
 }
 
-pub fn trigger_background_tagame_sync() {
-    let dir = config_dir();
-    let cfg_file = dir.join("config.json");
-    let game_dir = if let Ok(s) = std::fs::read_to_string(&cfg_file) {
-        serde_json::from_str::<serde_json::Value>(&s)
-            .ok()
-            .and_then(|v| v.get("game_dir").and_then(|g| g.as_str()).map(|s| s.to_string()))
-            .unwrap_or_default()
-    } else {
-        String::new()
-    };
-
-    if !game_dir.is_empty() {
-        std::thread::spawn(move || {
-            if let Ok(cooked) = crate::upk::tagame_swapper::resolve_cooked_dir(std::path::Path::new(&game_dir)) {
-                let keys_txt = include_str!("../resources/keys.txt");
-                let keys_map_json = include_str!("../resources/keys_map.json");
-                match crate::upk::tagame_swapper::apply_tagame_modifications(&cooked, &[], keys_txt, keys_map_json) {
-                    Ok(status) => {
-                        if status.applied_patches > 0 {
-                            crate::applog::event(&format!("spawner: synchronized {} loadout override(s) into TAGame.upk", status.applied_patches));
-                        }
-                    }
-                    Err(e) => crate::applog::event(&format!("spawner: TAGame.upk sync notice: {e}")),
-                }
-            }
-        });
-    }
-}
-
 #[tauri::command]
 pub async fn set_network_spawn_enabled(enabled: bool) -> Result<bool, String> {
     let dir = config_dir();
@@ -3193,12 +3163,11 @@ pub async fn set_network_spawn_enabled(enabled: bool) -> Result<bool, String> {
     cfg.inventory_spoof = Some(inv);
     let _ = write_spoof(&dir, &cfg)?;
     crate::proxy::set_spoof_config(cfg).await;
-    trigger_background_tagame_sync();
     Ok(enabled)
 }
 
-pub const MAX_SPAWNED_ITEMS: usize = 1000;
-pub const MAX_SPAWNED_TITLES: usize = 1000;
+pub const MAX_SPAWNED_ITEMS: usize = 2000;
+pub const MAX_SPAWNED_TITLES: usize = 2000;
 
 #[tauri::command]
 pub async fn add_network_spawned_item(
@@ -3218,7 +3187,7 @@ pub async fn add_network_spawned_item(
         inv.items.retain(|i| !(i.product_id == product_id && i.paint_id == paint_id));
     }
     if inv.items.len() >= MAX_SPAWNED_ITEMS {
-        return Err("Spawn limit reached (maximum 1,000 items). Please remove some spawned items first.".into());
+        return Err("Spawn limit reached (maximum 2,000 items). Please remove some spawned items first.".into());
     }
     inv.items.push(InventorySpoofItemPayload {
         product_id,
@@ -3232,7 +3201,6 @@ pub async fn add_network_spawned_item(
     cfg.inventory_spoof = Some(inv.clone());
     let _ = write_spoof(&dir, &cfg)?;
     crate::proxy::set_spoof_config(cfg).await;
-    trigger_background_tagame_sync();
     Ok(inv.items)
 }
 
@@ -3248,7 +3216,6 @@ pub async fn remove_network_spawned_item(
     cfg.inventory_spoof = Some(inv.clone());
     let _ = write_spoof(&dir, &cfg)?;
     crate::proxy::set_spoof_config(cfg).await;
-    trigger_background_tagame_sync();
     Ok(inv.items)
 }
 
@@ -3261,7 +3228,6 @@ pub async fn clear_network_spawned_items() -> Result<(), String> {
     cfg.inventory_spoof = Some(inv);
     let _ = write_spoof(&dir, &cfg)?;
     crate::proxy::set_spoof_config(cfg).await;
-    trigger_background_tagame_sync();
     Ok(())
 }
 
@@ -3282,7 +3248,6 @@ pub async fn add_network_spawned_items_bulk(
     cfg.inventory_spoof = Some(inv.clone());
     let _ = write_spoof(&dir, &cfg)?;
     crate::proxy::set_spoof_config(cfg).await;
-    trigger_background_tagame_sync();
     Ok(inv.items)
 }
 
@@ -3295,7 +3260,7 @@ pub async fn add_network_spawned_title(title_id: String) -> Result<Vec<String>, 
     let tid = title_id.trim().to_string();
     if !tid.is_empty() && !inv.titles.iter().any(|t| t.eq_ignore_ascii_case(&tid)) {
         if inv.titles.len() >= MAX_SPAWNED_TITLES {
-            return Err("Spawn limit reached (maximum 1,000 titles). Please remove some spawned titles first.".into());
+            return Err("Spawn limit reached (maximum 2,000 titles). Please remove some spawned titles first.".into());
         }
         inv.titles.push(tid);
     }

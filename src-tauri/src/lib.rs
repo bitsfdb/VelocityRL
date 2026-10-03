@@ -3110,19 +3110,11 @@ pub fn run() {
                     let validator_game_dir = config.game_dir.clone();
                     std::thread::spawn(move || {
                         match upk::tagame_swapper::resolve_cooked_dir(Path::new(&validator_game_dir)) {
-                            Ok(cooked) => {
-                                let keys_txt = include_str!("../resources/keys.txt");
-                                let keys_map_json = include_str!("../resources/keys_map.json");
-                                match upk::tagame_swapper::apply_tagame_modifications(&cooked, &[], keys_txt, keys_map_json) {
-                                    Ok(status) => {
-                                        if status.applied_patches > 0 {
-                                            applog::event(&format!("startup: synchronized {} spawned loadout patch(es) to TAGame.upk", status.applied_patches));
-                                        }
-                                    }
-                                    Err(e) => applog::event(&format!("startup: TAGame.upk loadout sync failed: {e}")),
-                                }
-                            }
-                            Err(e) => applog::event(&format!("startup: TAGame.upk sync skipped: {e}")),
+                            Ok(cooked) => match upk::tagame_swapper::apply_validation_patches(&cooked) {
+                                Ok(_) => {}
+                                Err(e) => applog::event(&format!("startup: validator patch failed: {e}")),
+                            },
+                            Err(e) => applog::event(&format!("startup: validator patch skipped: {e}")),
                         }
                     });
 

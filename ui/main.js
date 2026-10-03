@@ -7943,8 +7943,8 @@ function wireSpawnerControls() {
         try {
             if (titlesToSpawn.length > 0) {
                 const currentTitlesCount = (cachedSpawnedTitles || []).length;
-                if (currentTitlesCount + titlesToSpawn.length > 1000) {
-                    showToast(`Title spawn limit reached (maximum 1,000 titles). Current: ${currentTitlesCount}.`, 'warning');
+                if (currentTitlesCount + titlesToSpawn.length > 2000) {
+                    showToast(`Title spawn limit reached (maximum 2,000 titles). Current: ${currentTitlesCount}.`, 'warning');
                     return;
                 }
                 await invoke('add_network_spawned_titles_bulk', { titleIds: titlesToSpawn });
@@ -7975,8 +7975,8 @@ function wireSpawnerControls() {
                     }
                 }
 
-                if (currentItemsCount + payload.length > 1000) {
-                    showToast(`Item spawn limit reached (maximum 1,000 items). Current: ${currentItemsCount}, attempting to add: ${payload.length}.`, 'warning');
+                if (currentItemsCount + payload.length > 2000) {
+                    showToast(`Item spawn limit reached (maximum 2,000 items). Current: ${currentItemsCount}, attempting to add: ${payload.length}.`, 'warning');
                     return;
                 }
 
@@ -8361,14 +8361,14 @@ function updateSpawnerLimitBadges() {
 
     if (countEl) {
         countEl.textContent = totalSpawned.toLocaleString();
-        countEl.style.color = totalSpawned >= 1000 ? '#ef4444' : (totalSpawned >= 800 ? '#f59e0b' : '#4a9eff');
+        countEl.style.color = totalSpawned >= 2000 ? '#ef4444' : (totalSpawned >= 1600 ? '#f59e0b' : '#4a9eff');
     }
     if (restoreCountEl) {
         restoreCountEl.textContent = totalSpawned.toLocaleString();
-        restoreCountEl.style.color = totalSpawned >= 1000 ? '#ef4444' : (totalSpawned >= 800 ? '#f59e0b' : '#4a9eff');
+        restoreCountEl.style.color = totalSpawned >= 2000 ? '#ef4444' : (totalSpawned >= 1600 ? '#f59e0b' : '#4a9eff');
     }
     if (indicatorEl) {
-        if (totalSpawned >= 1000) {
+        if (totalSpawned >= 2000) {
             indicatorEl.style.borderColor = 'rgba(239, 68, 68, 0.4)';
             indicatorEl.style.background = 'rgba(239, 68, 68, 0.12)';
         } else {
@@ -8377,7 +8377,7 @@ function updateSpawnerLimitBadges() {
         }
     }
     if (restoreIndicatorEl) {
-        if (totalSpawned >= 1000) {
+        if (totalSpawned >= 2000) {
             restoreIndicatorEl.style.borderColor = 'rgba(239, 68, 68, 0.4)';
             restoreIndicatorEl.style.background = 'rgba(239, 68, 68, 0.12)';
         } else {

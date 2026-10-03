@@ -235,9 +235,40 @@ pub fn start_udp_relay(session: DsrSession) -> Option<u16> {
                             let prev = l_log.load(Ordering::Relaxed);
                             if now_ms.saturating_sub(prev) >= 500 {
                                 l_log.store(now_ms, Ordering::Relaxed);
-                                let summary = match decrypt_datagram(packet, &sess) {
-                                    Ok(pt) => format!("DSR Decrypted ({}B -> {}B)", n, pt.len()),
-                                    Err(_) => format!("DSR Raw UDP ({}B)", n),
+                                let (summary, body_bytes) = match decrypt_datagram(packet, &sess) {
+                                    Ok(pt) => {
+                                        let text_opt = String::from_utf8(pt.clone()).ok();
+                                        let content = if let Some(ref text) = text_opt {
+                                            if text.chars().all(|c| !c.is_control() || c == '\n' || c == '\r' || c == '\t') {
+                                                text.clone()
+                                            } else {
+                                                format!(
+                                                    "--- DECRYPTED PLAINTEXT ({} bytes) ---\nHex: {}\n\n--- RAW CIPHERTEXT ({} bytes) ---\nHex: {}",
+                                                    pt.len(),
+                                                    crate::applog::hex_encode(&pt),
+                                                    packet.len(),
+                                                    crate::applog::hex_encode(packet)
+                                                )
+                                            }
+                                        } else {
+                                            format!(
+                                                "--- DECRYPTED PLAINTEXT ({} bytes) ---\nHex: {}\n\n--- RAW CIPHERTEXT ({} bytes) ---\nHex: {}",
+                                                pt.len(),
+                                                crate::applog::hex_encode(&pt),
+                                                packet.len(),
+                                                crate::applog::hex_encode(packet)
+                                            )
+                                        };
+                                        (format!("DSR Decrypted ({}B -> {}B)", n, pt.len()), content.into_bytes())
+                                    }
+                                    Err(_) => (
+                                        format!("DSR Raw UDP ({}B)", n),
+                                        format!(
+                                            "--- RAW DATAGRAM ({} bytes) ---\nHex: {}",
+                                            packet.len(),
+                                            crate::applog::hex_encode(packet)
+                                        ).into_bytes(),
+                                    ),
                                 };
                                 crate::applog::record_traffic_event(
                                     "UDP",
@@ -247,7 +278,7 @@ pub fn start_udp_relay(session: DsrSession) -> Option<u16> {
                                     false,
                                     None,
                                     None,
-                                    packet,
+                                    &body_bytes,
                                     Some(&summary),
                                 );
                             }
@@ -285,9 +316,40 @@ pub fn start_udp_relay(session: DsrSession) -> Option<u16> {
                             let prev = l_log.load(Ordering::Relaxed);
                             if now_ms.saturating_sub(prev) >= 500 {
                                 l_log.store(now_ms, Ordering::Relaxed);
-                                let summary = match decrypt_datagram(packet, &sess) {
-                                    Ok(pt) => format!("DSR Decrypted ({}B -> {}B)", n, pt.len()),
-                                    Err(_) => format!("DSR Raw UDP ({}B)", n),
+                                let (summary, body_bytes) = match decrypt_datagram(packet, &sess) {
+                                    Ok(pt) => {
+                                        let text_opt = String::from_utf8(pt.clone()).ok();
+                                        let content = if let Some(ref text) = text_opt {
+                                            if text.chars().all(|c| !c.is_control() || c == '\n' || c == '\r' || c == '\t') {
+                                                text.clone()
+                                            } else {
+                                                format!(
+                                                    "--- DECRYPTED PLAINTEXT ({} bytes) ---\nHex: {}\n\n--- RAW CIPHERTEXT ({} bytes) ---\nHex: {}",
+                                                    pt.len(),
+                                                    crate::applog::hex_encode(&pt),
+                                                    packet.len(),
+                                                    crate::applog::hex_encode(packet)
+                                                )
+                                            }
+                                        } else {
+                                            format!(
+                                                "--- DECRYPTED PLAINTEXT ({} bytes) ---\nHex: {}\n\n--- RAW CIPHERTEXT ({} bytes) ---\nHex: {}",
+                                                pt.len(),
+                                                crate::applog::hex_encode(&pt),
+                                                packet.len(),
+                                                crate::applog::hex_encode(packet)
+                                            )
+                                        };
+                                        (format!("DSR Decrypted ({}B -> {}B)", n, pt.len()), content.into_bytes())
+                                    }
+                                    Err(_) => (
+                                        format!("DSR Raw UDP ({}B)", n),
+                                        format!(
+                                            "--- RAW DATAGRAM ({} bytes) ---\nHex: {}",
+                                            packet.len(),
+                                            crate::applog::hex_encode(packet)
+                                        ).into_bytes(),
+                                    ),
                                 };
                                 crate::applog::record_traffic_event(
                                     "UDP",
@@ -297,7 +359,7 @@ pub fn start_udp_relay(session: DsrSession) -> Option<u16> {
                                     false,
                                     None,
                                     None,
-                                    packet,
+                                    &body_bytes,
                                     Some(&summary),
                                 );
                             }
@@ -346,62 +408,67 @@ impl std::fmt::Display for DsrError {
 impl std::error::Error for DsrError {}
 
 pub fn decrypt_datagram(datagram: &[u8], session: &DsrSession) -> Result<Vec<u8>, DsrError> {
-    if datagram.len() < HEADER_LEN + BLOCK {
+    if datagram.len() < SESSION_ID_LEN + BLOCK {
         return Err(DsrError::TooShort);
     }
-    let session_id = &datagram[..SESSION_ID_LEN];
-    let seq = &datagram[SESSION_ID_LEN..SESSION_ID_LEN + SEQ_LEN];
-    let iv = &datagram[SESSION_ID_LEN + SEQ_LEN..HEADER_LEN];
 
-    // If session has an HMACKey and datagram has room for an HMAC trailer, check it
-    if !session.hmac_key.is_empty() && datagram.len() >= HEADER_LEN + BLOCK + HMAC_LEN {
-        let ciphertext_end = datagram.len() - HMAC_LEN;
-        let ciphertext = &datagram[HEADER_LEN..ciphertext_end];
-        let mac = &datagram[ciphertext_end..];
-
-        if ciphertext.len() % BLOCK == 0 {
-            use hmac::{Hmac, Mac};
-            use sha2::Sha256;
-            if let Ok(mut mac_ctx) = Hmac::<Sha256>::new_from_slice(&session.hmac_key) {
-                mac_ctx.update(session_id);
-                mac_ctx.update(seq);
-                mac_ctx.update(iv);
-                mac_ctx.update(ciphertext);
-                let expected = mac_ctx.finalize().into_bytes();
-                let mut diff = 0u8;
-                for (a, b) in expected.iter().zip(mac.iter()) {
-                    diff |= a ^ b;
-                }
-                if diff == 0 && expected.len() == mac.len() {
-                    return aes256_cbc_decrypt(&session.key, iv, ciphertext);
-                }
-            }
-        }
-    }
-
-    // Standard DSR UDP datagram: AES-256-CBC with NO HMAC!
-    let ciphertext = &datagram[HEADER_LEN..];
-    if !ciphertext.is_empty() && ciphertext.len() % BLOCK == 0 {
-        if let Ok(res) = aes256_cbc_decrypt(&session.key, iv, ciphertext) {
-            return Ok(res);
-        }
-    }
-
-    // Fallback: If session.iv is provided and datagram format is SessionID(16) + Seq(4) + Ciphertext
-    if session.iv.len() == IV_LEN && datagram.len() >= SESSION_ID_LEN + SEQ_LEN + BLOCK {
-        let alt_ciphertext = &datagram[SESSION_ID_LEN + SEQ_LEN..];
-        if alt_ciphertext.len() % BLOCK == 0 {
-            if let Ok(res) = aes256_cbc_decrypt(&session.key, &session.iv, alt_ciphertext) {
+    // Layout 1: SessionID(16) + Ciphertext(multiple of 16) using session.iv from reservation
+    if session.iv.len() == IV_LEN && datagram.len() >= SESSION_ID_LEN + BLOCK {
+        let ct = &datagram[SESSION_ID_LEN..];
+        if ct.len() % BLOCK == 0 {
+            if let Ok(res) = aes256_cbc_decrypt(&session.key, &session.iv, ct) {
                 return Ok(res);
             }
         }
     }
 
-    if ciphertext.is_empty() || ciphertext.len() % BLOCK != 0 {
-        return Err(DsrError::BadCipherLen);
+    // Layout 2: SessionID(16) + Per-packet IV(16) + Ciphertext(multiple of 16)
+    if datagram.len() >= SESSION_ID_LEN + IV_LEN + BLOCK {
+        let iv = &datagram[SESSION_ID_LEN..SESSION_ID_LEN + IV_LEN];
+        let ct = &datagram[SESSION_ID_LEN + IV_LEN..];
+        if ct.len() % BLOCK == 0 {
+            if let Ok(res) = aes256_cbc_decrypt(&session.key, iv, ct) {
+                return Ok(res);
+            }
+        }
     }
 
-    aes256_cbc_decrypt(&session.key, iv, ciphertext)
+    // Layout 3: SessionID(16) + Seq(4) + Per-packet IV(16) + Ciphertext (Header=36)
+    if datagram.len() >= HEADER_LEN + BLOCK {
+        let iv = &datagram[SESSION_ID_LEN + SEQ_LEN..HEADER_LEN];
+        let ct = &datagram[HEADER_LEN..];
+        if ct.len() % BLOCK == 0 {
+            if let Ok(res) = aes256_cbc_decrypt(&session.key, iv, ct) {
+                return Ok(res);
+            }
+        }
+    }
+
+    // Layout 4: With HMAC-SHA256 trailer
+    if !session.hmac_key.is_empty() && datagram.len() >= HEADER_LEN + BLOCK + HMAC_LEN {
+        let ciphertext_end = datagram.len() - HMAC_LEN;
+        let ct = &datagram[HEADER_LEN..ciphertext_end];
+        let mac = &datagram[ciphertext_end..];
+        if ct.len() % BLOCK == 0 {
+            use hmac::{Hmac, Mac};
+            use sha2::Sha256;
+            if let Ok(mut mac_ctx) = Hmac::<Sha256>::new_from_slice(&session.hmac_key) {
+                mac_ctx.update(&datagram[..SESSION_ID_LEN]);
+                mac_ctx.update(&datagram[SESSION_ID_LEN..SESSION_ID_LEN + SEQ_LEN]);
+                mac_ctx.update(&datagram[SESSION_ID_LEN + SEQ_LEN..HEADER_LEN]);
+                mac_ctx.update(ct);
+                let expected = mac_ctx.finalize().into_bytes();
+                if expected.as_slice() == mac {
+                    let iv = &datagram[SESSION_ID_LEN + SEQ_LEN..HEADER_LEN];
+                    if let Ok(res) = aes256_cbc_decrypt(&session.key, iv, ct) {
+                        return Ok(res);
+                    }
+                }
+            }
+        }
+    }
+
+    Err(DsrError::BadCipherLen)
 }
 
 pub fn aes256_cbc_decrypt(key: &[u8], iv: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, DsrError> {

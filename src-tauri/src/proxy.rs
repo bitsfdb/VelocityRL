@@ -3788,8 +3788,8 @@ fn update_slot_entry(elem: &mut serde_json::Value, item: &crate::psynet::Invento
         obj.insert("ProductID".into(), serde_json::json!(item.product_id));
     }
 
-    let target_slot = slot_index_for_item(item);
-    let instance_id_num = 998_000_000i64 + (target_slot as i64);
+    let hash_seed = ((item.product_id as u64) << 16) | ((item.paint_id as u64) & 0xFFFF);
+    let instance_id_num = 998_000_000i64 + ((hash_seed % 1_000_000) as i64);
     let instance_id_str = instance_id_num.to_string();
     obj.insert("InstanceID".into(), serde_json::json!(&instance_id_str));
     obj.insert("ProductInstanceID".into(), serde_json::json!(&instance_id_str));
@@ -3807,12 +3807,14 @@ fn update_slot_entry(elem: &mut serde_json::Value, item: &crate::psynet::Invento
         }
         if !updated_paint {
             obj.insert("Paint".into(), serde_json::json!(item.paint_id));
+            obj.insert("PaintID".into(), serde_json::json!(item.paint_id));
         }
 
         let paint_attr = serde_json::json!({
             "Key": "Painted",
             "Value": item.paint_id,
-            "TypeName": "ProductAttribute_Painted_TA"
+            "TypeName": "ProductAttribute_Painted_TA",
+            "PaintID": item.paint_id
         });
 
         if let Some(attrs) = obj.get_mut("Attributes").and_then(|a| a.as_array_mut()) {
@@ -3841,6 +3843,11 @@ fn patch_loadout_container(
 ) -> bool {
     let mut changed = false;
 
+    let is_preset_loadout = items.len() <= 14 && {
+        let mut slots = std::collections::HashSet::new();
+        items.iter().all(|i| slots.insert(slot_index_for_item(i)))
+    };
+
     if let Some(arr) = val.as_array_mut() {
         if arr.is_empty() {
             return false;
@@ -3866,55 +3873,75 @@ fn patch_loadout_container(
 
         let is_number_array = arr.iter().all(|e| e.is_number());
         if is_number_array {
-            for item in items {
-                let target_slot = slot_index_for_item(item);
-                if target_slot < arr.len() {
-                    arr[target_slot] = serde_json::json!(item.product_id);
-                    changed = true;
-                } else if target_slot < 32 {
-                    while arr.len() <= target_slot {
-                        arr.push(serde_json::json!(0));
+            if is_preset_loadout {
+                for item in items {
+                    let target_slot = slot_index_for_item(item);
+                    if target_slot < arr.len() {
+                        arr[target_slot] = serde_json::json!(item.product_id);
+                        changed = true;
+                    } else if target_slot < 32 {
+                        while arr.len() <= target_slot {
+                            arr.push(serde_json::json!(0));
+                        }
+                        arr[target_slot] = serde_json::json!(item.product_id);
+                        changed = true;
                     }
-                    arr[target_slot] = serde_json::json!(item.product_id);
-                    changed = true;
                 }
             }
             return changed;
         }
 
-        for item in items {
-            let target_slot = slot_index_for_item(item);
-            let aliases = slot_aliases(target_slot);
-            let mut found = false;
+        for elem in arr.iter_mut() {
+            let pid_opt = elem.get("ProductID")
+                .or_else(|| elem.get("ProductId"))
+                .or_else(|| elem.get("product_id"))
+                .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())));
 
-            for elem in arr.iter_mut() {
-                if let Some(slot_val) = elem.get("Slot")
-                    .or_else(|| elem.get("SlotIndex"))
-                    .or_else(|| elem.get("slot"))
-                    .or_else(|| elem.get("SlotIdx"))
-                {
-                    let matches_slot = if let Some(n) = slot_val.as_i64() {
-                        n == target_slot as i64
-                    } else if let Some(s) = slot_val.as_str() {
-                        s.parse::<usize>().map(|n| n == target_slot).unwrap_or_else(|_| {
-                            aliases.iter().any(|alias| s.eq_ignore_ascii_case(alias))
-                        })
-                    } else {
-                        false
-                    };
-
-                    if matches_slot {
-                        update_slot_entry(elem, item);
-                        found = true;
+            if let Some(pid) = pid_opt {
+                if let Some(matching) = items.iter().find(|i| (i.product_id as i64) == pid) {
+                    if matching.paint_id > 0 {
+                        update_slot_entry(elem, matching);
                         changed = true;
-                        break;
                     }
                 }
             }
+        }
 
-            if !found {
-                arr.push(new_slot_entry(target_slot, item));
-                changed = true;
+        if is_preset_loadout {
+            for item in items {
+                let target_slot = slot_index_for_item(item);
+                let aliases = slot_aliases(target_slot);
+                let mut found = false;
+
+                for elem in arr.iter_mut() {
+                    if let Some(slot_val) = elem.get("Slot")
+                        .or_else(|| elem.get("SlotIndex"))
+                        .or_else(|| elem.get("slot"))
+                        .or_else(|| elem.get("SlotIdx"))
+                    {
+                        let matches_slot = if let Some(n) = slot_val.as_i64() {
+                            n == target_slot as i64
+                        } else if let Some(s) = slot_val.as_str() {
+                            s.parse::<usize>().map(|n| n == target_slot).unwrap_or_else(|_| {
+                                aliases.iter().any(|alias| s.eq_ignore_ascii_case(alias))
+                            })
+                        } else {
+                            false
+                        };
+
+                        if matches_slot {
+                            update_slot_entry(elem, item);
+                            found = true;
+                            changed = true;
+                            break;
+                        }
+                    }
+                }
+
+                if !found {
+                    arr.push(new_slot_entry(target_slot, item));
+                    changed = true;
+                }
             }
         }
         return changed;
@@ -3941,13 +3968,31 @@ fn patch_loadout_container(
             }
         }
 
-        for item in items {
-            let slot_idx = slot_index_for_item(item);
-            let aliases = slot_aliases(slot_idx);
-            let mut key_found = false;
+        if is_preset_loadout {
+            for item in items {
+                let slot_idx = slot_index_for_item(item);
+                let aliases = slot_aliases(slot_idx);
+                let mut key_found = false;
 
-            for alias in aliases {
-                if let Some(field) = obj.get_mut(*alias) {
+                for alias in aliases {
+                    if let Some(field) = obj.get_mut(*alias) {
+                        key_found = true;
+                        if field.is_number() {
+                            *field = serde_json::json!(item.product_id);
+                            changed = true;
+                        } else if let Some(field_obj) = field.as_object_mut() {
+                            field_obj.insert("ProductID".into(), serde_json::json!(item.product_id));
+                            if item.paint_id > 0 {
+                                field_obj.insert("Paint".into(), serde_json::json!(item.paint_id));
+                                field_obj.insert("PaintID".into(), serde_json::json!(item.paint_id));
+                            }
+                            changed = true;
+                        }
+                    }
+                }
+
+                let idx_str = slot_idx.to_string();
+                if let Some(field) = obj.get_mut(&idx_str) {
                     key_found = true;
                     if field.is_number() {
                         *field = serde_json::json!(item.product_id);
@@ -3956,39 +4001,44 @@ fn patch_loadout_container(
                         field_obj.insert("ProductID".into(), serde_json::json!(item.product_id));
                         if item.paint_id > 0 {
                             field_obj.insert("Paint".into(), serde_json::json!(item.paint_id));
+                            field_obj.insert("PaintID".into(), serde_json::json!(item.paint_id));
+                        }
+                        changed = true;
+                    }
+                }
+
+                if !key_found {
+                    let has_loadout_markers = obj.keys().any(|k| {
+                        k == "Body" || k == "Wheels" || k == "Boost" || k == "0" || k == "2" || k == "3" || k.ends_with("ProductID")
+                    });
+                    if has_loadout_markers {
+                        let canonical_name = aliases[0];
+                        obj.insert(canonical_name.to_string(), serde_json::json!(item.product_id));
+                        obj.insert(idx_str, serde_json::json!(item.product_id));
+                        if item.paint_id > 0 {
+                            obj.insert(format!("{canonical_name}Paint"), serde_json::json!(item.paint_id));
+                            obj.insert(format!("{canonical_name}PaintID"), serde_json::json!(item.paint_id));
                         }
                         changed = true;
                     }
                 }
             }
-
-            let idx_str = slot_idx.to_string();
-            if let Some(field) = obj.get_mut(&idx_str) {
-                key_found = true;
-                if field.is_number() {
-                    *field = serde_json::json!(item.product_id);
-                    changed = true;
-                } else if let Some(field_obj) = field.as_object_mut() {
-                    field_obj.insert("ProductID".into(), serde_json::json!(item.product_id));
-                    if item.paint_id > 0 {
-                        field_obj.insert("Paint".into(), serde_json::json!(item.paint_id));
+        } else {
+            for item in items {
+                if item.paint_id <= 0 { continue; }
+                let slot_idx = slot_index_for_item(item);
+                let aliases = slot_aliases(slot_idx);
+                for alias in aliases {
+                    if let Some(field) = obj.get_mut(*alias) {
+                        if let Some(field_obj) = field.as_object_mut() {
+                            let f_pid = field_obj.get("ProductID").or_else(|| field_obj.get("ProductId")).and_then(|v| v.as_i64());
+                            if f_pid == Some(item.product_id as i64) {
+                                field_obj.insert("Paint".into(), serde_json::json!(item.paint_id));
+                                field_obj.insert("PaintID".into(), serde_json::json!(item.paint_id));
+                                changed = true;
+                            }
+                        }
                     }
-                    changed = true;
-                }
-            }
-
-            if !key_found {
-                let has_loadout_markers = obj.keys().any(|k| {
-                    k == "Body" || k == "Wheels" || k == "Boost" || k == "0" || k == "2" || k == "3" || k.ends_with("ProductID")
-                });
-                if has_loadout_markers {
-                    let canonical_name = aliases[0];
-                    obj.insert(canonical_name.to_string(), serde_json::json!(item.product_id));
-                    obj.insert(idx_str, serde_json::json!(item.product_id));
-                    if item.paint_id > 0 {
-                        obj.insert(format!("{canonical_name}Paint"), serde_json::json!(item.paint_id));
-                    }
-                    changed = true;
                 }
             }
         }
@@ -4188,11 +4238,13 @@ fn patch_inventory_array(
             attributes.push(serde_json::json!({
                 "Key": "Painted",
                 "Value": item.paint_id,
-                "TypeName": "ProductAttribute_Painted_TA"
+                "TypeName": "ProductAttribute_Painted_TA",
+                "PaintID": item.paint_id
             }));
             attributes.push(serde_json::json!({
                 "Key": "Paint",
-                "Value": item.paint_id
+                "Value": item.paint_id,
+                "PaintID": item.paint_id
             }));
         }
 
@@ -4245,6 +4297,8 @@ fn patch_inventory_array(
                 if item.paint_id > 0 {
                     obj.insert("Attributes".into(), serde_json::json!(attributes));
                     obj.insert("Paint".into(), serde_json::json!(item.paint_id));
+                    obj.insert("PaintID".into(), serde_json::json!(item.paint_id));
+                    obj.insert("Painted".into(), serde_json::json!(item.paint_id));
                 }
                 changed = true;
             }
@@ -4268,6 +4322,8 @@ fn patch_inventory_array(
             if item.paint_id > 0 {
                 if let Some(obj) = new_prod.as_object_mut() {
                     obj.insert("Paint".into(), serde_json::json!(item.paint_id));
+                    obj.insert("PaintID".into(), serde_json::json!(item.paint_id));
+                    obj.insert("Painted".into(), serde_json::json!(item.paint_id));
                 }
             }
 

@@ -124,11 +124,7 @@ async fn handle_traffic_http(req: Request<Incoming>) -> Result<Response<BoxBody<
     }
 
     if path == "/api/export" {
-        let content = if let Some(path) = crate::applog::traffic_debug_path() {
-            std::fs::read_to_string(&path).unwrap_or_else(|_| "(empty)".to_string())
-        } else {
-            "(log not initialised)".to_string()
-        };
+        let content = crate::applog::format_full_traffic_export();
 
         return Ok(Response::builder()
             .status(StatusCode::OK)
