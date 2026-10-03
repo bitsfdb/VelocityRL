@@ -2798,16 +2798,6 @@ fn patch_dsr_reservation_ws(
         }
         if let Some(inv) = inv_opt {
             if inv.enabled && !inv.items.is_empty() {
-                let items_ref: Vec<&crate::psynet::InventorySpoofItemPayload> = inv.items.iter().collect();
-
-                let mut temp_val = serde_json::Value::Object(obj.clone());
-                if patch_loadout_container(&mut temp_val, &items_ref) {
-                    if let serde_json::Value::Object(new_obj) = temp_val {
-                        *obj = new_obj;
-                        did_modify = true;
-                    }
-                }
-
                 if !obj.contains_key("ProductIDs") {
                     obj.insert("ProductIDs".into(), serde_json::json!([]));
                 }
@@ -2821,9 +2811,6 @@ fn patch_dsr_reservation_ws(
                 }
                 if let Some(players) = obj.get_mut("Players").and_then(|v| v.as_array_mut()) {
                     for player in players.iter_mut() {
-                        if patch_loadout_container(player, &items_ref) {
-                            did_modify = true;
-                        }
                         if let Some(p_obj) = player.as_object_mut() {
                             if !p_obj.contains_key("ProductIDs") {
                                 p_obj.insert("ProductIDs".into(), serde_json::json!([]));
@@ -3033,7 +3020,7 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         || svc_lower.contains("loadout/getplayerloadouts")
         || svc_lower.contains("loadout/saveloadout")
         || svc_lower.contains("authplayer")
-        || svc_lower.contains("genericstorage")
+        || svc_lower.contains("genericstorage/getplayergenericstorage")
         || svc_lower.contains("playerhasloadout")
         || find_bytes(body_part, b"PlayerLoadout").is_some()
         || find_bytes(body_part, b"playerLoadout").is_some()
@@ -6670,8 +6657,6 @@ mod tests {
         let player_pids: Vec<i64> = player["ProductIDs"].as_array().unwrap().iter().map(|v| v.as_i64().unwrap()).collect();
         assert!(player_pids.contains(&4284));
         assert!(player_pids.contains(&1565));
-        assert_eq!(player["Loadout"]["Body"], 4284);
-        assert_eq!(player["Loadout"]["Wheels"], 1565);
     }
 }
 

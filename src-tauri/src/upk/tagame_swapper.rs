@@ -1039,9 +1039,6 @@ pub fn apply_tagame_modifications(
                     if let Some(exp) = exports.iter().find(|e| e.name == "ConvertToClientLoadout") {
                         chunk0_targets.push((exp.idx, exp.pos, exp.name.clone(), exp.serial_offset));
                     }
-                    if let Some(exp) = exports.iter().find(|e| e.name == "SetLoadout" && e.outer_name == "Car_TA") {
-                        chunk0_targets.push((exp.idx, exp.pos, exp.name.clone(), exp.serial_offset));
-                    }
                     chunk0_targets.sort_by_key(|t| t.3);
 
                     let mut c0_patched = 0usize;
@@ -1126,6 +1123,87 @@ pub fn apply_tagame_modifications(
                         Err(e) => crate::applog::event(&format!(
                             "tagame_swapper: WARN chunk0 recompress failed: {e}; loadout swap DISCARDED"
                         )),
+                    }
+                }
+            }
+
+            // Target 2: Car_TA.SetLoadout (called whenever car spawns, respawns after goals, or round resets)
+            if let Some(exp_set) = exports.iter().find(|e| e.name == "SetLoadout" && e.outer_name == "Car_TA") {
+                let target_serial_off = exp_set.serial_offset;
+                let target_idx = exp_set.idx;
+                let target_pos = exp_set.pos;
+                if let Some(ch_idx) = chunks.iter().position(|ch| {
+                    target_serial_off >= ch.uncomp_offset && target_serial_off < ch.uncomp_offset + ch.uncomp_size as i64
+                }) {
+                    let ch_pos = chunks[ch_idx].pos;
+                    let ch_uncomp_offset = chunks[ch_idx].uncomp_offset;
+                    let ch_uncomp_size = chunks[ch_idx].uncomp_size;
+                    let ch_comp_offset = chunks[ch_idx].comp_offset;
+                    let ch_comp_size = chunks[ch_idx].comp_size;
+                    let ch_start = ch_comp_offset as usize;
+                    let ch_end = ch_start + ch_comp_size as usize;
+
+                    if ch_end <= file_bytes.len() {
+                        if let Ok(mut decomp_ch) = crate::upk::compression::decompress_chunk(&file_bytes[ch_start..ch_end]) {
+                            if let Some(exp_idx) = exports.iter().position(|e| e.idx == target_idx) {
+                                let exp_serial_offset = exports[exp_idx].serial_offset;
+                                let exp_serial_size = exports[exp_idx].serial_size;
+                                let func_off = (exp_serial_offset - ch_uncomp_offset) as usize;
+                                if func_off + 48 <= decomp_ch.len() {
+                                    let orig_disk_sz = u32::from_le_bytes(decomp_ch[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                                    const EXPANDED_SIZE: usize = 3000;
+                                    if orig_disk_sz < EXPANDED_SIZE {
+                                        let delta = EXPANDED_SIZE - orig_disk_sz;
+                                        let insert_pos = func_off + 48 + orig_disk_sz;
+                                        decomp_ch.splice(insert_pos..insert_pos, std::iter::repeat(opcodes::EX_NOTHING).take(delta));
+
+                                        let (payload, mem_sz) = emit_car_set_loadout_bytecode(&slot_overrides, EXPANDED_SIZE)?;
+
+                                        decomp_ch[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                        decomp_ch[func_off + 44..func_off + 48].copy_from_slice(&(EXPANDED_SIZE as u32).to_le_bytes());
+                                        decomp_ch[func_off + 48..func_off + 48 + EXPANDED_SIZE].copy_from_slice(&payload);
+
+                                        let new_serial_sz = exp_serial_size + delta as i32;
+                                        plain_header[target_pos + 32..target_pos + 36].copy_from_slice(&new_serial_sz.to_le_bytes());
+                                        exports[exp_idx].serial_size = new_serial_sz;
+
+                                        let cur_s_off = exp_serial_offset;
+                                        for other_exp in &mut exports {
+                                            if other_exp.serial_offset > cur_s_off {
+                                                other_exp.serial_offset += delta as i64;
+                                                plain_header[other_exp.pos + 36..other_exp.pos + 44].copy_from_slice(&other_exp.serial_offset.to_le_bytes());
+                                            }
+                                        }
+
+                                        let new_ch_uncomp = ch_uncomp_size + delta as i32;
+                                        plain_header[ch_pos + 8..ch_pos + 12].copy_from_slice(&new_ch_uncomp.to_le_bytes());
+                                        chunks[ch_idx].uncomp_size = new_ch_uncomp;
+                                        for ch in &mut chunks[ch_idx + 1..] {
+                                            ch.uncomp_offset += delta as i64;
+                                            plain_header[ch.pos..ch.pos + 8].copy_from_slice(&ch.uncomp_offset.to_le_bytes());
+                                        }
+
+                                        match crate::upk::compression::compress_chunk(&decomp_ch) {
+                                            Ok(mut recomp_ch) => {
+                                                let orig_ch_sz = ch_comp_size as usize;
+                                                if recomp_ch.len() <= orig_ch_sz {
+                                                    recomp_ch.resize(orig_ch_sz, 0);
+                                                    file_bytes[ch_start..ch_start + orig_ch_sz].copy_from_slice(&recomp_ch);
+                                                    applied_patches += 1;
+                                                    crate::applog::event(&format!("tagame_swapper: chunk{ch_idx} patched Car_TA.SetLoadout (respawn persistence)"));
+                                                } else {
+                                                    crate::applog::event(&format!(
+                                                        "tagame_swapper: WARN chunk{ch_idx} recompressed {} > {} bytes; SetLoadout DISCARDED",
+                                                        recomp_ch.len(), orig_ch_sz
+                                                    ));
+                                                }
+                                            }
+                                            Err(e) => crate::applog::event(&format!("tagame_swapper: chunk{ch_idx} recompress failed: {e}")),
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
