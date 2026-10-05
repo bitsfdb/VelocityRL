@@ -1189,6 +1189,59 @@ where
 }
 
 #[cfg(target_os = "linux")]
+pub fn candidate_user_homes() -> Vec<PathBuf> {
+    let mut homes: Vec<PathBuf> = Vec::new();
+    let mut add_home = |p: PathBuf| {
+        if p.exists() && !homes.contains(&p) {
+            homes.push(p);
+        }
+    };
+
+    if let Ok(home) = std::env::var("HOME") {
+        add_home(PathBuf::from(home));
+    }
+
+    if let Ok(sudo_user) = std::env::var("SUDO_USER") {
+        let u = sudo_user.trim();
+        if !u.is_empty() && u != "root" {
+            add_home(PathBuf::from("/home").join(u));
+        }
+    }
+
+    if let Ok(doas_user) = std::env::var("DOAS_USER") {
+        let u = doas_user.trim();
+        if !u.is_empty() && u != "root" {
+            add_home(PathBuf::from("/home").join(u));
+        }
+    }
+
+    if let Ok(pkexec_uid) = std::env::var("PKEXEC_UID") {
+        if let Ok(uid) = pkexec_uid.trim().parse::<libc::uid_t>() {
+            if uid != 0 {
+                unsafe {
+                    let pwd = libc::getpwuid(uid);
+                    if !pwd.is_null() && !(*pwd).pw_dir.is_null() {
+                        let dir_str = std::ffi::CStr::from_ptr((*pwd).pw_dir).to_string_lossy();
+                        add_home(PathBuf::from(dir_str.into_owned()));
+                    }
+                }
+            }
+        }
+    }
+
+    if let Ok(entries) = std::fs::read_dir("/home") {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                add_home(p);
+            }
+        }
+    }
+
+    homes
+}
+
+#[cfg(target_os = "linux")]
 fn find_candidate_wine_user_regs() -> Vec<PathBuf> {
     let mut cands = Vec::new();
     let add_if_exists = |list: &mut Vec<PathBuf>, p: PathBuf| {
@@ -1199,29 +1252,17 @@ fn find_candidate_wine_user_regs() -> Vec<PathBuf> {
 
     if let Ok(wp) = std::env::var("WINEPREFIX") {
         add_if_exists(&mut cands, PathBuf::from(wp).join("user.reg"));
+        add_if_exists(&mut cands, PathBuf::from(wp).join("pfx/user.reg"));
     }
 
-    let mut homes = Vec::new();
-    if let Ok(home) = std::env::var("HOME") {
-        let p = PathBuf::from(home);
-        if !homes.contains(&p) {
-            homes.push(p);
-        }
-    }
-    if let Ok(sudo_user) = std::env::var("SUDO_USER") {
-        let u = sudo_user.trim();
-        if !u.is_empty() && u != "root" {
-            let p = PathBuf::from("/home").join(u);
-            if !homes.contains(&p) {
-                homes.push(p);
-            }
-        }
-    }
+    let homes = candidate_user_homes();
 
     for h in &homes {
         // Heroic Launcher prefixes
         add_if_exists(&mut cands, h.join("Games/Heroic/Prefixes/Rocket League/user.reg"));
         add_if_exists(&mut cands, h.join("Games/Heroic/Prefixes/default/Rocket League/user.reg"));
+        add_if_exists(&mut cands, h.join("Games/Heroic/Prefixes/rocketleague/user.reg"));
+        add_if_exists(&mut cands, h.join("Games/Heroic/Prefixes/rocketleague/pfx/user.reg"));
         add_if_exists(&mut cands, h.join(".var/app/com.heroicgameslauncher.hgl/config/heroic/Prefixes/Rocket League/user.reg"));
         add_if_exists(&mut cands, h.join(".var/app/com.heroicgameslauncher.hgl/Prefixes/Rocket League/user.reg"));
 
@@ -1250,6 +1291,7 @@ fn find_candidate_wine_user_regs() -> Vec<PathBuf> {
         // Lutris prefixes
         add_if_exists(&mut cands, h.join("Games/rocket-league/user.reg"));
         add_if_exists(&mut cands, h.join("Games/rocketleague/user.reg"));
+        add_if_exists(&mut cands, h.join("Games/epic-games-store/user.reg"));
 
         // Default Wine
         add_if_exists(&mut cands, h.join(".wine/user.reg"));
@@ -1260,6 +1302,7 @@ fn find_candidate_wine_user_regs() -> Vec<PathBuf> {
             h.join(".steam/steam"),
             h.join(".steam/root"),
             h.join(".var/app/com.valvesoftware.Steam/data/Steam"),
+            h.join("snap/steam/common/.local/share/Steam"),
         ];
         for sr in &steam_roots {
             add_if_exists(&mut cands, sr.join("steamapps/compatdata/252950/pfx/user.reg"));
@@ -1284,6 +1327,7 @@ fn find_candidate_wine_user_regs() -> Vec<PathBuf> {
             if let Ok(entries) = std::fs::read_dir(bottles_dir) {
                 for entry in entries.flatten() {
                     add_if_exists(&mut cands, entry.path().join("user.reg"));
+                    add_if_exists(&mut cands, entry.path().join("pfx/user.reg"));
                 }
             }
         }
@@ -1310,8 +1354,9 @@ fn sync_wine_user_reg(path: &Path, enabled: bool) -> Result<(), std::io::Error> 
 
     let proxy_lines = if enabled {
         vec![
-            "\"ProxyEnable\"=dword:00000000".to_string(),
-            format!("\"AutoConfigURL\"=\"http://127.0.0.1:{proxy_port}/proxy.pac\""),
+            "\"ProxyEnable\"=dword:00000001".to_string(),
+            format!("\"ProxyServer\"=\"127.0.0.1:{proxy_port}\""),
+            "\"ProxyOverride\"=\"<local>;*epicgames.com;*.epicgames.com;*ol.epicgames.com;*.ol.epicgames.com;*unrealengine.com;*.unrealengine.com;*hcaptcha.com;*arkoselabs.com;*epicgames.org\"".to_string(),
         ]
     } else {
         vec!["\"ProxyEnable\"=dword:00000000".to_string()]
@@ -1552,6 +1597,7 @@ pub fn is_ca_installed() -> bool {
         "/etc/ca-certificates/trust-source/anchors/velocityrl_ca.crt",
         "/usr/local/share/ca-certificates/velocityrl_ca.crt",
         "/etc/pki/ca-trust/source/anchors/velocityrl_ca.crt",
+        "/etc/pki/trust/anchors/velocityrl_ca.crt",
     ] {
         if std::path::Path::new(p).exists() {
             return true;
@@ -1561,6 +1607,7 @@ pub fn is_ca_installed() -> bool {
         "/etc/ssl/certs/ca-certificates.crt",
         "/etc/ca-certificates/extracted/tls-ca-bundle.pem",
         "/etc/pki/tls/certs/ca-bundle.crt",
+        "/etc/ssl/ca-bundle.pem",
     ] {
         if let Ok(c) = fs::read_to_string(bundle) {
             if c.contains("VelocityRL") {
@@ -2201,7 +2248,7 @@ pub fn setup_linux_system(need_ca: bool, need_hosts: bool) -> Result<(), String>
     let mut parts: Vec<String> = Vec::new();
 
     // 1. Unprivileged port start
-    parts.push("sysctl -w net.ipv4.ip_unprivileged_port_start=80 2>/dev/null; echo 'net.ipv4.ip_unprivileged_port_start = 80' > /etc/sysctl.d/50-velocityrl.conf 2>/dev/null".into());
+    parts.push("sysctl -w net.ipv4.ip_unprivileged_port_start=80 2>/dev/null; if [ -d /etc/sysctl.d ]; then echo 'net.ipv4.ip_unprivileged_port_start = 80' > /etc/sysctl.d/50-velocityrl.conf; elif [ -f /etc/sysctl.conf ] && ! grep -q 'ip_unprivileged_port_start' /etc/sysctl.conf; then echo 'net.ipv4.ip_unprivileged_port_start = 80' >> /etc/sysctl.conf; fi 2>/dev/null".into());
 
     // 2. CA certificate
     let pid = std::process::id();
@@ -2212,6 +2259,7 @@ pub fn setup_linux_system(need_ca: bool, need_hosts: bool) -> Result<(), String>
             let arch_dir = std::path::Path::new("/etc/ca-certificates/trust-source/anchors");
             let debian_dir = std::path::Path::new("/usr/local/share/ca-certificates");
             let fedora_dir = std::path::Path::new("/etc/pki/ca-trust/source/anchors");
+            let suse_dir = std::path::Path::new("/etc/pki/trust/anchors");
 
             if arch_dir.exists() {
                 parts.push(format!("cp '{}' /etc/ca-certificates/trust-source/anchors/velocityrl_ca.crt && update-ca-trust", tmp_ca.display()));
@@ -2219,9 +2267,12 @@ pub fn setup_linux_system(need_ca: bool, need_hosts: bool) -> Result<(), String>
                 parts.push(format!("cp '{}' /usr/local/share/ca-certificates/velocityrl_ca.crt && update-ca-certificates", tmp_ca.display()));
             } else if fedora_dir.exists() {
                 parts.push(format!("cp '{}' /etc/pki/ca-trust/source/anchors/velocityrl_ca.crt && update-ca-trust", tmp_ca.display()));
+            } else if suse_dir.exists() {
+                parts.push(format!("cp '{}' /etc/pki/trust/anchors/velocityrl_ca.crt && update-ca-certificates", tmp_ca.display()));
             } else {
                 parts.push(format!("trust anchor '{}'", tmp_ca.display()));
             }
+            parts.push("which xbps-reconfigure >/dev/null 2>&1 && xbps-reconfigure -f ca-certificates 2>/dev/null || true".into());
         }
     }
 
@@ -2778,25 +2829,14 @@ pub fn clear_rocket_league_cache() -> Result<usize, String> {
     }
     #[cfg(target_os = "linux")]
     {
-        let mut homes = Vec::new();
-        if let Ok(home) = std::env::var("HOME") {
-            homes.push(PathBuf::from(home));
-        }
-        if let Ok(sudo_user) = std::env::var("SUDO_USER") {
-            let u = sudo_user.trim();
-            if !u.is_empty() && u != "root" {
-                let p = PathBuf::from("/home").join(u);
-                if !homes.contains(&p) {
-                    homes.push(p);
-                }
-            }
-        }
+        let homes = candidate_user_homes();
         for home_path in &homes {
-            let prefixes = [
+            let mut prefixes = vec![
                 home_path.join(".local/share/Steam/steamapps/compatdata/252950/pfx/drive_c"),
                 home_path.join(".steam/steam/steamapps/compatdata/252950/pfx/drive_c"),
                 home_path.join(".steam/root/steamapps/compatdata/252950/pfx/drive_c"),
                 home_path.join(".var/app/com.valvesoftware.Steam/data/Steam/steamapps/compatdata/252950/pfx/drive_c"),
+                home_path.join("snap/steam/common/.local/share/Steam/steamapps/compatdata/252950/pfx/drive_c"),
                 home_path.join("Games/Heroic/Prefixes/Rocket League/drive_c"),
                 home_path.join("Games/Heroic/Prefixes/default/Rocket League/drive_c"),
                 home_path.join("Games/Heroic/Prefixes/rocketleague/drive_c"),
@@ -2807,6 +2847,19 @@ pub fn clear_rocket_league_cache() -> Result<usize, String> {
                 home_path.join("Games/epic-games-store/drive_c"),
                 home_path.join(".wine/drive_c"),
             ];
+
+            // Add Bottles prefixes
+            for b_dir in &[
+                home_path.join(".local/share/bottles/bottles"),
+                home_path.join(".var/app/com.usebottles.bottles/data/bottles/bottles"),
+            ] {
+                if let Ok(entries) = std::fs::read_dir(b_dir) {
+                    for entry in entries.flatten() {
+                        prefixes.push(entry.path().join("drive_c"));
+                    }
+                }
+            }
+
             for pfx in &prefixes {
                 let users_dir = pfx.join("users");
                 if let Ok(entries) = std::fs::read_dir(&users_dir) {

@@ -536,6 +536,7 @@ pub fn loopback_443_owner() -> Option<u32> {
 
 #[cfg(target_os = "linux")]
 pub fn flush_dns_cache() -> bool {
+    // 1. systemd-resolved (systemd)
     let _ = std::process::Command::new("resolvectl")
         .arg("flush-caches")
         .stdout(std::process::Stdio::null())
@@ -546,11 +547,69 @@ pub fn flush_dns_cache() -> bool {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status();
+
+    // 2. NetworkManager (Debian, Ubuntu, Fedora, Arch, OpenSUSE)
+    let _ = std::process::Command::new("nmcli")
+        .args(["general", "reload", "dns-full"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+
+    // 3. nscd / unscd (glibc Name Service Cache Daemon)
     let _ = std::process::Command::new("nscd")
         .args(["-i", "hosts"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status();
+    let _ = std::process::Command::new("unscd")
+        .args(["-i", "hosts"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+
+    // 4. dnsmasq (SIGHUP triggers cache flush)
+    let _ = std::process::Command::new("pkill")
+        .args(["-HUP", "-x", "dnsmasq"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+
+    // 5. OpenRC (Alpine Linux, Gentoo, Artix)
+    let _ = std::process::Command::new("rc-service")
+        .args(["--ifexists", "dnsmasq", "restart"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    let _ = std::process::Command::new("rc-service")
+        .args(["--ifexists", "nscd", "restart"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+
+    // 6. Runit (Void Linux)
+    let _ = std::process::Command::new("sv")
+        .args(["restart", "nscd"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    let _ = std::process::Command::new("sv")
+        .args(["hup", "dnsmasq"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+
+    // 7. SysVinit / Debian service fallback
+    let _ = std::process::Command::new("service")
+        .args(["dnsmasq", "restart"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    let _ = std::process::Command::new("service")
+        .args(["nscd", "restart"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+
     true
 }
 

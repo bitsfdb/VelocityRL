@@ -12,7 +12,7 @@ fi
 
 VERSION="$(tr -d '[:space:]' < "$VERSION_FILE")"
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-    echo "ERROR: VERSION file contains '$VERSION' - expected semver like 2.1.0" >&2
+    echo "ERROR: VERSION file contains '$VERSION' - expected semver like 2.0.1" >&2
     exit 1
 fi
 echo "==> Version: $VERSION"
