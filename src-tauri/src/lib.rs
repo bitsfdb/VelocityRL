@@ -19,7 +19,7 @@ pub mod psynet;
 pub mod upk;
 pub mod workshop;
 pub mod tracker;
-mod winprobe;
+pub mod winprobe;
 pub mod proxy;
 pub mod features;
 
