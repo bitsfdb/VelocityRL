@@ -1137,9 +1137,13 @@ async fn get_launch_on_startup() -> Result<bool, String> {
     }
     #[cfg(target_os = "linux")]
     {
-        let home = std::env::var("HOME").unwrap_or_default();
-        let desktop = std::path::Path::new(&home).join(".config/autostart/velocityrl.desktop");
-        Ok(desktop.exists())
+        for home in crate::psynet::candidate_user_homes() {
+            let desktop = home.join(".config/autostart/velocityrl.desktop");
+            if desktop.exists() {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
     #[cfg(not(any(windows, target_os = "linux")))]
     {
@@ -1194,15 +1198,16 @@ async fn set_launch_on_startup(enable: bool) -> Result<(), String> {
     }
     #[cfg(target_os = "linux")]
     {
-        let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-        let autostart_dir = std::path::Path::new(&home).join(".config/autostart");
+        let homes = crate::psynet::candidate_user_homes();
+        let target_home = homes.into_iter().next().unwrap_or_else(|| PathBuf::from(std::env::var("HOME").unwrap_or_default()));
+        let autostart_dir = target_home.join(".config/autostart");
         let desktop_file = autostart_dir.join("velocityrl.desktop");
 
         if enable {
             let exe = std::env::current_exe().map_err(|e| e.to_string())?;
             let _ = std::fs::create_dir_all(&autostart_dir);
             let content = format!(
-                "[Desktop Entry]\nType=Application\nName=VelocityRL\nExec=\"{}\"\nHidden=false\nNoDisplay=false\nX-GNOME-Autostart-enabled=true\n",
+                "[Desktop Entry]\nType=Application\nName=VelocityRL\nExec=\"{}\"\nHidden=false\nNoDisplay=false\nX-GNOME-Autostart-enabled=true\nTerminal=false\nCategories=Game;Utility;\n",
                 exe.display()
             );
             std::fs::write(&desktop_file, content).map_err(|e| e.to_string())?;
@@ -2466,30 +2471,45 @@ pub fn user_rl_logs_dir() -> Option<PathBuf> {
     }
     #[cfg(target_os = "linux")]
     {
-        let home = std::env::var("HOME").ok()?;
-        let home_path = Path::new(&home);
-        let prefixes = [
-            home_path.join("Games/Heroic/Prefixes/Rocket League/drive_c"),
-            home_path.join("Games/Heroic/Prefixes/default/Rocket League/drive_c"),
-            home_path.join("Games/Heroic/Prefixes/rocketleague/drive_c"),
-            home_path.join("Games/Heroic/Prefixes/rocketleague/pfx/drive_c"),
-            home_path.join(".var/app/com.heroicgameslauncher.hgl/Prefixes/Rocket League/drive_c"),
-            home_path.join(".local/share/Steam/steamapps/compatdata/252950/pfx/drive_c"),
-            home_path.join(".steam/steam/steamapps/compatdata/252950/pfx/drive_c"),
-            home_path.join(".steam/root/steamapps/compatdata/252950/pfx/drive_c"),
-            home_path.join(".var/app/com.valvesoftware.Steam/data/Steam/steamapps/compatdata/252950/pfx/drive_c"),
-            home_path.join("Games/rocketleague/drive_c"),
-            home_path.join("Games/rocket-league/drive_c"),
-            home_path.join("Games/epic-games-store/drive_c"),
-            home_path.join(".wine/drive_c"),
-        ];
-        for pfx in &prefixes {
-            let users_dir = pfx.join("users");
-            if let Ok(entries) = std::fs::read_dir(&users_dir) {
-                for u in entries.flatten() {
-                    let log_cand = u.path().join("Documents/My Games/Rocket League/TAGame/Logs");
-                    if log_cand.exists() {
-                        return Some(log_cand);
+        let homes = crate::psynet::candidate_user_homes();
+        for home_path in &homes {
+            let mut prefixes = vec![
+                home_path.join(".local/share/Steam/steamapps/compatdata/252950/pfx/drive_c"),
+                home_path.join(".steam/steam/steamapps/compatdata/252950/pfx/drive_c"),
+                home_path.join(".steam/root/steamapps/compatdata/252950/pfx/drive_c"),
+                home_path.join(".var/app/com.valvesoftware.Steam/data/Steam/steamapps/compatdata/252950/pfx/drive_c"),
+                home_path.join("snap/steam/common/.local/share/Steam/steamapps/compatdata/252950/pfx/drive_c"),
+                home_path.join("Games/Heroic/Prefixes/Rocket League/drive_c"),
+                home_path.join("Games/Heroic/Prefixes/default/Rocket League/drive_c"),
+                home_path.join("Games/Heroic/Prefixes/rocketleague/drive_c"),
+                home_path.join("Games/Heroic/Prefixes/rocketleague/pfx/drive_c"),
+                home_path.join(".var/app/com.heroicgameslauncher.hgl/Prefixes/Rocket League/drive_c"),
+                home_path.join("Games/rocketleague/drive_c"),
+                home_path.join("Games/rocket-league/drive_c"),
+                home_path.join("Games/epic-games-store/drive_c"),
+                home_path.join(".wine/drive_c"),
+            ];
+
+            // Add Bottles prefixes
+            for b_dir in &[
+                home_path.join(".local/share/bottles/bottles"),
+                home_path.join(".var/app/com.usebottles.bottles/data/bottles/bottles"),
+            ] {
+                if let Ok(entries) = std::fs::read_dir(b_dir) {
+                    for entry in entries.flatten() {
+                        prefixes.push(entry.path().join("drive_c"));
+                    }
+                }
+            }
+
+            for pfx in &prefixes {
+                let users_dir = pfx.join("users");
+                if let Ok(entries) = std::fs::read_dir(&users_dir) {
+                    for u in entries.flatten() {
+                        let log_cand = u.path().join("Documents/My Games/Rocket League/TAGame/Logs");
+                        if log_cand.exists() {
+                            return Some(log_cand);
+                        }
                     }
                 }
             }
@@ -2760,14 +2780,25 @@ async fn detect_game_dir() -> Result<Vec<DetectedInstall>, String> {
 
     #[cfg(target_os = "linux")]
     {
-        if let Ok(home) = std::env::var("HOME") {
-            let home_path = std::path::Path::new(&home);
+        // 1. Check currently running Rocket League process via /proc
+        if let Some((pid, _)) = crate::winprobe::find_process_any(&["rocketleague.exe", "rocketleague"]) {
+            if let Some(exe_path) = crate::winprobe::process_path(pid) {
+                if let Ok(cooked) = upk::palette::resolve_cooked_dir(&exe_path) {
+                    add_unique(&mut results, "Running Rocket League", cooked.to_string_lossy().into_owned());
+                }
+            }
+        }
 
+        // 2. Check candidate user homes for Steam, Heroic, Lutris, Bottles, Wine
+        let homes = crate::psynet::candidate_user_homes();
+        for home_path in &homes {
+            // Steam
             let steam_roots = [
                 home_path.join(".local/share/Steam"),
                 home_path.join(".steam/steam"),
                 home_path.join(".steam/root"),
                 home_path.join(".var/app/com.valvesoftware.Steam/data/Steam"),
+                home_path.join("snap/steam/common/.local/share/Steam"),
             ];
 
             let mut library_paths = Vec::new();
@@ -2793,6 +2824,7 @@ async fn detect_game_dir() -> Result<Vec<DetectedInstall>, String> {
                 }
             }
 
+            // Heroic Games Launcher
             let heroic_cands = [
                 home_path.join("Games/Heroic/rocketleague/TAGame/CookedPCConsole"),
                 home_path.join("Games/rocketleague/TAGame/CookedPCConsole"),
@@ -2804,9 +2836,44 @@ async fn detect_game_dir() -> Result<Vec<DetectedInstall>, String> {
                 }
             }
 
+            // Heroic GamesConfig JSON files (custom install paths & prefixes)
+            for cfg_dir in &[
+                home_path.join(".config/heroic/GamesConfig"),
+                home_path.join(".var/app/com.heroicgameslauncher.hgl/config/heroic/GamesConfig"),
+            ] {
+                if let Ok(entries) = std::fs::read_dir(cfg_dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                            continue;
+                        }
+                        if let Ok(raw) = std::fs::read_to_string(&path) {
+                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) {
+                                if let Some(ip) = json.get("installPath").and_then(|p| p.as_str()) {
+                                    let cand = std::path::PathBuf::from(ip).join("TAGame/CookedPCConsole");
+                                    if cand.join("TAGame.upk").exists() {
+                                        add_unique(&mut results, "Heroic Games Launcher", cand.to_string_lossy().into_owned());
+                                    }
+                                }
+                                if let Some(wp) = json.get("winePrefix").and_then(|p| p.as_str()) {
+                                    let cand = std::path::PathBuf::from(wp).join("drive_c/Program Files/Epic Games/rocketleague/TAGame/CookedPCConsole");
+                                    if cand.join("TAGame.upk").exists() {
+                                        add_unique(&mut results, "Heroic Games Launcher", cand.to_string_lossy().into_owned());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Lutris
             let lutris_cands = [
                 home_path.join("Games/rocketleague/drive_c/Program Files/Epic Games/rocketleague/TAGame/CookedPCConsole"),
+                home_path.join("Games/rocket-league/drive_c/Program Files/Epic Games/rocketleague/TAGame/CookedPCConsole"),
                 home_path.join("Games/epic-games-store/drive_c/Program Files/Epic Games/rocketleague/TAGame/CookedPCConsole"),
+                home_path.join("Games/rocketleague/TAGame/CookedPCConsole"),
+                home_path.join("Games/rocket-league/TAGame/CookedPCConsole"),
             ];
             for cand in &lutris_cands {
                 if cand.join("TAGame.upk").exists() {
@@ -2814,13 +2881,50 @@ async fn detect_game_dir() -> Result<Vec<DetectedInstall>, String> {
                 }
             }
 
-            let bottles_dir = home_path.join(".var/app/com.usebottles.bottles/data/bottles/bottles");
-            if let Ok(entries) = std::fs::read_dir(&bottles_dir) {
-                for entry in entries.flatten() {
-                    let cand = entry.path().join("drive_c/Program Files/Epic Games/rocketleague/TAGame/CookedPCConsole");
-                    if cand.join("TAGame.upk").exists() {
-                        add_unique(&mut results, "Bottles", cand.to_string_lossy().into_owned());
+            // Bottles (Flatpak and native)
+            for bottles_dir in &[
+                home_path.join(".var/app/com.usebottles.bottles/data/bottles/bottles"),
+                home_path.join(".local/share/bottles/bottles"),
+            ] {
+                if let Ok(entries) = std::fs::read_dir(bottles_dir) {
+                    for entry in entries.flatten() {
+                        for sub in &[
+                            "drive_c/Program Files/Epic Games/rocketleague/TAGame/CookedPCConsole",
+                            "drive_c/Program Files (x86)/Epic Games/rocketleague/TAGame/CookedPCConsole",
+                            "drive_c/rocketleague/TAGame/CookedPCConsole",
+                        ] {
+                            let cand = entry.path().join(sub);
+                            if cand.join("TAGame.upk").exists() {
+                                add_unique(&mut results, "Bottles", cand.to_string_lossy().into_owned());
+                            }
+                        }
                     }
+                }
+            }
+
+            // Wine default
+            for sub in &[
+                "drive_c/Program Files/Epic Games/rocketleague/TAGame/CookedPCConsole",
+                "drive_c/Program Files (x86)/Epic Games/rocketleague/TAGame/CookedPCConsole",
+                "drive_c/rocketleague/TAGame/CookedPCConsole",
+            ] {
+                let cand = home_path.join(".wine").join(sub);
+                if cand.join("TAGame.upk").exists() {
+                    add_unique(&mut results, "Wine", cand.to_string_lossy().into_owned());
+                }
+            }
+        }
+
+        // Custom $WINEPREFIX
+        if let Ok(wp) = std::env::var("WINEPREFIX") {
+            for sub in &[
+                "drive_c/Program Files/Epic Games/rocketleague/TAGame/CookedPCConsole",
+                "drive_c/Program Files (x86)/Epic Games/rocketleague/TAGame/CookedPCConsole",
+                "drive_c/rocketleague/TAGame/CookedPCConsole",
+            ] {
+                let cand = std::path::PathBuf::from(&wp).join(sub);
+                if cand.join("TAGame.upk").exists() {
+                    add_unique(&mut results, "Wine ($WINEPREFIX)", cand.to_string_lossy().into_owned());
                 }
             }
         }

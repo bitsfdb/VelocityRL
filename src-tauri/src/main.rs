@@ -47,10 +47,18 @@ fn main() {
 
     if is_recover {
       if !is_root {
+        let exe = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("./velocity-rl"));
+        let status = std::process::Command::new("pkexec")
+          .arg(&exe)
+          .arg("--recover")
+          .status();
+        if status.map(|s| s.success()).unwrap_or(false) {
+          return;
+        }
         eprintln!("[-] Error: You must run recovery as root (sudo).");
         eprintln!(
           "[-] Please run: sudo {} --recover",
-          std::env::args().next().unwrap_or_else(|| "./velocity-rl".into())
+          exe.display()
         );
         std::process::exit(1);
       }
@@ -58,28 +66,40 @@ fn main() {
       return;
     }
 
-    if !is_root {
-      eprintln!("[-] Error: You must run VelocityRL as root (sudo).");
-      eprintln!(
-        "[-] Please run: sudo {}",
-        std::env::args().next().unwrap_or_else(|| "./velocity-rl".into())
-      );
-      std::process::exit(1);
-    }
-
     if args.iter().any(|a| a == "--setup" || a == "setup") {
+      if !is_root {
+        let exe = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("./velocity-rl"));
+        let status = std::process::Command::new("pkexec")
+          .arg(&exe)
+          .arg("--setup")
+          .status();
+        if status.map(|s| s.success()).unwrap_or(false) {
+          return;
+        }
+        eprintln!("[-] Error: You must run setup as root (sudo).");
+        eprintln!(
+          "[-] Please run: sudo {} --setup",
+          exe.display()
+        );
+        std::process::exit(1);
+      }
       run_cli_setup();
       return;
     }
 
-    // Automatically configure system settings (port 443, root CA, /etc/hosts)
-    run_cli_setup();
+    if is_root {
+      // Automatically configure system settings (port 443, root CA, /etc/hosts)
+      run_cli_setup();
 
-    // Prepare GUI environment for desktop session
-    setup_gui_environment();
+      // Prepare GUI environment for desktop session
+      setup_gui_environment();
 
-    // Drop root privileges back to the desktop user so GTK/WebKit/Glycin/bwrap run safely
-    drop_privileges_to_user();
+      // Drop root privileges back to the desktop user so GTK/WebKit/Glycin/bwrap run safely
+      drop_privileges_to_user();
+    } else {
+      // Regular desktop session: prepare GUI environment (DMABUF, Wayland/X11)
+      setup_gui_environment();
+    }
   }
 
   #[cfg(windows)]
@@ -105,7 +125,8 @@ fn print_help() {
   println!("  --recover     Revert all system changes so Rocket League works independently");
   println!("  --help, -h    Show this help message");
   println!();
-  println!("Note: VelocityRL requires root privileges on Linux (run with sudo).");
+  #[cfg(target_os = "linux")]
+  println!("Note: Initial setup requires root permissions (run 'sudo velocity-rl --setup' or launch with sudo/pkexec).");
   println!();
 }
 
@@ -120,8 +141,14 @@ fn setup_gui_environment() {
     std::env::set_var("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1");
   }
 
-  let sudo_user_opt = std::env::var("SUDO_USER").ok().filter(|u| !u.trim().is_empty() && u.trim() != "root");
-  let sudo_uid_opt = std::env::var("SUDO_UID").ok().filter(|id| !id.trim().is_empty() && id.trim() != "0");
+  let sudo_user_opt = std::env::var("SUDO_USER")
+    .or_else(|_| std::env::var("DOAS_USER"))
+    .ok()
+    .filter(|u| !u.trim().is_empty() && u.trim() != "root");
+  let sudo_uid_opt = std::env::var("SUDO_UID")
+    .or_else(|_| std::env::var("PKEXEC_UID"))
+    .ok()
+    .filter(|id| !id.trim().is_empty() && id.trim() != "0");
 
   let uid = sudo_uid_opt.unwrap_or_else(|| {
     if let Ok(entries) = std::fs::read_dir("/run/user") {
@@ -286,38 +313,48 @@ fn run_cli_recover() {
       new_text.push('\n');
     }
     let _ = std::fs::write("/etc/hosts", new_text);
-    println!("    [] Removed VelocityRL domain redirects from /etc/hosts");
+    println!("    [✓] Removed VelocityRL domain redirects from /etc/hosts");
   }
 
   println!("[*] Flushing DNS cache...");
-  let _ = std::process::Command::new("systemd-resolve").arg("--flush-caches").status();
-  let _ = std::process::Command::new("resolvectl").arg("flush-caches").status();
-  let _ = std::process::Command::new("nscd").args(["-i", "hosts"]).status();
+  let _ = app_lib::winprobe::flush_dns_cache();
+  println!("    [✓] Flushed system DNS resolver caches");
 
   println!("[*] Disabling Wine/Proton proxies...");
   app_lib::psynet::set_system_proxy_enabled(false);
-  println!("    [] Disabled system proxy in Wine/Proton user.reg");
+  println!("    [✓] Disabled system proxy in Wine/Proton user.reg");
 
   println!("[*] Removing VelocityRL Root CA from system trust store...");
   let mut ca_removed = false;
+  // Arch / Manjaro / SteamOS
   let arch_ca = std::path::Path::new("/etc/ca-certificates/trust-source/anchors/velocityrl_ca.crt");
   if arch_ca.exists() {
     let _ = std::fs::remove_file(arch_ca);
     let _ = std::process::Command::new("update-ca-trust").status();
     ca_removed = true;
   }
+  // Debian / Ubuntu / Mint / Pop!_OS / Alpine / Void / Gentoo
   let deb_ca = std::path::Path::new("/usr/local/share/ca-certificates/velocityrl_ca.crt");
   if deb_ca.exists() {
     let _ = std::fs::remove_file(deb_ca);
     let _ = std::process::Command::new("update-ca-certificates").args(["--fresh"]).status();
     ca_removed = true;
   }
+  // Fedora / RHEL / CentOS / Rocky / Alma
   let rhel_ca = std::path::Path::new("/etc/pki/ca-trust/source/anchors/velocityrl_ca.crt");
   if rhel_ca.exists() {
     let _ = std::fs::remove_file(rhel_ca);
     let _ = std::process::Command::new("update-ca-trust").status();
     ca_removed = true;
   }
+  // openSUSE / SLES
+  let suse_ca = std::path::Path::new("/etc/pki/trust/anchors/velocityrl_ca.crt");
+  if suse_ca.exists() {
+    let _ = std::fs::remove_file(suse_ca);
+    let _ = std::process::Command::new("update-ca-certificates").status();
+    ca_removed = true;
+  }
+  // Universal p11-kit
   let tmp_ca = std::env::temp_dir().join("velocityrl_ca_remove.crt");
   let ca_bytes = include_bytes!("../resources/certs/velocityrl_ca.crt");
   if std::fs::write(&tmp_ca, ca_bytes).is_ok() {
@@ -327,22 +364,34 @@ fn run_cli_recover() {
       .status();
     let _ = std::fs::remove_file(&tmp_ca);
   }
+  // Void Linux
+  let _ = std::process::Command::new("xbps-reconfigure").args(["-f", "ca-certificates"]).status();
+
   if ca_removed {
-    println!("    [] Removed root certificate and updated trust store");
+    println!("    [✓] Removed root certificate and updated trust store");
   } else {
-    println!("    [] No certificate left in system trust anchors");
+    println!("    [✓] No certificate left in system trust anchors");
   }
 
   println!("[*] Removing custom sysctl configuration...");
   let sysctl_file = std::path::Path::new("/etc/sysctl.d/50-velocityrl.conf");
   if sysctl_file.exists() {
     let _ = std::fs::remove_file(sysctl_file);
-    println!("    [] Removed /etc/sysctl.d/50-velocityrl.conf");
+    println!("    [✓] Removed /etc/sysctl.d/50-velocityrl.conf");
+  }
+  if let Ok(content) = std::fs::read_to_string("/etc/sysctl.conf") {
+    if content.contains("ip_unprivileged_port_start") {
+      let filtered: Vec<&str> = content.lines().filter(|l| !l.contains("ip_unprivileged_port_start")).collect();
+      let mut updated = filtered.join("\n");
+      if !updated.is_empty() { updated.push('\n'); }
+      let _ = std::fs::write("/etc/sysctl.conf", updated);
+      println!("    [✓] Cleaned net.ipv4.ip_unprivileged_port_start from /etc/sysctl.conf");
+    }
   }
 
   println!("[*] Cleaning up temporary proxy files...");
   let _ = std::fs::remove_dir_all("/tmp/VelocityRL_proxy");
-  println!("    [] Cleared /tmp/VelocityRL_proxy");
+  println!("    [✓] Cleared /tmp/VelocityRL_proxy");
 
   println!("==========================================");
   println!("  [SUCCESS] All settings restored to normal!");
@@ -376,7 +425,17 @@ fn run_cli_setup() {
   let _ = std::process::Command::new("sysctl")
     .args(["-w", "net.ipv4.ip_unprivileged_port_start=80"])
     .status();
-  let _ = std::fs::write("/etc/sysctl.d/50-velocityrl.conf", "net.ipv4.ip_unprivileged_port_start = 80\n");
+  if std::path::Path::new("/etc/sysctl.d").is_dir() {
+    let _ = std::fs::write("/etc/sysctl.d/50-velocityrl.conf", "net.ipv4.ip_unprivileged_port_start = 80\n");
+  } else if let Ok(mut content) = std::fs::read_to_string("/etc/sysctl.conf") {
+    if !content.contains("ip_unprivileged_port_start") {
+      if !content.is_empty() && !content.ends_with('\n') {
+        content.push('\n');
+      }
+      content.push_str("net.ipv4.ip_unprivileged_port_start = 80\n");
+      let _ = std::fs::write("/etc/sysctl.conf", content);
+    }
+  }
 
   println!("[*] Installing VelocityRL Root CA to system trust store...");
   let pid = std::process::id();
@@ -384,18 +443,38 @@ fn run_cli_setup() {
   let ca_bytes = include_bytes!("../resources/certs/velocityrl_ca.crt");
   let _ = std::fs::write(&tmp_ca, ca_bytes);
 
+  let mut installed = false;
+  // Arch / Manjaro / SteamOS
   if std::path::Path::new("/etc/ca-certificates/trust-source/anchors").exists() {
     let _ = std::fs::copy(&tmp_ca, "/etc/ca-certificates/trust-source/anchors/velocityrl_ca.crt");
     let _ = std::process::Command::new("update-ca-trust").status();
-  } else if std::path::Path::new("/usr/local/share/ca-certificates").exists() {
+    installed = true;
+  }
+  // Debian / Ubuntu / Mint / Pop!_OS / Alpine / Void / Gentoo
+  if std::path::Path::new("/usr/local/share/ca-certificates").exists() {
     let _ = std::fs::copy(&tmp_ca, "/usr/local/share/ca-certificates/velocityrl_ca.crt");
     let _ = std::process::Command::new("update-ca-certificates").status();
-  } else if std::path::Path::new("/etc/pki/ca-trust/source/anchors").exists() {
+    installed = true;
+  }
+  // Fedora / RHEL / CentOS / Rocky / Alma
+  if std::path::Path::new("/etc/pki/ca-trust/source/anchors").exists() {
     let _ = std::fs::copy(&tmp_ca, "/etc/pki/ca-trust/source/anchors/velocityrl_ca.crt");
     let _ = std::process::Command::new("update-ca-trust").status();
-  } else {
+    installed = true;
+  }
+  // openSUSE / SLES
+  if std::path::Path::new("/etc/pki/trust/anchors").exists() {
+    let _ = std::fs::copy(&tmp_ca, "/etc/pki/trust/anchors/velocityrl_ca.crt");
+    let _ = std::process::Command::new("update-ca-certificates").status();
+    installed = true;
+  }
+  // Universal p11-kit fallback
+  if !installed {
     let _ = std::process::Command::new("trust").args(["anchor", &tmp_ca.to_string_lossy()]).status();
   }
+  // Void Linux
+  let _ = std::process::Command::new("xbps-reconfigure").args(["-f", "ca-certificates"]).status();
+
   let _ = std::fs::remove_file(&tmp_ca);
 
   println!("[*] Configuring /etc/hosts loopback redirect...");
@@ -418,6 +497,9 @@ fn run_cli_setup() {
     let _ = std::fs::write("/etc/hosts", new_text);
   }
 
+  println!("[*] Flushing DNS cache...");
+  let _ = app_lib::winprobe::flush_dns_cache();
+
   println!("==========================================");
   println!("  [SUCCESS] All Linux permissions configured!");
   println!("==========================================");
@@ -430,8 +512,15 @@ fn drop_privileges_to_user() {
     return;
   }
 
-  let sudo_user_opt = std::env::var("SUDO_USER").ok().filter(|u| !u.trim().is_empty() && u.trim() != "root");
-  let sudo_uid_opt = std::env::var("SUDO_UID").ok().and_then(|id| id.trim().parse::<libc::uid_t>().ok()).filter(|&id| id != 0);
+  let sudo_user_opt = std::env::var("SUDO_USER")
+    .or_else(|_| std::env::var("DOAS_USER"))
+    .ok()
+    .filter(|u| !u.trim().is_empty() && u.trim() != "root");
+  let sudo_uid_opt = std::env::var("SUDO_UID")
+    .or_else(|_| std::env::var("PKEXEC_UID"))
+    .ok()
+    .and_then(|id| id.trim().parse::<libc::uid_t>().ok())
+    .filter(|&id| id != 0);
   let sudo_gid_opt = std::env::var("SUDO_GID").ok().and_then(|id| id.trim().parse::<libc::gid_t>().ok()).filter(|&id| id != 0);
 
   let (u, uid, gid) = if let (Some(u), Some(uid)) = (sudo_user_opt.as_ref(), sudo_uid_opt) {
