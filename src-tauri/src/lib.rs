@@ -1484,7 +1484,12 @@ fn save_swaps(app: &tauri::AppHandle, swaps: &[SwapEntry]) {
 
 #[tauri::command]
 async fn get_swaps(app: tauri::AppHandle) -> Result<Vec<SwapEntry>, String> {
-    Ok(load_swaps(&app))
+    let mut swaps = load_swaps(&app);
+    let items = get_items(app.clone(), None).await.unwrap_or_default();
+    if presets::sanitize_swaps(&mut swaps, &items) {
+        save_swaps(&app, &swaps);
+    }
+    Ok(swaps)
 }
 
 pub(crate) async fn sync_all_swaps_to_tagame(
@@ -1505,8 +1510,9 @@ pub(crate) async fn sync_all_swaps_to_tagame(
         let wanted_item = items.iter().find(|i| i.id == s.wanted_id);
 
         let slot_str = s.slot.clone()
-            .or_else(|| owned_item.map(|i| i.slot.clone()))
+            .filter(|sl| !sl.trim().is_empty() && !sl.trim().eq_ignore_ascii_case("item"))
             .or_else(|| wanted_item.map(|i| i.slot.clone()))
+            .or_else(|| owned_item.map(|i| i.slot.clone()))
             .unwrap_or_else(|| "Body".to_string());
 
         let slot_index = presets::slot_index_from_str(&slot_str) as i32;

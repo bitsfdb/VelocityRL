@@ -17,9 +17,22 @@ const API_BASE = 'https://api.velocityrl.tech';
 const PRIVACY_POLICY_URL = 'https://velocityrl.tech/privacy.html';
 
 function normItemSlot(slot) {
-    if (!slot) return '';
-    const s = slot.toLowerCase();
-    if (s.includes('decal')) return 'Decal';
+    if (!slot) return 'Item';
+    const s = slot.toLowerCase().replace(/[\s_\-]/g, '');
+    if (s.includes('goal') || s.includes('explosion')) return 'Goal Explosion';
+    if (s.includes('trail')) return 'Trail';
+    if (s.includes('audio') || s.includes('engine')) return 'Engine Audio';
+    if (s.includes('accent')) return 'Paint Finish (Accent)';
+    if (s.includes('finish') || s.includes('paint')) return 'Paint Finish';
+    if (s.includes('topper') || s.includes('hat')) return 'Topper';
+    if (s.includes('antenna')) return 'Antenna';
+    if (s.includes('boost')) return 'Rocket Boost';
+    if (s.includes('wheel')) return 'Wheels';
+    if (s.includes('decal') || s.includes('skin')) return 'Decal';
+    if (s.includes('banner')) return 'Player Banner';
+    if (s.includes('anthem') || s.includes('music')) return 'Player Anthem';
+    if (s.includes('border')) return 'Avatar Border';
+    if (s.includes('body')) return 'Body';
     return slot;
 }
 
@@ -1316,7 +1329,6 @@ function renderPresetItemsPage() {
     const itemsToShow = swaps.slice(start, start + perPage);
 
     list.innerHTML = itemsToShow.map(s => {
-        const slot = normItemSlot(s.slot || 'Item');
         let wantedItemObj = findItemByProductId(s.wanted_id);
         if (!wantedItemObj && s.wanted_name) {
             wantedItemObj = Array.isArray(items) ? items.find(it => it && (it.Product || it.product || '').toLowerCase() === s.wanted_name.toLowerCase()) : null;
@@ -1325,6 +1337,8 @@ function renderPresetItemsPage() {
         if (!ownedItemObj && s.owned_name) {
             ownedItemObj = Array.isArray(items) ? items.find(it => it && (it.Product || it.product || '').toLowerCase() === s.owned_name.toLowerCase()) : null;
         }
+        const resolvedSlot = (s.slot && s.slot !== 'Item') ? s.slot : (wantedItemObj?.Slot || wantedItemObj?.slot || ownedItemObj?.Slot || ownedItemObj?.slot || 'Item');
+        const slot = normItemSlot(resolvedSlot);
 
         const pImg = wantedItemObj?.image_url || wantedItemObj?.src || ownedItemObj?.image_url || ownedItemObj?.src || '';
         const targetPaint = s.custom_paint_hex ? renderPaintBadgeHtml(s.custom_paint_hex) : (s.paint_id > 0 ? renderPaintBadgeHtml(s.paint_id) : '');
@@ -1346,9 +1360,9 @@ function renderPresetItemsPage() {
                         <span class="preset-item-slot" style="font-size:11px; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.04em;">${escHtml(slot)}${decalPill}</span>
                     </div>
                     <div class="preset-item-names" style="display:flex; align-items:center; gap:6px; font-size:13px; flex-wrap:wrap;">
-                        <span style="color:var(--text);font-weight:500;">${escHtml(s.owned_name || 'Stock')}</span>
+                        <span style="color:var(--text);font-weight:500;">${escHtml(s.owned_name || ownedItemObj?.Product || ownedItemObj?.product || 'Stock')}</span>
                         <span class="preset-item-arrow" style="color:var(--text-secondary); opacity:0.6;">→</span>
-                        <span style="color:var(--accent-blue, #60a5fa);font-weight:600;">${escHtml(s.wanted_name || 'Item')}</span>
+                        <span style="color:var(--accent-blue, #60a5fa);font-weight:600;">${escHtml(s.wanted_name || wantedItemObj?.Product || wantedItemObj?.product || 'Item')}</span>
                     </div>
                 </div>
                 ${targetPaint ? `<div style="flex-shrink:0;">${targetPaint}</div>` : ''}
@@ -1837,26 +1851,45 @@ function wirePresetsUI() {
             try {
                 let swapsToSend = null;
                 const existingSwaps = await invoke('get_swaps').catch(() => []);
+                const list = Array.isArray(existingSwaps) ? [...existingSwaps] : [];
+
                 if (ownedItem && wantedItem) {
                     const ownedId = Number(ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id);
                     const wantedId = Number(wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id);
                     const activeOwnedPaintId = Number(ownedPaintId || 0);
-                    let paintId = itemIsPaintable(wantedItem) ? Number(wantedPaintId || 0) : 0;
+                    const paintId = itemIsPaintable(wantedItem) ? Number(wantedPaintId || 0) : 0;
                     const oName = ownedItem.Product || ownedItem.product || '';
                     const wName = wantedItem.Product || wantedItem.product || '';
-                    const pkg = ownedItem.AssetPackage || ownedItem.asset_package || '';
-                    const list = Array.isArray(existingSwaps) ? existingSwaps.filter(s => s.owned_id !== ownedId) : [];
-                    list.push({
+                    const pkg = wantedItem.AssetPackage || wantedItem.asset_package || ownedItem.AssetPackage || ownedItem.asset_package || '';
+                    const slot = ownedItem.Slot || ownedItem.slot || wantedItem.Slot || wantedItem.slot || '';
+
+                    const existingIdx = list.findIndex(s => s.owned_id === ownedId);
+                    const stagedEntry = {
                         owned_id: ownedId,
                         wanted_id: wantedId,
                         owned_name: oName,
                         wanted_name: wName,
-                        paint_id: 0,
-                        custom_paint_hex: null,
-                        owned_paint_id: null,
-                        owned_custom_hex: null,
+                        paint_id: paintId,
+                        custom_paint_hex: (typeof customPaintHex !== 'undefined' ? customPaintHex : null),
+                        owned_paint_id: activeOwnedPaintId > 0 ? activeOwnedPaintId : null,
+                        owned_custom_hex: (typeof ownedCustomPaintHex !== 'undefined' ? ownedCustomPaintHex : null),
                         asset_package: pkg,
-                    });
+                        slot: slot || undefined,
+                    };
+                    if (existingIdx >= 0) {
+                        if (!stagedEntry.slot && list[existingIdx].slot) {
+                            stagedEntry.slot = list[existingIdx].slot;
+                        }
+                        if (!stagedEntry.asset_package && list[existingIdx].asset_package) {
+                            stagedEntry.asset_package = list[existingIdx].asset_package;
+                        }
+                        list[existingIdx] = { ...list[existingIdx], ...stagedEntry };
+                    } else {
+                        list.push(stagedEntry);
+                    }
+                }
+
+                if (list.length > 0) {
                     swapsToSend = list;
                 }
                 const saved = await invoke('save_preset', { name: name.trim(), swaps: swapsToSend });
