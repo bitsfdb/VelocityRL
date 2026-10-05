@@ -143,9 +143,69 @@ fn generate_preset_uuid() -> String {
     (0..8).map(|_| format!("{:x}", rng.gen_range(0..16))).collect()
 }
 
+pub fn sanitize_swaps(swaps: &mut [SwapEntry], items: &[crate::Item]) -> bool {
+    let mut changed = false;
+    for s in swaps {
+        let owned = items.iter().find(|i| i.id == s.owned_id);
+        let wanted = items.iter().find(|i| i.id == s.wanted_id);
+
+        if s.owned_name.trim().is_empty() {
+            if let Some(it) = owned {
+                s.owned_name = it.product.clone();
+                changed = true;
+            }
+        }
+        if s.wanted_name.trim().is_empty() {
+            if let Some(it) = wanted {
+                s.wanted_name = it.product.clone();
+                changed = true;
+            }
+        }
+        if s.asset_package.trim().is_empty() {
+            if let Some(it) = wanted.or(owned) {
+                if !it.asset_package.is_empty() && it.asset_package != "None" {
+                    s.asset_package = it.asset_package.clone();
+                    changed = true;
+                }
+            }
+        }
+        let real_slot = wanted.map(|i| &i.slot).or_else(|| owned.map(|i| &i.slot));
+        if let Some(rs) = real_slot {
+            let rs_trimmed = rs.trim();
+            if !rs_trimmed.is_empty() {
+                let current_slot_empty = match &s.slot {
+                    None => true,
+                    Some(sl) => sl.trim().is_empty() || sl.trim().eq_ignore_ascii_case("item"),
+                };
+                if current_slot_empty {
+                    s.slot = Some(rs_trimmed.to_string());
+                    changed = true;
+                } else if let Some(cur_sl) = &s.slot {
+                    if slot_index_from_str(cur_sl) != slot_index_from_str(rs_trimmed) {
+                        s.slot = Some(rs_trimmed.to_string());
+                        changed = true;
+                    }
+                }
+            }
+        }
+    }
+    changed
+}
+
 #[tauri::command]
 pub async fn get_presets(app: tauri::AppHandle) -> Result<Vec<Preset>, String> {
-    Ok(load_preset_file(&app).presets)
+    let mut f = load_preset_file(&app);
+    let items = crate::get_items(app.clone(), None).await.unwrap_or_default();
+    let mut dirty = false;
+    for p in &mut f.presets {
+        if sanitize_swaps(&mut p.swaps, &items) {
+            dirty = true;
+        }
+    }
+    if dirty {
+        save_preset_file(&app, &f);
+    }
+    Ok(f.presets)
 }
 
 #[tauri::command]
@@ -162,21 +222,7 @@ pub async fn save_preset(
     let mut current_swaps = swaps.unwrap_or_else(|| crate::load_swaps(&app));
 
     let items = crate::get_items(app.clone(), None).await.unwrap_or_default();
-    for s in &mut current_swaps {
-        if s.owned_name.is_empty() {
-            if let Some(it) = items.iter().find(|i| i.id == s.owned_id) {
-                s.owned_name = it.product.clone();
-                if s.asset_package.is_empty() {
-                    s.asset_package = it.asset_package.clone();
-                }
-            }
-        }
-        if s.wanted_name.is_empty() {
-            if let Some(it) = items.iter().find(|i| i.id == s.wanted_id) {
-                s.wanted_name = it.product.clone();
-            }
-        }
-    }
+    sanitize_swaps(&mut current_swaps, &items);
 
     let mut preset_maps = maps.unwrap_or_default();
     let mut active_map_id = None;
@@ -271,7 +317,11 @@ pub async fn apply_preset(app: tauri::AppHandle, id: String) -> Result<Vec<Strin
     let mut applied: Vec<SwapEntry> = Vec::new();
 
     if !preset.swaps.is_empty() {
-        for s in &preset.swaps {
+        let mut current_swaps = preset.swaps.clone();
+        let items = crate::get_items(app.clone(), None).await.unwrap_or_default();
+        sanitize_swaps(&mut current_swaps, &items);
+
+        for s in &current_swaps {
             let paint_str = if s.paint_id > 0 {
                 format!(" ({})", crate::upk::swapper::paint_label(s.paint_id))
             } else {
@@ -281,8 +331,8 @@ pub async fn apply_preset(app: tauri::AppHandle, id: String) -> Result<Vec<Strin
             applied.push(s.clone());
         }
 
-        crate::save_swaps(&app, &preset.swaps);
-        if let Err(e) = crate::sync_all_swaps_to_tagame(&app, &cooked, &preset.swaps).await {
+        crate::save_swaps(&app, &current_swaps);
+        if let Err(e) = crate::sync_all_swaps_to_tagame(&app, &cooked, &current_swaps).await {
             return Err(format!("Failed to apply preset swaps: {e}"));
         }
     }
@@ -319,22 +369,55 @@ pub async fn apply_preset(app: tauri::AppHandle, id: String) -> Result<Vec<Strin
 pub const COSMETIC_SLOTS_COUNT: usize = 14;
 
 pub fn slot_index_from_str(slot: &str) -> usize {
-    match slot.to_lowercase().replace([' ', '_', '-'], "").as_str() {
-        "body" => 0,
-        "skin" | "decal" => 1,
+    let clean = slot.to_lowercase().replace([' ', '_', '-'], "");
+    match clean.as_str() {
+        "body" | "bodies" => 0,
+        "skin" | "decal" | "decals" => 1,
         "wheel" | "wheels" => 2,
-        "boost" | "rocketboost" => 3,
-        "antenna" => 4,
-        "topper" => 5,
-        "paintfinish" | "paint" => 6,
-        "paintfinishsecondary" | "paintfinishaccent" | "accentpaint" | "paintaccent" => 7,
-        "engineaudio" | "audio" => 8,
-        "trail" => 9,
-        "goalexplosion" | "explosion" => 10,
-        "playerbanner" | "banner" => 11,
-        "playeranthem" | "anthem" | "music" => 12,
-        "avatarborder" | "border" => 13,
-        _ => 0,
+        "boost" | "boosts" | "rocketboost" | "rocketboosts" => 3,
+        "antenna" | "antennas" => 4,
+        "topper" | "toppers" | "hat" | "hats" => 5,
+        "paintfinish" | "paintfinishes" | "paint" | "paints" | "finish" | "finishes" => 6,
+        "paintfinishsecondary" | "paintfinishaccent" | "accentpaint" | "paintaccent" | "accent" | "accents" => 7,
+        "engineaudio" | "audio" | "audios" | "engine" | "engines" => 8,
+        "trail" | "trails" | "friction" => 9,
+        "goalexplosion" | "goalexplosions" | "explosion" | "explosions" | "ge" => 10,
+        "playerbanner" | "playerbanners" | "banner" | "banners" => 11,
+        "playeranthem" | "playeranthems" | "anthem" | "anthems" | "music" | "track" => 12,
+        "avatarborder" | "avatarborders" | "border" | "borders" => 13,
+        _ => {
+            if clean.contains("goal") || clean.contains("explosion") {
+                10
+            } else if clean.contains("trail") {
+                9
+            } else if clean.contains("audio") || clean.contains("engine") {
+                8
+            } else if clean.contains("accent") {
+                7
+            } else if clean.contains("paint") || clean.contains("finish") {
+                6
+            } else if clean.contains("topper") || clean.contains("hat") {
+                5
+            } else if clean.contains("antenna") {
+                4
+            } else if clean.contains("boost") {
+                3
+            } else if clean.contains("wheel") {
+                2
+            } else if clean.contains("decal") || clean.contains("skin") {
+                1
+            } else if clean.contains("banner") {
+                11
+            } else if clean.contains("anthem") || clean.contains("music") {
+                12
+            } else if clean.contains("border") {
+                13
+            } else if clean.contains("body") {
+                0
+            } else {
+                0
+            }
+        }
     }
 }
 
@@ -381,7 +464,10 @@ pub fn default_donor_for_slot(idx: usize) -> (i32, &'static str) {
 pub fn encode_14slot_binary(swaps: &[SwapEntry]) -> String {
     let mut payload = [0u8; 42];
     for s in swaps {
-        let slot_str = s.slot.as_deref().unwrap_or("Body");
+        let slot_str = s.slot.as_deref().unwrap_or("").trim();
+        if slot_str.is_empty() || slot_str.eq_ignore_ascii_case("item") {
+            continue;
+        }
         let idx = slot_index_from_str(slot_str);
         if idx < 14 {
             let item_id = if s.wanted_id > 0 { s.wanted_id as u16 } else { s.owned_id as u16 };
@@ -482,8 +568,10 @@ fn code_for_preset(p: &Preset) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn peek_preset_code(code: String) -> Result<Preset, String> {
-    let (name, swaps, maps, active_map_id) = parse_code(&code)?;
+pub async fn peek_preset_code(app: tauri::AppHandle, code: String) -> Result<Preset, String> {
+    let (name, mut swaps, maps, active_map_id) = parse_code(&code)?;
+    let items = crate::get_items(app.clone(), None).await.unwrap_or_default();
+    sanitize_swaps(&mut swaps, &items);
     Ok(Preset {
         id: String::new(),
         name,
@@ -548,12 +636,14 @@ fn parse_code(code: &str) -> Result<(String, Vec<SwapEntry>, Vec<PresetMapEntry>
 
 #[tauri::command]
 pub async fn export_preset_code(app: tauri::AppHandle, id: String) -> Result<String, String> {
-    let f = load_preset_file(&app);
+    let mut f = load_preset_file(&app);
+    let items = crate::get_items(app.clone(), None).await.unwrap_or_default();
     let preset = f
         .presets
-        .iter()
+        .iter_mut()
         .find(|p| p.id == id)
         .ok_or("Preset not found.")?;
+    sanitize_swaps(&mut preset.swaps, &items);
     code_for_preset(preset)
 }
 
@@ -562,10 +652,12 @@ pub async fn import_preset_code(
     app: tauri::AppHandle,
     code: String,
 ) -> Result<Preset, String> {
-    let (name, swaps, maps, active_map_id) = parse_code(&code)?;
+    let (name, mut swaps, maps, active_map_id) = parse_code(&code)?;
     if swaps.is_empty() && maps.is_empty() {
         return Err("Preset code contains no swaps or maps.".into());
     }
+    let items = crate::get_items(app.clone(), None).await.unwrap_or_default();
+    sanitize_swaps(&mut swaps, &items);
     let mut f = load_preset_file(&app);
     if f.presets.len() >= MAX_PRESETS {
         return Err(format!("Preset limit reached ({MAX_PRESETS}). Delete one first."));
@@ -779,7 +871,7 @@ pub async fn random_swap_plan(
             owned_custom_hex: None,
             paint_id: 0,
             custom_paint_hex: None,
-            asset_package: donor.asset_package.clone(),
+            asset_package: pick.asset_package.clone(),
             slot: Some(donor.slot.clone()),
             timestamp: Some(chrono::Utc::now().to_rfc3339()),
         });
@@ -963,5 +1055,61 @@ mod tests {
         let res = parse_code(&code);
         assert!(res.is_err(), "Must reject preset with >50 swaps");
         assert!(res.unwrap_err().contains("contains more than 50 swaps"));
+    }
+
+    #[test]
+    fn test_goal_explosion_14slot_binary_encode_decode() {
+        let swaps = vec![
+            SwapEntry {
+                owned_id: 1903,
+                wanted_id: 4284,
+                owned_name: "Standard".into(),
+                wanted_name: "Gravity Bomb".into(),
+                owned_paint_id: None,
+                owned_custom_hex: None,
+                paint_id: 0,
+                custom_paint_hex: None,
+                asset_package: "Explosion_GravityBomb_SF".into(),
+                slot: Some("Goal Explosion".into()),
+                timestamp: None,
+            },
+        ];
+
+        let code = encode_14slot_binary(&swaps);
+        assert_eq!(code.len(), 78);
+
+        let (name, decoded_swaps, _, _) = parse_code(&code).expect("must parse code");
+        assert_eq!(name, "Shared Preset");
+        assert_eq!(decoded_swaps.len(), 1);
+
+        let ge_swap = &decoded_swaps[0];
+        assert_eq!(ge_swap.slot.as_deref(), Some("Goal Explosion"));
+        assert_eq!(ge_swap.wanted_id, 4284);
+        assert_eq!(ge_swap.owned_id, 1903);
+    }
+
+    #[test]
+    fn test_slot_index_from_str_covers_all_cosmetic_types() {
+        assert_eq!(slot_index_from_str("Body"), 0);
+        assert_eq!(slot_index_from_str("Bodies"), 0);
+        assert_eq!(slot_index_from_str("Decal"), 1);
+        assert_eq!(slot_index_from_str("Decals"), 1);
+        assert_eq!(slot_index_from_str("Wheels"), 2);
+        assert_eq!(slot_index_from_str("Wheel"), 2);
+        assert_eq!(slot_index_from_str("Rocket Boost"), 3);
+        assert_eq!(slot_index_from_str("Boost"), 3);
+        assert_eq!(slot_index_from_str("Antenna"), 4);
+        assert_eq!(slot_index_from_str("Antennas"), 4);
+        assert_eq!(slot_index_from_str("Topper"), 5);
+        assert_eq!(slot_index_from_str("Toppers"), 5);
+        assert_eq!(slot_index_from_str("Paint Finish"), 6);
+        assert_eq!(slot_index_from_str("Paint Finish (Accent)"), 7);
+        assert_eq!(slot_index_from_str("Engine Audio"), 8);
+        assert_eq!(slot_index_from_str("Trail"), 9);
+        assert_eq!(slot_index_from_str("Goal Explosion"), 10);
+        assert_eq!(slot_index_from_str("Goal Explosions"), 10);
+        assert_eq!(slot_index_from_str("Player Banner"), 11);
+        assert_eq!(slot_index_from_str("Player Anthem"), 12);
+        assert_eq!(slot_index_from_str("Avatar Border"), 13);
     }
 }
