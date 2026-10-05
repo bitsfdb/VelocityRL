@@ -484,29 +484,33 @@ function getPaintTextColor(paint) {
 }
 
 function renderPaintBadgeHtml(paintIdOrName) {
+    if (!paintIdOrName || paintIdOrName === 0 || paintIdOrName === '0' || paintIdOrName === 'None' || paintIdOrName === 'none') {
+        return '';
+    }
     const raw = paintIdOrName;
-    let label = 'None';
+    let label = '';
     let color = '#09090b';
     if (typeof raw === 'number') {
-        label = raw === 0 ? 'None' : paintLabel(raw);
+        if (raw === 0) return '';
+        label = paintLabel(raw);
         color = getPaintTextColor(raw);
     } else if (raw) {
         const str = String(raw).trim();
+        if (str === '0' || str.toLowerCase() === 'default' || str.toLowerCase() === 'none') return '';
         if (str.startsWith('#')) {
             label = str.toUpperCase();
             color = str;
         } else if (!isNaN(Number(str))) {
             const num = Number(str);
-            label = num === 0 ? 'None' : paintLabel(num);
+            if (num === 0) return '';
+            label = paintLabel(num);
             color = getPaintTextColor(num);
-        } else if (str.toLowerCase() === 'default' || str.toLowerCase() === 'none') {
-            label = 'None';
-            color = '#09090b';
         } else {
             label = str;
             color = getPaintTextColor(str);
         }
     }
+    if (!label || label === 'None') return '';
     return `<span class="paint-white-pill" style="background:#ffffff; color:${color}; font-weight:700;">${escHtml(label)}</span>`;
 }
 
@@ -538,51 +542,11 @@ function renderSelectedItem(container, item, onClear) {
     const decalBody = getItemDecalBody(item);
     const decalBadge = decalBody ? `<span class="quality-badge" style="background:rgba(91,140,255,0.18);color:#93c5fd;border:1px solid rgba(91,140,255,0.35);">${escHtml(decalBody)} Decal</span>` : '';
 
-    const isPaintable = isTarget && itemIsPaintable(item);
     if (!isTarget) {
         ownedPaintId = '0';
-    } else if (!isPaintable) {
+    } else {
         wantedPaintId = '0';
     }
-    const currentPaintId = Number((isTarget ? wantedPaintId : 0) || 0);
-
-    const itemPaintsList = Array.isArray(item.Paints) && item.Paints.length > 0 
-        ? item.Paints 
-        : (Array.isArray(item.paints) && item.paints.length > 0 ? item.paints : null);
-
-    let displayPaints = [{ id: 0, name: 'None' }];
-    if (itemPaintsList) {
-        for (const p of itemPaintsList) {
-            const pid = Number(p.id ?? p.ID);
-            const pname = p.label || p.Label || p.name || p.Name || paintLabel(pid);
-            if (pid > 0 && !displayPaints.some(dp => dp.id === pid)) {
-                displayPaints.push({ id: pid, name: pname });
-            }
-        }
-    } else if (isPaintable) {
-        for (const [pid, pname] of Object.entries(PAINT_NAMES)) {
-            const numId = Number(pid);
-            if (numId > 0) {
-                displayPaints.push({ id: numId, name: pname });
-            }
-        }
-    }
-
-    const paintChipsHtml = isPaintable ? `
-        <div class="card-paint-chips-wrap">
-            <div class="card-paint-chips-scroll">
-                ${displayPaints.map(p => `
-                    <button type="button" 
-                            class="paint-chip-pill ${p.id === currentPaintId ? 'is-active' : ''}" 
-                            data-paint="${p.id}"
-                            title="${escHtml(p.name)}"
-                            style="color:${getPaintTextColor(p.id)};">
-                        ${escHtml(p.name)}
-                    </button>
-                `).join('')}
-            </div>
-        </div>
-    ` : '';
 
     const clearBtnHtml = `
         <button type="button" class="card-clear-btn" title="Clear selection" aria-label="Clear selection">
@@ -593,8 +557,6 @@ function renderSelectedItem(container, item, onClear) {
         </button>
     `;
 
-    const activeBadgeContent = renderPaintBadgeHtml(currentPaintId);
-
     container.innerHTML = `
         ${clearBtnHtml}
         ${pImg ? `<img src="${escHtml(pImg)}" class="selected-img" />` : ''}
@@ -602,10 +564,8 @@ function renderSelectedItem(container, item, onClear) {
         <div style="display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;margin:4px 0;">
             <span class="quality-badge ${bgClass}">${escHtml(pQuality)}</span>
             ${decalBadge}
-            ${isPaintable ? `<div class="selected-paint-badge-wrap">${activeBadgeContent}</div>` : ''}
         </div>
         <p class="item-slot-label">${escHtml(pSlot)}${decalBody ? ` (${escHtml(decalBody)})` : ''}</p>
-        ${paintChipsHtml}
     `;
 
     const clearBtn = container.querySelector('.card-clear-btn');
@@ -618,24 +578,6 @@ function renderSelectedItem(container, item, onClear) {
                 ownedPaintId = '0';
             }
             onClear();
-        });
-    }
-
-    if (isPaintable && isTarget) {
-        container.querySelectorAll('.paint-chip-pill[data-paint]').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const pid = btn.dataset.paint;
-                wantedPaintId = pid;
-                container.querySelectorAll('.paint-chip-pill').forEach(b => {
-                    b.classList.toggle('is-active', b.dataset.paint === pid);
-                });
-                const badgeWrap = container.querySelector('.selected-paint-badge-wrap');
-                if (badgeWrap) {
-                    badgeWrap.innerHTML = renderPaintBadgeHtml(Number(pid));
-                }
-                validateSwapInputs();
-            });
         });
     }
 
@@ -744,19 +686,6 @@ async function init() {
     });
 
     applyBtn.onclick = handleApply;
-    const paintModal = document.getElementById('paint-notice-modal');
-    if (paintModal) {
-        document.getElementById('paint-notice-cancel').onclick = () => {
-            paintModal.classList.remove('active');
-        };
-        paintModal.onclick = (e) => {
-            if (e.target === paintModal) paintModal.classList.remove('active');
-        };
-        document.getElementById('paint-notice-proceed').onclick = () => {
-            paintModal.classList.remove('active');
-            executeApply();
-        };
-    }
     const migrationModal = document.getElementById('migration-modal');
     if (migrationModal) {
         document.getElementById('migration-modal-ok').onclick = () => migrationModal.classList.remove('active');
@@ -1922,7 +1851,7 @@ function wirePresetsUI() {
                         wanted_id: wantedId,
                         owned_name: oName,
                         wanted_name: wName,
-                        paint_id: paintId,
+                        paint_id: 0,
                         custom_paint_hex: null,
                         owned_paint_id: null,
                         owned_custom_hex: null,
@@ -2270,37 +2199,6 @@ function attrValue(entry) {
 }
 
 function itemIsPaintable(item) {
-    if (!item) return false;
-    const slot = normSlot(item.Slot || item.slot || item.Type || item.type);
-    if (UNPAINTABLE_SLOTS.has(slot)) return false;
-
-    // Check explicit Paintable boolean/flag on item
-    if (item.Paintable !== undefined) {
-        const flag = coercePaintableFlag(item.Paintable);
-        if (flag !== null) return flag;
-    }
-    if (item.paintable !== undefined) {
-        const flag = coercePaintableFlag(item.paintable);
-        if (flag !== null) return flag;
-    }
-
-    // Check Paints array
-    if (Array.isArray(item.Paints)) {
-        return item.Paints.length > 0;
-    }
-    if (Array.isArray(item.paints)) {
-        return item.paints.length > 0;
-    }
-
-    // Check Attributes list if present
-    for (const entry of itemAttrEntries(item)) {
-        const k = attrKey(entry);
-        if (k === 'paintable' || k === 'ispaintable') {
-            const flag = coercePaintableFlag(attrValue(entry));
-            if (flag !== null) return flag;
-        }
-    }
-
     return false;
 }
 
@@ -2417,15 +2315,6 @@ async function handleApply() {
         showToast('Select an owned item and a target asset first.', 'error');
         return;
     }
-    const isCarBody = normSlot(ownedItem?.Slot || ownedItem?.slot) === 'body' || normSlot(wantedItem?.Slot || wantedItem?.slot) === 'body';
-    const isPaintedCar = isCarBody && ((wantedPaintId && wantedPaintId !== '0') || (ownedPaintId && ownedPaintId !== '0'));
-    if (isPaintedCar) {
-        const paintModal = document.getElementById('paint-notice-modal');
-        if (paintModal) {
-            paintModal.classList.add('active');
-            return;
-        }
-    }
     executeApply();
 }
 
@@ -2446,14 +2335,12 @@ async function executeApply() {
         interval = setInterval(() => { if (p < 85) p += 5; showProgress(true, p); }, 400);
         const ownedId = (ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id).toString();
         const wantedId = (wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id).toString();
-        const activeOwnedPaintId = Number(ownedPaintId || 0);
-        let paintId = itemIsPaintable(wantedItem) ? Number(wantedPaintId || 0) : 0;
         const swapResult = await invoke('apply_swap', {
             ownedId,
             wantedId,
             ownedPaintId: null,
             ownedCustomHex: null,
-            paintId,
+            paintId: 0,
             customPaintHex: null,
         });
         clearInterval(interval);
@@ -2462,8 +2349,7 @@ async function executeApply() {
         updateStatus('Swap Complete', false);
         const ownedName = ownedItem?.product || ownedItem?.Product || 'item';
         const wantedName = wantedItem?.product || wantedItem?.Product || 'item';
-        const paintBit = paintId > 0 ? ` (${escHtml(paintLabel(paintId))})` : '';
-        showToast(`Swapped <strong>${escHtml(ownedName)}</strong> → <strong>${escHtml(wantedName)}</strong>${paintBit}`, 'success');
+        showToast(`Swapped <strong>${escHtml(ownedName)}</strong> → <strong>${escHtml(wantedName)}</strong>`, 'success');
 
         if (swapResult && swapResult.includes && swapResult.includes('Warnings:')) {
             const warningPart = swapResult.split('Warnings:\n')[1];
@@ -6085,7 +5971,6 @@ const LOCAL_RELEASES = [
 + **In-Match Swaps:** Your custom cars, decals, wheels, and boosts now stay equipped properly during online matches and Freeplay without resetting!
 + **Goal Explosions:** Custom goal explosions now celebrate and animate in matches when you score.
 + **Crash Fixes:** Fixed game crashes when opening the Garage, starting Freeplay, or loading into a match.
-+ **Better Paint Options:** Full support for all official car paints and trims so your setup looks authentic.
 + **Name & Credits Display:** Easily change your displayed in-game name and preview item shop credits in menus.
 + **Presets:** Save up to 50 custom car presets and easily share them with friends using short codes.
 + **Smoother Connections:** Fixed background network setup so Rocket League connects smoothly.
