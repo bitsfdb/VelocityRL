@@ -6073,13 +6073,46 @@ async function restoreAllTitleSwaps() {
     }
 }
 
-const CHANGELOG_CACHE_KEY = 'velocityrl_changelog_cache';
+const CHANGELOG_CACHE_KEY = 'velocityrl_changelog_cache_v201';
 const CHANGELOG_CACHE_TTL = 30 * 60 * 1000;
+
+const LOCAL_RELEASES = [
+    {
+        tag_name: "v2.0.1 (Hotfix)",
+        name: "v2.0.1 (Hotfix)",
+        published_at: "2026-10-05T12:00:00Z",
+        body: `**Hotfix update for item swapping and game stability:**
++ **In-Match Swaps:** Your custom cars, decals, wheels, and boosts now stay equipped properly during online matches and Freeplay without resetting!
++ **Goal Explosions:** Custom goal explosions now celebrate and animate in matches when you score.
++ **Crash Fixes:** Fixed game crashes when opening the Garage, starting Freeplay, or loading into a match.
++ **Better Paint Options:** Full support for all official car paints and trims so your setup looks authentic.
++ **Name & Credits Display:** Easily change your displayed in-game name and preview item shop credits in menus.
++ **Presets:** Save up to 50 custom car presets and easily share them with friends using short codes.
++ **Smoother Connections:** Fixed background network setup so Rocket League connects smoothly.
++ **New Languages:** VelocityRL is now available in 9 languages!`
+    },
+    {
+        tag_name: "v2.0.0",
+        name: "v2.0.0",
+        published_at: "2026-08-31T12:00:00Z",
+        body: `**Major release introducing all-new customization features:**
++ **Item Swapper:** Swap any car, wheel, decal, boost, or topper locally.
++ **Custom Color Palette:** Unlock full RGB custom team car colors.
++ **Titles & Fake Ranks:** Equip any player title and customize competitive rank displays.
++ **Camera Settings:** Unlock field of view, distance, and angle limits.
++ **Workshop Maps:** Built-in community map browser and one-click offline play.
++ **Live Tracker:** Real-time match score and MMR overlay.`
+    }
+];
 
 function renderChangelog(releases) {
     const body = document.getElementById('changelog-body');
-    const list = Array.isArray(releases) ? releases : (releases?.releases || []);
-    if (!list.length) { body.innerHTML = '<div style="color:var(--text-secondary);padding:20px;">No releases found.</div>'; return; }
+    let list = Array.isArray(releases) ? [...releases] : (releases?.releases ? [...releases.releases] : []);
+    if (!list.some(r => (r.tag_name || r.name || '').includes('2.0.1'))) {
+        list.unshift(LOCAL_RELEASES[0]);
+    }
+    if (!list.length) list = LOCAL_RELEASES;
+
     body.innerHTML = list.map(r => {
         const tag = r.tag_name || r.name || 'Release';
         const date = r.published_at ? new Date(r.published_at).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' }) : '';
@@ -6143,23 +6176,9 @@ async function openChangelog(forceRefresh = false) {
             renderChangelog(releases);
             return;
         }
-        throw new Error('No release data found');
+        renderChangelog(LOCAL_RELEASES);
     } catch (err) {
-        try {
-            const cached = JSON.parse(localStorage.getItem(CHANGELOG_CACHE_KEY) || 'null');
-            if (cached && cached.releases) {
-                renderChangelog(cached.releases);
-                return;
-            }
-        } catch {}
-
-        body.innerHTML = `
-            <div class="changelog-release">
-                <div class="changelog-release-tag">v2.0.0-alpha.1</div>
-                <div class="changelog-release-date">${new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' })}</div>
-                <div class="changelog-release-body">Item swapping, palette support, titles, fake ranks, camera limits, season logo, and PsyNet proxy.</div>
-            </div>
-            <div style="color:var(--text-secondary);padding:12px 0;font-size:12px;">Could not load changelog. <a href="#" onclick="window.__TAURI__.core.invoke('plugin:shell|open', { path: 'https://api.velocityrl.tech/v2/changelog' }); return false;" style="color:var(--accent-blue);">View on website</a>.</div>`;
+        renderChangelog(LOCAL_RELEASES);
     }
 }
 

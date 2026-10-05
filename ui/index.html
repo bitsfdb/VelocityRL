@@ -42,7 +42,7 @@
             <div id="swaps-notice-banner" class="repair-banner" style="display:none; border-left-color: #ff9800; margin-bottom: 12px; background: rgba(255, 152, 0, 0.08); align-items: center; justify-content: space-between;">
                 <div class="repair-banner-text">
                     <strong style="color: #ffa726;" data-i18n="banner.swaps_notice_title">Saved Swaps Notice</strong>
-                    <span data-i18n="banner.swaps_notice_desc">If you are updating from v2.0 to v2.1, please restore all your items here and then reswap manually.</span>
+                    <span data-i18n="banner.swaps_notice_desc">If you are updating from v2.0 to v2.0.1, please restore all your items here and then reswap manually.</span>
                 </div>
                 <div style="display: flex; gap: 8px; align-items: center; margin-left: 12px; flex-shrink: 0;">
                     <button id="swaps-notice-goto-btn" class="action-btn action-btn-secondary" style="padding: 4px 10px; font-size: 11px; white-space: nowrap;" data-i18n="banner.swaps_notice_btn">Restore Tab</button>
@@ -743,7 +743,7 @@
                     <div id="progress-fill" class="progress-fill"></div>
                 </div>
             </div>
-            <div id="version-btn" role="button" tabindex="0">What's New · v2.1.0</div>
+            <div id="version-btn" role="button" tabindex="0">What's New · v2.0.1</div>
         </footer>
     </div>
 
@@ -875,7 +875,43 @@
                 <div id="close-changelog" class="close-modal-btn">×</div>
             </div>
             <div id="changelog-body" class="changelog-scroll">
-                <div class="backup-empty">Loading...</div>
+                <div class="changelog-release" style="margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid rgba(255,255,255,0.08);">
+                    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;">
+                        <div class="changelog-release-tag" style="font-size:15px;font-weight:700;color:var(--accent);">v2.0.1 (Hotfix)</div>
+                        <div class="changelog-release-date" style="font-size:12px;color:var(--muted);">October 2026</div>
+                    </div>
+                    <div class="changelog-release-body" style="font-size:13px;line-height:1.6;">
+                        <p style="margin:0 0 8px 0;color:var(--text-secondary);">Hotfix update for item swapping and game stability:</p>
+                        <ul style="margin:0 0 0 18px;padding:0;display:flex;flex-direction:column;gap:6px;">
+                            <li><strong>In-Match Swaps:</strong> Your custom cars, decals, wheels, and boosts now stay equipped properly during online matches and Freeplay without resetting!</li>
+                            <li><strong>Goal Explosions:</strong> Custom goal explosions now celebrate and animate in matches when you score.</li>
+                            <li><strong>Crash Fixes:</strong> Fixed game crashes when opening the Garage, starting Freeplay, or loading into a match.</li>
+                            <li><strong>Better Paint Options:</strong> Full support for all official car paints and trims so your setup looks authentic.</li>
+                            <li><strong>Name & Credits Display:</strong> Easily change your displayed in-game name and preview item shop credits in menus.</li>
+                            <li><strong>Presets:</strong> Save up to 50 custom car presets and easily share them with friends using short codes.</li>
+                            <li><strong>Smoother Connections:</strong> Fixed background network setup so Rocket League connects smoothly.</li>
+                            <li><strong>New Languages:</strong> VelocityRL is now available in 9 languages!</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="changelog-release">
+                    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;">
+                        <div class="changelog-release-tag" style="font-size:15px;font-weight:700;color:var(--accent);">v2.0.0</div>
+                        <div class="changelog-release-date" style="font-size:12px;color:var(--muted);">August 2026</div>
+                    </div>
+                    <div class="changelog-release-body" style="font-size:13px;line-height:1.6;">
+                        <p style="margin:0 0 8px 0;color:var(--text-secondary);">Major release introducing all-new customization features:</p>
+                        <ul style="margin:0 0 0 18px;padding:0;display:flex;flex-direction:column;gap:6px;">
+                            <li><strong>Item Swapper:</strong> Swap any car, wheel, decal, boost, or topper locally.</li>
+                            <li><strong>Custom Color Palette:</strong> Unlock full RGB custom team car colors.</li>
+                            <li><strong>Titles & Fake Ranks:</strong> Equip any player title and customize competitive rank displays.</li>
+                            <li><strong>Camera Settings:</strong> Unlock field of view, distance, and angle limits.</li>
+                            <li><strong>Workshop Maps:</strong> Built-in community map browser and one-click offline play.</li>
+                            <li><strong>Live Tracker:</strong> Real-time match score and MMR overlay.</li>
+                        </ul>
+                    </div>
+                </div>
             </div>
             <div class="changelog-footer">
                 <button id="toggle-changelog-startup" class="path-btn" data-i18n="changelog.toggle_startup">Don't show on startup</button>
