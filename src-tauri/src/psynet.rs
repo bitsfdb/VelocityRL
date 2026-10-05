@@ -1251,8 +1251,9 @@ fn find_candidate_wine_user_regs() -> Vec<PathBuf> {
     };
 
     if let Ok(wp) = std::env::var("WINEPREFIX") {
-        add_if_exists(&mut cands, PathBuf::from(wp).join("user.reg"));
-        add_if_exists(&mut cands, PathBuf::from(wp).join("pfx/user.reg"));
+        let wp_path = Path::new(&wp);
+        add_if_exists(&mut cands, wp_path.join("user.reg"));
+        add_if_exists(&mut cands, wp_path.join("pfx/user.reg"));
     }
 
     let homes = candidate_user_homes();
