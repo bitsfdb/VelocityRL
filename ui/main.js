@@ -2487,6 +2487,7 @@ async function handleRestore() {
         const result = await invoke('restore_backups');
         updateStatus(result, false);
         refreshBackups();
+        refreshPaletteStatus();
         setTimeout(() => updateStatus('bitsfdb', false), 3000);
     } catch (err) {
         updateStatus('Restore Failed', true);
