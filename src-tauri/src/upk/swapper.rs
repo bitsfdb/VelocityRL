@@ -959,36 +959,62 @@ pub fn header_references_stale_engine(
     header_delta: i32,
     current_engine_guid: &[u8; 16],
 ) -> bool {
-    if summary.import_export_guids_offset < 0 || summary.import_guids_count <= 0 {
-        return false;
-    }
-    let engine_indices = find_engine_dependency_linker_indices(
-        header,
-        name_offset,
-        summary.name_count,
-        summary.import_offset,
-        summary.import_count,
-    );
-    if engine_indices.is_empty() {
-        return false;
-    }
-    let guid_section_start = (summary.import_export_guids_offset as i64
-        - name_offset as i64
-        + header_delta as i64) as usize;
-    let entry_size = 20;
-    for i in 0..summary.import_guids_count as usize {
-        let off = guid_section_start + i * entry_size;
-        if off + entry_size > header.len() {
-            break;
-        }
-        let pkg_idx = i32::from_le_bytes(header[off..off + 4].try_into().unwrap_or([0; 4]));
-        if engine_indices.contains(&pkg_idx) {
-            let guid = &header[off + 4..off + 20];
-            if guid != current_engine_guid.as_slice() {
-                return true;
+    // 1. Check import table GUIDs (used in mod packages)
+    if summary.import_export_guids_offset >= 0 && summary.import_guids_count > 0 {
+        let engine_indices = find_engine_dependency_linker_indices(
+            header,
+            name_offset,
+            summary.name_count,
+            summary.import_offset,
+            summary.import_count,
+        );
+        if !engine_indices.is_empty() {
+            let guid_section_start = (summary.import_export_guids_offset as i64
+                - name_offset as i64
+                + header_delta as i64) as usize;
+            let entry_size = 20;
+            for i in 0..summary.import_guids_count as usize {
+                let off = guid_section_start + i * entry_size;
+                if off + entry_size > header.len() {
+                    break;
+                }
+                let pkg_idx = i32::from_le_bytes(header[off..off + 4].try_into().unwrap_or([0; 4]));
+                if engine_indices.contains(&pkg_idx) {
+                    let guid = &header[off + 4..off + 20];
+                    if guid != current_engine_guid.as_slice() {
+                        return true;
+                    }
+                }
             }
         }
     }
+
+    // 2. Check export table Engine PackageGuid in core packages like TAGame.upk
+    let export_rel = (summary.export_offset - name_offset) as usize;
+    let depends_rel = (summary.depends_offset - name_offset) as usize;
+    let names = match crate::upk::palette::parse_names_in_block(header, summary.name_count) {
+        Ok(n) => n,
+        Err(_) => return false,
+    };
+    let mut pos = export_rel;
+    let mut count = 0;
+    while pos + 72 <= depends_rel && pos + 72 <= header.len() && count < summary.export_count as usize {
+        let name_idx = i32::from_le_bytes(header[pos + 12..pos + 16].try_into().unwrap_or([0; 4]));
+        let noc = i32::from_le_bytes(header[pos + 48..pos + 52].try_into().unwrap_or([0; 4]));
+        if name_idx >= 0 && (name_idx as usize) < names.len() && names[name_idx as usize].eq_ignore_ascii_case("Engine") && noc > 0 {
+            let guid_pos = pos + 56;
+            if guid_pos + 16 <= header.len() {
+                let guid = &header[guid_pos..guid_pos + 16];
+                if guid != current_engine_guid.as_slice() {
+                    return true;
+                }
+            }
+            break;
+        }
+        pos += 72 + (noc.max(0) as usize) * 4;
+        count += 1;
+    }
+
     false
 }
 
@@ -999,37 +1025,60 @@ pub fn patch_engine_import_guid(
     header_delta: i32,
     engine_guid: [u8; 16],
 ) -> bool {
-    if summary.import_export_guids_offset < 0 || summary.import_guids_count <= 0 {
-        return false;
-    }
-
-    let engine_indices = find_engine_dependency_linker_indices(
-        header,
-        name_offset,
-        summary.name_count,
-        summary.import_offset,
-        summary.import_count,
-    );
-    if engine_indices.is_empty() {
-        return false;
-    }
-
-    let guid_section_start =
-        (summary.import_export_guids_offset as i64 - name_offset as i64 + header_delta as i64) as usize;
-    let entry_size = 20;
-
     let mut patched = false;
-    for i in 0..summary.import_guids_count as usize {
-        let off = guid_section_start + i * entry_size;
-        if off + entry_size > header.len() { break; }
-        let pkg_idx = i32::from_le_bytes(
-            header[off..off + 4].try_into().unwrap_or([0; 4])
+
+    // 1. Patch import table GUIDs (used in mod packages)
+    if summary.import_export_guids_offset >= 0 && summary.import_guids_count > 0 {
+        let engine_indices = find_engine_dependency_linker_indices(
+            header,
+            name_offset,
+            summary.name_count,
+            summary.import_offset,
+            summary.import_count,
         );
-        if engine_indices.contains(&pkg_idx) {
-            header[off + 4..off + 20].copy_from_slice(&engine_guid);
-            patched = true;
+        if !engine_indices.is_empty() {
+            let guid_section_start =
+                (summary.import_export_guids_offset as i64 - name_offset as i64 + header_delta as i64) as usize;
+            let entry_size = 20;
+
+            for i in 0..summary.import_guids_count as usize {
+                let off = guid_section_start + i * entry_size;
+                if off + entry_size > header.len() { break; }
+                let pkg_idx = i32::from_le_bytes(
+                    header[off..off + 4].try_into().unwrap_or([0; 4])
+                );
+                if engine_indices.contains(&pkg_idx) {
+                    header[off + 4..off + 20].copy_from_slice(&engine_guid);
+                    patched = true;
+                }
+            }
         }
     }
+
+    // 2. Patch export table Engine PackageGuid in core packages like TAGame.upk
+    let export_rel = (summary.export_offset - name_offset) as usize;
+    let depends_rel = (summary.depends_offset - name_offset) as usize;
+    if let Ok(names) = crate::upk::palette::parse_names_in_block(header, summary.name_count) {
+        let mut pos = export_rel;
+        let mut count = 0;
+        while pos + 72 <= depends_rel && pos + 72 <= header.len() && count < summary.export_count as usize {
+            let name_idx = i32::from_le_bytes(header[pos + 12..pos + 16].try_into().unwrap_or([0; 4]));
+            let noc = i32::from_le_bytes(header[pos + 48..pos + 52].try_into().unwrap_or([0; 4]));
+            if name_idx >= 0 && (name_idx as usize) < names.len() && names[name_idx as usize].eq_ignore_ascii_case("Engine") && noc > 0 {
+                let guid_pos = pos + 56;
+                if guid_pos + 16 <= header.len() {
+                    if &header[guid_pos..guid_pos + 16] != &engine_guid {
+                        header[guid_pos..guid_pos + 16].copy_from_slice(&engine_guid);
+                        patched = true;
+                    }
+                }
+                break;
+            }
+            pos += 72 + (noc.max(0) as usize) * 4;
+            count += 1;
+        }
+    }
+
     patched
 }
 

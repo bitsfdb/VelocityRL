@@ -960,6 +960,7 @@ select::-ms-expand { display: none; }
 }
 
 .modal-wide { max-width: min(520px, 100%); }
+#settings-modal .modal { max-width: min(580px, 100%); }
 
 .modal-header {
     display: flex;

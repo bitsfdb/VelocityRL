@@ -907,9 +907,64 @@ async function init() {
         }
     };
     document.getElementById('settings-dev-panel-btn')?.addEventListener('click', async () => {
-        document.getElementById('dev-modal')?.classList.add('active');
+    document.getElementById('dev-modal')?.classList.add('active');
         await refreshDevPanel();
     });
+
+    // Manual Verify & Fetch TAGame.upk with live progress bar
+    document.getElementById('settings-download-tagame-btn')?.addEventListener('click', async () => {
+        const btn = document.getElementById('settings-download-tagame-btn');
+        const progressWrap = document.getElementById('settings-tagame-progress-wrap');
+        const progressBar = document.getElementById('settings-tagame-progress-bar');
+        const progressPct = document.getElementById('settings-tagame-progress-pct');
+        const progressStatus = document.getElementById('settings-tagame-progress-status');
+        const msg = document.getElementById('settings-catalog-msg');
+
+        if (!btn) return;
+        btn.disabled = true;
+        btn.textContent = 'Downloading…';
+        if (progressWrap) progressWrap.style.display = 'block';
+        if (progressBar) progressBar.style.width = '0%';
+        if (progressPct) progressPct.textContent = '0%';
+        if (progressStatus) progressStatus.textContent = 'Connecting to asset server…';
+        if (msg) msg.textContent = '';
+
+        let unlisten = null;
+        try {
+            if (window.__TAURI__?.event?.listen) {
+                unlisten = await window.__TAURI__.event.listen('tagame-download-progress', (event) => {
+                    const p = event.payload;
+                    if (progressBar) progressBar.style.width = `${p.percent}%`;
+                    if (progressPct) progressPct.textContent = `${p.percent}%`;
+                    const mbDown = (p.downloaded / (1024 * 1024)).toFixed(1);
+                    const mbTotal = (p.total / (1024 * 1024)).toFixed(1);
+                    if (progressStatus) progressStatus.textContent = `Downloading: ${mbDown} MB / ${mbTotal} MB`;
+                });
+            }
+
+            const res = await invoke('download_official_tagame');
+            if (progressBar) progressBar.style.width = '100%';
+            if (progressPct) progressPct.textContent = '100%';
+            if (progressStatus) progressStatus.textContent = 'Complete! Verified and backed up.';
+            showToast(res || 'Official TAGame.upk downloaded successfully!', 'success');
+            refreshPaletteStatus();
+        } catch (e) {
+            if (progressStatus) progressStatus.textContent = 'Failed: ' + e;
+            showToast('Download failed: ' + e, 'error');
+        } finally {
+            if (unlisten) {
+                try { unlisten(); } catch (_) {}
+            }
+            btn.disabled = false;
+            btn.textContent = 'Verify & Fetch TAGame.upk';
+            setTimeout(() => {
+                if (progressWrap && progressBar?.style.width === '100%') {
+                    progressWrap.style.display = 'none';
+                }
+            }, 3000);
+        }
+    });
+
     document.getElementById('settings-export-diag-btn')?.addEventListener('click', () => {
         triggerExportDiagnostics(document.getElementById('settings-action-msg'));
     });

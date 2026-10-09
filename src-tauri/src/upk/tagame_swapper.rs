@@ -1074,6 +1074,20 @@ pub fn apply_tagame_modifications(
             }
         }
 
+        // Ensure TAGame.upk references the exact Engine package GUID from Engine.upk (prevents version mismatch error)
+        let engine_path = cooked_dir.join("Engine.upk");
+        if let Some(engine_guid) = crate::upk::swapper::read_package_guid(&engine_path) {
+            for exp in &exports {
+                if exp.name.eq_ignore_ascii_case("Engine") {
+                    let guid_pos = exp.pos + 56;
+                    if guid_pos + 16 <= plain_header.len() {
+                        plain_header[guid_pos..guid_pos + 16].copy_from_slice(&engine_guid);
+                    }
+                    break;
+                }
+            }
+        }
+
         let re_enc = crypto::encrypt_ecb(&TAGAME_KEY, &plain_header);
         file_bytes[name_offset..enc_end].copy_from_slice(&re_enc);
 
@@ -1166,8 +1180,12 @@ pub fn restore_tagame_upk(cooked_dir: &Path) -> Result<TagameSwapperStatus, Taga
     })
 }
 
-/// Download clean, official TAGame.upk from VelocityRL asset endpoint using the build secret.
-pub async fn download_official_tagame_upk(target_path: &Path) -> Result<(), String> {
+/// Download clean, official TAGame.upk from VelocityRL asset endpoint with progress reporting.
+pub async fn download_official_tagame_upk<F>(target_path: &Path, mut progress_cb: F) -> Result<(), String>
+where
+    F: FnMut(usize, usize) + Send + 'static,
+{
+    use futures_util::StreamExt;
     use hmac::{Hmac, Mac};
     use sha2::Sha256;
 
@@ -1194,7 +1212,7 @@ pub async fn download_official_tagame_upk(target_path: &Path) -> Result<(), Stri
 
     let client = reqwest::Client::builder()
         .user_agent(crate::app_user_agent())
-        .timeout(std::time::Duration::from_secs(120))
+        .timeout(std::time::Duration::from_secs(300))
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -1203,7 +1221,19 @@ pub async fn download_official_tagame_upk(target_path: &Path) -> Result<(), Stri
         return Err(format!("Asset endpoint returned HTTP {}", resp.status()));
     }
 
-    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+    let total_size = resp.content_length().unwrap_or(78_252_961) as usize;
+    let mut downloaded = 0usize;
+
+    let mut stream = resp.bytes_stream();
+    let mut bytes = Vec::with_capacity(total_size);
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("Network error while downloading: {e}"))?;
+        downloaded += chunk.len();
+        bytes.extend_from_slice(&chunk);
+        progress_cb(downloaded, total_size);
+    }
+
     if bytes.len() < 10_000_000 {
         return Err(format!("Downloaded TAGame.upk file too small ({} bytes)", bytes.len()));
     }

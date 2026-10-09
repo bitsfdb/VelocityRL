@@ -1973,6 +1973,51 @@ async fn get_tagame_swapper_status(app: tauri::AppHandle) -> Result<upk::TagameS
     })
 }
 
+#[derive(Clone, serde::Serialize)]
+struct TagameDownloadProgress {
+    downloaded: usize,
+    total: usize,
+    percent: u32,
+}
+
+#[tauri::command]
+async fn download_official_tagame(app: tauri::AppHandle) -> Result<String, String> {
+    use tauri::Emitter;
+    let config = get_config(app.clone()).await?;
+    if config.game_dir.is_empty() {
+        return Err("Game directory not set. Open Settings and select CookedPCConsole folder.".into());
+    }
+    let cooked = upk::tagame_swapper::resolve_cooked_dir(Path::new(&config.game_dir))
+        .map_err(|e| e.to_string())?;
+
+    let target_path = cooked.join("TAGame.upk");
+    let backup_path = cooked.join("TAGame.upk.bak");
+
+    // If a clean backup doesn't exist, we will preserve/create it after download
+    let app_handle = app.clone();
+    let res = upk::tagame_swapper::download_official_tagame_upk(&target_path, move |downloaded, total| {
+        let percent = if total > 0 { ((downloaded as f64 / total as f64) * 100.0) as u32 } else { 0 };
+        let _ = app_handle.emit("tagame-download-progress", TagameDownloadProgress {
+            downloaded,
+            total,
+            percent,
+        });
+    }).await;
+
+    match res {
+        Ok(()) => {
+            // Also update TAGame.upk.bak so future restores/modifications use the fresh official copy
+            let _ = std::fs::copy(&target_path, &backup_path);
+            applog::event("tagame_swapper: official TAGame.upk downloaded and backed up successfully");
+            Ok("Official TAGame.upk downloaded and verified successfully.".into())
+        }
+        Err(e) => {
+            applog::error(&format!("tagame_swapper: failed to download TAGame.upk: {e}"));
+            Err(e)
+        }
+    }
+}
+
 #[tauri::command]
 async fn get_detected_car_body(app: tauri::AppHandle) -> Result<upk::DetectedCarInfo, String> {
     let swaps = load_swaps(&app);
@@ -3497,6 +3542,7 @@ pub fn run() {
             apply_tagame_swaps,
             restore_tagame_swaps,
             get_tagame_swapper_status,
+            download_official_tagame,
             get_detected_car_body,
             get_custom_decal_config,
             save_custom_decal_config,
