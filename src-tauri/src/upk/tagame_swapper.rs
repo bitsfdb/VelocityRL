@@ -926,9 +926,19 @@ pub fn apply_tagame_modifications(
             let c0_end = c0_start + c0_comp_size as usize;
             if c0_end <= file_bytes.len() {
                 if let Ok(mut decomp0) = crate::upk::compression::decompress_chunk(&file_bytes[c0_start..c0_end]) {
-                    // Car_TA::SetLoadout handles swapping directly on ClientLoadoutData when the vehicle spawns.
-                    // Leaving ConvertToClientLoadout vanilla preserves all non-product fields (paint, colors, etc.) without corruption.
+                    // 1. Patch ConvertToClientLoadout (Export #78 in _Types_TA) in Chunk 0 for client/UI loadout translation
+                    if let Some(exp) = exports.iter().find(|e| e.name == "ConvertToClientLoadout") {
+                        let func_off = (exp.serial_offset - c0_uncomp_offset) as usize;
+                        if func_off + 48 <= decomp0.len() {
+                            let orig_disk_sz = u32::from_le_bytes(decomp0[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                            if let Ok((payload, mem_sz)) = emit_convert_to_client_loadout_bytecode(&slot_overrides, orig_disk_sz) {
+                                decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                decomp0[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                            }
+                        }
+                    }
 
+                    // 2. Patch Car_TA::SetLoadout in Chunk 0 for vehicle spawn
                     if let Some(exp) = exports.iter().find(|e| e.name == "SetLoadout" && e.outer_name == "Car_TA") {
                         let func_off = (exp.serial_offset - c0_uncomp_offset) as usize;
                         if func_off + 48 <= decomp0.len() {

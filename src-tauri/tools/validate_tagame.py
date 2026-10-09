@@ -325,6 +325,21 @@ def validate_tagame(upk_path):
         print(f"[!] CRITICAL DESERIALIZATION FAILURE in Car_TA::SetLoadout: {e}")
         return False
 
+    # Check Chunk 0 ConvertToClientLoadout
+    cld = next((e for e in exports if e["name"] == "ConvertToClientLoadout" and e.get("outer_name") == "_Types_TA"), None)
+    if cld:
+        cld_off = cld["serial_offset"] - c0["uncomp_offset"]
+        cld_disk = struct.unpack("<I", decomp0[cld_off+44:cld_off+48])[0]
+        cld_script = decomp0[cld_off+48 : cld_off+48+cld_disk]
+        if cld_disk == 124 and cld_script[:2] == bytes([0x57, 0x0A]):
+            print(f"[*] _Types_TA::ConvertToClientLoadout: {cld_disk} bytes (Chunk 0 vanilla stock intact)")
+        else:
+            try:
+                validate_function_bytecode("_Types_TA::ConvertToClientLoadout", cld_script)
+            except Exception as e:
+                print(f"[!] CRITICAL DESERIALIZATION FAILURE in ConvertToClientLoadout: {e}")
+                return False
+
     # Check Chunk 1 ExplosionPreviewer_TA::SetLoadout
     if len(chunks) > 1:
         c1 = chunks[1]
