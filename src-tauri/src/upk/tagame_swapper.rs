@@ -305,6 +305,7 @@ pub fn emit_car_set_loadout_bytecode(
     Ok((bc, mem_sz))
 }
 
+#[allow(dead_code)]
 pub fn emit_car_preview_set_loadout_bytecode(
     slot_overrides: &[SlotSwapRule],
     max_disk_size: usize,
@@ -346,7 +347,7 @@ pub fn emit_car_preview_set_loadout_bytecode(
     let tail_disk_len = 19;
     for rule in &unique_rules {
         let index_disk_len = if rule.slot_idx == 0 { 1 } else { 2 };
-        let cond_disk_len = 53 + 2 * index_disk_len;
+        let cond_disk_len = 56 + 2 * index_disk_len;
         let uncond_disk_len = 26 + index_disk_len;
 
         let can_fit_cond = rule.owned_id.is_some()
@@ -363,6 +364,8 @@ pub fn emit_car_preview_set_loadout_bytecode(
 
             // Condition: NewLoadout.Products[slot_idx] == owned_id
             bc.push(opcodes::EX_EQUAL_EQUAL_INT_INT);
+            bc.push(opcodes::EX_DYN_ARRAY_OP);
+            bc.extend_from_slice(&[0x00, 0x00]);
             bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
             let index_mem = if rule.slot_idx == 0 {
                 bc.push(opcodes::EX_INT_ZERO);
@@ -1070,49 +1073,8 @@ pub fn apply_tagame_modifications(
                         }
                     }
 
-                    // Patch CarPreviewActor_TA::SetLoadout in Chunk 0 for garage turntable vehicle preview (strictly within vanilla 230 bytes)
-                    if let Some(preview_exp) = exports.iter().find(|e| e.name == "SetLoadout" && e.outer_name == "CarPreviewActor_TA") {
-                        let func_off = (preview_exp.serial_offset - c0_uncomp_offset) as usize;
-                        if func_off + 48 <= decomp0.len() {
-                            let orig_disk_sz = u32::from_le_bytes(decomp0[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                            if orig_disk_sz >= 30 && func_off + 48 + orig_disk_sz <= decomp0.len() {
-                                let preview_set_loadout_idx = preview_exp.idx as i32;
-                                let new_loadout_idx = exports.iter()
-                                    .find(|e| e.name == "NewLoadout" && e.outer_idx == preview_set_loadout_idx)
-                                    .map(|e| e.idx as i32)
-                                    .unwrap_or(18093);
-                                let in_loadout_idx = exports.iter()
-                                    .find(|e| e.name == "InLoadout" && e.outer_idx == preview_set_loadout_idx)
-                                    .map(|e| e.idx as i32)
-                                    .unwrap_or(18094);
-                                let products_idx = exports.iter()
-                                    .find(|e| e.name == "Products")
-                                    .map(|e| e.idx as i32)
-                                    .unwrap_or(1871);
-                                let loadout_data_idx = exports.iter()
-                                    .find(|e| e.name == "LoadoutData" && e.outer_name == "_Types_TA")
-                                    .map(|e| e.idx as i32)
-                                    .unwrap_or(2364);
-                                let force_set_loadout_name_idx = names.iter()
-                                    .position(|n| n == "ForceSetLoadout")
-                                    .map(|i| i as i32)
-                                    .unwrap_or(20264);
-
-                                if let Ok((payload, mem_sz)) = emit_car_preview_set_loadout_bytecode(
-                                    &slot_overrides,
-                                    orig_disk_sz,
-                                    Some(products_idx),
-                                    Some(loadout_data_idx),
-                                    Some(new_loadout_idx),
-                                    Some(in_loadout_idx),
-                                    Some(force_set_loadout_name_idx),
-                                ) {
-                                    decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                    decomp0[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
-                                }
-                            }
-                        }
-                    }
+                    // Keep CarPreviewActor_TA::SetLoadout (230 bytes) vanilla stock in Chunk 0
+                    // to prevent deserializer crash (Bad expr token 00)
 
                     if let Ok(mut recomp0) = crate::upk::compression::compress_chunk(&decomp0) {
                         let orig_c0_sz = c0_comp_size as usize;
