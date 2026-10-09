@@ -336,8 +336,8 @@ pub fn emit_car_set_loadout_bytecode(
             bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
 
             // Memory size for conditional:
-            // JUMP_IF_NOT (3) + cond_mem (36 + index_mem) + body_mem (35 + index_mem) = 74 + 2 * index_mem
-            let total_rule_mem = 3 + (36 + index_mem) + (35 + index_mem);
+            // JUMP_IF_NOT (3) + cond_mem (38 + index_mem) + body_mem (37 + index_mem) = 78 + 2 * index_mem
+            let total_rule_mem = 3 + (38 + index_mem) + (37 + index_mem);
             mem_sz += total_rule_mem;
         } else {
             // Unconditional rule:
@@ -1059,7 +1059,7 @@ pub fn apply_tagame_modifications(
 
                                         let jump_target = bc.len() as u16;
                                         bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
-                                        let total_rule_mem = 3 + (36 + index_mem) + (35 + index_mem);
+                                        let total_rule_mem = 3 + (38 + index_mem) + (37 + index_mem);
                                         mem_sz += total_rule_mem;
                                     } else {
                                         let rule_disk_len = if rule.slot_idx == 0 { 26 } else { 27 };
