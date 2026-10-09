@@ -209,8 +209,8 @@ pub fn emit_convert_to_client_loadout_bytecode(
             let cond_mem = 1 + 3 + index_mem + 28 + 5 + 1;
             let body_mem = 1 + 3 + index_mem + 28 + 5;
             let total_rule_mem = 3 + cond_mem + body_mem;
-            let jump_target_mem = (mem_sz + total_rule_mem) as u16;
-            bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target_mem.to_le_bytes());
+            let jump_target = bc.len() as u16;
+            bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
             mem_sz += total_rule_mem;
         } else {
             if bc.len() + uncond_disk_len + 12 > max_disk_size {
@@ -314,8 +314,8 @@ pub fn emit_car_set_loadout_bytecode(
             let cond_mem = 1 + 3 + index_mem + 28 + 5 + 1;
             let body_mem = 1 + 3 + index_mem + 28 + 5;
             let total_rule_mem = 3 + cond_mem + body_mem;
-            let jump_target_mem = (mem_sz + total_rule_mem) as u16;
-            bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target_mem.to_le_bytes());
+            let jump_target = bc.len() as u16;
+            bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
             mem_sz += total_rule_mem;
         } else {
             if bc.len() + uncond_disk_len + 110 > max_disk_size {
@@ -398,8 +398,8 @@ pub fn emit_get_asset_by_id_bytecode(
             let cond_mem = 1 + 9 + 5 + 1;
             let body_mem = 1 + 9 + 5;
             let total_rule_mem = 3 + cond_mem + body_mem;
-            let jump_target_mem = (mem_sz + total_rule_mem) as u16;
-            bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target_mem.to_le_bytes());
+            let jump_target = bc.len() as u16;
+            bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
             mem_sz += total_rule_mem;
         } else {
             if bc.len() + 11 + orig_script.len() > max_disk_size {
