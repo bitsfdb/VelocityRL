@@ -39,6 +39,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=VRL_BUILD_NUMBER");
     println!("cargo:rerun-if-env-changed=VRL_BUILD_HASH");
     println!("cargo:rerun-if-env-changed=VRL_BUILD_ID");
+    println!("cargo:rerun-if-env-changed=VRL_BUILD_SECRET");
 
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     let repo_root = manifest.parent().unwrap_or(manifest);
@@ -57,6 +58,12 @@ fn main() {
         .ok()
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| build_id.clone());
+
+    if let Ok(sec) = std::env::var("VRL_BUILD_SECRET") {
+        if !sec.is_empty() {
+            println!("cargo:rustc-env=VRL_BUILD_SECRET={sec}");
+        }
+    }
 
     println!("cargo:rustc-env=VRL_BUILD_NUMBER={number}");
     println!("cargo:rustc-env=VRL_BUILD_HASH={hash}");
