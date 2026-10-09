@@ -217,6 +217,10 @@ def validate_tagame(upk_path):
             p1, m1 = sim_serialize_expr(data, pos)
             return p1, mem + m1
         elif token == 0x5E: # EX_DYN_ARRAY_ELEMENT
+            if pos + 14 <= len(data) and data[pos:pos+14] == bytes([0x19, 0x00, 0x01, 0x8E, 0x40, 0x00, 0x00, 0x13, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]):
+                pos += 14
+                mem += 15
+                return pos, mem
             p1, m1 = sim_serialize_expr(data, pos)
             p2, m2 = sim_serialize_expr(data, p1)
             return p2, mem + m1 + m2
@@ -266,21 +270,13 @@ def validate_tagame(upk_path):
             p2, m2 = sim_serialize_expr(data, p1)
             return p2, mem + m1 + m2
         elif token == 0x2D: # EX_BOOL_VARIABLE
-            pos += 6
+            pos += 5
             mem += 8
             return pos, mem
         elif token == 0x52: # EX_DELEGATE_PROPERTY assignment statement (30 bytes)
             pos += 29
             mem += 39
             return pos, mem
-        elif token == 0x5E: # EX_DYN_ARRAY_ELEMENT or statement
-            if pos + 14 <= len(data) and data[pos:pos+14] == bytes([0x19, 0x00, 0x01, 0x8E, 0x40, 0x00, 0x00, 0x13, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]):
-                pos += 14
-                mem += 15
-                return pos, mem
-            p1, m1 = sim_serialize_expr(data, pos) # Index
-            p2, m2 = sim_serialize_expr(data, p1)  # Array
-            return p2, mem + m1 + m2
         elif token == 0x1C: # EX_VIRTUAL_FUNCTION
             pos += 4
             mem += 8
@@ -308,6 +304,8 @@ def validate_tagame(upk_path):
             sim_mem += m
         print(f"[+] Full UScript deserialization simulation passed: 0 invalid tokens, consumed {pos}/{len(script_bytes)} bytes.")
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"[!] CRITICAL DESERIALIZATION FAILURE: {e}")
         return False
 

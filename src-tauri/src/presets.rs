@@ -316,25 +316,23 @@ pub async fn apply_preset(app: tauri::AppHandle, id: String) -> Result<Vec<Strin
     let mut results = Vec::new();
     let mut applied: Vec<SwapEntry> = Vec::new();
 
-    if !preset.swaps.is_empty() {
-        let mut current_swaps = preset.swaps.clone();
-        let items = crate::get_items(app.clone(), None).await.unwrap_or_default();
-        sanitize_swaps(&mut current_swaps, &items);
+    let mut current_swaps = preset.swaps.clone();
+    let items = crate::get_items(app.clone(), None).await.unwrap_or_default();
+    sanitize_swaps(&mut current_swaps, &items);
 
-        for s in &current_swaps {
-            let paint_str = if s.paint_id > 0 {
-                format!(" ({})", crate::upk::swapper::paint_label(s.paint_id))
-            } else {
-                String::new()
-            };
-            results.push(format!("OK  {} → {}{}", s.owned_name, s.wanted_name, paint_str));
-            applied.push(s.clone());
-        }
+    for s in &current_swaps {
+        let paint_str = if s.paint_id > 0 {
+            format!(" ({})", crate::upk::swapper::paint_label(s.paint_id))
+        } else {
+            String::new()
+        };
+        results.push(format!("OK  {} → {}{}", s.owned_name, s.wanted_name, paint_str));
+        applied.push(s.clone());
+    }
 
-        crate::save_swaps(&app, &current_swaps);
-        if let Err(e) = crate::sync_all_swaps_to_tagame(&app, &cooked, &current_swaps).await {
-            return Err(format!("Failed to apply preset swaps: {e}"));
-        }
+    crate::save_swaps(&app, &current_swaps);
+    if let Err(e) = crate::sync_all_swaps_to_tagame(&app, &cooked, &current_swaps).await {
+        return Err(format!("Failed to apply preset swaps: {e}"));
     }
 
     let target_map_id = preset.active_map_id.as_ref().or_else(|| preset.maps.first().map(|m| &m.id));
