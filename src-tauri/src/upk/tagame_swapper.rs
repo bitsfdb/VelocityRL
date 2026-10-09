@@ -36,7 +36,6 @@ pub mod opcodes {
     pub const EX_EQUAL_EQUAL_INT_INT: u8 = 0x9A;
     pub const EX_END_FUNCTION_PARMS: u8 = 0x16;
     pub const EX_TRUE_CONST: u8 = 0x27;
-    pub const EX_FALSE_CONST: u8 = 0x28;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -999,112 +998,7 @@ pub fn apply_tagame_modifications(
             }
         }
 
-        // 2. Patch Chunk 1: ExplosionPreviewer_TA::SetLoadout for Garage 3D Stage Goal Explosion Preview
-        let target_ge_opt = swaps.iter()
-            .find(|s| {
-                let norm = s.slot.to_lowercase().replace([' ', '_', '-'], "");
-                norm.contains("goal") || norm.contains("explosion") || s.slot_index == Some(10) || s.slot_index == Some(14)
-            })
-            .map(|s| if s.product_id > 0 { s.product_id } else { 2044 });
 
-        if chunks.len() > 1 {
-            if let Some(target_ge) = target_ge_opt {
-                let c1 = &chunks[1];
-                let c1_start = c1.comp_offset as usize;
-                let c1_end = c1_start + c1.comp_size as usize;
-                if c1_end <= file_bytes.len() {
-                    if let Ok(mut decomp1) = crate::upk::compression::decompress_chunk(&file_bytes[c1_start..c1_end]) {
-                        if let Some(exp) = exports.iter().find(|e| {
-                            e.name == "SetLoadout" && e.outer_name == "ExplosionPreviewer_TA"
-                        }) {
-                            let func_off = (exp.serial_offset - c1.uncomp_offset) as usize;
-                            if func_off + 48 <= decomp1.len() {
-                                let orig_disk_sz = u32::from_le_bytes(decomp1[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                                if orig_disk_sz >= 115 && func_off + 48 + orig_disk_sz <= decomp1.len() {
-                                    let explosion_previewer_idx = exp.outer_idx;
-                                    let set_product_id = exports.iter()
-                                        .find(|e| e.name == "SetProduct" && (e.outer_idx == explosion_previewer_idx || e.outer_name == "ExplosionPreviewer_TA"))
-                                        .map(|e| e.idx as i32)
-                                        .unwrap_or(23231);
-
-                                    let vanilla_script = &decomp1[func_off + 48..func_off + 48 + orig_disk_sz];
-                                    let arg2 = &vanilla_script[58..111]; // InLoadout.PaintFinish
-                                    let mut bc = Vec::new();
-                                    bc.push(0x1C); // EX_VIRTUAL_FUNCTION
-                                    bc.extend_from_slice(&set_product_id.to_le_bytes()); // SetProduct
-                                    bc.push(opcodes::EX_INT_CONST);
-                                    bc.extend_from_slice(&target_ge.to_le_bytes()); // Arg 1: ProductID
-                                    bc.extend_from_slice(arg2); // Arg 2: PaintFinish
-                                    bc.push(opcodes::EX_END_FUNCTION_PARMS);
-                                    bc.push(opcodes::EX_RETURN);
-                                    bc.push(opcodes::EX_NOTHING);
-                                    bc.push(opcodes::EX_END_OF_SCRIPT);
-
-                                    let pad = orig_disk_sz.saturating_sub(bc.len());
-                                    bc.resize(orig_disk_sz, opcodes::EX_NOTHING);
-                                    let new_mem = (8 + 5 + 84 + 1 + 1 + 1 + 1 + pad) as u32;
-
-                                    decomp1[func_off + 40..func_off + 44].copy_from_slice(&new_mem.to_le_bytes());
-                                    decomp1[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&bc);
-                                }
-                            }
-                        }
-
-                        if let Ok(mut recomp1) = crate::upk::compression::compress_chunk(&decomp1) {
-                            let orig_c1_sz = c1.comp_size as usize;
-                            if recomp1.len() <= orig_c1_sz {
-                                recomp1.resize(orig_c1_sz, 0);
-                                file_bytes[c1_start..c1_start + orig_c1_sz].copy_from_slice(&recomp1);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 3. Patch Chunk 2: LoadoutValidation_TA::CorrectOnlineData
-        // Neutralize the item unowned strip check (EX_JUMP_IF_NOT target 3723) in-place so the game never reverts swapped items!
-        if chunks.len() > 2 {
-            let c2 = &chunks[2];
-            let c2_start = c2.comp_offset as usize;
-            let c2_end = c2_start + c2.comp_size as usize;
-            if c2_end <= file_bytes.len() {
-                if let Ok(mut decomp2) = crate::upk::compression::decompress_chunk(&file_bytes[c2_start..c2_end]) {
-                    if let Some(exp) = exports.iter().find(|e| e.name == "CorrectOnlineData") {
-                        let func_off = (exp.serial_offset - c2.uncomp_offset) as usize;
-                        if func_off + 48 <= decomp2.len() {
-                            let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                            if orig_disk_sz >= 2220 && func_off + 48 + orig_disk_sz <= decomp2.len() {
-                                let script = &mut decomp2[func_off + 48..func_off + 48 + orig_disk_sz];
-                                // Locate the exact strip check pattern:
-                                // [0x07, 0x8b, 0x0e] followed by the 19-byte ValidateProduct condition
-                                let target_pat = [
-                                    0x07, 0x8b, 0x0e,
-                                    0xf2, 0x1c, 0x08, 0xbb, 0x00, 0x00, 0x2b, 0xdf, 0xba, 0x00, 0x00, 0x2b, 0xde, 0xba, 0x00, 0x00, 0x16, 0x28, 0x16
-                                ];
-                                if let Some(match_pos) = script.windows(target_pat.len()).position(|w| w == target_pat) {
-                                    // In-place neutralization: replace the 19-byte condition with EX_FALSE (0x28) + 18x EX_NOTHING (0x0B).
-                                    // EX_JUMP_IF_NOT receives FALSE, jumping past the strip block to target 3723!
-                                    // Zero drift in disk size and zero drift in memory size.
-                                    script[match_pos + 3] = opcodes::EX_FALSE_CONST;
-                                    for b in &mut script[match_pos + 4..match_pos + 22] {
-                                        *b = opcodes::EX_NOTHING;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if let Ok(mut recomp2) = crate::upk::compression::compress_chunk(&decomp2) {
-                        let orig_c2_sz = c2.comp_size as usize;
-                        if recomp2.len() <= orig_c2_sz {
-                            recomp2.resize(orig_c2_sz, 0);
-                            file_bytes[c2_start..c2_start + orig_c2_sz].copy_from_slice(&recomp2);
-                        }
-                    }
-                }
-            }
-        }
 
         // Helper to safely patch any simple function bytecode with padding and updated mem_sz
         let patch_func = |decomp: &mut [u8], exp_name: &str, outer_name: Option<&str>, chunk_u_off: i64, bc: &[u8]| -> bool {
