@@ -354,7 +354,7 @@ pub fn emit_car_set_loadout_bytecode(
         0x04, 0x0B, 0x4C
     ];
     bc.extend_from_slice(&vanilla_body);
-    mem_sz += 9 + 78 + 11 + 3;
+    mem_sz += 9 + 78 + 11 + 3 + 6; // 107 bytes (verified by UE3 deserialization crash dump: expected 220)
 
     let nop_count = max_disk_size.saturating_sub(bc.len());
     bc.resize(max_disk_size, opcodes::EX_NOTHING);
@@ -973,7 +973,7 @@ pub fn apply_tagame_modifications(
                                 bc.extend_from_slice(&47858i32.to_le_bytes()); // OutLoadout (#47858)
                                 bc.push(opcodes::EX_LOCAL_VARIABLE);
                                 bc.extend_from_slice(&47853i32.to_le_bytes()); // InProductsConfig (#47853)
-                                mem_sz += 11;
+                                mem_sz += 19; // EX_LET(1) + 2 * EX_LOCAL_VARIABLE(9)
 
                                 // 2. Override specific slots on OutLoadout
                                 for rule in &slot_overrides {
