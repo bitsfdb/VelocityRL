@@ -212,7 +212,7 @@ pub fn emit_convert_to_client_loadout_bytecode(
             let cond_mem = 1 + 3 + index_mem + 28 + 5 + 1;
             let body_mem = 1 + 3 + index_mem + 28 + 5;
             let total_rule_mem = 3 + cond_mem + body_mem;
-            let jump_target = bc.len() as u16;
+            let jump_target = (mem_sz + total_rule_mem) as u16;
             bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
             mem_sz += total_rule_mem;
         } else {
@@ -355,12 +355,11 @@ pub fn emit_car_set_loadout_bytecode(
             bc.push(opcodes::EX_INT_CONST);
             bc.extend_from_slice(&rule.target_id.to_le_bytes());
 
-            let jump_target = bc.len() as u16;
-            bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
-
             // Memory size for conditional:
             // JUMP_IF_NOT (3) + cond_mem (39 + index_mem) + body_mem (38 + index_mem) = 80 + 2 * index_mem
             let total_rule_mem = 3 + (39 + index_mem) + (38 + index_mem);
+            let jump_target = (mem_sz + total_rule_mem) as u16;
+            bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
             mem_sz += total_rule_mem;
         } else {
             // Unconditional rule:
@@ -682,20 +681,11 @@ pub fn apply_tagame_modifications(
     let engine_guid = crate::upk::swapper::read_package_guid(&engine_path);
 
     // Auto-detect Rocket League game updates:
-    // If the game was updated, TAGame.upk will have been overwritten by Epic/Steam,
-    // and Engine.upk will have a new package GUID.
+    // If the game was updated, Engine.upk will have a new package GUID that does not match the backup.
+    // We NEVER compare file modification times (file_time_newer) because applying swaps updates TAGame.upk's
+    // modification time, which would cause the modified/patched file to overwrite and corrupt the clean backup!
     let backup_is_stale = if backup_path.is_file() {
-        let tagame_meta = fs::metadata(&tagame_path).ok();
-        let backup_meta = fs::metadata(&backup_path).ok();
-        let file_time_newer = match (tagame_meta, backup_meta) {
-            (Some(tm), Some(bm)) => match (tm.modified(), bm.modified()) {
-                (Ok(tt), Ok(bt)) => tt > bt,
-                _ => false,
-            },
-            _ => false,
-        };
-
-        let guid_mismatch = if let Some(eg) = engine_guid {
+        if let Some(eg) = engine_guid {
             if let Ok(bak_bytes) = fs::read(&backup_path) {
                 !bak_bytes.windows(16).any(|w| w == eg)
             } else {
@@ -703,9 +693,7 @@ pub fn apply_tagame_modifications(
             }
         } else {
             false
-        };
-
-        file_time_newer || guid_mismatch
+        }
     } else {
         false
     };
