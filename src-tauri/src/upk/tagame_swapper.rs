@@ -902,18 +902,17 @@ pub fn apply_tagame_modifications(
                         }
                     }
 
-                    if total_c0_delta > 0 {
-                        let new_c0_uncomp = c0_uncomp_size + total_c0_delta as i32;
-                        plain_header[c0_pos + 8..c0_pos + 12].copy_from_slice(&new_c0_uncomp.to_le_bytes());
-                        for ch in &mut chunks[1..] {
-                            ch.uncomp_offset += total_c0_delta as i64;
-                            plain_header[ch.pos..ch.pos + 8].copy_from_slice(&ch.uncomp_offset.to_le_bytes());
-                        }
-                    }
-
                     if let Ok(mut recomp0) = crate::upk::compression::compress_chunk(&decomp0) {
                         let orig_c0_sz = c0_comp_size as usize;
                         if recomp0.len() <= orig_c0_sz {
+                            if total_c0_delta > 0 {
+                                let new_c0_uncomp = c0_uncomp_size + total_c0_delta as i32;
+                                plain_header[c0_pos + 8..c0_pos + 12].copy_from_slice(&new_c0_uncomp.to_le_bytes());
+                                for ch in &mut chunks[1..] {
+                                    ch.uncomp_offset += total_c0_delta as i64;
+                                    plain_header[ch.pos..ch.pos + 8].copy_from_slice(&ch.uncomp_offset.to_le_bytes());
+                                }
+                            }
                             recomp0.resize(orig_c0_sz, 0);
                             file_bytes[c0_start..c0_start + orig_c0_sz].copy_from_slice(&recomp0);
                         }
@@ -1165,6 +1164,61 @@ pub fn restore_tagame_upk(cooked_dir: &Path) -> Result<TagameSwapperStatus, Taga
         active_swaps: Vec::new(),
         message: "TAGame.upk and backups restored successfully.".to_string(),
     })
+}
+
+/// Download clean, official TAGame.upk from VelocityRL asset endpoint using the build secret.
+pub async fn download_official_tagame_upk(target_path: &Path) -> Result<(), String> {
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+
+    type HmacSha256 = Hmac<Sha256>;
+
+    let build_secret = option_env!("VRL_BUILD_SECRET")
+        .unwrap_or("18667c8a510a5a0eb3ea0124d23f372b7387b6383a328ca4136e30f1f633997a");
+
+    let now_ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let mut mac = HmacSha256::new_from_slice(build_secret.as_bytes())
+        .map_err(|e| format!("HMAC init failed: {e}"))?;
+    mac.update(format!("{now_ts}:TAGame.upk").as_bytes());
+    let sig = hex::encode(mac.finalize().into_bytes());
+
+    let url = format!(
+        "https://api.velocityrl.tech/v2/rl/assets/tagame.upk?secret={sig}&t={now_ts}"
+    );
+
+    crate::applog::event(&format!("tagame: downloading official TAGame.upk from {url}"));
+
+    let client = reqwest::Client::builder()
+        .user_agent(crate::app_user_agent())
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("Asset endpoint returned HTTP {}", resp.status()));
+    }
+
+    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+    if bytes.len() < 10_000_000 {
+        return Err(format!("Downloaded TAGame.upk file too small ({} bytes)", bytes.len()));
+    }
+
+    if let Some(parent) = target_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    fs::write(target_path, &bytes).map_err(|e| format!("Failed to write TAGame.upk: {e}"))?;
+
+    crate::applog::event(&format!(
+        "tagame: official TAGame.upk downloaded successfully ({} bytes)",
+        bytes.len()
+    ));
+
+    Ok(())
 }
 
 #[cfg(test)]

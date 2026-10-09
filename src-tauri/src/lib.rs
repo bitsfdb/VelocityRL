@@ -3228,7 +3228,26 @@ pub fn run() {
             let ttl_app = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(3)).await; // brief delay after boot
-                maybe_refresh_catalog_by_ttl(ttl_app).await;
+                maybe_refresh_catalog_by_ttl(ttl_app.clone()).await;
+
+                // Periodic game update & features check loop (runs every 5 minutes)
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(300)).await;
+                    let _ = features::get_features(ttl_app.clone()).await;
+
+                    // If game directory is configured, verify TAGame.upk integrity / updates
+                    if let Ok(config) = get_config(ttl_app.clone()).await {
+                        if !config.game_dir.is_empty() {
+                            if let Ok(cooked) = upk::tagame_swapper::resolve_cooked_dir(std::path::Path::new(&config.game_dir)) {
+                                let tagame = cooked.join("TAGame.upk");
+                                if !tagame.exists() {
+                                    applog::event("periodic_check: TAGame.upk missing, attempting automatic download...");
+                                    let _ = upk::tagame_swapper::download_official_tagame_upk(&tagame).await;
+                                }
+                            }
+                        }
+                    }
+                }
             });
 
             std::thread::spawn(|| {

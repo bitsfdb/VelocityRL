@@ -24,27 +24,43 @@
         <p>
             VelocityRL is free and open source. If it's useful to you,
             donations help cover development time and infrastructure.
-            We accept <strong>Bitcoin</strong>.
+            We accept <strong>Litecoin</strong> and <strong>Ethereum (EVM)</strong>.
         </p>
 
         <div class="coin-card">
             <div class="coin-head">
-                <span class="coin-name">Bitcoin <span class="ticker">BTC</span></span>
+                <span class="coin-name">Litecoin <span class="ticker">LTC</span></span>
                 <span class="coin-note">Native SegWit (Bech32)</span>
             </div>
             <div class="address-row">
-                <code id="btc-address" class="address">bc1q7y6f64e7m9nfk3akpykel7eqdj4gp0n5heummx</code>
-                <button id="copy-btn" class="copy-btn" type="button">Copy</button>
+                <code class="address">ltc1qd75edw7kjgyvlksx68va7cce4nrkxcjzxvh7q4</code>
+                <button class="copy-btn" type="button" data-address="ltc1qd75edw7kjgyvlksx68va7cce4nrkxcjzxvh7q4">Copy</button>
             </div>
             <p class="coin-links">
-                <a href="bitcoin:bc1q7y6f64e7m9nfk3akpykel7eqdj4gp0n5heummx">Open in wallet</a>
+                <a href="litecoin:ltc1qd75edw7kjgyvlksx68va7cce4nrkxcjzxvh7q4">Open in wallet</a>
+                <span class="sep">&middot;</span>
+                <a href="https://github.com/bitsfdb/VelocityRL/releases/latest">Download VelocityRL</a>
+            </p>
+        </div>
+
+        <div class="coin-card">
+            <div class="coin-head">
+                <span class="coin-name">Ethereum / EVM <span class="ticker">ETH</span></span>
+                <span class="coin-note">ERC-20 &amp; EVM Networks</span>
+            </div>
+            <div class="address-row">
+                <code class="address">0x90bB84e4C4B20d4b0D4cA9e0451c7De1Ad765dff</code>
+                <button class="copy-btn" type="button" data-address="0x90bB84e4C4B20d4b0D4cA9e0451c7De1Ad765dff">Copy</button>
+            </div>
+            <p class="coin-links">
+                <a href="ethereum:0x90bB84e4C4B20d4b0D4cA9e0451c7De1Ad765dff">Open in wallet</a>
                 <span class="sep">&middot;</span>
                 <a href="https://github.com/bitsfdb/VelocityRL/releases/latest">Download VelocityRL</a>
             </p>
         </div>
 
         <p class="note">
-            Only send BTC to this address. Transactions are final and cannot be reversed.<br>
+            Please double check addresses and networks before sending. Transactions are final and cannot be reversed.<br>
             Questions? Reach us on <a href="https://discord.gg/2HhBNbrGMj">Discord</a>.
         </p>
     </main>
@@ -57,24 +73,25 @@
 
     <script>
         (function () {
-            var btn = document.getElementById('copy-btn');
-            var addr = document.getElementById('btc-address').textContent.trim();
-            btn.addEventListener('click', function () {
-                function done() {
-                    btn.textContent = 'Copied';
-                    setTimeout(function () { btn.textContent = 'Copy'; }, 1500);
-                }
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(addr).then(done);
-                } else {
-                    var ta = document.createElement('textarea');
-                    ta.value = addr;
-                    document.body.appendChild(ta);
-                    ta.select();
-                    document.execCommand('copy');
-                    document.body.removeChild(ta);
-                    done();
-                }
+            document.querySelectorAll('.copy-btn').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var addr = btn.getAttribute('data-address') || (btn.previousElementSibling ? btn.previousElementSibling.textContent.trim() : '');
+                    function done() {
+                        btn.textContent = 'Copied';
+                        setTimeout(function () { btn.textContent = 'Copy'; }, 1500);
+                    }
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(addr).then(done);
+                    } else {
+                        var ta = document.createElement('textarea');
+                        ta.value = addr;
+                        document.body.appendChild(ta);
+                        ta.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(ta);
+                        done();
+                    }
+                });
             });
         })();
     </script>

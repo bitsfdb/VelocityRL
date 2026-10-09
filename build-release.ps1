@@ -46,5 +46,42 @@ if (Test-Path $pkgPath) {
         }
     }
 }
+# ---------------------------------------------------------------------------
+# Deterministic Source Tree Hash, Build ID & Secret Generation
+# ---------------------------------------------------------------------------
+Write-Host "==> Computing deterministic source tree hash..."
+$sha256 = [System.Security.Cryptography.SHA256]::Create()
+$files = Get-ChildItem -Path (Join-Path $PSScriptRoot "src-tauri\src"), (Join-Path $PSScriptRoot "ui") -Recurse -File |
+    Where-Object { $_.FullName -notmatch '[\\/](\.git|target|node_modules)[\\/]' } |
+    Sort-Object FullName
 
-& .\.signing\build-release.ps1
+$hashStream = [System.IO.MemoryStream]::new()
+foreach ($f in $files) {
+    $rel = [System.IO.Path]::GetRelativePath($PSScriptRoot, $f.FullName).Replace('\', '/')
+    $relBytes = [System.Text.Encoding]::UTF8.GetBytes($rel)
+    $hashStream.Write($relBytes, 0, $relBytes.Length)
+    $fBytes = [System.IO.File]::ReadAllBytes($f.FullName)
+    $hashStream.Write($fBytes, 0, $fBytes.Length)
+}
+$sourceHashBytes = $sha256.ComputeHash($hashStream.ToArray())
+$sourceHashHex = [BitConverter]::ToString($sourceHashBytes).Replace('-', '').ToLowerInvariant()
+$buildIdInt = [BitConverter]::ToInt32($sourceHashBytes, 0)
+$env:VRL_BUILD_ID = "$buildIdInt"
+$env:VRL_BUILD_HASH = $sourceHashHex.Substring(0, 8)
+
+# Compute Build Secret using source hash and master asset secret
+$masterSecret = "18667c8a510a5a0eb3ea0124d23f372b7387b6383a328ca4136e30f1f633997a"
+$hmac = [System.Security.Cryptography.HMACSHA256]::new([System.Text.Encoding]::UTF8.GetBytes($masterSecret))
+$secretBytes = $hmac.ComputeHash([System.Text.Encoding]::UTF8.GetBytes("$sourceHashHex"))
+$env:VRL_BUILD_SECRET = [BitConverter]::ToString($secretBytes).Replace('-', '').ToLowerInvariant()
+
+Write-Host "    Source Tree Hash: $sourceHashHex"
+Write-Host "    Deterministic Build ID: $env:VRL_BUILD_ID"
+Write-Host "    Build Secret derived successfully."
+
+if (Test-Path ".\.signing\build-release.ps1") {
+    & .\.signing\build-release.ps1
+} else {
+    Write-Host "==> Running npm run tauri build..."
+    npm run tauri build
+}
