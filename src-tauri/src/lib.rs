@@ -1522,6 +1522,21 @@ pub(crate) async fn sync_all_swaps_to_tagame(
         return Ok(());
     }
 
+    // Restore individual modified companion UPK packages so prior preset trim/body modifications are cleanly reverted
+    if let Ok(entries) = std::fs::read_dir(cooked) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                let lower = file_name.to_lowercase();
+                if lower.ends_with(".upk.bak") && !lower.starts_with("tagame") {
+                    let live_name = file_name.trim_end_matches(".bak");
+                    let live_path = cooked.join(live_name);
+                    let _ = std::fs::copy(&path, &live_path);
+                }
+            }
+        }
+    }
+
     let items = get_items(app.clone(), None).await.unwrap_or_default();
     let mut tagame_items = Vec::new();
 

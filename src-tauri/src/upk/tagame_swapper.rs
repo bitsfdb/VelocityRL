@@ -170,12 +170,7 @@ pub fn emit_convert_to_client_loadout_bytecode(
             bc.push(opcodes::EX_EQUAL_EQUAL_INT_INT);
             bc.push(opcodes::EX_DYN_ARRAY_OP);
             bc.extend_from_slice(&[0x00, 0x00]);
-            bc.push(opcodes::EX_STRUCT_MEMBER);
-            bc.extend_from_slice(&1871i32.to_le_bytes());
-            bc.extend_from_slice(&1872i32.to_le_bytes());
-            bc.extend_from_slice(&[0x00, 0x01]);
-            bc.push(opcodes::EX_INSTANCE_VARIABLE);
-            bc.extend_from_slice(&75i32.to_le_bytes());
+            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
             let index_mem = if rule.slot_idx == 0 {
                 bc.push(opcodes::EX_INT_ZERO);
                 1u32
@@ -184,6 +179,12 @@ pub fn emit_convert_to_client_loadout_bytecode(
                 bc.push(rule.slot_idx);
                 2u32
             };
+            bc.push(opcodes::EX_STRUCT_MEMBER);
+            bc.extend_from_slice(&1871i32.to_le_bytes());
+            bc.extend_from_slice(&1872i32.to_le_bytes());
+            bc.extend_from_slice(&[0x00, 0x01]);
+            bc.push(opcodes::EX_INSTANCE_VARIABLE);
+            bc.extend_from_slice(&75i32.to_le_bytes());
 
             bc.push(opcodes::EX_INT_CONST);
             bc.extend_from_slice(&owned_id.to_le_bytes());
@@ -192,18 +193,19 @@ pub fn emit_convert_to_client_loadout_bytecode(
             bc.push(opcodes::EX_LET);
             bc.push(opcodes::EX_DYN_ARRAY_OP);
             bc.extend_from_slice(&[0x00, 0x00]);
-            bc.push(opcodes::EX_STRUCT_MEMBER);
-            bc.extend_from_slice(&1871i32.to_le_bytes());
-            bc.extend_from_slice(&1872i32.to_le_bytes());
-            bc.extend_from_slice(&[0x00, 0x01]);
-            bc.push(opcodes::EX_INSTANCE_VARIABLE);
-            bc.extend_from_slice(&75i32.to_le_bytes());
+            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
             if rule.slot_idx == 0 {
                 bc.push(opcodes::EX_INT_ZERO);
             } else {
                 bc.push(opcodes::EX_INT_CONST_BYTE);
                 bc.push(rule.slot_idx);
             }
+            bc.push(opcodes::EX_STRUCT_MEMBER);
+            bc.extend_from_slice(&1871i32.to_le_bytes());
+            bc.extend_from_slice(&1872i32.to_le_bytes());
+            bc.extend_from_slice(&[0x00, 0x01]);
+            bc.push(opcodes::EX_INSTANCE_VARIABLE);
+            bc.extend_from_slice(&75i32.to_le_bytes());
             bc.push(opcodes::EX_INT_CONST);
             bc.extend_from_slice(&rule.target_id.to_le_bytes());
 
@@ -220,12 +222,7 @@ pub fn emit_convert_to_client_loadout_bytecode(
             bc.push(opcodes::EX_LET);
             bc.push(opcodes::EX_DYN_ARRAY_OP);
             bc.extend_from_slice(&[0x00, 0x00]);
-            bc.push(opcodes::EX_STRUCT_MEMBER);
-            bc.extend_from_slice(&1871i32.to_le_bytes());
-            bc.extend_from_slice(&1872i32.to_le_bytes());
-            bc.extend_from_slice(&[0x00, 0x01]);
-            bc.push(opcodes::EX_INSTANCE_VARIABLE);
-            bc.extend_from_slice(&75i32.to_le_bytes());
+            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
             if rule.slot_idx == 0 {
                 bc.push(opcodes::EX_INT_ZERO);
                 mem_sz += 38;
@@ -234,6 +231,12 @@ pub fn emit_convert_to_client_loadout_bytecode(
                 bc.push(rule.slot_idx);
                 mem_sz += 39;
             }
+            bc.push(opcodes::EX_STRUCT_MEMBER);
+            bc.extend_from_slice(&1871i32.to_le_bytes());
+            bc.extend_from_slice(&1872i32.to_le_bytes());
+            bc.extend_from_slice(&[0x00, 0x01]);
+            bc.push(opcodes::EX_INSTANCE_VARIABLE);
+            bc.extend_from_slice(&75i32.to_le_bytes());
             bc.push(opcodes::EX_INT_CONST);
             bc.extend_from_slice(&rule.target_id.to_le_bytes());
         }
@@ -393,10 +396,14 @@ pub fn emit_car_set_loadout_bytecode(
     ];
     bc.extend_from_slice(&vanilla_body);
     // Exact vanilla execution body UScript memory size:
-    // Vanilla function has MemSize=242, DiskSize=186 (97 bytecode bytes + 89 NOPs).
-    // Each EX_NOTHING NOP is 1 byte in memory and 1 byte on disk (89 bytes).
-    // Therefore, the 97-byte execution body consumes exactly 242 - 89 = 153 UScript memory bytes.
-    mem_sz += 153;
+    // Stmt 1 (EX_LET_BOOL): 11
+    // Stmt 2 (EX_DELEGATE_PROPERTY): 40
+    // Stmt 3 (EX_DELEGATE_PROPERTY): 40
+    // Stmt 4 (EX_DYN_ARRAY_ELEMENT): 16
+    // Stmt 5 (EX_VIRTUAL_FUNCTION LoadClientLoadout): 19
+    // Stmt 6 (EX_RETURN; EX_NOTHING; EX_END_OF_SCRIPT): 3
+    // Total for the 97-byte vanilla execution body is exactly 129 UScript memory bytes.
+    mem_sz += 129;
 
     let nop_count = max_disk_size.saturating_sub(bc.len());
     bc.resize(max_disk_size, opcodes::EX_NOTHING);
@@ -888,9 +895,44 @@ pub fn apply_tagame_modifications(
                         let func_off = (exp.serial_offset - c0_uncomp_offset) as usize;
                         if func_off + 48 <= decomp0.len() {
                             let orig_disk_sz = u32::from_le_bytes(decomp0[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                            if let Ok((payload, mem_sz)) = emit_car_set_loadout_bytecode(&slot_overrides, orig_disk_sz) {
+                            const EXPANDED_DISK_SZ: usize = 3000;
+                            let (target_disk_sz, delta) = if orig_disk_sz < EXPANDED_DISK_SZ {
+                                (EXPANDED_DISK_SZ, EXPANDED_DISK_SZ - orig_disk_sz)
+                            } else {
+                                (orig_disk_sz, 0)
+                            };
+
+                            if delta > 0 {
+                                let insert_pos = func_off + 48 + orig_disk_sz;
+                                decomp0.splice(insert_pos..insert_pos, std::iter::repeat(opcodes::EX_NOTHING).take(delta));
+                            }
+
+                            if let Ok((payload, mem_sz)) = emit_car_set_loadout_bytecode(&slot_overrides, target_disk_sz) {
                                 decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                decomp0[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                decomp0[func_off + 44..func_off + 48].copy_from_slice(&(target_disk_sz as u32).to_le_bytes());
+                                decomp0[func_off + 48..func_off + 48 + target_disk_sz].copy_from_slice(&payload);
+
+                                if delta > 0 {
+                                    // Update export serial size in plain header
+                                    let new_s_sz = exp.serial_size + delta as i32;
+                                    plain_header[exp.pos + 32..exp.pos + 36].copy_from_slice(&new_s_sz.to_le_bytes());
+
+                                    // Shift subsequent export serial offsets in plain header
+                                    for other_exp in &exports {
+                                        if other_exp.serial_offset > exp.serial_offset {
+                                            let new_s_off = other_exp.serial_offset + delta as i64;
+                                            plain_header[other_exp.pos + 36..other_exp.pos + 44].copy_from_slice(&new_s_off.to_le_bytes());
+                                        }
+                                    }
+
+                                    // Update chunk table in plain header
+                                    let new_c0_uncomp = chunks[0].uncomp_size + delta as i32;
+                                    plain_header[chunks[0].pos + 8..chunks[0].pos + 12].copy_from_slice(&new_c0_uncomp.to_le_bytes());
+                                    for ch in &chunks[1..] {
+                                        let new_u_off = ch.uncomp_offset + delta as i64;
+                                        plain_header[ch.pos..ch.pos + 8].copy_from_slice(&new_u_off.to_le_bytes());
+                                    }
+                                }
                             }
                         }
                     }
