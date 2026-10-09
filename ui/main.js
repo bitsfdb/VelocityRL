@@ -1822,7 +1822,7 @@ async function checkMigrationPopup() {
     } catch { /* silent */ }
 }
 
-let _swapsNoticeDismissed = false;
+let _swapsNoticeDismissed = localStorage.getItem('vrl_swaps_notice_dismissed') === 'true';
 async function checkSwapsNoticeBanner() {
     const banner = document.getElementById('swaps-notice-banner');
     if (!banner || _swapsNoticeDismissed) return;
@@ -1848,6 +1848,7 @@ function initSwapsNoticeBannerEvents() {
     if (closeBtn) {
         closeBtn.onclick = () => {
             _swapsNoticeDismissed = true;
+            try { localStorage.setItem('vrl_swaps_notice_dismissed', 'true'); } catch {}
             const banner = document.getElementById('swaps-notice-banner');
             if (banner) banner.style.display = 'none';
         };
