@@ -409,15 +409,15 @@ pub fn emit_car_set_loadout_bytecode(
         _ => &default_vanilla_body[..],
     };
     bc.extend_from_slice(vanilla_body);
-    // Exact vanilla execution body UScript memory size:
+    // Exact vanilla execution body UScript memory size in 64-bit RocketLeague.exe:
     // Stmt 1 (EX_LET_BOOL): 11
     // Stmt 2 (EX_DELEGATE_PROPERTY): 40
     // Stmt 3 (EX_DELEGATE_PROPERTY): 40
-    // Stmt 4 (EX_DYN_ARRAY_ELEMENT): 16
+    // Stmt 4 (EX_DYN_ARRAY_ELEMENT): 20 (64-bit object pointer expansion)
     // Stmt 5 (EX_VIRTUAL_FUNCTION LoadClientLoadout): 19
     // Stmt 6 (EX_RETURN; EX_NOTHING; EX_END_OF_SCRIPT): 3
-    // Total for the 97-byte vanilla execution body is exactly 129 UScript memory bytes.
-    mem_sz += 129;
+    // Total for the 97-byte vanilla execution body is exactly 133 UScript memory bytes.
+    mem_sz += 133;
 
     let nop_count = max_disk_size.saturating_sub(bc.len());
     bc.resize(max_disk_size, opcodes::EX_NOTHING);
