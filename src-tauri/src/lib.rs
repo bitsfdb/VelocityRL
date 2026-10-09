@@ -1776,8 +1776,12 @@ async fn restore_backups(app: tauri::AppHandle) -> Result<String, String> {
     let cooked = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
         .unwrap_or_else(|_| PathBuf::from(&config.game_dir));
 
-    let state = load_integrity(&app);
-    if !state.palette_active {
+    let mut state = load_integrity(&app);
+    if state.palette_active {
+        let _ = upk::palette::restore_palette_backup(Path::new(&config.game_dir));
+        integrity::mark_palette_off(&mut state);
+        let _ = psynet::merge_palette_spoof(false);
+    } else {
         let _ = upk::tagame_swapper::restore_tagame_upk(&cooked);
     }
     let _ = upk::swapper::restore_all(&cooked.to_string_lossy());
@@ -1786,7 +1790,6 @@ async fn restore_backups(app: tauri::AppHandle) -> Result<String, String> {
     save_swaps(&app, &[]);
     record_swap_history(&app, "restore_all", &[], "restored all active swaps");
 
-    let mut state = load_integrity(&app);
     state.swap_packages.clear();
     state.swap_fingerprints.clear();
     let _ = save_integrity(&app, &state);
