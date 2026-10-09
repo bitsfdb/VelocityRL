@@ -2153,7 +2153,7 @@ fn file_layout_ok(path: &Path, keys: &str, keymap: &str) -> Result<(), PaletteEr
     validate_chunk_layout(&data, &chunks)
 }
 
-fn backup_references_stale_engine(
+pub fn backup_references_stale_engine(
     backup: &Path,
     current_engine_guid: &[u8; 16],
     keys_txt: &str,

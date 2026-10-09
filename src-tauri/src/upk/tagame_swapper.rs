@@ -664,7 +664,7 @@ pub fn apply_body_paint_modification(
 pub fn apply_tagame_modifications(
     cooked_dir: &Path,
     swaps: &[TagameSwapItem],
-    _keys_txt: &str,
+    keys_txt: &str,
     keys_map_json: &str,
 ) -> Result<TagameSwapperStatus, TagameSwapError> {
     let tagame_path = cooked_dir.join("TAGame.upk");
@@ -682,15 +682,16 @@ pub fn apply_tagame_modifications(
 
     // Auto-detect Rocket League game updates:
     // If the game was updated, Engine.upk will have a new package GUID that does not match the backup.
-    // We NEVER compare file modification times (file_time_newer) because applying swaps updates TAGame.upk's
-    // modification time, which would cause the modified/patched file to overwrite and corrupt the clean backup!
+    // Note: TAGame.upk has an AES-encrypted header, so we decrypt and check the export/import table references
+    // via `backup_references_stale_engine` rather than naive raw-byte window searches.
     let backup_is_stale = if backup_path.is_file() {
         if let Some(eg) = engine_guid {
-            if let Ok(bak_bytes) = fs::read(&backup_path) {
-                !bak_bytes.windows(16).any(|w| w == eg)
-            } else {
-                false
-            }
+            crate::upk::palette::backup_references_stale_engine(
+                &backup_path,
+                &eg,
+                keys_txt,
+                keys_map_json,
+            )
         } else {
             false
         }
@@ -711,7 +712,7 @@ pub fn apply_tagame_modifications(
 
     let pal_st = crate::upk::palette::read_palette_status(cooked_dir, None);
     if pal_st.applied {
-        if let Ok(_) = crate::upk::palette::apply_rich_palette_to_file(cooked_dir, _keys_txt, keys_map_json) {
+        if let Ok(_) = crate::upk::palette::apply_rich_palette_to_file(cooked_dir, keys_txt, keys_map_json) {
             if let Ok(pal_bytes) = fs::read(&tagame_path) {
                 file_bytes = pal_bytes;
             }
