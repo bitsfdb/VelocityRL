@@ -2497,8 +2497,12 @@ pub fn restore_palette_backup(game_dir: &Path) -> Result<PaletteStatus, PaletteE
     if backup.exists() {
         restore_from(&backup, &tagame, keys, keymap)?;
     } else {
+        let st = read_palette_status(&cooked, None);
+        if !st.applied {
+            return Ok(st);
+        }
         return Err(PaletteError::Msg(
-            "No palette backup (TAGame.upk.bak)".into(),
+            "No palette backup (TAGame.upk.bak). Verify game files in Epic/Steam to restore vanilla.".into(),
         ));
     }
 
