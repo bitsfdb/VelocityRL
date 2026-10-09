@@ -998,6 +998,228 @@ pub fn apply_tagame_modifications(
             }
         }
 
+        // 2. Patch Chunk 1: ExplosionPreviewer_TA::SetLoadout for Garage 3D Stage Goal Explosion Preview
+        let target_ge_opt = swaps.iter()
+            .find(|s| {
+                let norm = s.slot.to_lowercase().replace([' ', '_', '-'], "");
+                norm.contains("goal") || norm.contains("explosion") || s.slot_index == Some(10) || s.slot_index == Some(14)
+            })
+            .map(|s| if s.product_id > 0 { s.product_id } else { 2044 });
+
+        if chunks.len() > 1 {
+            if let Some(target_ge) = target_ge_opt {
+                let c1 = &chunks[1];
+                let c1_start = c1.comp_offset as usize;
+                let c1_end = c1_start + c1.comp_size as usize;
+                if c1_end <= file_bytes.len() {
+                    if let Ok(mut decomp1) = crate::upk::compression::decompress_chunk(&file_bytes[c1_start..c1_end]) {
+                        if let Some(exp) = exports.iter().find(|e| {
+                            e.name == "SetLoadout" && e.outer_name == "ExplosionPreviewer_TA"
+                        }) {
+                            let func_off = (exp.serial_offset - c1.uncomp_offset) as usize;
+                            if func_off + 48 <= decomp1.len() {
+                                let orig_disk_sz = u32::from_le_bytes(decomp1[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                                if orig_disk_sz >= 115 && func_off + 48 + orig_disk_sz <= decomp1.len() {
+                                    // Dynamically resolve SetProduct export index under ExplosionPreviewer_TA or fallback
+                                    let explosion_previewer_idx = exp.outer_idx;
+                                    let set_product_id = exports.iter()
+                                        .find(|e| e.name == "SetProduct" && (e.outer_idx == explosion_previewer_idx || e.outer_name == "ExplosionPreviewer_TA"))
+                                        .map(|e| e.idx as i32)
+                                        .unwrap_or(23231);
+
+                                    let vanilla_script = &decomp1[func_off + 48..func_off + 48 + orig_disk_sz];
+                                    let arg2 = &vanilla_script[58..111]; // InLoadout.PaintFinish
+                                    let mut bc = Vec::new();
+                                    bc.push(0x1C); // EX_VIRTUAL_FUNCTION
+                                    bc.extend_from_slice(&set_product_id.to_le_bytes()); // SetProduct
+                                    bc.push(opcodes::EX_INT_CONST);
+                                    bc.extend_from_slice(&target_ge.to_le_bytes()); // Arg 1: ProductID
+                                    bc.extend_from_slice(arg2); // Arg 2: PaintFinish
+                                    bc.push(opcodes::EX_END_FUNCTION_PARMS);
+                                    bc.push(opcodes::EX_RETURN);
+                                    bc.push(opcodes::EX_NOTHING);
+                                    bc.push(opcodes::EX_END_OF_SCRIPT);
+
+                                    let pad = orig_disk_sz.saturating_sub(bc.len());
+                                    bc.resize(orig_disk_sz, opcodes::EX_NOTHING);
+                                    let new_mem = (5 + 5 + 84 + 1 + 3 + pad) as u32;
+
+                                    decomp1[func_off + 40..func_off + 44].copy_from_slice(&new_mem.to_le_bytes());
+                                    decomp1[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&bc);
+                                }
+                            }
+                        }
+
+                        if let Ok(mut recomp1) = crate::upk::compression::compress_chunk(&decomp1) {
+                            let orig_c1_sz = c1.comp_size as usize;
+                            if recomp1.len() <= orig_c1_sz {
+                                recomp1.resize(orig_c1_sz, 0);
+                                file_bytes[c1_start..c1_start + orig_c1_sz].copy_from_slice(&recomp1);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Patch Chunk 2: LoadoutValidation_TA::CorrectOnlineData for In-Game / Online Matches
+        if chunks.len() > 2 && !slot_overrides.is_empty() {
+            let c2 = &chunks[2];
+            let c2_start = c2.comp_offset as usize;
+            let c2_end = c2_start + c2.comp_size as usize;
+            if c2_end <= file_bytes.len() {
+                if let Ok(mut decomp2) = crate::upk::compression::decompress_chunk(&file_bytes[c2_start..c2_end]) {
+                    // CorrectOnlineData overrides OutLoadout.Products[slot] with the swapped product IDs
+                    if let Some(exp) = exports.iter().find(|e| e.name == "CorrectOnlineData") {
+                        let func_off = (exp.serial_offset - c2.uncomp_offset) as usize;
+                        if func_off + 48 <= decomp2.len() {
+                            let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                            if orig_disk_sz >= 100 {
+                                let cod_idx = exp.idx as i32;
+                                let out_loadout_id = exports.iter()
+                                    .find(|e| e.name == "OutLoadout" && e.outer_idx == cod_idx)
+                                    .map(|e| e.idx as i32)
+                                    .unwrap_or(47858);
+                                let in_config_id = exports.iter()
+                                    .find(|e| e.name == "InProductsConfig" && e.outer_idx == cod_idx)
+                                    .map(|e| e.idx as i32)
+                                    .unwrap_or(47853);
+                                let cld_idx = exports.iter()
+                                    .find(|e| e.name == "CustomLoadoutData")
+                                    .map(|e| e.idx as i32)
+                                    .unwrap_or(2364);
+                                let products_idx = exports.iter()
+                                    .find(|e| e.name == "Products" && e.outer_idx == cld_idx)
+                                    .map(|e| e.idx as i32)
+                                    .unwrap_or(1871);
+
+                                let mut bc = Vec::new();
+                                let mut mem_sz: u32 = 0;
+
+                                // 1. OutLoadout = InProductsConfig;
+                                bc.push(opcodes::EX_LET);
+                                bc.push(opcodes::EX_LOCAL_VARIABLE);
+                                bc.extend_from_slice(&out_loadout_id.to_le_bytes());
+                                bc.push(opcodes::EX_LOCAL_VARIABLE);
+                                bc.extend_from_slice(&in_config_id.to_le_bytes());
+                                mem_sz += 19; // EX_LET(1) + 2 * EX_LOCAL_VARIABLE(9)
+
+                                // 2. Override specific slots on OutLoadout
+                                let mut seen_online = std::collections::HashSet::new();
+                                let mut unique_online_rules = Vec::new();
+                                for r in slot_overrides.iter().rev() {
+                                    if seen_online.insert((r.slot_idx, r.owned_id)) {
+                                        unique_online_rules.push(r.clone());
+                                    }
+                                }
+                                unique_online_rules.reverse();
+
+                                for rule in &unique_online_rules {
+                                    if let Some(owned_id) = rule.owned_id {
+                                        let rule_disk_len = if rule.slot_idx == 0 { 56 } else { 58 };
+                                        if bc.len() + rule_disk_len + 10 > orig_disk_sz {
+                                            break;
+                                        }
+
+                                        bc.push(opcodes::EX_JUMP_IF_NOT);
+                                        let jump_pos = bc.len();
+                                        bc.extend_from_slice(&[0x00, 0x00]);
+
+                                        bc.push(opcodes::EX_EQUAL_EQUAL_INT_INT);
+                                        bc.push(opcodes::EX_DYN_ARRAY_OP);
+                                        bc.extend_from_slice(&[0x00, 0x00]);
+                                        bc.push(opcodes::EX_STRUCT_MEMBER);
+                                        bc.extend_from_slice(&products_idx.to_le_bytes());
+                                        bc.extend_from_slice(&cld_idx.to_le_bytes());
+                                        bc.extend_from_slice(&[0x00, 0x00]);
+                                        bc.push(opcodes::EX_LOCAL_VARIABLE);
+                                        bc.extend_from_slice(&out_loadout_id.to_le_bytes());
+                                        let index_mem = if rule.slot_idx == 0 {
+                                            bc.push(opcodes::EX_INT_ZERO);
+                                            1u32
+                                        } else {
+                                            bc.push(opcodes::EX_INT_CONST_BYTE);
+                                            bc.push(rule.slot_idx);
+                                            2u32
+                                        };
+                                        bc.push(opcodes::EX_INT_CONST);
+                                        bc.extend_from_slice(&owned_id.to_le_bytes());
+                                        bc.push(opcodes::EX_END_FUNCTION_PARMS);
+
+                                        bc.push(opcodes::EX_LET);
+                                        bc.push(opcodes::EX_DYN_ARRAY_OP);
+                                        bc.extend_from_slice(&[0x00, 0x00]);
+                                        bc.push(opcodes::EX_STRUCT_MEMBER);
+                                        bc.extend_from_slice(&products_idx.to_le_bytes());
+                                        bc.extend_from_slice(&cld_idx.to_le_bytes());
+                                        bc.extend_from_slice(&[0x00, 0x00]);
+                                        bc.push(opcodes::EX_LOCAL_VARIABLE);
+                                        bc.extend_from_slice(&out_loadout_id.to_le_bytes());
+                                        if rule.slot_idx == 0 {
+                                            bc.push(opcodes::EX_INT_ZERO);
+                                        } else {
+                                            bc.push(opcodes::EX_INT_CONST_BYTE);
+                                            bc.push(rule.slot_idx);
+                                        }
+                                        bc.push(opcodes::EX_INT_CONST);
+                                        bc.extend_from_slice(&rule.target_id.to_le_bytes());
+
+                                        let total_rule_mem = 3 + (38 + index_mem) + (37 + index_mem);
+                                        let jump_target = (mem_sz + total_rule_mem) as u16;
+                                        bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
+                                        mem_sz += total_rule_mem;
+                                    } else {
+                                        let rule_disk_len = if rule.slot_idx == 0 { 26 } else { 27 };
+                                        if bc.len() + rule_disk_len + 10 > orig_disk_sz {
+                                            break;
+                                        }
+                                        bc.push(opcodes::EX_LET);
+                                        bc.push(opcodes::EX_DYN_ARRAY_OP);
+                                        bc.extend_from_slice(&[0x00, 0x00]);
+                                        bc.push(opcodes::EX_STRUCT_MEMBER);
+                                        bc.extend_from_slice(&products_idx.to_le_bytes());
+                                        bc.extend_from_slice(&cld_idx.to_le_bytes());
+                                        bc.extend_from_slice(&[0x00, 0x00]);
+                                        bc.push(opcodes::EX_LOCAL_VARIABLE);
+                                        bc.extend_from_slice(&out_loadout_id.to_le_bytes());
+                                        if rule.slot_idx == 0 {
+                                            bc.push(opcodes::EX_INT_ZERO);
+                                            mem_sz += 38;
+                                        } else {
+                                            bc.push(opcodes::EX_INT_CONST_BYTE);
+                                            bc.push(rule.slot_idx);
+                                            mem_sz += 39;
+                                        }
+                                        bc.push(opcodes::EX_INT_CONST);
+                                        bc.extend_from_slice(&rule.target_id.to_le_bytes());
+                                    }
+                                }
+                                bc.push(opcodes::EX_RETURN);
+                                bc.push(0x28); // EX_FALSE (valid loadout, no DLC stripping)
+                                bc.push(opcodes::EX_END_OF_SCRIPT);
+                                mem_sz += 3;
+
+                                let nop_cnt = orig_disk_sz.saturating_sub(bc.len());
+                                bc.resize(orig_disk_sz, opcodes::EX_NOTHING);
+                                mem_sz += nop_cnt as u32;
+
+                                decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&bc);
+                            }
+                        }
+                    }
+
+                    if let Ok(mut recomp2) = crate::upk::compression::compress_chunk(&decomp2) {
+                        let orig_c2_sz = c2.comp_size as usize;
+                        if recomp2.len() <= orig_c2_sz {
+                            recomp2.resize(orig_c2_sz, 0);
+                            file_bytes[c2_start..c2_start + orig_c2_sz].copy_from_slice(&recomp2);
+                        }
+                    }
+                }
+            }
+        }
+
         // Helper to safely patch any simple function bytecode with padding and updated mem_sz
         let patch_func = |decomp: &mut [u8], exp_name: &str, outer_name: Option<&str>, chunk_u_off: i64, bc: &[u8]| -> bool {
             if let Some(exp) = exports.iter().find(|e| e.name == exp_name && outer_name.map_or(true, |o| e.outer_name == o)) {
