@@ -166,9 +166,19 @@ def sim_serialize_expr(data, pos):
         pos += 29
         mem += 39
         return pos, mem
-    elif token == 0x1C: # EX_VIRTUAL_FUNCTION
+    elif token == 0x1C: # EX_FINAL_FUNCTION
         pos += 4
         mem += 8
+        while pos < len(data) and data[pos] != 0x16:
+            pos, m_arg = sim_serialize_expr(data, pos)
+            mem += m_arg
+        if pos < len(data) and data[pos] == 0x16:
+            pos += 1
+            mem += 1
+        return pos, mem
+    elif token == 0x1B: # EX_VIRTUAL_FUNCTION
+        pos += 8
+        mem += 16
         while pos < len(data) and data[pos] != 0x16:
             pos, m_arg = sim_serialize_expr(data, pos)
             mem += m_arg
@@ -324,6 +334,21 @@ def validate_tagame(upk_path):
     except Exception as e:
         print(f"[!] CRITICAL DESERIALIZATION FAILURE in Car_TA::SetLoadout: {e}")
         return False
+
+    # Check Chunk 0 CarPreviewActor_TA::SetLoadout
+    car_preview = next((e for e in exports if e["name"] == "SetLoadout" and e.get("outer_name") == "CarPreviewActor_TA"), None)
+    if car_preview:
+        cp_off = car_preview["serial_offset"] - c0["uncomp_offset"]
+        cp_disk = struct.unpack("<I", decomp0[cp_off+44:cp_off+48])[0]
+        cp_script = decomp0[cp_off+48 : cp_off+48+cp_disk]
+        if cp_disk == 230 and cp_script[11:15] == bytes([0x1C, 0x47, 0x47, 0x00]):
+            print(f"[*] CarPreviewActor_TA::SetLoadout: {cp_disk} bytes (Chunk 0 vanilla stock intact)")
+        else:
+            try:
+                validate_function_bytecode("CarPreviewActor_TA::SetLoadout", cp_script)
+            except Exception as e:
+                print(f"[!] CRITICAL DESERIALIZATION FAILURE in CarPreviewActor_TA::SetLoadout: {e}")
+                return False
 
     # Check Chunk 0 ConvertToClientLoadout
     cld = next((e for e in exports if e["name"] == "ConvertToClientLoadout" and e.get("outer_name") == "_Types_TA"), None)

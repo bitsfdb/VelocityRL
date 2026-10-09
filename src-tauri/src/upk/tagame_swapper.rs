@@ -36,6 +36,9 @@ pub mod opcodes {
     pub const EX_EQUAL_EQUAL_INT_INT: u8 = 0x9A;
     pub const EX_END_FUNCTION_PARMS: u8 = 0x16;
     pub const EX_TRUE_CONST: u8 = 0x27;
+    pub const EX_FALSE_CONST: u8 = 0x28;
+    pub const EX_FINAL_FUNCTION: u8 = 0x1C;
+    pub const EX_VIRTUAL_FUNCTION: u8 = 0x1B;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -231,11 +234,10 @@ pub fn emit_car_set_loadout_bytecode(
             bc.push(opcodes::EX_INT_CONST);
             bc.extend_from_slice(&rule.target_id.to_le_bytes());
 
-            // Memory size for conditional:
-            // JUMP_IF_NOT (3) + cond_mem (39 + index_mem) + body_mem (38 + index_mem) = 80 + 2 * index_mem
-            let total_rule_mem = 3 + (39 + index_mem) + (38 + index_mem);
-            let jump_target = (mem_sz + total_rule_mem) as u16;
+            // Jump target is the local bytecode offset immediately after the body
+            let jump_target = bc.len() as u16;
             bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
+            let total_rule_mem = 3 + (39 + index_mem) + (38 + index_mem);
             mem_sz += total_rule_mem;
         } else {
             // Unconditional rule:
@@ -295,6 +297,218 @@ pub fn emit_car_set_loadout_bytecode(
     // Stmt 6 (EX_RETURN; EX_NOTHING; EX_END_OF_SCRIPT): 3
     // Total for the 97-byte vanilla execution body is exactly 133 UScript memory bytes.
     mem_sz += 133;
+
+    let nop_count = max_disk_size.saturating_sub(bc.len());
+    bc.resize(max_disk_size, opcodes::EX_NOTHING);
+    mem_sz += nop_count as u32;
+
+    Ok((bc, mem_sz))
+}
+
+pub fn emit_car_preview_set_loadout_bytecode(
+    slot_overrides: &[SlotSwapRule],
+    max_disk_size: usize,
+    products_id_opt: Option<i32>,
+    loadout_data_id_opt: Option<i32>,
+    new_loadout_id_opt: Option<i32>,
+    in_loadout_id_opt: Option<i32>,
+    force_set_loadout_name_idx_opt: Option<i32>,
+) -> Result<(Vec<u8>, u32), TagameSwapError> {
+    let mut bc = Vec::new();
+    let mut mem_sz: u32 = 0;
+
+    let products_id = products_id_opt.unwrap_or(1871);
+    let loadout_data_id = loadout_data_id_opt.unwrap_or(2364);
+    let new_loadout_id = new_loadout_id_opt.unwrap_or(18093);
+    let in_loadout_id = in_loadout_id_opt.unwrap_or(18094);
+    let force_set_loadout_name_idx = force_set_loadout_name_idx_opt.unwrap_or(20264);
+
+    // 1. Assignment: NewLoadout = InLoadout; (11 bytes disk, 19 mem)
+    bc.push(opcodes::EX_LET);
+    bc.push(opcodes::EX_INSTANCE_VARIABLE);
+    bc.extend_from_slice(&new_loadout_id.to_le_bytes());
+    bc.push(opcodes::EX_LOCAL_VARIABLE);
+    bc.extend_from_slice(&in_loadout_id.to_le_bytes());
+    mem_sz += 19;
+
+    // Filter to vehicle cosmetics (slots 0..=9: Body, Decal, Wheels, Boost, Antenna, Topper, Finish, Accent, Audio, Trail)
+    let mut seen = std::collections::HashSet::new();
+    let mut unique_rules = Vec::new();
+    for r in slot_overrides.iter().rev() {
+        if r.slot_idx <= 9 && seen.insert(r.slot_idx) {
+            unique_rules.push(r.clone());
+        }
+    }
+    unique_rules.reverse();
+
+    // 2. Slot override rules on NewLoadout
+    // ForceSetLoadout tail call is 19 bytes disk
+    let tail_disk_len = 19;
+    for rule in &unique_rules {
+        let index_disk_len = if rule.slot_idx == 0 { 1 } else { 2 };
+        let cond_disk_len = 53 + 2 * index_disk_len;
+        let uncond_disk_len = 26 + index_disk_len;
+
+        let can_fit_cond = rule.owned_id.is_some()
+            && (unique_rules.len() <= 3 || (rule.slot_idx == 0 && unique_rules.len() <= 5))
+            && (bc.len() + cond_disk_len + tail_disk_len <= max_disk_size);
+
+        if can_fit_cond {
+            let owned_id = rule.owned_id.unwrap();
+
+            // EX_JUMP_IF_NOT
+            bc.push(opcodes::EX_JUMP_IF_NOT);
+            let jump_pos = bc.len();
+            bc.extend_from_slice(&[0x00, 0x00]);
+
+            // Condition: NewLoadout.Products[slot_idx] == owned_id
+            bc.push(opcodes::EX_EQUAL_EQUAL_INT_INT);
+            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
+            let index_mem = if rule.slot_idx == 0 {
+                bc.push(opcodes::EX_INT_ZERO);
+                1u32
+            } else {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(rule.slot_idx);
+                2u32
+            };
+            bc.push(opcodes::EX_STRUCT_MEMBER);
+            bc.extend_from_slice(&products_id.to_le_bytes());
+            bc.extend_from_slice(&loadout_data_id.to_le_bytes());
+            bc.extend_from_slice(&[0x00, 0x01]);
+            bc.push(opcodes::EX_INSTANCE_VARIABLE);
+            bc.extend_from_slice(&new_loadout_id.to_le_bytes());
+            bc.push(opcodes::EX_INT_CONST);
+            bc.extend_from_slice(&owned_id.to_le_bytes());
+            bc.push(opcodes::EX_END_FUNCTION_PARMS);
+
+            // Body: NewLoadout.Products[slot_idx] = target_id
+            bc.push(opcodes::EX_LET);
+            bc.push(opcodes::EX_DYN_ARRAY_OP);
+            bc.extend_from_slice(&[0x00, 0x00]);
+            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
+            if rule.slot_idx == 0 {
+                bc.push(opcodes::EX_INT_ZERO);
+            } else {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(rule.slot_idx);
+            }
+            bc.push(opcodes::EX_STRUCT_MEMBER);
+            bc.extend_from_slice(&products_id.to_le_bytes());
+            bc.extend_from_slice(&loadout_data_id.to_le_bytes());
+            bc.extend_from_slice(&[0x00, 0x01]);
+            bc.push(opcodes::EX_INSTANCE_VARIABLE);
+            bc.extend_from_slice(&new_loadout_id.to_le_bytes());
+            bc.push(opcodes::EX_INT_CONST);
+            bc.extend_from_slice(&rule.target_id.to_le_bytes());
+
+            // Jump target is local bytecode offset right after body
+            let jump_target = bc.len() as u16;
+            bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
+
+            let total_rule_mem = 77 + 2 * index_mem;
+            mem_sz += total_rule_mem;
+        } else if bc.len() + uncond_disk_len + tail_disk_len <= max_disk_size {
+            // Unconditional: NewLoadout.Products[slot_idx] = target_id;
+            bc.push(opcodes::EX_LET);
+            bc.push(opcodes::EX_DYN_ARRAY_OP);
+            bc.extend_from_slice(&[0x00, 0x00]);
+            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
+            let index_mem = if rule.slot_idx == 0 {
+                bc.push(opcodes::EX_INT_ZERO);
+                1u32
+            } else {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(rule.slot_idx);
+                2u32
+            };
+            bc.push(opcodes::EX_STRUCT_MEMBER);
+            bc.extend_from_slice(&products_id.to_le_bytes());
+            bc.extend_from_slice(&loadout_data_id.to_le_bytes());
+            bc.extend_from_slice(&[0x00, 0x01]);
+            bc.push(opcodes::EX_INSTANCE_VARIABLE);
+            bc.extend_from_slice(&new_loadout_id.to_le_bytes());
+            bc.push(opcodes::EX_INT_CONST);
+            bc.extend_from_slice(&rule.target_id.to_le_bytes());
+
+            mem_sz += 38 + index_mem;
+        }
+    }
+
+    // 3. Stmt: ForceSetLoadout(NewLoadout, false); return;
+    bc.push(opcodes::EX_VIRTUAL_FUNCTION);
+    bc.extend_from_slice(&force_set_loadout_name_idx.to_le_bytes());
+    bc.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+    bc.push(opcodes::EX_INSTANCE_VARIABLE);
+    bc.extend_from_slice(&new_loadout_id.to_le_bytes());
+    bc.push(opcodes::EX_FALSE_CONST);
+    bc.push(opcodes::EX_END_FUNCTION_PARMS);
+    bc.push(opcodes::EX_RETURN);
+    bc.push(opcodes::EX_NOTHING);
+    bc.push(opcodes::EX_END_OF_SCRIPT);
+    mem_sz += 31;
+
+    // 4. Pad with EX_NOTHING up to max_disk_size
+    let nop_count = max_disk_size.saturating_sub(bc.len());
+    bc.resize(max_disk_size, opcodes::EX_NOTHING);
+    mem_sz += nop_count as u32;
+
+    Ok((bc, mem_sz))
+}
+
+pub fn emit_explosion_previewer_set_loadout_bytecode(
+    target_ge: i32,
+    max_disk_size: usize,
+    vanilla_code_opt: Option<&[u8]>,
+) -> Result<(Vec<u8>, u32), TagameSwapError> {
+    let mut bc = Vec::with_capacity(max_disk_size);
+
+    // 1. Call SetProduct header (5 bytes: EX_FINAL_FUNCTION SetProduct)
+    if let Some(code) = vanilla_code_opt {
+        if code.len() >= 5 {
+            bc.extend_from_slice(&code[0..5]);
+        } else {
+            bc.extend_from_slice(&[0x1C, 0xBF, 0x5A, 0x00, 0x00]);
+        }
+    } else {
+        bc.extend_from_slice(&[0x1C, 0xBF, 0x5A, 0x00, 0x00]);
+    }
+
+    // 2. Arg 1: ProductID = EX_INT_CONST target_ge (5 bytes)
+    bc.push(opcodes::EX_INT_CONST);
+    bc.extend_from_slice(&target_ge.to_le_bytes());
+
+    // 3. Arg 2: InLoadout.OnlineProducts[slot] (53 bytes)
+    let default_arg2: [u8; 53] = [
+        0x57, 0x00, 0x00, 0x5e, 0x19, 0x00, 0x12, 0x00, 0x20, 0x16, 0x64, 0x00, 0x00, 0x09, 0x00, 0xd3,
+        0x63, 0x00, 0x00, 0x00, 0x02, 0xd3, 0x63, 0x00, 0x00, 0x09, 0x00, 0x5d, 0x26, 0x00, 0x00, 0x00,
+        0x01, 0x5d, 0x26, 0x00, 0x00, 0x35, 0x38, 0x09, 0x00, 0x00, 0x3c, 0x09, 0x00, 0x00, 0x00, 0x00,
+        0x46, 0xb9, 0x5a, 0x00, 0x00,
+    ];
+    let arg2 = match vanilla_code_opt {
+        Some(code) if code.len() >= 111 => &code[58..111],
+        _ => &default_arg2[..],
+    };
+    bc.extend_from_slice(arg2);
+
+    // 4. End parms, Return, Nothing, End of Script (4 bytes)
+    bc.extend_from_slice(&[
+        opcodes::EX_END_FUNCTION_PARMS,
+        opcodes::EX_RETURN,
+        opcodes::EX_NOTHING,
+        opcodes::EX_END_OF_SCRIPT,
+    ]);
+
+    // Memory size for the 67-byte active code:
+    // EX_FINAL_FUNCTION: 9
+    // EX_INT_CONST: 5
+    // Arg 2 (OnlineProducts array element expression): 65
+    // EX_END_FUNCTION_PARMS: 1
+    // EX_RETURN: 1
+    // EX_NOTHING: 1
+    // EX_END_OF_SCRIPT: 1
+    // Total active memory size: 83
+    let mut mem_sz = 83u32;
 
     let nop_count = max_disk_size.saturating_sub(bc.len());
     bc.resize(max_disk_size, opcodes::EX_NOTHING);
@@ -856,6 +1070,50 @@ pub fn apply_tagame_modifications(
                         }
                     }
 
+                    // Patch CarPreviewActor_TA::SetLoadout in Chunk 0 for garage turntable vehicle preview (strictly within vanilla 230 bytes)
+                    if let Some(preview_exp) = exports.iter().find(|e| e.name == "SetLoadout" && e.outer_name == "CarPreviewActor_TA") {
+                        let func_off = (preview_exp.serial_offset - c0_uncomp_offset) as usize;
+                        if func_off + 48 <= decomp0.len() {
+                            let orig_disk_sz = u32::from_le_bytes(decomp0[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                            if orig_disk_sz >= 30 && func_off + 48 + orig_disk_sz <= decomp0.len() {
+                                let preview_set_loadout_idx = preview_exp.idx as i32;
+                                let new_loadout_idx = exports.iter()
+                                    .find(|e| e.name == "NewLoadout" && e.outer_idx == preview_set_loadout_idx)
+                                    .map(|e| e.idx as i32)
+                                    .unwrap_or(18093);
+                                let in_loadout_idx = exports.iter()
+                                    .find(|e| e.name == "InLoadout" && e.outer_idx == preview_set_loadout_idx)
+                                    .map(|e| e.idx as i32)
+                                    .unwrap_or(18094);
+                                let products_idx = exports.iter()
+                                    .find(|e| e.name == "Products")
+                                    .map(|e| e.idx as i32)
+                                    .unwrap_or(1871);
+                                let loadout_data_idx = exports.iter()
+                                    .find(|e| e.name == "LoadoutData" && e.outer_name == "_Types_TA")
+                                    .map(|e| e.idx as i32)
+                                    .unwrap_or(2364);
+                                let force_set_loadout_name_idx = names.iter()
+                                    .position(|n| n == "ForceSetLoadout")
+                                    .map(|i| i as i32)
+                                    .unwrap_or(20264);
+
+                                if let Ok((payload, mem_sz)) = emit_car_preview_set_loadout_bytecode(
+                                    &slot_overrides,
+                                    orig_disk_sz,
+                                    Some(products_idx),
+                                    Some(loadout_data_idx),
+                                    Some(new_loadout_idx),
+                                    Some(in_loadout_idx),
+                                    Some(force_set_loadout_name_idx),
+                                ) {
+                                    decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                    decomp0[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                }
+                            }
+                        }
+                    }
+
                     if let Ok(mut recomp0) = crate::upk::compression::compress_chunk(&decomp0) {
                         let orig_c0_sz = c0_comp_size as usize;
                         if recomp0.len() <= orig_c0_sz {
@@ -873,28 +1131,67 @@ pub fn apply_tagame_modifications(
             }
         }
 
+        // 2. Patch Chunk 1: ExplosionPreviewer_TA::SetLoadout (115 bytes) if a goal explosion swap is present
+        let goal_explosion_target = swaps.iter().find_map(|s| {
+            let norm = s.slot.to_lowercase().replace([' ', '_', '-'], "");
+            let slot_idx: u8 = if norm.contains("goal") || norm.contains("explosion") || s.slot_index == Some(10) || s.slot_index == Some(14) {
+                10
+            } else if let Some(idx) = s.slot_index {
+                idx as u8
+            } else {
+                crate::presets::slot_index_from_str(&s.slot) as u8
+            };
+            if slot_idx == 10 || norm.contains("goal") || norm.contains("explosion") {
+                Some(if s.product_id > 0 { s.product_id } else { 2044 })
+            } else {
+                None
+            }
+        });
 
-
-        // Helper to safely patch any simple function bytecode with padding and updated mem_sz
-        let patch_func = |decomp: &mut [u8], exp_name: &str, outer_name: Option<&str>, chunk_u_off: i64, bc: &[u8]| -> bool {
-            if let Some(exp) = exports.iter().find(|e| e.name == exp_name && outer_name.map_or(true, |o| e.outer_name == o)) {
-                let func_off = (exp.serial_offset - chunk_u_off) as usize;
-                if func_off + 48 <= decomp.len() {
-                    let orig_disk_sz = u32::from_le_bytes(decomp[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                    if bc.len() <= orig_disk_sz && func_off + 48 + orig_disk_sz <= decomp.len() {
-                        let pad = orig_disk_sz - bc.len();
-                        let mem_sz = (bc.len() + pad) as u32;
-                        decomp[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                        decomp[func_off + 48..func_off + 48 + bc.len()].copy_from_slice(bc);
-                        for b in &mut decomp[func_off + 48 + bc.len()..func_off + 48 + orig_disk_sz] {
-                            *b = opcodes::EX_NOTHING;
+        if let Some(target_ge) = goal_explosion_target {
+            if chunks.len() > 1 {
+                let c1_uncomp_offset = chunks[1].uncomp_offset;
+                let c1_comp_offset = chunks[1].comp_offset;
+                let c1_comp_size = chunks[1].comp_size;
+                let c1_start = c1_comp_offset as usize;
+                let c1_end = c1_start + c1_comp_size as usize;
+                if c1_end <= file_bytes.len() {
+                    if let Ok(mut decomp1) = crate::upk::compression::decompress_chunk(&file_bytes[c1_start..c1_end]) {
+                        if let Some(exp) = exports.iter().find(|e| e.name == "SetLoadout" && e.outer_name == "ExplosionPreviewer_TA") {
+                            let func_off = (exp.serial_offset - c1_uncomp_offset) as usize;
+                            if func_off + 48 <= decomp1.len() {
+                                let orig_disk_sz = u32::from_le_bytes(decomp1[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                                if orig_disk_sz >= 67 && func_off + 48 + orig_disk_sz <= decomp1.len() {
+                                    let vanilla_code = &decomp1[func_off + 48..func_off + 48 + orig_disk_sz];
+                                    if let Ok((payload, mem_sz)) = emit_explosion_previewer_set_loadout_bytecode(
+                                        target_ge,
+                                        orig_disk_sz,
+                                        Some(vanilla_code),
+                                    ) {
+                                        decomp1[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                        decomp1[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                    }
+                                }
+                            }
                         }
-                        return true;
+
+                        if let Ok(mut recomp1) = crate::upk::compression::compress_chunk(&decomp1) {
+                            let orig_c1_sz = c1_comp_size as usize;
+                            if recomp1.len() <= orig_c1_sz {
+                                recomp1.resize(orig_c1_sz, 0);
+                                file_bytes[c1_start..c1_start + orig_c1_sz].copy_from_slice(&recomp1);
+                            } else {
+                                return Err(TagameSwapError::Msg(format!(
+                                    "Recompressed Chunk 1 ({} bytes) exceeds allocation ({} bytes)",
+                                    recomp1.len(),
+                                    orig_c1_sz
+                                )));
+                            }
+                        }
                     }
                 }
             }
-            false
-        };
+        }
 
 
 
