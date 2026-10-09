@@ -287,6 +287,31 @@ def validate_tagame(upk_path):
                 pos += 1
                 mem += 1
             return pos, mem
+        elif token == 0x1F: # EX_STRING_CONST
+            null_pos = data.find(b"\x00", pos)
+            if null_pos != -1:
+                str_len = (null_pos - pos) + 1
+                pos += str_len
+                mem += str_len
+            return pos, mem
+        elif token == 0x21: # EX_NAME_CONST
+            pos += 8
+            mem += 8
+            return pos, mem
+        elif token == 0x48: # EX_EMPTY_PARM
+            return pos, mem
+        elif token == 0x38: # Operator / conversion
+            p1, m1 = sim_serialize_expr(data, pos)
+            p2, m2 = sim_serialize_expr(data, p1)
+            return p2, mem + m1 + m2
+        elif token >= 0x60: # High tokens / native calls
+            while pos < len(data) and data[pos] != 0x16 and data[pos] not in [0x0B, 0x4C]:
+                pos, m_arg = sim_serialize_expr(data, pos)
+                mem += m_arg
+            if pos < len(data) and data[pos] == 0x16:
+                pos += 1
+                mem += 1
+            return pos, mem
         elif token in [0x00, 0x10]:
             raise ValueError(f"Bad expr token {token:02x} at script offset {pos-1}")
         else:
