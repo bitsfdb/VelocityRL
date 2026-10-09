@@ -23,6 +23,7 @@ pub mod opcodes {
     pub const EX_INSTANCE_VARIABLE: u8 = 0x2B;
     pub const EX_STRUCT_MEMBER: u8 = 0x35;
     pub const EX_DYN_ARRAY_OP: u8 = 0x57;
+    pub const EX_DYN_ARRAY_ELEMENT: u8 = 0x5E;
     pub const EX_INT_ZERO: u8 = 0x25;
     pub const EX_INT_CONST_BYTE: u8 = 0x2C;
     pub const EX_INT_CONST: u8 = 0x1D;
@@ -275,7 +276,10 @@ pub fn emit_car_set_loadout_bytecode(
         if let Some(owned_id) = rule.owned_id {
             // Conditional rule:
             // if (Data.Products[slot_idx] == owned_id) Data.Products[slot_idx] = target_id;
-            let rule_disk_len = if rule.slot_idx == 0 { 56 } else { 58 };
+            // In UE3, dynamic array indexing is:
+            // EX_DYN_ARRAY_OP (0x57) + [0x00, 0x00] + EX_DYN_ARRAY_ELEMENT (0x5E) + <Index Expr> + <Array Expr>
+            let index_disk_len = if rule.slot_idx == 0 { 1 } else { 2 };
+            let rule_disk_len = 56 + 2 * index_disk_len;
             if bc.len() + rule_disk_len + 97 > max_disk_size {
                 break;
             }
@@ -291,12 +295,8 @@ pub fn emit_car_set_loadout_bytecode(
             // Left side: Data.Products[slot_idx]
             bc.push(opcodes::EX_DYN_ARRAY_OP);
             bc.extend_from_slice(&[0x00, 0x00]);
-            bc.push(opcodes::EX_STRUCT_MEMBER);
-            bc.extend_from_slice(&1871i32.to_le_bytes()); // Products (#1871)
-            bc.extend_from_slice(&1872i32.to_le_bytes()); // ClientLoadoutData (#1872)
-            bc.extend_from_slice(&[0x00, 0x01]);
-            bc.push(opcodes::EX_LOCAL_VARIABLE);
-            bc.extend_from_slice(&16586i32.to_le_bytes()); // Data (#16586)
+            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
+            // 1. Index operand:
             let index_mem = if rule.slot_idx == 0 {
                 bc.push(opcodes::EX_INT_ZERO);
                 1u32
@@ -305,6 +305,13 @@ pub fn emit_car_set_loadout_bytecode(
                 bc.push(rule.slot_idx);
                 2u32
             };
+            // 2. Array operand: Data.Products
+            bc.push(opcodes::EX_STRUCT_MEMBER);
+            bc.extend_from_slice(&1871i32.to_le_bytes()); // Products (#1871)
+            bc.extend_from_slice(&1872i32.to_le_bytes()); // ClientLoadoutData (#1872)
+            bc.extend_from_slice(&[0x00, 0x01]);
+            bc.push(opcodes::EX_LOCAL_VARIABLE);
+            bc.extend_from_slice(&16586i32.to_le_bytes()); // Data (#16586)
 
             // Right side: owned_id
             bc.push(opcodes::EX_INT_CONST);
@@ -317,18 +324,21 @@ pub fn emit_car_set_loadout_bytecode(
             bc.push(opcodes::EX_LET);
             bc.push(opcodes::EX_DYN_ARRAY_OP);
             bc.extend_from_slice(&[0x00, 0x00]);
-            bc.push(opcodes::EX_STRUCT_MEMBER);
-            bc.extend_from_slice(&1871i32.to_le_bytes()); // Products (#1871)
-            bc.extend_from_slice(&1872i32.to_le_bytes()); // ClientLoadoutData (#1872)
-            bc.extend_from_slice(&[0x00, 0x01]);
-            bc.push(opcodes::EX_LOCAL_VARIABLE);
-            bc.extend_from_slice(&16586i32.to_le_bytes()); // Data (#16586)
+            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
+            // 1. Index operand:
             if rule.slot_idx == 0 {
                 bc.push(opcodes::EX_INT_ZERO);
             } else {
                 bc.push(opcodes::EX_INT_CONST_BYTE);
                 bc.push(rule.slot_idx);
             }
+            // 2. Array operand: Data.Products
+            bc.push(opcodes::EX_STRUCT_MEMBER);
+            bc.extend_from_slice(&1871i32.to_le_bytes()); // Products (#1871)
+            bc.extend_from_slice(&1872i32.to_le_bytes()); // ClientLoadoutData (#1872)
+            bc.extend_from_slice(&[0x00, 0x01]);
+            bc.push(opcodes::EX_LOCAL_VARIABLE);
+            bc.extend_from_slice(&16586i32.to_le_bytes()); // Data (#16586)
             bc.push(opcodes::EX_INT_CONST);
             bc.extend_from_slice(&rule.target_id.to_le_bytes());
 
@@ -336,35 +346,38 @@ pub fn emit_car_set_loadout_bytecode(
             bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
 
             // Memory size for conditional:
-            // JUMP_IF_NOT (3) + cond_mem (38 + index_mem) + body_mem (37 + index_mem) = 78 + 2 * index_mem
-            let total_rule_mem = 3 + (38 + index_mem) + (37 + index_mem);
+            // JUMP_IF_NOT (3) + cond_mem (39 + index_mem) + body_mem (38 + index_mem) = 80 + 2 * index_mem
+            let total_rule_mem = 3 + (39 + index_mem) + (38 + index_mem);
             mem_sz += total_rule_mem;
         } else {
             // Unconditional rule:
             // Data.Products[slot_idx] = target_id;
-            let rule_disk_len = if rule.slot_idx == 0 { 26 } else { 27 };
+            let index_disk_len = if rule.slot_idx == 0 { 1 } else { 2 };
+            let rule_disk_len = 26 + index_disk_len;
             if bc.len() + rule_disk_len + 97 > max_disk_size {
                 break;
             }
             bc.push(opcodes::EX_LET);
             bc.push(opcodes::EX_DYN_ARRAY_OP);
             bc.extend_from_slice(&[0x00, 0x00]);
+            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
+            let index_mem = if rule.slot_idx == 0 {
+                bc.push(opcodes::EX_INT_ZERO);
+                1u32
+            } else {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(rule.slot_idx);
+                2u32
+            };
             bc.push(opcodes::EX_STRUCT_MEMBER);
             bc.extend_from_slice(&1871i32.to_le_bytes()); // Products (#1871)
             bc.extend_from_slice(&1872i32.to_le_bytes()); // ClientLoadoutData (#1872)
             bc.extend_from_slice(&[0x00, 0x01]);
             bc.push(opcodes::EX_LOCAL_VARIABLE);
             bc.extend_from_slice(&16586i32.to_le_bytes()); // Data (#16586)
-            if rule.slot_idx == 0 {
-                bc.push(opcodes::EX_INT_ZERO);
-                mem_sz += 38;
-            } else {
-                bc.push(opcodes::EX_INT_CONST_BYTE);
-                bc.push(rule.slot_idx);
-                mem_sz += 39;
-            }
             bc.push(opcodes::EX_INT_CONST);
             bc.extend_from_slice(&rule.target_id.to_le_bytes());
+            mem_sz += 38 + index_mem;
         }
     }
 
