@@ -258,25 +258,33 @@ pub fn emit_convert_to_client_loadout_bytecode(
 pub fn emit_car_set_loadout_bytecode(
     slot_overrides: &[SlotSwapRule],
     max_disk_size: usize,
+    products_id_opt: Option<i32>,
+    cld_id_opt: Option<i32>,
+    data_var_id_opt: Option<i32>,
+    vanilla_tail_opt: Option<&[u8]>,
 ) -> Result<(Vec<u8>, u32), TagameSwapError> {
     let mut bc = Vec::new();
     let mut mem_sz: u32 = 0;
 
-    // 1. Slot assignments on Data (local #16586)
-    // De-duplicate by (slot_idx, owned_id) so latest rule for each combination applies.
-    // This allows multiple different swaps on the SAME slot (e.g. 5 different wheels, multiple boosts)
-    // across different presets while preserving preset conditionals!
+    let products_id = products_id_opt.unwrap_or(1871);
+    let cld_id = cld_id_opt.unwrap_or(1872);
+    let data_var_id = data_var_id_opt.unwrap_or(16586);
+
+    // 1. Slot assignments on Data (local #data_var_id)
+    // De-duplicate by slot_idx so highest priority rule applies.
     let mut seen = std::collections::HashSet::new();
     let mut unique_rules = Vec::new();
     for r in slot_overrides.iter().rev() {
-        if seen.insert((r.slot_idx, r.owned_id)) {
+        if seen.insert(r.slot_idx) {
             unique_rules.push(r.clone());
         }
     }
     unique_rules.reverse();
 
     for rule in &unique_rules {
-        if let Some(owned_id) = rule.owned_id {
+        let fits_conditional = rule.owned_id.is_some() && (max_disk_size >= 250 || unique_rules.len() == 1);
+        if fits_conditional {
+            let owned_id = rule.owned_id.unwrap();
             // Conditional rule:
             // if (Data.Products[slot_idx] == owned_id) Data.Products[slot_idx] = target_id;
             // In UE3, dynamic array indexing is:
@@ -310,11 +318,11 @@ pub fn emit_car_set_loadout_bytecode(
             };
             // 2. Array operand: Data.Products
             bc.push(opcodes::EX_STRUCT_MEMBER);
-            bc.extend_from_slice(&1871i32.to_le_bytes()); // Products (#1871)
-            bc.extend_from_slice(&1872i32.to_le_bytes()); // ClientLoadoutData (#1872)
+            bc.extend_from_slice(&products_id.to_le_bytes());
+            bc.extend_from_slice(&cld_id.to_le_bytes());
             bc.extend_from_slice(&[0x00, 0x01]);
             bc.push(opcodes::EX_LOCAL_VARIABLE);
-            bc.extend_from_slice(&16586i32.to_le_bytes()); // Data (#16586)
+            bc.extend_from_slice(&data_var_id.to_le_bytes());
 
             // Right side: owned_id
             bc.push(opcodes::EX_INT_CONST);
@@ -337,11 +345,11 @@ pub fn emit_car_set_loadout_bytecode(
             }
             // 2. Array operand: Data.Products
             bc.push(opcodes::EX_STRUCT_MEMBER);
-            bc.extend_from_slice(&1871i32.to_le_bytes()); // Products (#1871)
-            bc.extend_from_slice(&1872i32.to_le_bytes()); // ClientLoadoutData (#1872)
+            bc.extend_from_slice(&products_id.to_le_bytes());
+            bc.extend_from_slice(&cld_id.to_le_bytes());
             bc.extend_from_slice(&[0x00, 0x01]);
             bc.push(opcodes::EX_LOCAL_VARIABLE);
-            bc.extend_from_slice(&16586i32.to_le_bytes()); // Data (#16586)
+            bc.extend_from_slice(&data_var_id.to_le_bytes());
             bc.push(opcodes::EX_INT_CONST);
             bc.extend_from_slice(&rule.target_id.to_le_bytes());
 
@@ -355,6 +363,8 @@ pub fn emit_car_set_loadout_bytecode(
         } else {
             // Unconditional rule:
             // Data.Products[slot_idx] = target_id;
+            // Takes 27 bytes (slot 0) or 28 bytes (slot > 0), allowing up to 3 slots
+            // (e.g. Body, Goal Explosion garage slot 10, Goal Explosion match slot 15) to fit in 186 bytes!
             let index_disk_len = if rule.slot_idx == 0 { 1 } else { 2 };
             let rule_disk_len = 26 + index_disk_len;
             if bc.len() + rule_disk_len + 97 > max_disk_size {
@@ -373,11 +383,11 @@ pub fn emit_car_set_loadout_bytecode(
                 2u32
             };
             bc.push(opcodes::EX_STRUCT_MEMBER);
-            bc.extend_from_slice(&1871i32.to_le_bytes()); // Products (#1871)
-            bc.extend_from_slice(&1872i32.to_le_bytes()); // ClientLoadoutData (#1872)
+            bc.extend_from_slice(&products_id.to_le_bytes());
+            bc.extend_from_slice(&cld_id.to_le_bytes());
             bc.extend_from_slice(&[0x00, 0x01]);
             bc.push(opcodes::EX_LOCAL_VARIABLE);
-            bc.extend_from_slice(&16586i32.to_le_bytes()); // Data (#16586)
+            bc.extend_from_slice(&data_var_id.to_le_bytes());
             bc.push(opcodes::EX_INT_CONST);
             bc.extend_from_slice(&rule.target_id.to_le_bytes());
             mem_sz += 38 + index_mem;
@@ -386,7 +396,7 @@ pub fn emit_car_set_loadout_bytecode(
 
     // 2. Exact vanilla execution body:
     // bLoadoutSet = true; Loadout.EventAssetLoaded = ...; Loadout.EventAllAssetsLoaded = ...; ProductLoader.LoadClientLoadout(Data); return;
-    let vanilla_body: [u8; 97] = [
+    let default_vanilla_body: [u8; 97] = [
         0x14, 0x2D, 0x01, 0x8D, 0x40, 0x00, 0x00, 0x27,
         0x52, 0x5E, 0x19, 0x00, 0x01, 0x8E, 0x40, 0x00, 0x00, 0x09, 0x00, 0xF8, 0x3E, 0x00, 0x00, 0x00, 0x01, 0xF8, 0x3E, 0x00, 0x00, 0x49, 0x8B, 0x5C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x52, 0x5E, 0x19, 0x00, 0x01, 0x8E, 0x40, 0x00, 0x00, 0x09, 0x00, 0xF7, 0x3E, 0x00, 0x00, 0x00, 0x01, 0xF7, 0x3E, 0x00, 0x00, 0x49, 0x7D, 0x5C, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -394,7 +404,11 @@ pub fn emit_car_set_loadout_bytecode(
         0x1C, 0x10, 0x3F, 0x00, 0x00, 0x46, 0xCA, 0x40, 0x00, 0x00, 0x16,
         0x04, 0x0B, 0x4C
     ];
-    bc.extend_from_slice(&vanilla_body);
+    let vanilla_body = match vanilla_tail_opt {
+        Some(tail) if tail.len() == 97 => tail,
+        _ => &default_vanilla_body[..],
+    };
+    bc.extend_from_slice(vanilla_body);
     // Exact vanilla execution body UScript memory size:
     // Stmt 1 (EX_LET_BOOL): 11
     // Stmt 2 (EX_DELEGATE_PROPERTY): 40
@@ -662,7 +676,40 @@ pub fn apply_tagame_modifications(
         )));
     }
 
-    if !backup_path.is_file() {
+    let engine_path = cooked_dir.join("Engine.upk");
+    let engine_guid = crate::upk::swapper::read_package_guid(&engine_path);
+
+    // Auto-detect Rocket League game updates:
+    // If the game was updated, TAGame.upk will have been overwritten by Epic/Steam,
+    // and Engine.upk will have a new package GUID.
+    let backup_is_stale = if backup_path.is_file() {
+        let tagame_meta = fs::metadata(&tagame_path).ok();
+        let backup_meta = fs::metadata(&backup_path).ok();
+        let file_time_newer = match (tagame_meta, backup_meta) {
+            (Some(tm), Some(bm)) => match (tm.modified(), bm.modified()) {
+                (Ok(tt), Ok(bt)) => tt > bt,
+                _ => false,
+            },
+            _ => false,
+        };
+
+        let guid_mismatch = if let Some(eg) = engine_guid {
+            if let Ok(bak_bytes) = fs::read(&backup_path) {
+                !bak_bytes.windows(16).any(|w| w == eg)
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        file_time_newer || guid_mismatch
+    } else {
+        false
+    };
+
+    if !backup_path.is_file() || backup_is_stale {
+        crate::applog::event("apply_tagame_modifications: game update detected or backup missing, refreshing TAGame.upk.bak");
         fs::copy(&tagame_path, &backup_path).map_err(|e| {
             TagameSwapError::Msg(format!("Failed to create backup {}: {e}", backup_path.display()))
         })?;
@@ -879,7 +926,7 @@ pub fn apply_tagame_modifications(
             }
         }
 
-        // 1. Patch Chunk 0: Car_TA::SetLoadout (#16587) with dynamic allocation expansion for up to 50+ swaps
+        // 1. Patch Chunk 0: Car_TA::SetLoadout strictly within vanilla allocation (186 bytes)
         if !chunks.is_empty() {
             let c0_uncomp_offset = chunks[0].uncomp_offset;
             let c0_comp_offset = chunks[0].comp_offset;
@@ -895,43 +942,44 @@ pub fn apply_tagame_modifications(
                         let func_off = (exp.serial_offset - c0_uncomp_offset) as usize;
                         if func_off + 48 <= decomp0.len() {
                             let orig_disk_sz = u32::from_le_bytes(decomp0[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                            const EXPANDED_DISK_SZ: usize = 3000;
-                            let (target_disk_sz, delta) = if orig_disk_sz < EXPANDED_DISK_SZ {
-                                (EXPANDED_DISK_SZ, EXPANDED_DISK_SZ - orig_disk_sz)
-                            } else {
-                                (orig_disk_sz, 0)
-                            };
+                            if orig_disk_sz >= 97 && func_off + 48 + orig_disk_sz <= decomp0.len() {
+                                // Dynamically resolve Data, ClientLoadoutData, and Products export indices
+                                let set_loadout_idx = exp.idx as i32;
+                                let data_var_idx = exports.iter()
+                                    .find(|e| e.name == "Data" && e.outer_idx == set_loadout_idx)
+                                    .map(|e| e.idx as i32)
+                                    .unwrap_or(16586);
+                                let cld_idx = exports.iter()
+                                    .find(|e| e.name == "ClientLoadoutData")
+                                    .map(|e| e.idx as i32)
+                                    .unwrap_or(1872);
+                                let products_idx = exports.iter()
+                                    .find(|e| e.name == "Products" && e.outer_idx == cld_idx)
+                                    .map(|e| e.idx as i32)
+                                    .unwrap_or(1871);
 
-                            if delta > 0 {
-                                let insert_pos = func_off + 48 + orig_disk_sz;
-                                decomp0.splice(insert_pos..insert_pos, std::iter::repeat(opcodes::EX_NOTHING).take(delta));
-                            }
-
-                            if let Ok((payload, mem_sz)) = emit_car_set_loadout_bytecode(&slot_overrides, target_disk_sz) {
-                                decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                decomp0[func_off + 44..func_off + 48].copy_from_slice(&(target_disk_sz as u32).to_le_bytes());
-                                decomp0[func_off + 48..func_off + 48 + target_disk_sz].copy_from_slice(&payload);
-
-                                if delta > 0 {
-                                    // Update export serial size in plain header
-                                    let new_s_sz = exp.serial_size + delta as i32;
-                                    plain_header[exp.pos + 32..exp.pos + 36].copy_from_slice(&new_s_sz.to_le_bytes());
-
-                                    // Shift subsequent export serial offsets in plain header
-                                    for other_exp in &exports {
-                                        if other_exp.serial_offset > exp.serial_offset {
-                                            let new_s_off = other_exp.serial_offset + delta as i64;
-                                            plain_header[other_exp.pos + 36..other_exp.pos + 44].copy_from_slice(&new_s_off.to_le_bytes());
-                                        }
+                                // Dynamically extract vanilla body if present in orig_script
+                                let orig_script = &decomp0[func_off + 48..func_off + 48 + orig_disk_sz];
+                                let vanilla_tail = if let Some(pos) = orig_script.windows(2).position(|w| w == [0x14, 0x2D]) {
+                                    if orig_script.ends_with(&[0x04, 0x0B, 0x4C]) && orig_disk_sz - pos >= 90 {
+                                        Some(&orig_script[pos..])
+                                    } else {
+                                        None
                                     }
+                                } else {
+                                    None
+                                };
 
-                                    // Update chunk table in plain header
-                                    let new_c0_uncomp = chunks[0].uncomp_size + delta as i32;
-                                    plain_header[chunks[0].pos + 8..chunks[0].pos + 12].copy_from_slice(&new_c0_uncomp.to_le_bytes());
-                                    for ch in &chunks[1..] {
-                                        let new_u_off = ch.uncomp_offset + delta as i64;
-                                        plain_header[ch.pos..ch.pos + 8].copy_from_slice(&new_u_off.to_le_bytes());
-                                    }
+                                if let Ok((payload, mem_sz)) = emit_car_set_loadout_bytecode(
+                                    &slot_overrides,
+                                    orig_disk_sz,
+                                    Some(products_idx),
+                                    Some(cld_idx),
+                                    Some(data_var_idx),
+                                    vanilla_tail,
+                                ) {
+                                    decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                    decomp0[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
                                 }
                             }
                         }
@@ -1195,7 +1243,7 @@ mod tests {
             SlotSwapRule { slot_idx: 2, owned_id: None, target_id: 30 },
             SlotSwapRule { slot_idx: 3, owned_id: None, target_id: 32 },
         ];
-        let (bc, mem_sz) = emit_car_set_loadout_bytecode(&rules, 186).unwrap();
+        let (bc, mem_sz) = emit_car_set_loadout_bytecode(&rules, 186, None, None, None, None).unwrap();
         assert_eq!(bc.len(), 186);
         assert_eq!(bc[0], opcodes::EX_LET);
         assert!(mem_sz >= 186);
@@ -1208,7 +1256,7 @@ mod tests {
             SlotSwapRule { slot_idx: 2, owned_id: Some(400), target_id: 50 },
             SlotSwapRule { slot_idx: 3, owned_id: Some(29), target_id: 12968 },
         ];
-        let (bc, mem_sz) = emit_car_set_loadout_bytecode(&rules, 300).unwrap();
+        let (bc, mem_sz) = emit_car_set_loadout_bytecode(&rules, 300, None, None, None, None).unwrap();
         assert_eq!(bc.len(), 300);
         assert_eq!(bc[0], opcodes::EX_JUMP_IF_NOT);
         assert_eq!(bc[3], opcodes::EX_EQUAL_EQUAL_INT_INT);
