@@ -736,12 +736,7 @@ fn atomic_write(path: &Path, data: &[u8]) -> Result<(), PaletteError> {
     }
 }
 
-fn refuse_if_game_running(action: &str) -> Result<(), PaletteError> {
-    if crate::psynet::is_rocket_league_running() {
-        return Err(PaletteError::Msg(format!(
-            "Rocket League is currently running. Please close the game before {action} to avoid file lock errors."
-        )));
-    }
+fn refuse_if_game_running(_action: &str) -> Result<(), PaletteError> {
     Ok(())
 }
 
