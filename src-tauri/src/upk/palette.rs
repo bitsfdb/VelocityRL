@@ -354,10 +354,18 @@ fn decrypt_tagame(
     let map_key = keys_map
         .get("tagame")
         .copied()
-        .or_else(|| keys_map.get("TAGame").copied());
+        .or_else(|| keys_map.get("TAGame").copied())
+        .or(Some(crate::upk::tagame_swapper::TAGAME_KEY));
     let key = map_key
         .and_then(|k| {
-            crypto::find_valid_key_relaxed(enc_block, meta.compressed_chunks_offset, &[k])
+            // Verify key by checking if decrypted first name block contains a plausible length
+            let probe = crypto::decrypt_ecb(&k, &enc_block[..64.min(enc_block.len())]);
+            let nlen = i32::from_le_bytes(probe[..4].try_into().unwrap_or([0; 4]));
+            if nlen > 0 && nlen < 256 {
+                Some(k)
+            } else {
+                crypto::find_valid_key_relaxed(enc_block, meta.compressed_chunks_offset, &[k])
+            }
         })
         .or_else(|| {
             crypto::find_valid_key(
@@ -728,7 +736,12 @@ fn atomic_write(path: &Path, data: &[u8]) -> Result<(), PaletteError> {
     }
 }
 
-fn refuse_if_game_running(_action: &str) -> Result<(), PaletteError> {
+fn refuse_if_game_running(action: &str) -> Result<(), PaletteError> {
+    if crate::psynet::is_rocket_league_running() {
+        return Err(PaletteError::Msg(format!(
+            "Rocket League is currently running. Please close the game before {action} to avoid file lock errors."
+        )));
+    }
     Ok(())
 }
 
