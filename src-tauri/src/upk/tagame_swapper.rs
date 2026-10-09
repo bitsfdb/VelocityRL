@@ -22,7 +22,7 @@ pub mod opcodes {
     pub const EX_LOCAL_VARIABLE: u8 = 0x46;
     pub const EX_INSTANCE_VARIABLE: u8 = 0x2B;
     pub const EX_STRUCT_MEMBER: u8 = 0x35;
-    pub const EX_DYN_ARRAY_OP: u8 = 0x57;
+    pub const EX_DYN_ARRAY_ELEMENT: u8 = 0x10;
     pub const EX_INT_ZERO: u8 = 0x25;
     pub const EX_INT_CONST_BYTE: u8 = 0x2C;
     pub const EX_INT_CONST: u8 = 0x1D;
@@ -167,8 +167,7 @@ pub fn emit_convert_to_client_loadout_bytecode(
             bc.extend_from_slice(&[0x00, 0x00]);
 
             bc.push(opcodes::EX_EQUAL_EQUAL_INT_INT);
-            bc.push(opcodes::EX_DYN_ARRAY_OP);
-            bc.extend_from_slice(&[0x00, 0x00]);
+            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
             let index_mem = if rule.slot_idx == 0 {
                 bc.push(opcodes::EX_INT_ZERO);
                 1u32
@@ -189,8 +188,7 @@ pub fn emit_convert_to_client_loadout_bytecode(
             bc.push(opcodes::EX_END_FUNCTION_PARMS);
 
             bc.push(opcodes::EX_LET);
-            bc.push(opcodes::EX_DYN_ARRAY_OP);
-            bc.extend_from_slice(&[0x00, 0x00]);
+            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
             if rule.slot_idx == 0 {
                 bc.push(opcodes::EX_INT_ZERO);
             } else {
@@ -206,8 +204,8 @@ pub fn emit_convert_to_client_loadout_bytecode(
             bc.push(opcodes::EX_INT_CONST);
             bc.extend_from_slice(&rule.target_id.to_le_bytes());
 
-            let cond_mem = 1 + 3 + index_mem + 28 + 5 + 1;
-            let body_mem = 1 + 3 + index_mem + 28 + 5;
+            let cond_mem = 1 + 1 + index_mem + 28 + 5 + 1;
+            let body_mem = 1 + 1 + index_mem + 28 + 5;
             let total_rule_mem = 3 + cond_mem + body_mem;
             let jump_target = bc.len() as u16;
             bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
@@ -217,15 +215,14 @@ pub fn emit_convert_to_client_loadout_bytecode(
                 break;
             }
             bc.push(opcodes::EX_LET);
-            bc.push(opcodes::EX_DYN_ARRAY_OP);
-            bc.extend_from_slice(&[0x00, 0x00]);
+            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
             if rule.slot_idx == 0 {
                 bc.push(opcodes::EX_INT_ZERO);
-                mem_sz += 38;
+                mem_sz += 36;
             } else {
                 bc.push(opcodes::EX_INT_CONST_BYTE);
                 bc.push(rule.slot_idx);
-                mem_sz += 39;
+                mem_sz += 37;
             }
             bc.push(opcodes::EX_STRUCT_MEMBER);
             bc.extend_from_slice(&1871i32.to_le_bytes());
@@ -259,88 +256,39 @@ pub fn emit_car_set_loadout_bytecode(
     let mut mem_sz: u32 = 0;
 
     // 1. Slot assignments on Data (local #16586)
-    for rule in slot_overrides {
-        let cond_disk_len = if rule.slot_idx == 0 { 56 } else { 58 };
-        let uncond_disk_len = if rule.slot_idx == 0 { 26 } else { 27 };
-
-        if let Some(owned_id) = rule.owned_id {
-            if bc.len() + cond_disk_len + 110 > max_disk_size {
-                break;
-            }
-            bc.push(opcodes::EX_JUMP_IF_NOT);
-            let jump_pos = bc.len();
-            bc.extend_from_slice(&[0x00, 0x00]);
-
-            bc.push(opcodes::EX_EQUAL_EQUAL_INT_INT);
-            bc.push(opcodes::EX_DYN_ARRAY_OP);
-            bc.extend_from_slice(&[0x00, 0x00]);
-            let index_mem = if rule.slot_idx == 0 {
-                bc.push(opcodes::EX_INT_ZERO);
-                1u32
-            } else {
-                bc.push(opcodes::EX_INT_CONST_BYTE);
-                bc.push(rule.slot_idx);
-                2u32
-            };
-            bc.push(opcodes::EX_STRUCT_MEMBER);
-            bc.extend_from_slice(&1871i32.to_le_bytes()); // Products
-            bc.extend_from_slice(&1872i32.to_le_bytes()); // ClientLoadoutData
-            bc.extend_from_slice(&[0x00, 0x01]);
-            bc.push(opcodes::EX_LOCAL_VARIABLE);
-            bc.extend_from_slice(&16586i32.to_le_bytes()); // Data (#16586)
-
-            bc.push(opcodes::EX_INT_CONST);
-            bc.extend_from_slice(&owned_id.to_le_bytes());
-            bc.push(opcodes::EX_END_FUNCTION_PARMS);
-
-            bc.push(opcodes::EX_LET);
-            bc.push(opcodes::EX_DYN_ARRAY_OP);
-            bc.extend_from_slice(&[0x00, 0x00]);
-            if rule.slot_idx == 0 {
-                bc.push(opcodes::EX_INT_ZERO);
-            } else {
-                bc.push(opcodes::EX_INT_CONST_BYTE);
-                bc.push(rule.slot_idx);
-            }
-            bc.push(opcodes::EX_STRUCT_MEMBER);
-            bc.extend_from_slice(&1871i32.to_le_bytes());
-            bc.extend_from_slice(&1872i32.to_le_bytes());
-            bc.extend_from_slice(&[0x00, 0x01]);
-            bc.push(opcodes::EX_LOCAL_VARIABLE);
-            bc.extend_from_slice(&16586i32.to_le_bytes());
-            bc.push(opcodes::EX_INT_CONST);
-            bc.extend_from_slice(&rule.target_id.to_le_bytes());
-
-            let cond_mem = 1 + 3 + index_mem + 28 + 5 + 1;
-            let body_mem = 1 + 3 + index_mem + 28 + 5;
-            let total_rule_mem = 3 + cond_mem + body_mem;
-            let jump_target = bc.len() as u16;
-            bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
-            mem_sz += total_rule_mem;
-        } else {
-            if bc.len() + uncond_disk_len + 110 > max_disk_size {
-                break;
-            }
-            bc.push(opcodes::EX_LET);
-            bc.push(opcodes::EX_DYN_ARRAY_OP);
-            bc.extend_from_slice(&[0x00, 0x00]);
-            if rule.slot_idx == 0 {
-                bc.push(opcodes::EX_INT_ZERO);
-                mem_sz += 38;
-            } else {
-                bc.push(opcodes::EX_INT_CONST_BYTE);
-                bc.push(rule.slot_idx);
-                mem_sz += 39;
-            }
-            bc.push(opcodes::EX_STRUCT_MEMBER);
-            bc.extend_from_slice(&1871i32.to_le_bytes());
-            bc.extend_from_slice(&1872i32.to_le_bytes());
-            bc.extend_from_slice(&[0x00, 0x01]);
-            bc.push(opcodes::EX_LOCAL_VARIABLE);
-            bc.extend_from_slice(&16586i32.to_le_bytes());
-            bc.push(opcodes::EX_INT_CONST);
-            bc.extend_from_slice(&rule.target_id.to_le_bytes());
+    // De-duplicate slots so latest rule for each slot applies
+    let mut seen_slots = std::collections::HashSet::new();
+    let mut unique_rules = Vec::new();
+    for r in slot_overrides.iter().rev() {
+        if seen_slots.insert(r.slot_idx) {
+            unique_rules.push(r.clone());
         }
+    }
+    unique_rules.reverse();
+
+    for rule in &unique_rules {
+        let rule_disk_len = if rule.slot_idx == 0 { 22 } else { 23 };
+        if bc.len() + rule_disk_len + 97 > max_disk_size {
+            break;
+        }
+        bc.push(opcodes::EX_LET);
+        bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
+        if rule.slot_idx == 0 {
+            bc.push(opcodes::EX_INT_ZERO);
+            mem_sz += 36; // LET(1) + DYN_ARRAY(1) + INT_ZERO(1) + STRUCT_MEMBER(19) + LOCAL_VAR(9) + INT_CONST(5)
+        } else {
+            bc.push(opcodes::EX_INT_CONST_BYTE);
+            bc.push(rule.slot_idx);
+            mem_sz += 37; // LET(1) + DYN_ARRAY(1) + INT_CONST_BYTE(2) + STRUCT_MEMBER(19) + LOCAL_VAR(9) + INT_CONST(5)
+        }
+        bc.push(opcodes::EX_STRUCT_MEMBER);
+        bc.extend_from_slice(&1871i32.to_le_bytes()); // Products (#1871)
+        bc.extend_from_slice(&1872i32.to_le_bytes()); // ClientLoadoutData (#1872)
+        bc.extend_from_slice(&[0x00, 0x01]);
+        bc.push(opcodes::EX_LOCAL_VARIABLE);
+        bc.extend_from_slice(&16586i32.to_le_bytes()); // Data (#16586)
+        bc.push(opcodes::EX_INT_CONST);
+        bc.extend_from_slice(&rule.target_id.to_le_bytes());
     }
 
     // 2. Exact vanilla execution body:
@@ -973,15 +921,14 @@ pub fn apply_tagame_modifications(
                                         break;
                                     }
                                     bc.push(opcodes::EX_LET);
-                                    bc.push(opcodes::EX_DYN_ARRAY_OP);
-                                    bc.extend_from_slice(&[0x00, 0x00]);
+                                    bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
                                     if rule.slot_idx == 0 {
                                         bc.push(opcodes::EX_INT_ZERO);
-                                        mem_sz += 38;
+                                        mem_sz += 36;
                                     } else {
                                         bc.push(opcodes::EX_INT_CONST_BYTE);
                                         bc.push(rule.slot_idx);
-                                        mem_sz += 39;
+                                        mem_sz += 37;
                                     }
                                     bc.push(opcodes::EX_STRUCT_MEMBER);
                                     bc.extend_from_slice(&1871i32.to_le_bytes()); // Products
