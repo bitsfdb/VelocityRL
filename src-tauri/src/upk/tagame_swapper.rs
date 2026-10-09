@@ -379,7 +379,11 @@ pub fn emit_car_set_loadout_bytecode(
         0x04, 0x0B, 0x4C
     ];
     bc.extend_from_slice(&vanilla_body);
-    mem_sz += 9 + 78 + 11 + 3 + 6; // 107 bytes (verified by UE3 deserialization crash dump: expected 220)
+    // Exact vanilla execution body UScript memory size:
+    // Vanilla function has MemSize=242, DiskSize=186 (97 bytecode bytes + 89 NOPs).
+    // Each EX_NOTHING NOP is 1 byte in memory and 1 byte on disk (89 bytes).
+    // Therefore, the 97-byte execution body consumes exactly 242 - 89 = 153 UScript memory bytes.
+    mem_sz += 153;
 
     let nop_count = max_disk_size.saturating_sub(bc.len());
     bc.resize(max_disk_size, opcodes::EX_NOTHING);
@@ -916,62 +920,7 @@ pub fn apply_tagame_modifications(
             false
         };
 
-        // 2. Patch Chunk 1: ExplosionPreviewer_TA::SetLoadout (#23226) for Garage 3D Stage Preview
-        let target_ge_opt = swaps.iter()
-            .find(|s| {
-                let norm = s.slot.to_lowercase().replace([' ', '_', '-'], "");
-                norm.contains("goal") || norm.contains("explosion") || s.slot_index == Some(10) || s.slot_index == Some(14)
-            })
-            .map(|s| if s.product_id > 0 { s.product_id } else { 2044 });
 
-        if chunks.len() > 1 {
-            if let Some(target_ge) = target_ge_opt {
-                let c1 = &chunks[1];
-                let c1_start = c1.comp_offset as usize;
-                let c1_end = c1_start + c1.comp_size as usize;
-                if c1_end <= file_bytes.len() {
-                    if let Ok(mut decomp1) = crate::upk::compression::decompress_chunk(&file_bytes[c1_start..c1_end]) {
-                        if let Some(exp) = exports.iter().find(|e| {
-                            e.name == "SetLoadout" && e.outer_name == "ExplosionPreviewer_TA"
-                        }) {
-                            let func_off = (exp.serial_offset - c1.uncomp_offset) as usize;
-                            if func_off + 48 <= decomp1.len() {
-                                let orig_disk_sz = u32::from_le_bytes(decomp1[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                                if orig_disk_sz >= 115 && func_off + 48 + orig_disk_sz <= decomp1.len() {
-                                    let vanilla_script = &decomp1[func_off + 48..func_off + 48 + orig_disk_sz];
-                                    let arg2 = &vanilla_script[58..111]; // InLoadout.PaintFinish
-                                    let mut bc = Vec::new();
-                                    bc.push(0x1C); // EX_VIRTUAL_FUNCTION
-                                    bc.extend_from_slice(&23231i32.to_le_bytes()); // SetProduct (#23231)
-                                    bc.push(opcodes::EX_INT_CONST);
-                                    bc.extend_from_slice(&target_ge.to_le_bytes()); // Arg 1: ProductID
-                                    bc.extend_from_slice(arg2); // Arg 2: PaintFinish
-                                    bc.push(opcodes::EX_END_FUNCTION_PARMS);
-                                    bc.push(opcodes::EX_RETURN);
-                                    bc.push(opcodes::EX_NOTHING);
-                                    bc.push(opcodes::EX_END_OF_SCRIPT);
-
-                                    let pad = orig_disk_sz.saturating_sub(bc.len());
-                                    bc.resize(orig_disk_sz, opcodes::EX_NOTHING);
-                                    let new_mem = (5 + 5 + 84 + 1 + 3 + pad) as u32;
-
-                                    decomp1[func_off + 40..func_off + 44].copy_from_slice(&new_mem.to_le_bytes());
-                                    decomp1[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&bc);
-                                }
-                            }
-                        }
-
-                        if let Ok(mut recomp1) = crate::upk::compression::compress_chunk(&decomp1) {
-                            let orig_c1_sz = c1.comp_size as usize;
-                            if recomp1.len() <= orig_c1_sz {
-                                recomp1.resize(orig_c1_sz, 0);
-                                file_bytes[c1_start..c1_start + orig_c1_sz].copy_from_slice(&recomp1);
-                            }
-                        }
-                    }
-                }
-            }
-        }
 
 
 
