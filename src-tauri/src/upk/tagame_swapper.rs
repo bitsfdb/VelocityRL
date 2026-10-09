@@ -131,130 +131,6 @@ pub struct SlotSwapRule {
     pub target_id: i32,
 }
 
-pub fn emit_convert_to_client_loadout_bytecode(
-    slot_overrides: &[SlotSwapRule],
-    max_disk_size: usize,
-) -> Result<(Vec<u8>, u32), TagameSwapError> {
-    let mut bc = Vec::new();
-    let mut mem_sz: u32 = 0;
-
-    // 1. NewLoadout.Products = FromData.Products;
-    bc.push(opcodes::EX_LET);
-    bc.push(opcodes::EX_STRUCT_MEMBER);
-    bc.extend_from_slice(&1871i32.to_le_bytes());
-    bc.extend_from_slice(&1872i32.to_le_bytes());
-    bc.extend_from_slice(&[0x00, 0x01]);
-    bc.push(opcodes::EX_INSTANCE_VARIABLE);
-    bc.extend_from_slice(&75i32.to_le_bytes());
-
-    bc.push(opcodes::EX_STRUCT_MEMBER);
-    bc.extend_from_slice(&1871i32.to_le_bytes());
-    bc.extend_from_slice(&2364i32.to_le_bytes());
-    bc.extend_from_slice(&[0x00, 0x00]);
-    bc.push(opcodes::EX_LOCAL_VARIABLE);
-    bc.extend_from_slice(&77i32.to_le_bytes());
-    mem_sz += 57;
-
-    for rule in slot_overrides {
-        let cond_disk_len = if rule.slot_idx == 0 { 56 } else { 58 };
-        let uncond_disk_len = if rule.slot_idx == 0 { 26 } else { 27 };
-
-        if let Some(owned_id) = rule.owned_id {
-            if bc.len() + cond_disk_len + 12 > max_disk_size {
-                break;
-            }
-            bc.push(opcodes::EX_JUMP_IF_NOT);
-            let jump_pos = bc.len();
-            bc.extend_from_slice(&[0x00, 0x00]);
-
-            bc.push(opcodes::EX_EQUAL_EQUAL_INT_INT);
-            bc.push(opcodes::EX_DYN_ARRAY_OP);
-            bc.extend_from_slice(&[0x00, 0x00]);
-            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
-            let index_mem = if rule.slot_idx == 0 {
-                bc.push(opcodes::EX_INT_ZERO);
-                1u32
-            } else {
-                bc.push(opcodes::EX_INT_CONST_BYTE);
-                bc.push(rule.slot_idx);
-                2u32
-            };
-            bc.push(opcodes::EX_STRUCT_MEMBER);
-            bc.extend_from_slice(&1871i32.to_le_bytes());
-            bc.extend_from_slice(&1872i32.to_le_bytes());
-            bc.extend_from_slice(&[0x00, 0x01]);
-            bc.push(opcodes::EX_INSTANCE_VARIABLE);
-            bc.extend_from_slice(&75i32.to_le_bytes());
-
-            bc.push(opcodes::EX_INT_CONST);
-            bc.extend_from_slice(&owned_id.to_le_bytes());
-            bc.push(opcodes::EX_END_FUNCTION_PARMS);
-
-            bc.push(opcodes::EX_LET);
-            bc.push(opcodes::EX_DYN_ARRAY_OP);
-            bc.extend_from_slice(&[0x00, 0x00]);
-            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
-            if rule.slot_idx == 0 {
-                bc.push(opcodes::EX_INT_ZERO);
-            } else {
-                bc.push(opcodes::EX_INT_CONST_BYTE);
-                bc.push(rule.slot_idx);
-            }
-            bc.push(opcodes::EX_STRUCT_MEMBER);
-            bc.extend_from_slice(&1871i32.to_le_bytes());
-            bc.extend_from_slice(&1872i32.to_le_bytes());
-            bc.extend_from_slice(&[0x00, 0x01]);
-            bc.push(opcodes::EX_INSTANCE_VARIABLE);
-            bc.extend_from_slice(&75i32.to_le_bytes());
-            bc.push(opcodes::EX_INT_CONST);
-            bc.extend_from_slice(&rule.target_id.to_le_bytes());
-
-            let cond_mem = 1 + 3 + index_mem + 28 + 5 + 1;
-            let body_mem = 1 + 3 + index_mem + 28 + 5;
-            let total_rule_mem = 3 + cond_mem + body_mem;
-            let jump_target = (mem_sz + total_rule_mem) as u16;
-            bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
-            mem_sz += total_rule_mem;
-        } else {
-            if bc.len() + uncond_disk_len + 12 > max_disk_size {
-                break;
-            }
-            bc.push(opcodes::EX_LET);
-            bc.push(opcodes::EX_DYN_ARRAY_OP);
-            bc.extend_from_slice(&[0x00, 0x00]);
-            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
-            if rule.slot_idx == 0 {
-                bc.push(opcodes::EX_INT_ZERO);
-                mem_sz += 38;
-            } else {
-                bc.push(opcodes::EX_INT_CONST_BYTE);
-                bc.push(rule.slot_idx);
-                mem_sz += 39;
-            }
-            bc.push(opcodes::EX_STRUCT_MEMBER);
-            bc.extend_from_slice(&1871i32.to_le_bytes());
-            bc.extend_from_slice(&1872i32.to_le_bytes());
-            bc.extend_from_slice(&[0x00, 0x01]);
-            bc.push(opcodes::EX_INSTANCE_VARIABLE);
-            bc.extend_from_slice(&75i32.to_le_bytes());
-            bc.push(opcodes::EX_INT_CONST);
-            bc.extend_from_slice(&rule.target_id.to_le_bytes());
-        }
-    }
-
-    // 3. return NewLoadout;
-    bc.push(opcodes::EX_RETURN);
-    bc.push(opcodes::EX_INSTANCE_VARIABLE);
-    bc.extend_from_slice(&75i32.to_le_bytes());
-    bc.push(opcodes::EX_END_OF_SCRIPT);
-    mem_sz += 11;
-
-    let nop_count = max_disk_size.saturating_sub(bc.len());
-    bc.resize(max_disk_size, opcodes::EX_NOTHING);
-    mem_sz += nop_count as u32;
-    Ok((bc, mem_sz))
-}
-
 pub fn emit_car_set_loadout_bytecode(
     slot_overrides: &[SlotSwapRule],
     max_disk_size: usize,
@@ -926,19 +802,7 @@ pub fn apply_tagame_modifications(
             let c0_end = c0_start + c0_comp_size as usize;
             if c0_end <= file_bytes.len() {
                 if let Ok(mut decomp0) = crate::upk::compression::decompress_chunk(&file_bytes[c0_start..c0_end]) {
-                    // 1. Patch ConvertToClientLoadout (Export #78 in _Types_TA) in Chunk 0 for client/UI loadout translation
-                    if let Some(exp) = exports.iter().find(|e| e.name == "ConvertToClientLoadout") {
-                        let func_off = (exp.serial_offset - c0_uncomp_offset) as usize;
-                        if func_off + 48 <= decomp0.len() {
-                            let orig_disk_sz = u32::from_le_bytes(decomp0[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                            if let Ok((payload, mem_sz)) = emit_convert_to_client_loadout_bytecode(&slot_overrides, orig_disk_sz) {
-                                decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                decomp0[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
-                            }
-                        }
-                    }
-
-                    // 2. Patch Car_TA::SetLoadout in Chunk 0 for vehicle spawn
+                    // Patch Car_TA::SetLoadout in Chunk 0 for vehicle spawn (strictly within vanilla 186 bytes)
                     if let Some(exp) = exports.iter().find(|e| e.name == "SetLoadout" && e.outer_name == "Car_TA") {
                         let func_off = (exp.serial_offset - c0_uncomp_offset) as usize;
                         if func_off + 48 <= decomp0.len() {
@@ -1216,34 +1080,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_emit_convert_to_client_loadout_bytecode_unconditional() {
-        let rules = [SlotSwapRule {
-            slot_idx: 0,
-            owned_id: None,
-            target_id: 4284,
-        }];
-        let (bc, mem_sz) = emit_convert_to_client_loadout_bytecode(&rules, 124).unwrap();
-        assert_eq!(bc.len(), 124);
-        assert_eq!(mem_sz, 164);
-        assert_eq!(bc[0], opcodes::EX_LET);
-    }
-
-    #[test]
-    fn test_emit_convert_to_client_loadout_bytecode_conditional() {
-        let rules = [SlotSwapRule {
-            slot_idx: 3,
-            owned_id: Some(100),
-            target_id: 400,
-        }];
-        let (bc, mem_sz) = emit_convert_to_client_loadout_bytecode(&rules, 124).unwrap();
-        assert_eq!(bc.len(), 124);
-        assert_eq!(bc[0], opcodes::EX_LET);
-        assert_eq!(bc[33], opcodes::EX_JUMP_IF_NOT);
-        assert_eq!(bc[36], opcodes::EX_EQUAL_EQUAL_INT_INT);
-        assert_eq!(mem_sz, 176);
-    }
 
     #[test]
     fn test_emit_car_set_loadout_bytecode() {
