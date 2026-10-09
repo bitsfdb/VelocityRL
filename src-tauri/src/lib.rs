@@ -1398,8 +1398,10 @@ async fn apply_rich_palette(app: tauri::AppHandle) -> Result<upk::PaletteStatus,
     let _ = psynet::merge_palette_spoof(true);
 
     let swaps = load_swaps(&app);
-    if let Ok(cooked_path) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
-        let _ = sync_all_swaps_to_tagame(&app, &cooked_path, &swaps).await;
+    if !swaps.is_empty() {
+        if let Ok(cooked_path) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
+            let _ = sync_all_swaps_to_tagame(&app, &cooked_path, &swaps).await;
+        }
     }
 
     Ok(st)
@@ -1419,8 +1421,10 @@ async fn restore_rich_palette(app: tauri::AppHandle) -> Result<upk::PaletteStatu
     let _ = psynet::merge_palette_spoof(false);
 
     let swaps = load_swaps(&app);
-    if let Ok(cooked_path) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
-        let _ = sync_all_swaps_to_tagame(&app, &cooked_path, &swaps).await;
+    if !swaps.is_empty() {
+        if let Ok(cooked_path) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
+            let _ = sync_all_swaps_to_tagame(&app, &cooked_path, &swaps).await;
+        }
     }
 
     Ok(st)
@@ -1498,7 +1502,23 @@ pub(crate) async fn sync_all_swaps_to_tagame(
     swaps: &[SwapEntry],
 ) -> Result<(), String> {
     if swaps.is_empty() {
-        let _ = upk::tagame_swapper::restore_tagame_upk(cooked);
+        let state = load_integrity(app);
+        if !state.palette_active {
+            let _ = upk::tagame_swapper::restore_tagame_upk(cooked);
+        } else if let Ok(entries) = std::fs::read_dir(cooked) {
+            // Restore only individual modified companion UPK packages, preserving TAGame.upk palette
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                    let lower = file_name.to_lowercase();
+                    if lower.ends_with(".upk.bak") && !lower.starts_with("tagame") {
+                        let live_name = file_name.trim_end_matches(".bak");
+                        let live_path = cooked.join(live_name);
+                        let _ = std::fs::copy(&path, &live_path);
+                    }
+                }
+            }
+        }
         return Ok(());
     }
 
@@ -1741,7 +1761,10 @@ async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<()
     if swaps.len() != orig_len || swaps.is_empty() {
         save_swaps(&app, &swaps);
         if swaps.is_empty() {
-            let _ = upk::tagame_swapper::restore_tagame_upk(&cooked);
+            let state = load_integrity(&app);
+            if !state.palette_active {
+                let _ = upk::tagame_swapper::restore_tagame_upk(&cooked);
+            }
         } else {
             let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
         }
@@ -1760,7 +1783,10 @@ async fn restore_backups(app: tauri::AppHandle) -> Result<String, String> {
     let cooked = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
         .unwrap_or_else(|_| PathBuf::from(&config.game_dir));
 
-    let _ = upk::tagame_swapper::restore_tagame_upk(&cooked);
+    let state = load_integrity(&app);
+    if !state.palette_active {
+        let _ = upk::tagame_swapper::restore_tagame_upk(&cooked);
+    }
     let _ = upk::swapper::restore_all(&cooked.to_string_lossy());
 
     let count = load_swaps(&app).len();
