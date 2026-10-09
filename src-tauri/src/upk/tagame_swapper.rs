@@ -861,74 +861,13 @@ pub fn apply_tagame_modifications(
                     // Car_TA::SetLoadout handles swapping directly on ClientLoadoutData when the vehicle spawns.
                     // Leaving ConvertToClientLoadout vanilla preserves all non-product fields (paint, colors, etc.) without corruption.
 
-                    if let Some(exp_idx) = exports.iter().position(|e| e.name == "SetLoadout" && e.outer_name == "Car_TA") {
-                        let exp = &exports[exp_idx];
+                    if let Some(exp) = exports.iter().find(|e| e.name == "SetLoadout" && e.outer_name == "Car_TA") {
                         let func_off = (exp.serial_offset - c0_uncomp_offset) as usize;
                         if func_off + 48 <= decomp0.len() {
                             let orig_disk_sz = u32::from_le_bytes(decomp0[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-
-                            // Calculate required disk size for all unique rules
-                            let mut seen = std::collections::HashSet::new();
-                            let mut needed_bytes = 97usize; // vanilla execution body
-                            for r in slot_overrides.iter().rev() {
-                                if seen.insert((r.slot_idx, r.owned_id)) {
-                                    let rule_len = if r.owned_id.is_some() {
-                                        if r.slot_idx == 0 { 52 } else { 54 }
-                                    } else {
-                                        if r.slot_idx == 0 { 22 } else { 23 }
-                                    };
-                                    needed_bytes += rule_len;
-                                }
-                            }
-
-                            // If needed_bytes exceeds orig_disk_sz, expand chunk 0 allocation
-                            let (target_disk_sz, delta) = if needed_bytes > orig_disk_sz {
-                                let target = (needed_bytes + 15) & !15;
-                                (target, target - orig_disk_sz)
-                            } else {
-                                (orig_disk_sz, 0)
-                            };
-
-                            if delta > 0 {
-                                // 1. Splice delta bytes into decomp0 right at the end of original bytecode (before trailer)
-                                let insert_pos = func_off + 48 + orig_disk_sz;
-                                if insert_pos <= decomp0.len() {
-                                    decomp0.splice(insert_pos..insert_pos, vec![0u8; delta]);
-
-                                    // 2. Update SetLoadout disk_sz in decomp0 UFunction header
-                                    decomp0[func_off + 44..func_off + 48].copy_from_slice(&(target_disk_sz as u32).to_le_bytes());
-
-                                    // 3. Update SetLoadout serial_size in plain_header and exports vector
-                                    let set_loadout_pos = exp.pos;
-                                    let set_loadout_serial_off = exp.serial_offset;
-                                    let new_serial_sz = exp.serial_size + delta as i32;
-                                    plain_header[set_loadout_pos + 32..set_loadout_pos + 36].copy_from_slice(&new_serial_sz.to_le_bytes());
-                                    exports[exp_idx].serial_size = new_serial_sz;
-
-                                    // 4. Shift serial_offset for all exports located after SetLoadout
-                                    for e in &mut exports {
-                                        if e.serial_offset > set_loadout_serial_off {
-                                            e.serial_offset += delta as i64;
-                                            plain_header[e.pos + 36..e.pos + 44].copy_from_slice(&e.serial_offset.to_le_bytes());
-                                        }
-                                    }
-
-                                    // 5. Update Chunk 0 uncomp_size in plain_header and chunks vector
-                                    chunks[0].uncomp_size += delta as i32;
-                                    let c0_pos = chunks[0].pos;
-                                    plain_header[c0_pos + 8..c0_pos + 12].copy_from_slice(&chunks[0].uncomp_size.to_le_bytes());
-
-                                    // 6. Shift uncomp_offset for all subsequent chunks (chunks 1..N)
-                                    for c in &mut chunks[1..] {
-                                        c.uncomp_offset += delta as i64;
-                                        plain_header[c.pos..c.pos + 8].copy_from_slice(&c.uncomp_offset.to_le_bytes());
-                                    }
-                                }
-                            }
-
-                            if let Ok((payload, mem_sz)) = emit_car_set_loadout_bytecode(&slot_overrides, target_disk_sz) {
+                            if let Ok((payload, mem_sz)) = emit_car_set_loadout_bytecode(&slot_overrides, orig_disk_sz) {
                                 decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                decomp0[func_off + 48..func_off + 48 + target_disk_sz].copy_from_slice(&payload);
+                                decomp0[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
                             }
                         }
                     }
