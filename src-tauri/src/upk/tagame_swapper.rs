@@ -272,10 +272,12 @@ pub fn emit_car_set_loadout_bytecode(
 
     // 1. Slot assignments on Data (local #data_var_id)
     // De-duplicate by slot_idx so highest priority rule applies.
+    // Note: Car_TA only manages vehicle-attached cosmetics (slots 0..=9: Body, Decal, Wheels, Boost, Antenna, Topper, Finish, Accent, Audio, Trail).
+    // Slots >= 10 (Goal Explosion, Banner, Anthem, Border) are handled externally and must not consume the 186-byte Car_TA buffer.
     let mut seen = std::collections::HashSet::new();
     let mut unique_rules = Vec::new();
     for r in slot_overrides.iter().rev() {
-        if seen.insert(r.slot_idx) {
+        if r.slot_idx <= 9 && seen.insert(r.slot_idx) {
             unique_rules.push(r.clone());
         }
     }
@@ -958,11 +960,17 @@ pub fn apply_tagame_modifications(
                                     .map(|e| e.idx as i32)
                                     .unwrap_or(1871);
 
-                                // Dynamically extract vanilla body if present in orig_script
+                                // Dynamically extract vanilla body if present in orig_script:
+                                // Looks for the vanilla execution body starting at [0x14, 0x2D] up to and including [0x04, 0x0B, 0x4C].
                                 let orig_script = &decomp0[func_off + 48..func_off + 48 + orig_disk_sz];
-                                let vanilla_tail = if let Some(pos) = orig_script.windows(2).position(|w| w == [0x14, 0x2D]) {
-                                    if orig_script.ends_with(&[0x04, 0x0B, 0x4C]) && orig_disk_sz - pos >= 90 {
-                                        Some(&orig_script[pos..])
+                                let vanilla_tail = if let Some(start_pos) = orig_script.windows(2).position(|w| w == [0x14, 0x2D]) {
+                                    if let Some(end_rel) = orig_script[start_pos..].windows(3).position(|w| w == [0x04, 0x0B, 0x4C]) {
+                                        let tail_len = end_rel + 3;
+                                        if tail_len >= 90 && tail_len <= 110 {
+                                            Some(&orig_script[start_pos..start_pos + tail_len])
+                                        } else {
+                                            None
+                                        }
                                     } else {
                                         None
                                     }
