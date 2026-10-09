@@ -453,6 +453,7 @@ pub fn patch_eos_accounts_json(
                 }
                 user_data.insert("displayName".to_string(), serde_json::json!(new_name));
                 user_data.insert("sanitizedDisplayName".to_string(), serde_json::json!(new_name));
+                user_data.insert("sanitized_display_name".to_string(), serde_json::json!(new_name));
                 modified = true;
                 if let Some(ref a) = acc {
                     learned_pid = Some(a.clone());
@@ -502,6 +503,7 @@ pub fn patch_eos_accounts_json(
             }
             user_data.insert("displayName".to_string(), serde_json::json!(new_name));
             user_data.insert("sanitizedDisplayName".to_string(), serde_json::json!(new_name));
+            user_data.insert("sanitized_display_name".to_string(), serde_json::json!(new_name));
             modified = true;
             if let Some(ref a) = acc {
                 learned_pid = Some(a.clone());
@@ -558,6 +560,7 @@ fn patch_ws_names_value(
         "VerifiedPlayerName",
         "PlayerName",
         "DisplayName",
+        "displayName",
         "epicDisplayName",
         "PlayerNickName",
         "NickName",
@@ -566,6 +569,9 @@ fn patch_ws_names_value(
         "TargetName",
         "AccountName",
         "PersonaName",
+        "sanitizedDisplayName",
+        "sanitized_display_name",
+        "SanitizedDisplayName",
     ];
 
     match val {
@@ -1428,14 +1434,31 @@ async fn handle_forward_websocket(
 
     let connector = create_upstream_tls_connector();
     let addr = format!("{upstream_host}:{upstream_port}");
-    let tcp_conn = match tokio::net::TcpStream::connect(&addr).await {
-        Ok(t) => t,
-        Err(e) => {
-            crate::applog::event(&format!("forward proxy ws: connect to {addr} failed: {e}"));
-            return Ok(Response::builder()
-                .status(StatusCode::BAD_GATEWAY)
-                .body(full_body(format!("connect error: {e}")))
-                .unwrap());
+    let tcp_conn = if let Some(mut sa) = resolve_ipv4_public(upstream_host) {
+        sa.set_port(upstream_port);
+        match tokio::net::TcpStream::connect(sa).await {
+            Ok(t) => t,
+            Err(_) => match tokio::net::TcpStream::connect(&addr).await {
+                Ok(t) => t,
+                Err(e) => {
+                    crate::applog::event(&format!("forward proxy ws: connect to {addr} failed: {e}"));
+                    return Ok(Response::builder()
+                        .status(StatusCode::BAD_GATEWAY)
+                        .body(full_body(format!("connect error: {e}")))
+                        .unwrap());
+                }
+            },
+        }
+    } else {
+        match tokio::net::TcpStream::connect(&addr).await {
+            Ok(t) => t,
+            Err(e) => {
+                crate::applog::event(&format!("forward proxy ws: connect to {addr} failed: {e}"));
+                return Ok(Response::builder()
+                    .status(StatusCode::BAD_GATEWAY)
+                    .body(full_body(format!("connect error: {e}")))
+                    .unwrap());
+            }
         }
     };
 
@@ -2169,7 +2192,7 @@ async fn handle_request(
         .map(|v| v.eq_ignore_ascii_case("websocket"))
         .unwrap_or(false);
 
-    if host_hdr.contains("ws.rlpp.psynet.gg") || is_upgrade {
+    if host_hdr.contains("ws.rlpp.psynet.gg") {
         return handle_websocket(req).await;
     }
 
@@ -2177,16 +2200,8 @@ async fn handle_request(
         return handle_broker_request(req, client).await;
     }
 
-    let name_spoof_on = {
-        let spoof_cfg = crate::psynet::load_active_spoof_from_disk();
-        spoof_cfg
-            .as_ref()
-            .and_then(|c| c.name_spoof.as_ref())
-            .map(|n| n.enabled)
-            .unwrap_or(false)
-    };
-
-    if (is_eos_account_host(&host_hdr) && name_spoof_on) || host_hdr.contains("psyonix.com") || host_hdr.contains("live.psynet.gg") {
+    let is_eos = is_eos_account_host(&host_hdr);
+    if is_eos || host_hdr.contains("psyonix.com") || host_hdr.contains("live.psynet.gg") {
         let host = hostname_only(&host_hdr).to_string();
         let port = host_header_port(&host_hdr, 443);
         crate::applog::event(&format!(
@@ -2202,6 +2217,15 @@ async fn handle_request(
             http_client_pinned_for(&host)
         };
         return handle_forward_intercepted_request(req, host, port, up_client).await;
+    }
+
+    if is_upgrade {
+        let host = hostname_only(&host_hdr).to_string();
+        let port = host_header_port(&host_hdr, 443);
+        if !host.is_empty() {
+            return handle_forward_websocket(req, &host, port).await;
+        }
+        return handle_websocket(req).await;
     }
 
     handle_http_config(req, client).await

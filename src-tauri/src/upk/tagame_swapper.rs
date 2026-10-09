@@ -1117,13 +1117,13 @@ pub fn apply_tagame_modifications(
                 let _ = apply_body_paint_modification(cooked_dir, pkg, pid, custom_hex_str, keys_map_json);
             }
         } else {
-            let (pkg_path, actual_file_name) = match crate::upk::swapper::resolve_package_path(cooked_dir, pkg) {
-                Some(res) => res,
-                None => continue,
-            };
-            let bak_path = cooked_dir.join(format!("{actual_file_name}.bak"));
-            if bak_path.is_file() {
-                let _ = fs::copy(&bak_path, &pkg_path);
+            for restore_name in [pkg, "body_grain_SF"] {
+                if let Some((pkg_path, actual_file_name)) = crate::upk::swapper::resolve_package_path(cooked_dir, restore_name) {
+                    let bak_path = cooked_dir.join(format!("{actual_file_name}.bak"));
+                    if bak_path.is_file() {
+                        let _ = fs::copy(&bak_path, &pkg_path);
+                    }
+                }
             }
         }
     }
