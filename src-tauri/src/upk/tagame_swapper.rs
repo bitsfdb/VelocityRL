@@ -323,10 +323,7 @@ pub fn emit_car_set_loadout_bytecode(
     // Stmt 2 (EX_DELEGATE_PROPERTY): 40
     // Stmt 3 (EX_DELEGATE_PROPERTY): 40
     // Stmt 4 (EX_DYN_ARRAY_ELEMENT): 20 (64-bit object pointer expansion)
-    // Stmt 5 (EX_VIRTUAL_FUNCTION LoadClientLoadout): 19
-    // Stmt 6 (EX_RETURN; EX_NOTHING; EX_END_OF_SCRIPT): 3
-    // Total for the 97-byte vanilla execution body is exactly 133 UScript memory bytes.
-    mem_sz += 133;
+    mem_sz += 137;
 
     let nop_count = max_disk_size.saturating_sub(bc.len());
     bc.resize(max_disk_size, opcodes::EX_NOTHING);
@@ -518,7 +515,7 @@ pub fn emit_car_preview_set_loadout_bytecode(
     bc.push(opcodes::EX_RETURN);
     bc.push(opcodes::EX_NOTHING);
     bc.push(opcodes::EX_END_OF_SCRIPT);
-    mem_sz += 31;
+    mem_sz += 23;
 
     // 4. Pad with EX_NOTHING up to max_disk_size
     let nop_count = max_disk_size.saturating_sub(bc.len());
@@ -677,7 +674,7 @@ pub fn emit_explosion_previewer_set_product_bytecode(
         let jump_target = bc.len() as u16;
         bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
 
-        mem_sz += 3 + (1 + 8 + 4 + 1) + (1 + 8 + 4);
+        mem_sz += 3 + (1 + 9 + 5 + 1) + (1 + 9 + 5);
     } else {
         // ProductID = target;
         bc.push(opcodes::EX_LET);
@@ -686,7 +683,7 @@ pub fn emit_explosion_previewer_set_product_bytecode(
         bc.push(opcodes::EX_INT_CONST);
         bc.extend_from_slice(&target_id.to_le_bytes());
 
-        mem_sz += 1 + 8 + 4;
+        mem_sz += 1 + 9 + 5;
     }
 
     bc.push(opcodes::EX_RETURN);
@@ -1335,24 +1332,6 @@ pub fn apply_tagame_modifications(
                 let c1_end = c1_start + c1_comp_size as usize;
                 if c1_end <= file_bytes.len() {
                     if let Ok(mut decomp1) = crate::upk::compression::decompress_chunk(&file_bytes[c1_start..c1_end]) {
-                        if let Some(exp) = exports.iter().find(|e| e.name == "SetLoadout" && e.outer_name == "ExplosionPreviewer_TA") {
-                            let func_off = (exp.serial_offset - c1_uncomp_offset) as usize;
-                            if func_off + 48 <= decomp1.len() {
-                                let orig_disk_sz = u32::from_le_bytes(decomp1[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                                if orig_disk_sz >= 67 && func_off + 48 + orig_disk_sz <= decomp1.len() {
-                                    let vanilla_code = &decomp1[func_off + 48..func_off + 48 + orig_disk_sz];
-                                    if let Ok((payload, mem_sz)) = emit_explosion_previewer_set_loadout_bytecode(
-                                        target_ge,
-                                        orig_disk_sz,
-                                        Some(vanilla_code),
-                                    ) {
-                                        decomp1[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                        decomp1[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
-                                    }
-                                }
-                            }
-                        }
-
                         if let Some(exp_sp) = exports.iter().find(|e| e.name == "SetProduct" && e.outer_name == "ExplosionPreviewer_TA") {
                             let func_off = (exp_sp.serial_offset - c1_uncomp_offset) as usize;
                             if func_off + 48 <= decomp1.len() {
