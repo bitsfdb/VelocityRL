@@ -730,6 +730,7 @@ pub fn emit_get_asset_by_id_bytecode(
 
             let cond_mem = 1 + 9 + 5 + 1;
             let body_mem = 1 + 9 + 5;
+            let total_rule_mem = 3 + cond_mem + body_mem;
             let jump_target = (mem_sz + total_rule_mem) as u16;
             bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
             mem_sz += total_rule_mem;
@@ -1481,7 +1482,12 @@ where
     let mut mac = HmacSha256::new_from_slice(build_secret.as_bytes())
         .map_err(|e| format!("HMAC init failed: {e}"))?;
     mac.update(format!("{now_ts}:TAGame.upk").as_bytes());
-    let sig = hex::encode(mac.finalize().into_bytes());
+    let sig: String = mac
+        .finalize()
+        .into_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
 
     let url = format!(
         "https://api.velocityrl.tech/v2/rl/assets/tagame.upk?secret={sig}&t={now_ts}"

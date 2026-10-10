@@ -2059,7 +2059,7 @@ async fn download_official_tagame(app: tauri::AppHandle) -> Result<String, Strin
             Ok("Official TAGame.upk downloaded and verified successfully.".into())
         }
         Err(e) => {
-            applog::error(&format!("tagame_swapper: failed to download TAGame.upk: {e}"));
+            applog::event(&format!("tagame_swapper: failed to download TAGame.upk: {e}"));
             Err(e)
         }
     }
@@ -3334,7 +3334,7 @@ pub fn run() {
                                 let tagame = cooked.join("TAGame.upk");
                                 if !tagame.exists() {
                                     applog::event("periodic_check: TAGame.upk missing, attempting automatic download...");
-                                    let _ = upk::tagame_swapper::download_official_tagame_upk(&tagame).await;
+                                    let _ = upk::tagame_swapper::download_official_tagame_upk(&tagame, |_, _| {}).await;
                                 }
                             }
                         }
