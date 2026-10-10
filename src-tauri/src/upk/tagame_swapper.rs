@@ -39,6 +39,8 @@ pub mod opcodes {
     pub const EX_FALSE_CONST: u8 = 0x28;
     pub const EX_FINAL_FUNCTION: u8 = 0x1C;
     pub const EX_VIRTUAL_FUNCTION: u8 = 0x1B;
+    pub const EX_FLOAT_CONST: u8 = 0x1E;
+    pub const EX_BOOL_VARIABLE: u8 = 0x2D;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -545,6 +547,118 @@ pub fn emit_explosion_previewer_set_loadout_bytecode(
     // EX_END_OF_SCRIPT: 1
     // Total active memory size: 83
     let mut mem_sz = 83u32;
+
+    let nop_count = max_disk_size.saturating_sub(bc.len());
+    bc.resize(max_disk_size, opcodes::EX_NOTHING);
+    mem_sz += nop_count as u32;
+
+    Ok((bc, mem_sz))
+}
+
+pub fn emit_car_mesh_apply_paint_settings_bytecode(
+    rgba: [u8; 16],
+    max_disk_size: usize,
+) -> Result<(Vec<u8>, u32), TagameSwapError> {
+    let mut bc = Vec::with_capacity(max_disk_size);
+    let mut mem_sz: u32 = 0;
+
+    // 1. EX_JUMP_IF_NOT: if (bLocalPlayer)
+    bc.push(opcodes::EX_JUMP_IF_NOT);
+    let jump_pos = bc.len();
+    bc.extend_from_slice(&[0x00, 0x00]);
+
+    // Condition: bLocalPlayer (Export #15648)
+    bc.push(opcodes::EX_BOOL_VARIABLE);
+    bc.extend_from_slice(&15648i32.to_le_bytes());
+    bc.push(0x00);
+    mem_sz += 3 + 8;
+
+    // 2. Struct member assignments on CustomColorOverride (Export #15655)
+    // LinearColor struct (-4233)
+    // R: -1580, G: -1579, B: -1578, A: -1577
+    let members: [(i32, &[u8]); 4] = [
+        (-1580i32, &rgba[0..4]),   // R
+        (-1579i32, &rgba[4..8]),   // G
+        (-1578i32, &rgba[8..12]),  // B
+        (-1577i32, &rgba[12..16]), // A
+    ];
+
+    for (prop_id, val_bytes) in members {
+        bc.push(opcodes::EX_LET);
+        bc.push(opcodes::EX_STRUCT_MEMBER);
+        bc.extend_from_slice(&prop_id.to_le_bytes());
+        bc.extend_from_slice(&(-4233i32).to_le_bytes());
+        bc.extend_from_slice(&[0x00, 0x01]);
+        bc.push(opcodes::EX_INSTANCE_VARIABLE);
+        bc.extend_from_slice(&15655i32.to_le_bytes());
+        bc.push(opcodes::EX_FLOAT_CONST);
+        bc.extend_from_slice(val_bytes);
+
+        mem_sz += 1 + 18 + 8 + 4;
+    }
+
+    let jump_target = bc.len() as u16;
+    bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
+
+    bc.push(opcodes::EX_RETURN);
+    bc.push(opcodes::EX_NOTHING);
+    bc.push(opcodes::EX_END_OF_SCRIPT);
+    mem_sz += 3;
+
+    let nop_count = max_disk_size.saturating_sub(bc.len());
+    bc.resize(max_disk_size, opcodes::EX_NOTHING);
+    mem_sz += nop_count as u32;
+
+    Ok((bc, mem_sz))
+}
+
+pub fn emit_explosion_previewer_set_product_bytecode(
+    owned_id_opt: Option<i32>,
+    target_id: i32,
+    max_disk_size: usize,
+) -> Result<(Vec<u8>, u32), TagameSwapError> {
+    let mut bc = Vec::with_capacity(max_disk_size);
+    let mut mem_sz: u32 = 0;
+    let product_id_var = 23230i32; // ProductID local parameter
+
+    if let Some(owned) = owned_id_opt {
+        // if (ProductID == owned) ProductID = target;
+        bc.push(opcodes::EX_JUMP_IF_NOT);
+        let jump_pos = bc.len();
+        bc.extend_from_slice(&[0x00, 0x00]);
+
+        bc.push(opcodes::EX_EQUAL_EQUAL_INT_INT);
+        bc.push(opcodes::EX_INSTANCE_VARIABLE);
+        bc.extend_from_slice(&product_id_var.to_le_bytes());
+        bc.push(opcodes::EX_INT_CONST);
+        bc.extend_from_slice(&owned.to_le_bytes());
+        bc.push(opcodes::EX_END_FUNCTION_PARMS);
+
+        bc.push(opcodes::EX_LET);
+        bc.push(opcodes::EX_INSTANCE_VARIABLE);
+        bc.extend_from_slice(&product_id_var.to_le_bytes());
+        bc.push(opcodes::EX_INT_CONST);
+        bc.extend_from_slice(&target_id.to_le_bytes());
+
+        let jump_target = bc.len() as u16;
+        bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
+
+        mem_sz += 3 + (1 + 8 + 4 + 1) + (1 + 8 + 4);
+    } else {
+        // ProductID = target;
+        bc.push(opcodes::EX_LET);
+        bc.push(opcodes::EX_INSTANCE_VARIABLE);
+        bc.extend_from_slice(&product_id_var.to_le_bytes());
+        bc.push(opcodes::EX_INT_CONST);
+        bc.extend_from_slice(&target_id.to_le_bytes());
+
+        mem_sz += 1 + 8 + 4;
+    }
+
+    bc.push(opcodes::EX_RETURN);
+    bc.push(opcodes::EX_NOTHING);
+    bc.push(opcodes::EX_END_OF_SCRIPT);
+    mem_sz += 3;
 
     let nop_count = max_disk_size.saturating_sub(bc.len());
     bc.resize(max_disk_size, opcodes::EX_NOTHING);
@@ -1122,6 +1236,35 @@ pub fn apply_tagame_modifications(
                         }
                     }
 
+                    // Patch CarMeshComponentBase_TA::ApplyPaintSettings (636 bytes) if custom paint is present
+                    let custom_paint = swaps.iter().find_map(|s| {
+                        if let Some(ref hex) = s.custom_paint_hex.as_ref().filter(|h| !h.trim().is_empty()) {
+                            Some(hex_to_linear_rgba(hex))
+                        } else if let Some(pid) = s.paint_id.filter(|p| *p > 0) {
+                            Some(get_paint_rgba(pid))
+                        } else {
+                            None
+                        }
+                    });
+
+                    if let Some(paint_rgba) = custom_paint {
+                        if let Some(exp) = exports.iter().find(|e| e.name == "ApplyPaintSettings" && e.outer_name == "CarMeshComponentBase_TA") {
+                            let func_off = (exp.serial_offset - c0_uncomp_offset) as usize;
+                            if func_off + 48 <= decomp0.len() {
+                                let orig_disk_sz = u32::from_le_bytes(decomp0[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                                if orig_disk_sz >= 84 && func_off + 48 + orig_disk_sz <= decomp0.len() {
+                                    if let Ok((payload, mem_sz)) = emit_car_mesh_apply_paint_settings_bytecode(
+                                        paint_rgba,
+                                        orig_disk_sz,
+                                    ) {
+                                        decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                        decomp0[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     if let Ok(mut recomp0) = crate::upk::compression::compress_chunk(&decomp0) {
                         let orig_c0_sz = c0_comp_size as usize;
                         if recomp0.len() <= orig_c0_sz {
@@ -1139,7 +1282,7 @@ pub fn apply_tagame_modifications(
             }
         }
 
-        // 2. Patch Chunk 1: ExplosionPreviewer_TA::SetLoadout (115 bytes) if a goal explosion swap is present
+        // 2. Patch Chunk 1: ExplosionPreviewer_TA::SetLoadout (115 bytes) & SetProduct (273 bytes) if a goal explosion swap is present
         let goal_explosion_target = swaps.iter().find_map(|s| {
             let slot_idx = s.slot_index.map(|i| i as u8).unwrap_or_else(|| crate::presets::upk_slot_index_from_str(&s.slot));
             if slot_idx == 15 || s.slot.to_lowercase().contains("goal") || s.slot.to_lowercase().contains("explosion") {
@@ -1168,6 +1311,31 @@ pub fn apply_tagame_modifications(
                                         target_ge,
                                         orig_disk_sz,
                                         Some(vanilla_code),
+                                    ) {
+                                        decomp1[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                        decomp1[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                    }
+                                }
+                            }
+                        }
+
+                        if let Some(exp_sp) = exports.iter().find(|e| e.name == "SetProduct" && e.outer_name == "ExplosionPreviewer_TA") {
+                            let func_off = (exp_sp.serial_offset - c1_uncomp_offset) as usize;
+                            if func_off + 48 <= decomp1.len() {
+                                let orig_disk_sz = u32::from_le_bytes(decomp1[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                                if orig_disk_sz >= 30 && func_off + 48 + orig_disk_sz <= decomp1.len() {
+                                    let owned_ge = swaps.iter().find_map(|s| {
+                                        let slot_idx = s.slot_index.map(|i| i as u8).unwrap_or_else(|| crate::presets::upk_slot_index_from_str(&s.slot));
+                                        if slot_idx == 15 || s.slot.to_lowercase().contains("goal") || s.slot.to_lowercase().contains("explosion") {
+                                            s.owned_id
+                                        } else {
+                                            None
+                                        }
+                                    });
+                                    if let Ok((payload, mem_sz)) = emit_explosion_previewer_set_product_bytecode(
+                                        owned_ge,
+                                        target_ge,
+                                        orig_disk_sz,
                                     ) {
                                         decomp1[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
                                         decomp1[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
