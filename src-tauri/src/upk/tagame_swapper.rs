@@ -256,8 +256,8 @@ pub fn emit_car_set_loadout_bytecode(
             mem_sz += assign_mem;
         }
 
-        // Jump target is local bytecode offset immediately after body
-        let jump_target = bc.len() as u16;
+        // Jump target is local UScript memory offset immediately after body
+        let jump_target = mem_sz as u16;
         bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
     } else {
         // Pure unconditional rules (only if caller explicitly provided no owned_ids)
@@ -459,7 +459,7 @@ pub fn emit_car_preview_set_loadout_bytecode(
             mem_sz += assign_mem;
         }
 
-        let jump_target = bc.len() as u16;
+        let jump_target = mem_sz as u16;
         bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
     } else {
         for rule in &unique_rules {
@@ -586,6 +586,7 @@ pub fn emit_explosion_previewer_set_loadout_bytecode(
     Ok((bc, mem_sz))
 }
 
+#[allow(dead_code)]
 pub fn emit_car_mesh_apply_paint_settings_bytecode(
     rgba: [u8; 16],
     max_disk_size: usize,
@@ -669,12 +670,9 @@ pub fn emit_explosion_previewer_set_product_bytecode(
         bc.push(opcodes::EX_INSTANCE_VARIABLE);
         bc.extend_from_slice(&product_id_var.to_le_bytes());
         bc.push(opcodes::EX_INT_CONST);
-        bc.extend_from_slice(&target_id.to_le_bytes());
-
-        let jump_target = bc.len() as u16;
-        bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
-
         mem_sz += 3 + (1 + 9 + 5 + 1) + (1 + 9 + 5);
+        let jump_target = mem_sz as u16;
+        bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
     } else {
         // ProductID = target;
         bc.push(opcodes::EX_LET);
@@ -732,8 +730,7 @@ pub fn emit_get_asset_by_id_bytecode(
 
             let cond_mem = 1 + 9 + 5 + 1;
             let body_mem = 1 + 9 + 5;
-            let total_rule_mem = 3 + cond_mem + body_mem;
-            let jump_target = bc.len() as u16;
+            let jump_target = (mem_sz + total_rule_mem) as u16;
             bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
             mem_sz += total_rule_mem;
         } else {
@@ -1267,34 +1264,7 @@ pub fn apply_tagame_modifications(
                         }
                     }
 
-                    // Patch CarMeshComponentBase_TA::ApplyPaintSettings (636 bytes) if custom paint is present
-                    let custom_paint = swaps.iter().find_map(|s| {
-                        if let Some(ref hex) = s.custom_paint_hex.as_ref().filter(|h| !h.trim().is_empty()) {
-                            Some(hex_to_linear_rgba(hex))
-                        } else if let Some(pid) = s.paint_id.filter(|p| *p > 0) {
-                            Some(get_paint_rgba(pid))
-                        } else {
-                            None
-                        }
-                    });
-
-                    if let Some(paint_rgba) = custom_paint {
-                        if let Some(exp) = exports.iter().find(|e| e.name == "ApplyPaintSettings" && e.outer_name == "CarMeshComponentBase_TA") {
-                            let func_off = (exp.serial_offset - c0_uncomp_offset) as usize;
-                            if func_off + 48 <= decomp0.len() {
-                                let orig_disk_sz = u32::from_le_bytes(decomp0[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                                if orig_disk_sz >= 84 && func_off + 48 + orig_disk_sz <= decomp0.len() {
-                                    if let Ok((payload, mem_sz)) = emit_car_mesh_apply_paint_settings_bytecode(
-                                        paint_rgba,
-                                        orig_disk_sz,
-                                    ) {
-                                        decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                        decomp0[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    // Keep CarMeshComponentBase_TA::ApplyPaintSettings 100% vanilla stock intact to ensure clean shader & material initialization without crash
 
                     if let Ok(mut recomp0) = crate::upk::compression::compress_chunk(&decomp0) {
                         let orig_c0_sz = c0_comp_size as usize;

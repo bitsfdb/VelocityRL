@@ -116,11 +116,8 @@ def test_full_pipeline(src_upk="/root/velrlapi/.cache/TAGame.upk", dst_upk="/tmp
     c0_bytes = data[c0["comp_offset"]:c0["comp_offset"]+c0["comp_size"]]
     decomp0 = bytearray(decompress_chunk(c0_bytes))
 
-    cmc_aps = next(e for e in exports if e["name"] == "ApplyPaintSettings" and e["outer_name"] == "CarMeshComponentBase_TA")
-    aps_off = cmc_aps["serial_offset"] - c0["uncomp_offset"]
-    aps_disk = struct.unpack("<I", decomp0[aps_off+44:aps_off+48])[0]
-    paint_payload = build_test_conditional_paint_bytecode(r=2.5, g=0.0, b=1.0, max_sz=aps_disk)
-    decomp0[aps_off+48:aps_off+48+aps_disk] = paint_payload
+    # Keep CarMeshComponentBase_TA::ApplyPaintSettings 100% vanilla stock intact
+
 
     car_sl = next(e for e in exports if e["name"] == "SetLoadout" and e["outer_name"] == "Car_TA")
     car_off = car_sl["serial_offset"] - c0["uncomp_offset"]
