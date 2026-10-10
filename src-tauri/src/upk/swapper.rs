@@ -1336,6 +1336,7 @@ fn process_and_write_upk_swap(
             "Header grew by {} bytes but only {} bytes of padding available.",
             size_growth, donor_meta.garbage_size
         )));
+    }
     // Ensure swapped package references the exact Engine package GUID from Engine.upk (prevents version mismatch error)
     if let Some(cooked_dir) = target_path.parent() {
         let engine_path = cooked_dir.join("Engine.upk");
