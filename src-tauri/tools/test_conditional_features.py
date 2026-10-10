@@ -80,7 +80,8 @@ def build_test_explosion_setproduct_bytecode(owned=2044, target=4001, max_sz=273
     bc.append(0x1D)
     bc.extend(int(target).to_bytes(4, 'little'))
     
-    jump_target = len(bc)
+    mem_sz = 3 + (1 + 9 + 5 + 1) + (1 + 9 + 5)
+    jump_target = mem_sz
     bc[jump_pos:jump_pos+2] = jump_target.to_bytes(2, 'little')
     
     bc.append(0x04)
@@ -120,6 +121,7 @@ def build_test_car_set_loadout_bytecode(slots=[(0, 23, 4001), (15, 2044, 3001)],
     bc.append(0x9A) # EX_EQUAL_EQUAL_INT_INT
     bc.extend([0x57, 0x00, 0x00])
     bc.append(0x5E)
+    cond_index_mem = 1 if trigger_slot == 0 else 2
     if trigger_slot == 0:
         bc.append(0x25) # EX_INT_ZERO
     else:
@@ -134,6 +136,9 @@ def build_test_car_set_loadout_bytecode(slots=[(0, 23, 4001), (15, 2044, 3001)],
     bc.extend(int(trigger_owned).to_bytes(4, 'little'))
     bc.append(0x16)
 
+    cond_mem = 3 + 1 + 3 + 1 + cond_index_mem + 28 + 5 + 1
+    mem_sz = cond_mem
+
     for slot_idx, _, target_id in slots:
         index_len = 1 if slot_idx == 0 else 2
         target_len = 2 if 0 <= target_id <= 255 else 5
@@ -144,6 +149,7 @@ def build_test_car_set_loadout_bytecode(slots=[(0, 23, 4001), (15, 2044, 3001)],
         bc.append(0x0F) # EX_LET
         bc.extend([0x57, 0x00, 0x00])
         bc.append(0x5E)
+        assign_index_mem = 1 if slot_idx == 0 else 2
         if slot_idx == 0:
             bc.append(0x25)
         else:
@@ -154,13 +160,17 @@ def build_test_car_set_loadout_bytecode(slots=[(0, 23, 4001), (15, 2044, 3001)],
         bc.extend([0x00, 0x01])
         bc.append(0x46)
         bc.extend(data_var_id.to_bytes(4, 'little'))
+        target_mem_len = 2 if 0 <= target_id <= 255 else 5
         if 0 <= target_id <= 255:
             bc.extend([0x2C, target_id])
         else:
             bc.append(0x1D)
             bc.extend(int(target_id).to_bytes(4, 'little'))
 
-    jump_target = len(bc)
+        assign_mem = 1 + 3 + 1 + assign_index_mem + 28 + target_mem_len
+        mem_sz += assign_mem
+
+    jump_target = mem_sz
     bc[jump_pos:jump_pos+2] = jump_target.to_bytes(2, 'little')
     bc.extend(default_vanilla_body)
 
@@ -205,6 +215,7 @@ def build_test_car_preview_set_loadout_bytecode(slots=[(0, 23, 4001), (1, 10, 25
     bc.append(0x9A)
     bc.extend([0x57, 0x00, 0x00])
     bc.append(0x5E)
+    cond_index_mem = 1 if trigger_slot == 0 else 2
     if trigger_slot == 0:
         bc.append(0x25)
     else:
@@ -219,6 +230,9 @@ def build_test_car_preview_set_loadout_bytecode(slots=[(0, 23, 4001), (1, 10, 25
     bc.extend(int(trigger_owned).to_bytes(4, 'little'))
     bc.append(0x16)
 
+    cond_mem = 3 + 1 + 3 + 1 + cond_index_mem + 28 + 5 + 1
+    mem_sz = 19 + cond_mem
+
     for slot_idx, _, target_id in slots:
         index_len = 1 if slot_idx == 0 else 2
         target_len = 2 if 0 <= target_id <= 255 else 5
@@ -229,6 +243,7 @@ def build_test_car_preview_set_loadout_bytecode(slots=[(0, 23, 4001), (1, 10, 25
         bc.append(0x0F)
         bc.extend([0x57, 0x00, 0x00])
         bc.append(0x5E)
+        assign_index_mem = 1 if slot_idx == 0 else 2
         if slot_idx == 0:
             bc.append(0x25)
         else:
@@ -239,13 +254,17 @@ def build_test_car_preview_set_loadout_bytecode(slots=[(0, 23, 4001), (1, 10, 25
         bc.extend([0x00, 0x01])
         bc.append(0x2B)
         bc.extend(new_loadout_id.to_bytes(4, 'little'))
+        target_mem_len = 2 if 0 <= target_id <= 255 else 5
         if 0 <= target_id <= 255:
             bc.extend([0x2C, target_id])
         else:
             bc.append(0x1D)
             bc.extend(int(target_id).to_bytes(4, 'little'))
 
-    jump_target = len(bc)
+        assign_mem = 1 + 3 + 1 + assign_index_mem + 28 + target_mem_len
+        mem_sz += assign_mem
+
+    jump_target = mem_sz
     bc[jump_pos:jump_pos+2] = jump_target.to_bytes(2, 'little')
     bc.extend(tail)
 
