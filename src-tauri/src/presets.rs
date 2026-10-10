@@ -366,6 +366,65 @@ pub async fn apply_preset(app: tauri::AppHandle, id: String) -> Result<Vec<Strin
 #[allow(dead_code)]
 pub const COSMETIC_SLOTS_COUNT: usize = 14;
 
+/// Real TAGame.upk ProductSlot array index mappings (from Default__GameData_TA::ProductSlots)
+pub fn upk_slot_index_from_str(slot: &str) -> u8 {
+    let clean = slot.to_lowercase().replace([' ', '_', '-'], "");
+    match clean.as_str() {
+        "body" | "bodies" => 0,
+        "skin" | "decal" | "decals" => 1,
+        "wheel" | "wheels" => 2,
+        "boost" | "boosts" | "rocketboost" | "rocketboosts" => 3,
+        "antenna" | "antennas" => 4,
+        "topper" | "toppers" | "hat" | "hats" => 5,
+        "front" => 6,
+        "paintfinish" | "paintfinishes" | "paint" | "paints" | "finish" | "finishes" => 7,
+        "bot" => 8,
+        "logo" => 9,
+        "underglow" => 10,
+        "premiuminventory" => 11,
+        "paintfinishsecondary" | "paintfinishaccent" | "accentpaint" | "paintaccent" | "accent" | "accents" | "customfinish" => 12,
+        "engineaudio" | "audio" | "audios" | "engine" | "engines" => 13,
+        "trail" | "trails" | "friction" | "supersonictrail" => 14,
+        "goalexplosion" | "goalexplosions" | "explosion" | "explosions" | "ge" => 15,
+        "playerbanner" | "playerbanners" | "banner" | "banners" => 16,
+        "garagecomplexrow" => 17,
+        "playeranthem" | "playeranthems" | "anthem" | "anthems" | "music" | "track" | "musicstingers" => 18,
+        "playeravatar" => 19,
+        "avatarborder" | "avatarborders" | "border" | "borders" | "playeravatarborder" => 20,
+        _ => {
+            if clean.contains("goal") || clean.contains("explosion") {
+                15
+            } else if clean.contains("banner") {
+                16
+            } else if clean.contains("anthem") || clean.contains("music") {
+                18
+            } else if clean.contains("border") {
+                20
+            } else if clean.contains("trail") || clean.contains("friction") {
+                14
+            } else if clean.contains("audio") || clean.contains("engine") {
+                13
+            } else if clean.contains("accent") {
+                12
+            } else if clean.contains("paint") || clean.contains("finish") {
+                7
+            } else if clean.contains("topper") || clean.contains("hat") {
+                5
+            } else if clean.contains("antenna") {
+                4
+            } else if clean.contains("boost") {
+                3
+            } else if clean.contains("wheel") {
+                2
+            } else if clean.contains("decal") || clean.contains("skin") {
+                1
+            } else {
+                0
+            }
+        }
+    }
+}
+
 pub fn slot_index_from_str(slot: &str) -> usize {
     let clean = slot.to_lowercase().replace([' ', '_', '-'], "");
     match clean.as_str() {

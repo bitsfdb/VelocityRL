@@ -134,6 +134,11 @@ pub struct SlotSwapRule {
     pub target_id: i32,
 }
 
+#[inline]
+pub fn is_car_loadout_slot(slot_idx: u8) -> bool {
+    matches!(slot_idx, 0 | 1 | 2 | 3 | 4 | 5 | 7 | 12 | 13 | 14)
+}
+
 pub fn emit_car_set_loadout_bytecode(
     slot_overrides: &[SlotSwapRule],
     max_disk_size: usize,
@@ -151,109 +156,78 @@ pub fn emit_car_set_loadout_bytecode(
 
     // 1. Slot assignments on Data (local #data_var_id)
     // De-duplicate by slot_idx so highest priority rule applies.
-    // Note: Car_TA only manages vehicle-attached cosmetics (slots 0..=9: Body, Decal, Wheels, Boost, Antenna, Topper, Finish, Accent, Audio, Trail).
-    // Slots >= 10 (Goal Explosion, Banner, Anthem, Border) are handled externally and must not consume the 186-byte Car_TA buffer.
+    // Car_TA manages vehicle-attached cosmetics: slots 0 (Body), 1 (Decal), 2 (Wheels),
+    // 3 (Boost), 4 (Antenna), 5 (Topper), 7 (PaintFinish), 12 (Accent), 13 (Audio), 14 (Trail).
     let mut seen = std::collections::HashSet::new();
     let mut unique_rules = Vec::new();
     for r in slot_overrides.iter().rev() {
-        if r.slot_idx <= 9 && seen.insert(r.slot_idx) {
+        if is_car_loadout_slot(r.slot_idx) && seen.insert(r.slot_idx) {
             unique_rules.push(r.clone());
         }
     }
     unique_rules.reverse();
 
-    for rule in &unique_rules {
-        let fits_conditional = rule.owned_id.is_some() && (max_disk_size >= 250 || unique_rules.len() == 1);
-        if fits_conditional {
-            let owned_id = rule.owned_id.unwrap();
-            // Conditional rule:
-            // if (Data.Products[slot_idx] == owned_id) Data.Products[slot_idx] = target_id;
-            // In UE3, dynamic array indexing is:
-            // EX_DYN_ARRAY_OP (0x57) + [0x00, 0x00] + EX_DYN_ARRAY_ELEMENT (0x5E) + <Index Expr> + <Array Expr>
-            let index_disk_len = if rule.slot_idx == 0 { 1 } else { 2 };
-            let rule_disk_len = 56 + 2 * index_disk_len;
-            if bc.len() + rule_disk_len + 97 > max_disk_size {
-                break;
-            }
+    let trigger_opt = unique_rules.iter().find(|r| r.slot_idx == 0 && r.owned_id.is_some())
+        .or_else(|| unique_rules.iter().find(|r| r.owned_id.is_some()))
+        .cloned();
 
-            // EX_JUMP_IF_NOT
-            bc.push(opcodes::EX_JUMP_IF_NOT);
-            let jump_pos = bc.len();
-            bc.extend_from_slice(&[0x00, 0x00]);
+    let vanilla_tail_len = 97;
+    let available_space = max_disk_size.saturating_sub(vanilla_tail_len);
 
-            // EX_EQUAL_EQUAL_INT_INT (==)
-            bc.push(opcodes::EX_EQUAL_EQUAL_INT_INT);
+    if let Some(trigger) = trigger_opt {
+        let owned_id = trigger.owned_id.unwrap();
 
-            // Left side: Data.Products[slot_idx]
-            bc.push(opcodes::EX_DYN_ARRAY_OP);
-            bc.extend_from_slice(&[0x00, 0x00]);
-            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
-            // 1. Index operand:
-            let index_mem = if rule.slot_idx == 0 {
-                bc.push(opcodes::EX_INT_ZERO);
-                1u32
-            } else {
-                bc.push(opcodes::EX_INT_CONST_BYTE);
-                bc.push(rule.slot_idx);
-                2u32
-            };
-            // 2. Array operand: Data.Products
-            bc.push(opcodes::EX_STRUCT_MEMBER);
-            bc.extend_from_slice(&products_id.to_le_bytes());
-            bc.extend_from_slice(&cld_id.to_le_bytes());
-            bc.extend_from_slice(&[0x00, 0x01]);
-            bc.push(opcodes::EX_LOCAL_VARIABLE);
-            bc.extend_from_slice(&data_var_id.to_le_bytes());
+        // 1. Unified condition header: if (Data.Products[trigger.slot_idx] == owned_id)
+        bc.push(opcodes::EX_JUMP_IF_NOT);
+        let jump_pos = bc.len();
+        bc.extend_from_slice(&[0x00, 0x00]);
 
-            // Right side: owned_id
-            bc.push(opcodes::EX_INT_CONST);
-            bc.extend_from_slice(&owned_id.to_le_bytes());
-
-            // End parms for == operator
-            bc.push(opcodes::EX_END_FUNCTION_PARMS);
-
-            // Body: Data.Products[slot_idx] = target_id
-            bc.push(opcodes::EX_LET);
-            bc.push(opcodes::EX_DYN_ARRAY_OP);
-            bc.extend_from_slice(&[0x00, 0x00]);
-            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
-            // 1. Index operand:
-            if rule.slot_idx == 0 {
-                bc.push(opcodes::EX_INT_ZERO);
-            } else {
-                bc.push(opcodes::EX_INT_CONST_BYTE);
-                bc.push(rule.slot_idx);
-            }
-            // 2. Array operand: Data.Products
-            bc.push(opcodes::EX_STRUCT_MEMBER);
-            bc.extend_from_slice(&products_id.to_le_bytes());
-            bc.extend_from_slice(&cld_id.to_le_bytes());
-            bc.extend_from_slice(&[0x00, 0x01]);
-            bc.push(opcodes::EX_LOCAL_VARIABLE);
-            bc.extend_from_slice(&data_var_id.to_le_bytes());
-            bc.push(opcodes::EX_INT_CONST);
-            bc.extend_from_slice(&rule.target_id.to_le_bytes());
-
-            // Jump target is the local bytecode offset immediately after the body
-            let jump_target = bc.len() as u16;
-            bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
-            let total_rule_mem = 3 + (39 + index_mem) + (38 + index_mem);
-            mem_sz += total_rule_mem;
+        bc.push(opcodes::EX_EQUAL_EQUAL_INT_INT);
+        bc.push(opcodes::EX_DYN_ARRAY_OP);
+        bc.extend_from_slice(&[0x00, 0x00]);
+        bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
+        let cond_index_mem = if trigger.slot_idx == 0 {
+            bc.push(opcodes::EX_INT_ZERO);
+            1u32
         } else {
-            // Unconditional rule:
-            // Data.Products[slot_idx] = target_id;
-            // Takes 27 bytes (slot 0) or 28 bytes (slot > 0), allowing up to 3 slots
-            // (e.g. Body, Goal Explosion garage slot 10, Goal Explosion match slot 15) to fit in 186 bytes!
+            bc.push(opcodes::EX_INT_CONST_BYTE);
+            bc.push(trigger.slot_idx);
+            2u32
+        };
+        bc.push(opcodes::EX_STRUCT_MEMBER);
+        bc.extend_from_slice(&products_id.to_le_bytes());
+        bc.extend_from_slice(&cld_id.to_le_bytes());
+        bc.extend_from_slice(&[0x00, 0x01]);
+        bc.push(opcodes::EX_LOCAL_VARIABLE);
+        bc.extend_from_slice(&data_var_id.to_le_bytes());
+        bc.push(opcodes::EX_INT_CONST);
+        bc.extend_from_slice(&owned_id.to_le_bytes());
+        bc.push(opcodes::EX_END_FUNCTION_PARMS);
+
+        let cond_mem = 3 + 1 + 3 + 1 + cond_index_mem + 28 + 5 + 1;
+        mem_sz += cond_mem;
+
+        // 2. Body assignments: trigger rule first, then remaining unique rules
+        let mut ordered_rules = Vec::new();
+        ordered_rules.push(trigger);
+        for r in &unique_rules {
+            if r.slot_idx != trigger.slot_idx {
+                ordered_rules.push(r.clone());
+            }
+        }
+
+        for rule in ordered_rules {
             let index_disk_len = if rule.slot_idx == 0 { 1 } else { 2 };
-            let rule_disk_len = 26 + index_disk_len;
-            if bc.len() + rule_disk_len + 97 > max_disk_size {
+            let assign_disk_len = 26 + index_disk_len;
+            if bc.len() + assign_disk_len > available_space {
                 break;
             }
+
             bc.push(opcodes::EX_LET);
             bc.push(opcodes::EX_DYN_ARRAY_OP);
             bc.extend_from_slice(&[0x00, 0x00]);
             bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
-            let index_mem = if rule.slot_idx == 0 {
+            let assign_index_mem = if rule.slot_idx == 0 {
                 bc.push(opcodes::EX_INT_ZERO);
                 1u32
             } else {
@@ -269,7 +243,45 @@ pub fn emit_car_set_loadout_bytecode(
             bc.extend_from_slice(&data_var_id.to_le_bytes());
             bc.push(opcodes::EX_INT_CONST);
             bc.extend_from_slice(&rule.target_id.to_le_bytes());
-            mem_sz += 38 + index_mem;
+
+            let assign_mem = 1 + 3 + 1 + assign_index_mem + 28 + 5;
+            mem_sz += assign_mem;
+        }
+
+        // Jump target is local bytecode offset immediately after body
+        let jump_target = bc.len() as u16;
+        bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
+    } else {
+        // Pure unconditional rules (only if caller explicitly provided no owned_ids)
+        for rule in &unique_rules {
+            let index_disk_len = if rule.slot_idx == 0 { 1 } else { 2 };
+            let assign_disk_len = 26 + index_disk_len;
+            if bc.len() + assign_disk_len > available_space {
+                break;
+            }
+            bc.push(opcodes::EX_LET);
+            bc.push(opcodes::EX_DYN_ARRAY_OP);
+            bc.extend_from_slice(&[0x00, 0x00]);
+            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
+            let assign_index_mem = if rule.slot_idx == 0 {
+                bc.push(opcodes::EX_INT_ZERO);
+                1u32
+            } else {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(rule.slot_idx);
+                2u32
+            };
+            bc.push(opcodes::EX_STRUCT_MEMBER);
+            bc.extend_from_slice(&products_id.to_le_bytes());
+            bc.extend_from_slice(&cld_id.to_le_bytes());
+            bc.extend_from_slice(&[0x00, 0x01]);
+            bc.push(opcodes::EX_LOCAL_VARIABLE);
+            bc.extend_from_slice(&data_var_id.to_le_bytes());
+            bc.push(opcodes::EX_INT_CONST);
+            bc.extend_from_slice(&rule.target_id.to_le_bytes());
+
+            let assign_mem = 1 + 3 + 1 + assign_index_mem + 28 + 5;
+            mem_sz += assign_mem;
         }
     }
 
@@ -332,92 +344,78 @@ pub fn emit_car_preview_set_loadout_bytecode(
     bc.extend_from_slice(&in_loadout_id.to_le_bytes());
     mem_sz += 19;
 
-    // Filter to vehicle cosmetics (slots 0..=9: Body, Decal, Wheels, Boost, Antenna, Topper, Finish, Accent, Audio, Trail)
+    // Filter to vehicle cosmetics: slots 0, 1, 2, 3, 4, 5, 7, 12, 13, 14
     let mut seen = std::collections::HashSet::new();
     let mut unique_rules = Vec::new();
     for r in slot_overrides.iter().rev() {
-        if r.slot_idx <= 9 && seen.insert(r.slot_idx) {
+        if is_car_loadout_slot(r.slot_idx) && seen.insert(r.slot_idx) {
             unique_rules.push(r.clone());
         }
     }
     unique_rules.reverse();
 
+    let trigger_opt = unique_rules.iter().find(|r| r.slot_idx == 0 && r.owned_id.is_some())
+        .or_else(|| unique_rules.iter().find(|r| r.owned_id.is_some()))
+        .cloned();
+
     // 2. Slot override rules on NewLoadout
     // ForceSetLoadout tail call is 19 bytes disk
     let tail_disk_len = 19;
-    for rule in &unique_rules {
-        let index_disk_len = if rule.slot_idx == 0 { 1 } else { 2 };
-        let cond_disk_len = 56 + 2 * index_disk_len;
-        let uncond_disk_len = 26 + index_disk_len;
+    let available_space = max_disk_size.saturating_sub(tail_disk_len);
 
-        let can_fit_cond = rule.owned_id.is_some()
-            && (unique_rules.len() <= 3 || (rule.slot_idx == 0 && unique_rules.len() <= 5))
-            && (bc.len() + cond_disk_len + tail_disk_len <= max_disk_size);
+    if let Some(trigger) = trigger_opt {
+        let owned_id = trigger.owned_id.unwrap();
 
-        if can_fit_cond {
-            let owned_id = rule.owned_id.unwrap();
+        // Unified condition: if (NewLoadout.Products[trigger.slot_idx] == owned_id)
+        bc.push(opcodes::EX_JUMP_IF_NOT);
+        let jump_pos = bc.len();
+        bc.extend_from_slice(&[0x00, 0x00]);
 
-            // EX_JUMP_IF_NOT
-            bc.push(opcodes::EX_JUMP_IF_NOT);
-            let jump_pos = bc.len();
-            bc.extend_from_slice(&[0x00, 0x00]);
+        bc.push(opcodes::EX_EQUAL_EQUAL_INT_INT);
+        bc.push(opcodes::EX_DYN_ARRAY_OP);
+        bc.extend_from_slice(&[0x00, 0x00]);
+        bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
+        let cond_index_mem = if trigger.slot_idx == 0 {
+            bc.push(opcodes::EX_INT_ZERO);
+            1u32
+        } else {
+            bc.push(opcodes::EX_INT_CONST_BYTE);
+            bc.push(trigger.slot_idx);
+            2u32
+        };
+        bc.push(opcodes::EX_STRUCT_MEMBER);
+        bc.extend_from_slice(&products_id.to_le_bytes());
+        bc.extend_from_slice(&loadout_data_id.to_le_bytes());
+        bc.extend_from_slice(&[0x00, 0x01]);
+        bc.push(opcodes::EX_INSTANCE_VARIABLE);
+        bc.extend_from_slice(&new_loadout_id.to_le_bytes());
+        bc.push(opcodes::EX_INT_CONST);
+        bc.extend_from_slice(&owned_id.to_le_bytes());
+        bc.push(opcodes::EX_END_FUNCTION_PARMS);
 
-            // Condition: NewLoadout.Products[slot_idx] == owned_id
-            bc.push(opcodes::EX_EQUAL_EQUAL_INT_INT);
-            bc.push(opcodes::EX_DYN_ARRAY_OP);
-            bc.extend_from_slice(&[0x00, 0x00]);
-            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
-            let index_mem = if rule.slot_idx == 0 {
-                bc.push(opcodes::EX_INT_ZERO);
-                1u32
-            } else {
-                bc.push(opcodes::EX_INT_CONST_BYTE);
-                bc.push(rule.slot_idx);
-                2u32
-            };
-            bc.push(opcodes::EX_STRUCT_MEMBER);
-            bc.extend_from_slice(&products_id.to_le_bytes());
-            bc.extend_from_slice(&loadout_data_id.to_le_bytes());
-            bc.extend_from_slice(&[0x00, 0x01]);
-            bc.push(opcodes::EX_INSTANCE_VARIABLE);
-            bc.extend_from_slice(&new_loadout_id.to_le_bytes());
-            bc.push(opcodes::EX_INT_CONST);
-            bc.extend_from_slice(&owned_id.to_le_bytes());
-            bc.push(opcodes::EX_END_FUNCTION_PARMS);
+        let cond_mem = 3 + 1 + 3 + 1 + cond_index_mem + 28 + 5 + 1;
+        mem_sz += cond_mem;
 
-            // Body: NewLoadout.Products[slot_idx] = target_id
-            bc.push(opcodes::EX_LET);
-            bc.push(opcodes::EX_DYN_ARRAY_OP);
-            bc.extend_from_slice(&[0x00, 0x00]);
-            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
-            if rule.slot_idx == 0 {
-                bc.push(opcodes::EX_INT_ZERO);
-            } else {
-                bc.push(opcodes::EX_INT_CONST_BYTE);
-                bc.push(rule.slot_idx);
+        let mut ordered_rules = Vec::new();
+        ordered_rules.push(trigger);
+        for r in &unique_rules {
+            if r.slot_idx != trigger.slot_idx {
+                ordered_rules.push(r.clone());
             }
-            bc.push(opcodes::EX_STRUCT_MEMBER);
-            bc.extend_from_slice(&products_id.to_le_bytes());
-            bc.extend_from_slice(&loadout_data_id.to_le_bytes());
-            bc.extend_from_slice(&[0x00, 0x01]);
-            bc.push(opcodes::EX_INSTANCE_VARIABLE);
-            bc.extend_from_slice(&new_loadout_id.to_le_bytes());
-            bc.push(opcodes::EX_INT_CONST);
-            bc.extend_from_slice(&rule.target_id.to_le_bytes());
+        }
 
-            // Jump target is local bytecode offset right after body
-            let jump_target = bc.len() as u16;
-            bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
+        for rule in ordered_rules {
+            let index_disk_len = if rule.slot_idx == 0 { 1 } else { 2 };
+            let assign_disk_len = 26 + index_disk_len;
+            if bc.len() + assign_disk_len > available_space {
+                break;
+            }
 
-            let total_rule_mem = 77 + 2 * index_mem;
-            mem_sz += total_rule_mem;
-        } else if bc.len() + uncond_disk_len + tail_disk_len <= max_disk_size {
-            // Unconditional: NewLoadout.Products[slot_idx] = target_id;
             bc.push(opcodes::EX_LET);
             bc.push(opcodes::EX_DYN_ARRAY_OP);
             bc.extend_from_slice(&[0x00, 0x00]);
             bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
-            let index_mem = if rule.slot_idx == 0 {
+            let assign_index_mem = if rule.slot_idx == 0 {
                 bc.push(opcodes::EX_INT_ZERO);
                 1u32
             } else {
@@ -434,7 +432,42 @@ pub fn emit_car_preview_set_loadout_bytecode(
             bc.push(opcodes::EX_INT_CONST);
             bc.extend_from_slice(&rule.target_id.to_le_bytes());
 
-            mem_sz += 38 + index_mem;
+            let assign_mem = 1 + 3 + 1 + assign_index_mem + 28 + 5;
+            mem_sz += assign_mem;
+        }
+
+        let jump_target = bc.len() as u16;
+        bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
+    } else {
+        for rule in &unique_rules {
+            let index_disk_len = if rule.slot_idx == 0 { 1 } else { 2 };
+            let assign_disk_len = 26 + index_disk_len;
+            if bc.len() + assign_disk_len > available_space {
+                break;
+            }
+            bc.push(opcodes::EX_LET);
+            bc.push(opcodes::EX_DYN_ARRAY_OP);
+            bc.extend_from_slice(&[0x00, 0x00]);
+            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
+            let assign_index_mem = if rule.slot_idx == 0 {
+                bc.push(opcodes::EX_INT_ZERO);
+                1u32
+            } else {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(rule.slot_idx);
+                2u32
+            };
+            bc.push(opcodes::EX_STRUCT_MEMBER);
+            bc.extend_from_slice(&products_id.to_le_bytes());
+            bc.extend_from_slice(&loadout_data_id.to_le_bytes());
+            bc.extend_from_slice(&[0x00, 0x01]);
+            bc.push(opcodes::EX_INSTANCE_VARIABLE);
+            bc.extend_from_slice(&new_loadout_id.to_le_bytes());
+            bc.push(opcodes::EX_INT_CONST);
+            bc.extend_from_slice(&rule.target_id.to_le_bytes());
+
+            let assign_mem = 1 + 3 + 1 + assign_index_mem + 28 + 5;
+            mem_sz += assign_mem;
         }
     }
 
@@ -654,7 +687,7 @@ pub fn get_paint_rgba(paint_id: i32) -> [u8; 16] {
     out
 }
 
-pub fn apply_body_paint_modification(
+pub fn apply_item_paint_modification(
     cooked_dir: &Path,
     package_name: &str,
     paint_id: i32,
@@ -669,6 +702,18 @@ pub fn apply_body_paint_modification(
 
     if !backup_path.is_file() {
         let _ = fs::copy(&pkg_path, &backup_path);
+    }
+
+    // 1. If Rocket League has a dedicated painted package file, copy it!
+    if paint_id > 0 {
+        if let Some(painted_pkg) = crate::upk::swapper::find_painted_package(cooked_dir, package_name, paint_id) {
+            if let Some((src_painted, _)) = crate::upk::swapper::resolve_package_path(cooked_dir, &painted_pkg) {
+                if src_painted.is_file() && src_painted != pkg_path {
+                    let _ = fs::copy(&src_painted, &pkg_path);
+                    return Ok(());
+                }
+            }
+        }
     }
 
     let src_path = if backup_path.is_file() { &backup_path } else { &pkg_path };
@@ -715,7 +760,7 @@ pub fn apply_body_paint_modification(
         get_paint_rgba(paint_id)
     };
 
-    // Replace all material instance vector parameter patterns across decompressed chunk
+    // Replace material instance vector parameter patterns across decompressed chunk
     let patterns = [
         // 0.0663 f32 (CustomColor stock on Fennec/Dominus/Octane)
         [0x25, 0xc6, 0x87, 0x3d, 0x25, 0xc6, 0x87, 0x3d, 0x25, 0xc6, 0x87, 0x3d, 0x00, 0x00, 0x80, 0x3f],
@@ -723,6 +768,10 @@ pub fn apply_body_paint_modification(
         [0x8f, 0xc2, 0xf5, 0x3d, 0x8f, 0xc2, 0xf5, 0x3d, 0x8f, 0xc2, 0xf5, 0x3d, 0x00, 0x00, 0x80, 0x3f],
         // 0.05 f32
         [0xcd, 0xcc, 0x4c, 0x3d, 0xcd, 0xcc, 0x4c, 0x3d, 0xcd, 0xcc, 0x4c, 0x3d, 0x00, 0x00, 0x80, 0x3f],
+        // 0.02 f32 (dark trim / wheels)
+        [0xa4, 0x70, 0x9d, 0x3c, 0xa4, 0x70, 0x9d, 0x3c, 0xa4, 0x70, 0x9d, 0x3c, 0x00, 0x00, 0x80, 0x3f],
+        // 0.01 f32 (black trim / wheels)
+        [0x0a, 0xd7, 0x23, 0x3c, 0x0a, 0xd7, 0x23, 0x3c, 0x0a, 0xd7, 0x23, 0x3c, 0x00, 0x00, 0x80, 0x3f],
     ];
 
     for pat in &patterns {
@@ -733,7 +782,6 @@ pub fn apply_body_paint_modification(
             search_from = pos + 16;
         }
     }
-
 
     // Recompress Chunk 0
     let mut recomp = crate::upk::compression::compress_chunk(&decomp)
@@ -754,11 +802,23 @@ pub fn apply_body_paint_modification(
     Ok(())
 }
 
+#[inline]
+pub fn apply_body_paint_modification(
+    cooked_dir: &Path,
+    package_name: &str,
+    paint_id: i32,
+    custom_hex: Option<&str>,
+    keys_map_json: &str,
+) -> Result<(), TagameSwapError> {
+    apply_item_paint_modification(cooked_dir, package_name, paint_id, custom_hex, keys_map_json)
+}
+
 pub fn apply_tagame_modifications(
     cooked_dir: &Path,
     swaps: &[TagameSwapItem],
     keys_txt: &str,
     keys_map_json: &str,
+    palette_enabled: Option<bool>,
 ) -> Result<TagameSwapperStatus, TagameSwapError> {
     let tagame_path = cooked_dir.join("TAGame.upk");
     let backup_path = cooked_dir.join(TAGAME_BACKUP_NAME);
@@ -792,19 +852,29 @@ pub fn apply_tagame_modifications(
         false
     };
 
+    let live_is_vanilla = crate::upk::palette::is_vanilla_stock_file(&tagame_path, keys_txt, keys_map_json);
     if !backup_path.is_file() || backup_is_stale {
-        crate::applog::event("apply_tagame_modifications: game update detected or backup missing, refreshing TAGame.upk.bak");
-        fs::copy(&tagame_path, &backup_path).map_err(|e| {
-            TagameSwapError::Msg(format!("Failed to create backup {}: {e}", backup_path.display()))
-        })?;
+        if live_is_vanilla {
+            crate::applog::event("apply_tagame_modifications: game update detected or backup missing, refreshing TAGame.upk.bak from vanilla stock file");
+            fs::copy(&tagame_path, &backup_path).map_err(|e| {
+                TagameSwapError::Msg(format!("Failed to create backup {}: {e}", backup_path.display()))
+            })?;
+        } else if !backup_path.is_file() {
+            crate::applog::event("apply_tagame_modifications: backup missing and live file is modded; creating backup with warning");
+            let _ = fs::copy(&tagame_path, &backup_path);
+        }
     }
 
     let mut file_bytes = fs::read(&backup_path).map_err(|e| {
         TagameSwapError::Msg(format!("Failed to read {}: {e}", backup_path.display()))
     })?;
 
-    let pal_st = crate::upk::palette::read_palette_status(cooked_dir, None);
-    if pal_st.applied {
+    let should_apply_palette = palette_enabled.unwrap_or_else(|| {
+        let pal_st = crate::upk::palette::read_palette_status(cooked_dir, None);
+        pal_st.applied
+    });
+
+    if should_apply_palette {
         if let Ok(_) = crate::upk::palette::apply_rich_palette_to_file(cooked_dir, keys_txt, keys_map_json) {
             if let Ok(pal_bytes) = fs::read(&tagame_path) {
                 file_bytes = pal_bytes;
@@ -932,39 +1002,10 @@ pub fn apply_tagame_modifications(
 
         for s in swaps {
             let pid = if s.product_id > 0 { s.product_id } else { 4284 };
-            let norm = s.slot.to_lowercase().replace([' ', '_', '-'], "");
-            let slot_idx: u8 = if norm.contains("body") || s.slot_index == Some(0) {
-                0
-            } else if norm.contains("decal") || norm.contains("skin") || s.slot_index == Some(1) {
-                1
-            } else if norm.contains("wheel") || s.slot_index == Some(2) {
-                2
-            } else if norm.contains("boost") || s.slot_index == Some(3) {
-                3
-            } else if norm.contains("antenna") || s.slot_index == Some(4) {
-                4
-            } else if norm.contains("topper") || norm.contains("hat") || s.slot_index == Some(5) {
-                5
-            } else if norm.contains("paintfinish") || norm.contains("finish") || s.slot_index == Some(6) {
-                6
-            } else if norm.contains("accent") || s.slot_index == Some(7) {
-                7
-            } else if norm.contains("audio") || norm.contains("engine") || s.slot_index == Some(8) {
-                8
-            } else if norm.contains("trail") || s.slot_index == Some(9) || s.slot_index == Some(13) {
-                9
-            } else if norm.contains("goal") || norm.contains("explosion") || s.slot_index == Some(10) || s.slot_index == Some(14) {
-                10
-            } else if norm.contains("banner") || s.slot_index == Some(11) || s.slot_index == Some(15) {
-                11
-            } else if norm.contains("anthem") || norm.contains("music") || s.slot_index == Some(12) || s.slot_index == Some(18) {
-                12
-            } else if norm.contains("border") || s.slot_index == Some(13) || s.slot_index == Some(20) {
-                13
-            } else if let Some(idx) = s.slot_index {
+            let slot_idx = if let Some(idx) = s.slot_index {
                 idx as u8
             } else {
-                crate::presets::slot_index_from_str(&s.slot) as u8
+                crate::presets::upk_slot_index_from_str(&s.slot)
             };
 
             slot_overrides.push(SlotSwapRule {
@@ -972,42 +1013,6 @@ pub fn apply_tagame_modifications(
                 owned_id: s.owned_id,
                 target_id: pid,
             });
-
-            let is_ge = slot_idx == 10 || norm.contains("goal") || norm.contains("explosion") || s.slot_index == Some(14);
-            if is_ge {
-                let target_ge = if s.product_id > 0 { s.product_id } else { 2044 };
-
-                // Goal Explosions map to Slot 10 (garage/legacy) and Slot 15 (in-match/replication)
-                slot_overrides.push(SlotSwapRule {
-                    slot_idx: 15,
-                    owned_id: s.owned_id,
-                    target_id: target_ge,
-                });
-
-                // If owned is 0, 1903, or None (default), cover both 0 and 1903 on both slot 10 and slot 15
-                if s.owned_id == Some(1903) || s.owned_id == Some(0) || s.owned_id.is_none() {
-                    slot_overrides.push(SlotSwapRule {
-                        slot_idx: 10,
-                        owned_id: Some(0),
-                        target_id: target_ge,
-                    });
-                    slot_overrides.push(SlotSwapRule {
-                        slot_idx: 10,
-                        owned_id: Some(1903),
-                        target_id: target_ge,
-                    });
-                    slot_overrides.push(SlotSwapRule {
-                        slot_idx: 15,
-                        owned_id: Some(0),
-                        target_id: target_ge,
-                    });
-                    slot_overrides.push(SlotSwapRule {
-                        slot_idx: 15,
-                        owned_id: Some(1903),
-                        target_id: target_ge,
-                    });
-                }
-            }
         }
 
         // 1. Patch Chunk 0: Car_TA::SetLoadout strictly within vanilla allocation (186 bytes)
@@ -1073,8 +1078,49 @@ pub fn apply_tagame_modifications(
                         }
                     }
 
-                    // Keep CarPreviewActor_TA::SetLoadout (230 bytes) vanilla stock in Chunk 0
-                    // to prevent deserializer crash (Bad expr token 00)
+                    // Patch CarPreviewActor_TA::SetLoadout (230 bytes) in Chunk 0 for garage pedestal preview
+                    if let Some(exp) = exports.iter().find(|e| e.name == "SetLoadout" && e.outer_name == "CarPreviewActor_TA") {
+                        let func_off = (exp.serial_offset - c0_uncomp_offset) as usize;
+                        if func_off + 48 <= decomp0.len() {
+                            let orig_disk_sz = u32::from_le_bytes(decomp0[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                            if orig_disk_sz >= 30 && func_off + 48 + orig_disk_sz <= decomp0.len() {
+                                let set_loadout_idx = exp.idx as i32;
+                                let new_loadout_idx = exports.iter()
+                                    .find(|e| e.name == "NewLoadout" && e.outer_idx == set_loadout_idx)
+                                    .map(|e| e.idx as i32)
+                                    .unwrap_or(18093);
+                                let in_loadout_idx = exports.iter()
+                                    .find(|e| e.name == "InLoadout" && e.outer_idx == set_loadout_idx)
+                                    .map(|e| e.idx as i32)
+                                    .unwrap_or(18094);
+                                let loadout_data_idx = exports.iter()
+                                    .find(|e| e.name == "LoadoutData")
+                                    .map(|e| e.idx as i32)
+                                    .unwrap_or(2364);
+                                let products_idx = exports.iter()
+                                    .find(|e| e.name == "Products" && e.outer_idx == loadout_data_idx)
+                                    .map(|e| e.idx as i32)
+                                    .unwrap_or(1871);
+                                let force_set_idx = names.iter()
+                                    .position(|n| n == "ForceSetLoadout")
+                                    .map(|i| i as i32)
+                                    .unwrap_or(20264);
+
+                                if let Ok((payload, mem_sz)) = emit_car_preview_set_loadout_bytecode(
+                                    &slot_overrides,
+                                    orig_disk_sz,
+                                    Some(products_idx),
+                                    Some(loadout_data_idx),
+                                    Some(new_loadout_idx),
+                                    Some(in_loadout_idx),
+                                    Some(force_set_idx),
+                                ) {
+                                    decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                    decomp0[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                }
+                            }
+                        }
+                    }
 
                     if let Ok(mut recomp0) = crate::upk::compression::compress_chunk(&decomp0) {
                         let orig_c0_sz = c0_comp_size as usize;
@@ -1095,15 +1141,8 @@ pub fn apply_tagame_modifications(
 
         // 2. Patch Chunk 1: ExplosionPreviewer_TA::SetLoadout (115 bytes) if a goal explosion swap is present
         let goal_explosion_target = swaps.iter().find_map(|s| {
-            let norm = s.slot.to_lowercase().replace([' ', '_', '-'], "");
-            let slot_idx: u8 = if norm.contains("goal") || norm.contains("explosion") || s.slot_index == Some(10) || s.slot_index == Some(14) {
-                10
-            } else if let Some(idx) = s.slot_index {
-                idx as u8
-            } else {
-                crate::presets::slot_index_from_str(&s.slot) as u8
-            };
-            if slot_idx == 10 || norm.contains("goal") || norm.contains("explosion") {
+            let slot_idx = s.slot_index.map(|i| i as u8).unwrap_or_else(|| crate::presets::upk_slot_index_from_str(&s.slot));
+            if slot_idx == 15 || s.slot.to_lowercase().contains("goal") || s.slot.to_lowercase().contains("explosion") {
                 Some(if s.product_id > 0 { s.product_id } else { 2044 })
             } else {
                 None
@@ -1178,31 +1217,35 @@ pub fn apply_tagame_modifications(
 
         fs::write(&tagame_path, &file_bytes)?;
     } else {
-        if !pal_st.applied && backup_path.is_file() {
+        if !should_apply_palette && backup_path.is_file() {
             let _ = fs::copy(&backup_path, &tagame_path);
         }
     }
 
-    // Apply body trim paint overrides (e.g. Fennec Black / custom trim hex)
+    // Apply paint overrides across all item types (wheels, boosts, decals, bodies / custom hex)
     for s in swaps {
-        let is_body = s.slot.to_lowercase().contains("body")
-            || s.package_name.as_deref().map_or(false, |p| p.to_lowercase().starts_with("body_"));
-        if !is_body {
-            continue;
-        }
-
-        let pkg = s.package_name.as_deref().unwrap_or("body_grain_SF");
+        let pkg_opt = s.package_name.as_deref();
         let custom_hex_str = s.custom_paint_hex.as_deref();
         let has_custom = custom_hex_str.map(|h| !h.trim().is_empty()).unwrap_or(false);
         let pid = s.paint_id.unwrap_or(0);
 
         if has_custom || pid > 0 {
-            let _ = apply_body_paint_modification(cooked_dir, "body_grain_SF", pid, custom_hex_str, keys_map_json);
-            if pkg != "body_grain_SF" {
-                let _ = apply_body_paint_modification(cooked_dir, pkg, pid, custom_hex_str, keys_map_json);
+            if let Some(pkg) = pkg_opt {
+                let _ = apply_item_paint_modification(cooked_dir, pkg, pid, custom_hex_str, keys_map_json);
             }
-        } else {
-            for restore_name in [pkg, "body_grain_SF"] {
+            let is_body = s.slot.to_lowercase().contains("body")
+                || pkg_opt.map_or(false, |p| p.to_lowercase().starts_with("body_"));
+            if is_body {
+                let _ = apply_item_paint_modification(cooked_dir, "body_grain_SF", pid, custom_hex_str, keys_map_json);
+            }
+        } else if let Some(pkg) = pkg_opt {
+            let mut restore_names = vec![pkg];
+            let is_body = s.slot.to_lowercase().contains("body")
+                || pkg.to_lowercase().starts_with("body_");
+            if is_body {
+                restore_names.push("body_grain_SF");
+            }
+            for restore_name in restore_names {
                 if let Some((pkg_path, actual_file_name)) = crate::upk::swapper::resolve_package_path(cooked_dir, restore_name) {
                     let bak_path = cooked_dir.join(format!("{actual_file_name}.bak"));
                     if bak_path.is_file() {
@@ -1425,7 +1468,7 @@ mod tests {
         let keys_txt = include_str!("../../resources/keys.txt");
         let keys_map_json = include_str!("../../resources/keys_map.json");
 
-        let status = apply_tagame_modifications(&temp_dir, &swaps, keys_txt, keys_map_json).expect("apply_tagame_modifications must succeed");
+        let status = apply_tagame_modifications(&temp_dir, &swaps, keys_txt, keys_map_json, None).expect("apply_tagame_modifications must succeed");
         assert!(status.applied);
         assert_eq!(status.active_swaps.len(), 4);
 
