@@ -65,6 +65,7 @@ AssetSwapper_Decrypted/
 log.txt
 *.log
 GEMINI.md
+gemini.md
 CLAUDE.md
 AGENTS.md
 .agent/
