@@ -313,7 +313,7 @@ pub fn resolve_package_path(game_dir: &Path, raw_pkg: &str) -> Option<(PathBuf, 
     None
 }
 
-fn find_painted_package(game_dir: &Path, asset_package: &str, paint_id: i32) -> Option<String> {
+pub fn find_painted_package(game_dir: &Path, asset_package: &str, paint_id: i32) -> Option<String> {
     for cand in painted_package_candidates(asset_package, paint_id) {
         if is_thumbnail_companion_upk(&cand) {
             continue;
