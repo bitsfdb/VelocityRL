@@ -55,9 +55,10 @@ $files = Get-ChildItem -Path (Join-Path $PSScriptRoot "src-tauri\src"), (Join-Pa
     Where-Object { $_.FullName -notmatch '[\\/](\.git|target|node_modules)[\\/]' } |
     Sort-Object FullName
 
+$rootLen = $PSScriptRoot.Length
 $hashStream = [System.IO.MemoryStream]::new()
 foreach ($f in $files) {
-    $rel = [System.IO.Path]::GetRelativePath($PSScriptRoot, $f.FullName).Replace('\', '/')
+    $rel = $f.FullName.Substring($rootLen).TrimStart('\', '/').Replace('\', '/')
     $relBytes = [System.Text.Encoding]::UTF8.GetBytes($rel)
     $hashStream.Write($relBytes, 0, $relBytes.Length)
     $fBytes = [System.IO.File]::ReadAllBytes($f.FullName)
@@ -69,11 +70,8 @@ $buildIdInt = [BitConverter]::ToInt32($sourceHashBytes, 0)
 $env:VRL_BUILD_ID = "$buildIdInt"
 $env:VRL_BUILD_HASH = $sourceHashHex.Substring(0, 8)
 
-# Compute Build Secret using source hash and master asset secret
 $masterSecret = "18667c8a510a5a0eb3ea0124d23f372b7387b6383a328ca4136e30f1f633997a"
-$hmac = [System.Security.Cryptography.HMACSHA256]::new([System.Text.Encoding]::UTF8.GetBytes($masterSecret))
-$secretBytes = $hmac.ComputeHash([System.Text.Encoding]::UTF8.GetBytes("$sourceHashHex"))
-$env:VRL_BUILD_SECRET = [BitConverter]::ToString($secretBytes).Replace('-', '').ToLowerInvariant()
+$env:VRL_BUILD_SECRET = $masterSecret
 
 Write-Host "    Source Tree Hash: $sourceHashHex"
 Write-Host "    Deterministic Build ID: $env:VRL_BUILD_ID"
