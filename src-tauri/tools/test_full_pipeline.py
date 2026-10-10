@@ -1,10 +1,24 @@
 #!/usr/bin/env python3
+"""
+/*
+ * velocityrl
+ * Copyright (c) 2026 bits (https://github.com/bitsfdb/velocityrl)
+ * 
+ * Licensed under the GNU General Public License v3.0.
+ * unauthorized rebranding or stripping of this copyright notice is strictly prohibited.
+ */
+"""
 import sys
 import os
 import shutil
 import struct
 sys.path.insert(0, '/root/VelocityRL/src-tauri/tools')
-from test_conditional_features import build_test_conditional_paint_bytecode, build_test_explosion_setproduct_bytecode
+from test_conditional_features import (
+    build_test_conditional_paint_bytecode,
+    build_test_explosion_setproduct_bytecode,
+    build_test_car_set_loadout_bytecode,
+    build_test_car_preview_set_loadout_bytecode,
+)
 from validate_tagame import validate_tagame, decompress_chunk, TAGAME_KEY
 from Crypto.Cipher import AES
 import zlib
@@ -44,7 +58,6 @@ def test_full_pipeline(src_upk="/root/velrlapi/.cache/TAGame.upk", dst_upk="/tmp
 
     pos = export_offset - name_offset
     names = []
-    # read names
     n_p = 0
     for _ in range(name_count):
         l = struct.unpack("<i", plain_header[n_p:n_p+4])[0]
@@ -59,7 +72,6 @@ def test_full_pipeline(src_upk="/root/velrlapi/.cache/TAGame.upk", dst_upk="/tmp
 
     exports = []
     while pos + 72 <= chunks_rel and len(exports) < export_count:
-        class_idx = struct.unpack("<i", plain_header[pos:pos+4])[0]
         outer_idx = struct.unpack("<i", plain_header[pos+8:pos+12])[0]
         name_idx = struct.unpack("<i", plain_header[pos+12:pos+16])[0]
         serial_size = struct.unpack("<i", plain_header[pos+32:pos+36])[0]
@@ -80,19 +92,6 @@ def test_full_pipeline(src_upk="/root/velrlapi/.cache/TAGame.upk", dst_upk="/tmp
         if 0 < e["outer_idx"] <= len(exports):
             e["outer_name"] = exports[e["outer_idx"] - 1]["name"]
 
-    # 1. Patch Chunk 0: CarMeshComponentBase_TA::ApplyPaintSettings
-    print("[*] Patching Chunk 0 with conditional custom paint...")
-    c0 = chunks[0]
-    c0_bytes = data[c0["comp_offset"]:c0["comp_offset"]+c0["comp_size"]]
-    decomp0 = bytearray(decompress_chunk(c0_bytes))
-
-    cmc_aps = next(e for e in exports if e["name"] == "ApplyPaintSettings" and e["outer_name"] == "CarMeshComponentBase_TA")
-    aps_off = cmc_aps["serial_offset"] - c0["uncomp_offset"]
-    aps_disk = struct.unpack("<I", decomp0[aps_off+44:aps_off+48])[0]
-    paint_payload = build_test_conditional_paint_bytecode(r=2.5, g=0.0, b=1.0, max_sz=aps_disk)
-    decomp0[aps_off+48:aps_off+48+aps_disk] = paint_payload
-
-    # Recompress Chunk 0
     def compress_chunk_ue3(decomp):
         block_sz = 131072
         num_blocks = (len(decomp) + block_sz - 1) // block_sz
@@ -110,6 +109,33 @@ def test_full_pipeline(src_upk="/root/velrlapi/.cache/TAGame.upk", dst_upk="/tmp
         for cb, _ in comp_blocks:
             out.extend(cb)
         return bytes(out)
+
+    # 1. Patch Chunk 0: CarMeshComponentBase_TA::ApplyPaintSettings, Car_TA::SetLoadout, CarPreviewActor_TA::SetLoadout
+    print("[*] Patching Chunk 0...")
+    c0 = chunks[0]
+    c0_bytes = data[c0["comp_offset"]:c0["comp_offset"]+c0["comp_size"]]
+    decomp0 = bytearray(decompress_chunk(c0_bytes))
+
+    cmc_aps = next(e for e in exports if e["name"] == "ApplyPaintSettings" and e["outer_name"] == "CarMeshComponentBase_TA")
+    aps_off = cmc_aps["serial_offset"] - c0["uncomp_offset"]
+    aps_disk = struct.unpack("<I", decomp0[aps_off+44:aps_off+48])[0]
+    paint_payload = build_test_conditional_paint_bytecode(r=2.5, g=0.0, b=1.0, max_sz=aps_disk)
+    decomp0[aps_off+48:aps_off+48+aps_disk] = paint_payload
+
+    car_sl = next(e for e in exports if e["name"] == "SetLoadout" and e["outer_name"] == "Car_TA")
+    car_off = car_sl["serial_offset"] - c0["uncomp_offset"]
+    car_disk = struct.unpack("<I", decomp0[car_off+44:car_off+48])[0]
+    car_payload = build_test_car_set_loadout_bytecode(slots=[(0, 23, 4001), (15, 2044, 3001)], max_sz=car_disk)
+    decomp0[car_off+48:car_off+48+car_disk] = car_payload
+
+    prev_sl = next(e for e in exports if e["name"] == "SetLoadout" and e["outer_name"] == "CarPreviewActor_TA")
+    prev_off = prev_sl["serial_offset"] - c0["uncomp_offset"]
+    prev_disk = struct.unpack("<I", decomp0[prev_off+44:prev_off+48])[0]
+    prev_payload = build_test_car_preview_set_loadout_bytecode(
+        slots=[(0, 23, 4001), (1, 10, 250), (2, 5, 100), (3, 2, 50), (5, 1, 30), (14, 4, 80)],
+        max_sz=prev_disk
+    )
+    decomp0[prev_off+48:prev_off+48+prev_disk] = prev_payload
 
     recomp0 = compress_chunk_ue3(bytes(decomp0))
     if len(recomp0) > c0["comp_size"]:
@@ -139,7 +165,6 @@ def test_full_pipeline(src_upk="/root/velrlapi/.cache/TAGame.upk", dst_upk="/tmp
     data[c1["comp_offset"]:c1["comp_offset"]+c1["comp_size"]] = padded1
     print(f"[+] Chunk 1 recompressed: {len(recomp1)}/{c1['comp_size']} bytes.")
 
-    # Write patched UPK
     with open(dst_upk, "wb") as f:
         f.write(data)
 
