@@ -2030,7 +2030,7 @@ fn is_current_stack_matching_stock(
     Ok(true)
 }
 
-fn is_vanilla_stock_file(path: &Path, keys: &str, keymap: &str) -> bool {
+pub fn is_vanilla_stock_file(path: &Path, keys: &str, keymap: &str) -> bool {
     if file_layout_ok(path, keys, keymap).is_err() {
         return false;
     }

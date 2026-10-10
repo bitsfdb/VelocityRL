@@ -1533,9 +1533,30 @@ pub(crate) async fn sync_all_swaps_to_tagame(
             .filter(|sl| !sl.trim().is_empty() && !sl.trim().eq_ignore_ascii_case("item"))
             .or_else(|| wanted_item.map(|i| i.slot.clone()))
             .or_else(|| owned_item.map(|i| i.slot.clone()))
-            .unwrap_or_else(|| "Body".to_string());
+            .unwrap_or_else(|| {
+                let lower = format!("{} {} {}", s.wanted_name, s.owned_name, s.asset_package).to_lowercase();
+                if lower.contains("goal") || lower.contains("explosion") {
+                    "Goal Explosion".to_string()
+                } else if lower.contains("banner") {
+                    "Player Banner".to_string()
+                } else if lower.contains("wheel") {
+                    "Wheels".to_string()
+                } else if lower.contains("boost") {
+                    "Rocket Boost".to_string()
+                } else if lower.contains("decal") || lower.contains("skin") {
+                    "Decal".to_string()
+                } else if lower.contains("trail") {
+                    "Trail".to_string()
+                } else if lower.contains("anthem") || lower.contains("music") {
+                    "Player Anthem".to_string()
+                } else if lower.contains("border") {
+                    "Avatar Border".to_string()
+                } else {
+                    "Body".to_string()
+                }
+            });
 
-        let slot_index = presets::slot_index_from_str(&slot_str) as i32;
+        let slot_index = presets::upk_slot_index_from_str(&slot_str) as i32;
 
         let pkg = wanted_item
             .map(|w| w.asset_package.clone())
@@ -1560,11 +1581,13 @@ pub(crate) async fn sync_all_swaps_to_tagame(
     let keys_txt = include_str!("../resources/keys.txt");
     let keys_map_json = include_str!("../resources/keys_map.json");
 
+    let integrity = load_integrity(&app);
     upk::tagame_swapper::apply_tagame_modifications(
         cooked,
         &tagame_items,
         keys_txt,
         keys_map_json,
+        Some(integrity.palette_active),
     ).map_err(|e| e.to_string())?;
 
     Ok(())
@@ -1936,11 +1959,13 @@ async fn apply_tagame_swaps(
     let keys_txt = include_str!("../resources/keys.txt");
     let keys_map_json = include_str!("../resources/keys_map.json");
 
+    let integrity = load_integrity(&app);
     let status = upk::tagame_swapper::apply_tagame_modifications(
         &cooked,
         &swaps,
         keys_txt,
         keys_map_json,
+        Some(integrity.palette_active),
     ).map_err(|e| e.to_string())?;
 
     applog::event(&format!(
