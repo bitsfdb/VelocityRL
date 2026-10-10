@@ -134,6 +134,10 @@ def sim_serialize_expr(data, pos):
         pos += 4
         mem += 4
         return pos, mem
+    elif token == 0x1E: # EX_FLOAT_CONST
+        pos += 4
+        mem += 4
+        return pos, mem
     elif token == 0x9A: # EX_EQUAL_EQUAL_INT_INT
         p1, m1 = sim_serialize_expr(data, pos)
         p2, m2 = sim_serialize_expr(data, p1)
@@ -365,7 +369,22 @@ def validate_tagame(upk_path):
                 print(f"[!] CRITICAL DESERIALIZATION FAILURE in ConvertToClientLoadout: {e}")
                 return False
 
-    # Check Chunk 1 ExplosionPreviewer_TA::SetLoadout
+    # Check Chunk 0 CarMeshComponentBase_TA::ApplyPaintSettings
+    cmc_aps = next((e for e in exports if e["name"] == "ApplyPaintSettings" and e.get("outer_name") == "CarMeshComponentBase_TA"), None)
+    if cmc_aps:
+        aps_off = cmc_aps["serial_offset"] - c0["uncomp_offset"]
+        aps_disk = struct.unpack("<I", decomp0[aps_off+44:aps_off+48])[0]
+        aps_script = decomp0[aps_off+48 : aps_off+48+aps_disk]
+        if aps_disk == 636 and aps_script[:4] == bytes([0x0F, 0x2B, 0xB7, 0x3D]):
+            print(f"[*] CarMeshComponentBase_TA::ApplyPaintSettings: {aps_disk} bytes (Chunk 0 vanilla stock intact)")
+        else:
+            try:
+                validate_function_bytecode("CarMeshComponentBase_TA::ApplyPaintSettings", aps_script)
+            except Exception as e:
+                print(f"[!] CRITICAL DESERIALIZATION FAILURE in ApplyPaintSettings: {e}")
+                return False
+
+    # Check Chunk 1 ExplosionPreviewer_TA::SetLoadout & SetProduct
     if len(chunks) > 1:
         c1 = chunks[1]
         c1_bytes = data[c1["comp_offset"] : c1["comp_offset"] + c1["comp_size"]]
@@ -379,6 +398,20 @@ def validate_tagame(upk_path):
             except Exception as e:
                 print(f"[!] CRITICAL DESERIALIZATION FAILURE in ExplosionPreviewer_TA::SetLoadout: {e}")
                 return False
+
+        ep_sp = next((e for e in exports if e["name"] == "SetProduct" and e["outer_name"] == "ExplosionPreviewer_TA"), None)
+        if ep_sp:
+            ep_sp_off = ep_sp["serial_offset"] - c1["uncomp_offset"]
+            ep_sp_disk = struct.unpack("<I", decomp1[ep_sp_off+44:ep_sp_off+48])[0]
+            ep_sp_script = decomp1[ep_sp_off+48 : ep_sp_off+48+ep_sp_disk]
+            if ep_sp_disk == 273 and ep_sp_script[:4] == bytes([0x07, 0xA2, 0x01, 0x33]):
+                print(f"[*] ExplosionPreviewer_TA::SetProduct: {ep_sp_disk} bytes (Chunk 1 vanilla stock intact)")
+            else:
+                try:
+                    validate_function_bytecode("ExplosionPreviewer_TA::SetProduct", ep_sp_script)
+                except Exception as e:
+                    print(f"[!] CRITICAL DESERIALIZATION FAILURE in ExplosionPreviewer_TA::SetProduct: {e}")
+                    return False
 
     # Check Chunk 2 LoadoutValidation_TA::CorrectOnlineData
     if len(chunks) > 2:
