@@ -138,7 +138,7 @@ pub struct SlotSwapRule {
 
 #[inline]
 pub fn is_car_loadout_slot(slot_idx: u8) -> bool {
-    matches!(slot_idx, 0 | 1 | 2 | 3 | 4 | 5 | 7 | 12 | 13 | 14)
+    matches!(slot_idx, 0 | 1 | 2 | 3 | 4 | 5 | 7 | 12 | 13 | 14 | 15)
 }
 
 pub fn emit_car_set_loadout_bytecode(
@@ -156,10 +156,6 @@ pub fn emit_car_set_loadout_bytecode(
     let cld_id = cld_id_opt.unwrap_or(1872);
     let data_var_id = data_var_id_opt.unwrap_or(16586);
 
-    // 1. Slot assignments on Data (local #data_var_id)
-    // De-duplicate by slot_idx so highest priority rule applies.
-    // Car_TA manages vehicle-attached cosmetics: slots 0 (Body), 1 (Decal), 2 (Wheels),
-    // 3 (Boost), 4 (Antenna), 5 (Topper), 7 (PaintFinish), 12 (Accent), 13 (Audio), 14 (Trail).
     let mut seen = std::collections::HashSet::new();
     let mut unique_rules = Vec::new();
     for r in slot_overrides.iter().rev() {
@@ -220,7 +216,12 @@ pub fn emit_car_set_loadout_bytecode(
 
         for rule in ordered_rules {
             let index_disk_len = if rule.slot_idx == 0 { 1 } else { 2 };
-            let assign_disk_len = 26 + index_disk_len;
+            let (target_disk_len, target_mem_len) = if rule.target_id <= 255 && rule.target_id >= 0 {
+                (2, 2u32)
+            } else {
+                (5, 5u32)
+            };
+            let assign_disk_len = 21 + index_disk_len + target_disk_len;
             if bc.len() + assign_disk_len > available_space {
                 break;
             }
@@ -243,10 +244,15 @@ pub fn emit_car_set_loadout_bytecode(
             bc.extend_from_slice(&[0x00, 0x01]);
             bc.push(opcodes::EX_LOCAL_VARIABLE);
             bc.extend_from_slice(&data_var_id.to_le_bytes());
-            bc.push(opcodes::EX_INT_CONST);
-            bc.extend_from_slice(&rule.target_id.to_le_bytes());
+            if rule.target_id <= 255 && rule.target_id >= 0 {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(rule.target_id as u8);
+            } else {
+                bc.push(opcodes::EX_INT_CONST);
+                bc.extend_from_slice(&rule.target_id.to_le_bytes());
+            }
 
-            let assign_mem = 1 + 3 + 1 + assign_index_mem + 28 + 5;
+            let assign_mem = 1 + 3 + 1 + assign_index_mem + 28 + target_mem_len;
             mem_sz += assign_mem;
         }
 
@@ -257,7 +263,12 @@ pub fn emit_car_set_loadout_bytecode(
         // Pure unconditional rules (only if caller explicitly provided no owned_ids)
         for rule in &unique_rules {
             let index_disk_len = if rule.slot_idx == 0 { 1 } else { 2 };
-            let assign_disk_len = 26 + index_disk_len;
+            let (target_disk_len, target_mem_len) = if rule.target_id <= 255 && rule.target_id >= 0 {
+                (2, 2u32)
+            } else {
+                (5, 5u32)
+            };
+            let assign_disk_len = 21 + index_disk_len + target_disk_len;
             if bc.len() + assign_disk_len > available_space {
                 break;
             }
@@ -279,10 +290,15 @@ pub fn emit_car_set_loadout_bytecode(
             bc.extend_from_slice(&[0x00, 0x01]);
             bc.push(opcodes::EX_LOCAL_VARIABLE);
             bc.extend_from_slice(&data_var_id.to_le_bytes());
-            bc.push(opcodes::EX_INT_CONST);
-            bc.extend_from_slice(&rule.target_id.to_le_bytes());
+            if rule.target_id <= 255 && rule.target_id >= 0 {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(rule.target_id as u8);
+            } else {
+                bc.push(opcodes::EX_INT_CONST);
+                bc.extend_from_slice(&rule.target_id.to_le_bytes());
+            }
 
-            let assign_mem = 1 + 3 + 1 + assign_index_mem + 28 + 5;
+            let assign_mem = 1 + 3 + 1 + assign_index_mem + 28 + target_mem_len;
             mem_sz += assign_mem;
         }
     }
@@ -345,8 +361,6 @@ pub fn emit_car_preview_set_loadout_bytecode(
     bc.push(opcodes::EX_LOCAL_VARIABLE);
     bc.extend_from_slice(&in_loadout_id.to_le_bytes());
     mem_sz += 19;
-
-    // Filter to vehicle cosmetics: slots 0, 1, 2, 3, 4, 5, 7, 12, 13, 14
     let mut seen = std::collections::HashSet::new();
     let mut unique_rules = Vec::new();
     for r in slot_overrides.iter().rev() {
@@ -408,7 +422,12 @@ pub fn emit_car_preview_set_loadout_bytecode(
 
         for rule in ordered_rules {
             let index_disk_len = if rule.slot_idx == 0 { 1 } else { 2 };
-            let assign_disk_len = 26 + index_disk_len;
+            let (target_disk_len, target_mem_len) = if rule.target_id <= 255 && rule.target_id >= 0 {
+                (2, 2u32)
+            } else {
+                (5, 5u32)
+            };
+            let assign_disk_len = 21 + index_disk_len + target_disk_len;
             if bc.len() + assign_disk_len > available_space {
                 break;
             }
@@ -431,10 +450,15 @@ pub fn emit_car_preview_set_loadout_bytecode(
             bc.extend_from_slice(&[0x00, 0x01]);
             bc.push(opcodes::EX_INSTANCE_VARIABLE);
             bc.extend_from_slice(&new_loadout_id.to_le_bytes());
-            bc.push(opcodes::EX_INT_CONST);
-            bc.extend_from_slice(&rule.target_id.to_le_bytes());
+            if rule.target_id <= 255 && rule.target_id >= 0 {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(rule.target_id as u8);
+            } else {
+                bc.push(opcodes::EX_INT_CONST);
+                bc.extend_from_slice(&rule.target_id.to_le_bytes());
+            }
 
-            let assign_mem = 1 + 3 + 1 + assign_index_mem + 28 + 5;
+            let assign_mem = 1 + 3 + 1 + assign_index_mem + 28 + target_mem_len;
             mem_sz += assign_mem;
         }
 
@@ -443,7 +467,12 @@ pub fn emit_car_preview_set_loadout_bytecode(
     } else {
         for rule in &unique_rules {
             let index_disk_len = if rule.slot_idx == 0 { 1 } else { 2 };
-            let assign_disk_len = 26 + index_disk_len;
+            let (target_disk_len, target_mem_len) = if rule.target_id <= 255 && rule.target_id >= 0 {
+                (2, 2u32)
+            } else {
+                (5, 5u32)
+            };
+            let assign_disk_len = 21 + index_disk_len + target_disk_len;
             if bc.len() + assign_disk_len > available_space {
                 break;
             }
@@ -465,10 +494,15 @@ pub fn emit_car_preview_set_loadout_bytecode(
             bc.extend_from_slice(&[0x00, 0x01]);
             bc.push(opcodes::EX_INSTANCE_VARIABLE);
             bc.extend_from_slice(&new_loadout_id.to_le_bytes());
-            bc.push(opcodes::EX_INT_CONST);
-            bc.extend_from_slice(&rule.target_id.to_le_bytes());
+            if rule.target_id <= 255 && rule.target_id >= 0 {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(rule.target_id as u8);
+            } else {
+                bc.push(opcodes::EX_INT_CONST);
+                bc.extend_from_slice(&rule.target_id.to_le_bytes());
+            }
 
-            let assign_mem = 1 + 3 + 1 + assign_index_mem + 28 + 5;
+            let assign_mem = 1 + 3 + 1 + assign_index_mem + 28 + target_mem_len;
             mem_sz += assign_mem;
         }
     }
@@ -1580,6 +1614,23 @@ mod tests {
     }
 
     #[test]
+    fn test_emit_car_preview_set_loadout_bytecode() {
+        let rules = [
+            SlotSwapRule { slot_idx: 0, owned_id: Some(23), target_id: 4284 },
+            SlotSwapRule { slot_idx: 1, owned_id: None, target_id: 250 },
+            SlotSwapRule { slot_idx: 2, owned_id: None, target_id: 30 },
+            SlotSwapRule { slot_idx: 3, owned_id: None, target_id: 50 },
+            SlotSwapRule { slot_idx: 5, owned_id: None, target_id: 30 },
+            SlotSwapRule { slot_idx: 14, owned_id: None, target_id: 80 },
+            SlotSwapRule { slot_idx: 15, owned_id: None, target_id: 2044 },
+        ];
+        let (bc, mem_sz) = emit_car_preview_set_loadout_bytecode(&rules, 230, None, None, None, None, None).unwrap();
+        assert_eq!(bc.len(), 230);
+        assert_eq!(bc[0], opcodes::EX_LET);
+        assert!(mem_sz >= 230);
+    }
+
+    #[test]
     fn test_apply_tagame_modifications_real_upk() {
         let cooked_bak = Path::new(r"E:\games\rocketleague\TAGame\CookedPCConsole");
         if !cooked_bak.join("TAGame.upk.bak").is_file() {
@@ -1624,7 +1675,7 @@ mod tests {
             },
             TagameSwapItem {
                 slot: "Goal Explosion".to_string(),
-                slot_index: Some(10),
+                slot_index: Some(15),
                 owned_id: Some(1903),
                 product_id: 2044, // Dueling Dragons
                 paint_id: None,
