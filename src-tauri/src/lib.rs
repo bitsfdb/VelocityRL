@@ -22,6 +22,7 @@ pub mod tracker;
 pub mod winprobe;
 pub mod proxy;
 pub mod features;
+pub mod savedata;
 
 
 #[allow(dead_code)]
@@ -1499,111 +1500,40 @@ async fn get_swaps(app: tauri::AppHandle) -> Result<Vec<SwapEntry>, String> {
 pub(crate) async fn sync_all_swaps_to_tagame(
     app: &tauri::AppHandle,
     cooked: &Path,
-    swaps: &[SwapEntry],
+    _swaps: &[SwapEntry],
 ) -> Result<(), String> {
-    if swaps.is_empty() {
-        let state = load_integrity(app);
-        if !state.palette_active {
-            let _ = upk::tagame_swapper::restore_tagame_upk(cooked);
-        } else if let Ok(entries) = std::fs::read_dir(cooked) {
-            // Restore only individual modified companion UPK packages, preserving TAGame.upk palette
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                    let lower = file_name.to_lowercase();
-                    if lower.ends_with(".upk.bak") && !lower.starts_with("tagame") {
-                        let live_name = file_name.trim_end_matches(".bak");
-                        let live_path = cooked.join(live_name);
-                        let _ = std::fs::copy(&path, &live_path);
-                    }
+    // UPK bytecode patching is replaced by native SaveData spawning.
+    // Ensure TAGame.upk and companion packages are restored to vanilla stock so the game never crashes.
+    let state = load_integrity(app);
+    if !state.palette_active {
+        let _ = upk::tagame_swapper::restore_tagame_upk(cooked);
+    }
+    if let Ok(entries) = std::fs::read_dir(cooked) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                let lower = file_name.to_lowercase();
+                if lower.ends_with(".upk.bak") && !lower.starts_with("tagame") {
+                    let live_name = file_name.trim_end_matches(".bak");
+                    let live_path = cooked.join(live_name);
+                    let _ = std::fs::copy(&path, &live_path);
                 }
             }
         }
-        return Ok(());
     }
-
-    let items = get_items(app.clone(), None).await.unwrap_or_default();
-    let mut tagame_items = Vec::new();
-
-    for s in swaps {
-        let owned_item = items.iter().find(|i| i.id == s.owned_id);
-        let wanted_item = items.iter().find(|i| i.id == s.wanted_id);
-
-        let slot_str = s.slot.clone()
-            .filter(|sl| !sl.trim().is_empty() && !sl.trim().eq_ignore_ascii_case("item"))
-            .or_else(|| wanted_item.map(|i| i.slot.clone()))
-            .or_else(|| owned_item.map(|i| i.slot.clone()))
-            .unwrap_or_else(|| {
-                let lower = format!("{} {} {}", s.wanted_name, s.owned_name, s.asset_package).to_lowercase();
-                if lower.contains("goal") || lower.contains("explosion") {
-                    "Goal Explosion".to_string()
-                } else if lower.contains("banner") {
-                    "Player Banner".to_string()
-                } else if lower.contains("wheel") {
-                    "Wheels".to_string()
-                } else if lower.contains("boost") {
-                    "Rocket Boost".to_string()
-                } else if lower.contains("decal") || lower.contains("skin") {
-                    "Decal".to_string()
-                } else if lower.contains("trail") {
-                    "Trail".to_string()
-                } else if lower.contains("anthem") || lower.contains("music") {
-                    "Player Anthem".to_string()
-                } else if lower.contains("border") {
-                    "Avatar Border".to_string()
-                } else {
-                    "Body".to_string()
-                }
-            });
-
-        let slot_index = presets::upk_slot_index_from_str(&slot_str) as i32;
-
-        let pkg = wanted_item
-            .map(|w| w.asset_package.clone())
-            .unwrap_or_else(|| s.asset_package.clone());
-
-        let product_id = match s.wanted_id {
-            999902 => 2526,
-            _ => s.wanted_id,
-        };
-
-        tagame_items.push(upk::TagameSwapItem {
-            slot: slot_str.clone(),
-            slot_index: Some(slot_index),
-            owned_id: Some(s.owned_id),
-            product_id,
-            paint_id: if s.paint_id > 0 { Some(s.paint_id) } else { None },
-            custom_paint_hex: s.custom_paint_hex.clone(),
-            package_name: Some(pkg.clone()),
-        });
-    }
-
-    let keys_txt = include_str!("../resources/keys.txt");
-    let keys_map_json = include_str!("../resources/keys_map.json");
-
-    let integrity = load_integrity(&app);
-    upk::tagame_swapper::apply_tagame_modifications(
-        cooked,
-        &tagame_items,
-        keys_txt,
-        keys_map_json,
-        Some(integrity.palette_active),
-    ).map_err(|e| e.to_string())?;
-
     Ok(())
 }
 
 #[tauri::command]
 async fn delete_swap(app: tauri::AppHandle, owned_id: i32) -> Result<(), String> {
     let mut swaps = load_swaps(&app);
-    swaps.retain(|s| s.owned_id != owned_id);
+    let target = swaps.iter().find(|s| s.owned_id == owned_id || s.wanted_id == owned_id).cloned();
+    swaps.retain(|s| s.owned_id != owned_id && s.wanted_id != owned_id);
     save_swaps(&app, &swaps);
 
-    if let Ok(config) = get_config(app.clone()).await {
-        if !config.game_dir.is_empty() {
-            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
-            }
+    if let Some(s) = target {
+        if let Ok(save_path) = savedata::locate_latest_save() {
+            let _ = savedata::remove_spawn_native(&save_path, s.wanted_id);
         }
     }
     Ok(())
@@ -1640,94 +1570,76 @@ async fn apply_swap(
     if !features::is_build_supported() {
         return Err("VelocityRL build is outdated. Please update to the latest version.".into());
     }
-    let mut config = get_config(app.clone()).await?;
-    if config.game_dir.is_empty() {
-        if let Ok(installs) = detect_game_dir().await {
-            if let Some(first) = installs.first() {
-                let _ = save_config(app.clone(), Config {
-                    game_dir: first.path.clone(),
-                    ..config.clone()
-                }).await;
-                config.game_dir = first.path.clone();
-                applog::event(&format!("apply_swap: auto-configured game_dir to '{}'", config.game_dir));
-            }
-        }
-    }
-    if config.game_dir.is_empty() {
-        return Err("Game directory not set. Open Settings and select your Rocket League CookedPCConsole folder.".to_string());
-    }
-    let mut paint_id = paint_id.unwrap_or(0);
-    if !(0..=29).contains(&paint_id) {
-        return Err(format!("invalid paint id {paint_id} (use 0 for None/Match, or 1–29)"));
-    }
 
     let all_items = get_items(app.clone(), None).await
         .map_err(|e| format!("Failed to load items database: {}", e))?;
 
     let oid: i32 = owned_id.parse().unwrap_or(0);
     let wid: i32 = wanted_id.parse().unwrap_or(0);
-    let owned = all_items.iter().find(|i| i.id == oid)
-        .ok_or_else(|| format!("Owned item ID {owned_id} not found in database"))?;
     let wanted = all_items.iter().find(|i| i.id == wid)
         .ok_or_else(|| format!("Target item ID {wanted_id} not found in database"))?;
 
+    let mut paint_id = paint_id.unwrap_or(0);
+    if !(0..=29).contains(&paint_id) {
+        return Err(format!("invalid paint id {paint_id} (use 0 for None, or 1–18)"));
+    }
     if paint_id > 0 && !item_is_paintable(wanted) {
         paint_id = 0;
     }
 
-    let cooked = match upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
-        Ok(dir) => dir,
-        Err(_) => {
-            let p = PathBuf::from(&config.game_dir);
-            if !p.exists() || !p.join("TAGame.upk").exists() {
-                return Err(format!(
-                    "Game directory not valid: '{}'. Please open Settings and select your Rocket League CookedPCConsole folder.",
-                    config.game_dir
-                ));
+    // Ensure game directory TAGame.upk is restored to vanilla stock
+    if let Ok(config) = get_config(app.clone()).await {
+        if !config.game_dir.is_empty() {
+            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                let _ = sync_all_swaps_to_tagame(&app, &cooked, &[]).await;
             }
-            p
         }
-    };
+    }
 
-    let clean_hex = custom_paint_hex.filter(|h| !h.trim().is_empty());
-    let clean_owned_hex = owned_custom_hex.filter(|h| !h.trim().is_empty());
+    // Locate player save file and inject item
+    let save_path = savedata::locate_latest_save()?;
+    let _ = savedata::spawn_item_native(&save_path, wid, paint_id)?;
 
-    applog::event(&format!(
-        "apply_swap: starting owned_id={} wanted_id={} paint_id={} custom_hex={:?} cooked='{}'",
-        owned_id, wanted_id, paint_id, clean_hex, cooked.display()
-    ));
+    let owned_name = all_items.iter().find(|i| i.id == oid)
+        .map(|i| i.product.clone())
+        .unwrap_or_else(|| "Item".to_string());
 
     let mut swaps = load_swaps(&app);
-    swaps.retain(|s| s.owned_id != oid);
+    swaps.retain(|s| s.wanted_id != wid);
     let new_entry = SwapEntry {
-        owned_id: oid,
+        owned_id: if oid > 0 { oid } else { wid },
         wanted_id: wid,
-        owned_name: owned.product.clone(),
+        owned_name: owned_name.clone(),
         wanted_name: wanted.product.clone(),
         owned_paint_id,
-        owned_custom_hex: clean_owned_hex,
+        owned_custom_hex,
         paint_id,
-        custom_paint_hex: clean_hex.clone(),
+        custom_paint_hex,
         asset_package: wanted.asset_package.clone(),
-        slot: Some(owned.slot.clone()),
+        slot: Some(wanted.slot.clone()),
         timestamp: Some(chrono::Utc::now().to_rfc3339()),
     };
     swaps.push(new_entry.clone());
     save_swaps(&app, &swaps);
 
-    sync_all_swaps_to_tagame(&app, &cooked, &swaps).await?;
+    record_swap_history(&app, "spawn", std::slice::from_ref(&new_entry), "");
+    applog::event(&format!("spawn: succeeded for product_id={} into save {}", wid, save_path.display()));
 
-    record_swap_history(&app, "swap", std::slice::from_ref(&new_entry), "");
-
-    applog::event(&format!("apply_swap: succeeded for owned_id={} wanted_id={}", owned_id, wanted_id));
-    let paint_suffix = if let Some(hex) = clean_hex {
-        format!(" ({hex})")
-    } else if paint_id > 0 {
+    let paint_suffix = if paint_id > 0 {
         format!(" ({})", upk::swapper::paint_label(paint_id))
     } else {
         String::new()
     };
-    Ok(format!("Successfully swapped {} with {}{}", owned.product, wanted.product, paint_suffix))
+    Ok(format!("Successfully spawned {}{} into your inventory!", wanted.product, paint_suffix))
+}
+
+#[tauri::command]
+async fn spawn_item(
+    app: tauri::AppHandle,
+    wanted_id: String,
+    paint_id: Option<i32>,
+) -> Result<String, String> {
+    apply_swap(app, "0".to_string(), wanted_id, None, None, paint_id, None).await
 }
 
 pub(crate) fn build_swap_opts(game_dir: PathBuf, items_json: String) -> upk::SwapOptions {
@@ -1741,49 +1653,26 @@ pub(crate) fn build_swap_opts(game_dir: PathBuf, items_json: String) -> upk::Swa
 
 #[tauri::command]
 async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<(), String> {
-    let config = get_config(app.clone()).await?;
-    if config.game_dir.is_empty() {
-        return Err("Game directory not configured".into());
+    if let Ok(config) = get_config(app.clone()).await {
+        if !config.game_dir.is_empty() {
+            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                let _ = sync_all_swaps_to_tagame(&app, &cooked, &[]).await;
+            }
+        }
     }
-    let cooked = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
-        .unwrap_or_else(|_| PathBuf::from(&config.game_dir));
-
-    let bak_path = if path.ends_with(".bak") {
-        PathBuf::from(&path)
-    } else {
-        PathBuf::from(format!("{path}.bak"))
-    };
-
-    let bak_str = bak_path.to_string_lossy().into_owned();
-    let _ = upk::swapper::restore_single(&bak_str);
 
     let mut swaps = load_swaps(&app);
-    let orig_len = swaps.len();
-
     let target_id = path
         .strip_prefix("item_")
         .and_then(|s| s.parse::<i32>().ok());
 
     if let Some(id) = target_id {
-        swaps.retain(|s| s.owned_id != id && s.wanted_id != id);
-        record_swap_history(&app, "restore", &[], &format!("restored item #{id}"));
-    } else {
-        swaps.retain(|s| {
-            s.asset_package.to_lowercase() != path.to_lowercase()
-                && s.owned_name.to_lowercase() != path.to_lowercase()
-        });
-    }
-
-    if swaps.len() != orig_len || swaps.is_empty() {
-        save_swaps(&app, &swaps);
-        if swaps.is_empty() {
-            let state = load_integrity(&app);
-            if !state.palette_active {
-                let _ = upk::tagame_swapper::restore_tagame_upk(&cooked);
-            }
-        } else {
-            let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
+        if let Ok(save_path) = savedata::locate_latest_save() {
+            let _ = savedata::remove_spawn_native(&save_path, id);
         }
+        swaps.retain(|s| s.owned_id != id && s.wanted_id != id);
+        save_swaps(&app, &swaps);
+        record_swap_history(&app, "restore", &[], &format!("restored item #{id}"));
     }
 
     applog::event(&format!("restore_single_backup: restored {path}"));
@@ -1792,33 +1681,26 @@ async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<()
 
 #[tauri::command]
 async fn restore_backups(app: tauri::AppHandle) -> Result<String, String> {
-    let config = get_config(app.clone()).await?;
-    if config.game_dir.is_empty() {
-        return Err("Game directory not set".to_string());
+    if let Ok(config) = get_config(app.clone()).await {
+        if !config.game_dir.is_empty() {
+            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                let _ = sync_all_swaps_to_tagame(&app, &cooked, &[]).await;
+            }
+        }
     }
-    let cooked = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
-        .unwrap_or_else(|_| PathBuf::from(&config.game_dir));
 
-    let mut state = load_integrity(&app);
-    if state.palette_active {
-        let _ = upk::palette::restore_palette_backup(Path::new(&config.game_dir));
-        integrity::mark_palette_off(&mut state);
-        let _ = psynet::merge_palette_spoof(false);
-    } else {
-        let _ = upk::tagame_swapper::restore_tagame_upk(&cooked);
+    let swaps = load_swaps(&app);
+    let count = swaps.len();
+    if let Ok(save_path) = savedata::locate_latest_save() {
+        for s in &swaps {
+            let _ = savedata::remove_spawn_native(&save_path, s.wanted_id);
+        }
     }
-    let _ = upk::swapper::restore_all(&cooked.to_string_lossy());
 
-    let count = load_swaps(&app).len();
     save_swaps(&app, &[]);
-    record_swap_history(&app, "restore_all", &[], "restored all active swaps");
-
-    state.swap_packages.clear();
-    state.swap_fingerprints.clear();
-    let _ = save_integrity(&app, &state);
-
-    applog::event(&format!("restore_backups: restored {count} swaps"));
-    Ok(format!("Restored {} item(s) to default", count))
+    record_swap_history(&app, "restore_all", &[], "restored all active items");
+    applog::event(&format!("restore_backups: restored {count} items"));
+    Ok(format!("Restored {} item(s) from inventory", count))
 }
 
 #[tauri::command]
@@ -1826,19 +1708,24 @@ async fn reswap_all(app: tauri::AppHandle) -> Result<String, String> {
     if !features::is_build_supported() {
         return Err("VelocityRL build is outdated. Please update to the latest version.".into());
     }
-    let config = get_config(app.clone()).await?;
-    if config.game_dir.is_empty() {
-        return Err("Game directory not set".to_string());
-    }
     let swaps = load_swaps(&app);
     if swaps.is_empty() {
-        return Err("No recorded swaps to re-apply. Swap items again from the Swapper tab.".into());
+        return Err("No recorded items to re-apply.".into());
     }
-    let cooked = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
-        .unwrap_or_else(|_| PathBuf::from(&config.game_dir));
 
-    sync_all_swaps_to_tagame(&app, &cooked, &swaps).await?;
-    Ok(format!("Synchronized {} active swap(s)", swaps.len()))
+    if let Ok(config) = get_config(app.clone()).await {
+        if !config.game_dir.is_empty() {
+            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                let _ = sync_all_swaps_to_tagame(&app, &cooked, &[]).await;
+            }
+        }
+    }
+
+    let save_path = savedata::locate_latest_save()?;
+    for s in &swaps {
+        let _ = savedata::spawn_item_native(&save_path, s.wanted_id, s.paint_id);
+    }
+    Ok(format!("Re-spawned {} active item(s) into your inventory", swaps.len()))
 }
 
 
@@ -3531,6 +3418,7 @@ pub fn run() {
             set_launch_on_startup,
             get_backups,
             apply_swap,
+            spawn_item,
             reswap_all,
             restore_backups,
             restore_single_backup,

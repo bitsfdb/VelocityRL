@@ -331,8 +331,13 @@ pub async fn apply_preset(app: tauri::AppHandle, id: String) -> Result<Vec<Strin
     }
 
     crate::save_swaps(&app, &current_swaps);
-    if let Err(e) = crate::sync_all_swaps_to_tagame(&app, &cooked, &current_swaps).await {
-        return Err(format!("Failed to apply preset swaps: {e}"));
+    let _ = crate::sync_all_swaps_to_tagame(&app, &cooked, &current_swaps).await;
+
+    // Inject preset items into player save file
+    if let Ok(save_path) = crate::savedata::locate_latest_save() {
+        for s in &current_swaps {
+            let _ = crate::savedata::spawn_item_native(&save_path, s.wanted_id, s.paint_id);
+        }
     }
 
     let target_map_id = preset.active_map_id.as_ref().or_else(|| preset.maps.first().map(|m| &m.id));
@@ -968,8 +973,13 @@ pub async fn apply_swap_plan(
     }
 
     crate::save_swaps(&app, &swaps);
-    if let Err(e) = crate::sync_all_swaps_to_tagame(&app, &cooked, &swaps).await {
-        return Err(format!("Failed to apply random loadout: {e}"));
+    let _ = crate::sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
+
+    // Inject random loadout items into player save file
+    if let Ok(save_path) = crate::savedata::locate_latest_save() {
+        for s in &plan {
+            let _ = crate::savedata::spawn_item_native(&save_path, s.wanted_id, s.paint_id);
+        }
     }
 
     append_history(&app, "random", &plan, "random loadout applied");
