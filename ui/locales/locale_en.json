@@ -47,8 +47,8 @@
         "paint": "Paint",
         "coming_soon": "None",
         "paint_hint": "Select a paint color to apply to the target item.",
-        "swap_btn": "Swap Items",
-        "rl_running_hint": "Rocket League is running — close it before swapping or restoring."
+        "swap_btn": "Spawn Item",
+        "rl_running_hint": "Rocket League is running — close it before spawning or restoring."
     },
     "restore": {
         "title": "Restore / Revert",

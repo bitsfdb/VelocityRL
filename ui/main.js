@@ -2365,10 +2365,7 @@ function syncSwapPaintUi() {
 function validateSwapInputs() {
     syncSwapPaintUi();
     if (!applyBtn) return;
-    const oSlot = ownedItem ? normSlot(ownedItem.Slot || ownedItem.slot) : '';
-    const wSlot = wantedItem ? normSlot(wantedItem.Slot || wantedItem.slot) : '';
-    const typesMatch = !ownedItem || !wantedItem || oSlot === wSlot;
-    applyBtn.disabled = appLoading || swapBusy || !(ownedItem && wantedItem && typesMatch);
+    applyBtn.disabled = appLoading || swapBusy || !wantedItem;
 }
 
 const validate = validateSwapInputs;
@@ -2400,8 +2397,8 @@ async function openSettingsForPath() {
 
 async function handleApply() {
     if (isAppLoading() || swapBusy || !applyBtn) return;
-    if (!ownedItem || !wantedItem) {
-        showToast('Select an owned item and a target asset first.', 'error');
+    if (!wantedItem) {
+        showToast('Select an item to spawn first.', 'error');
         return;
     }
     executeApply();
@@ -2414,34 +2411,34 @@ async function executeApply() {
     let interval;
     try {
         await refreshSwapRlHint();
-        if (!ownedItem || !wantedItem) {
-            showToast('Select an owned item and a target asset first.', 'error');
+        if (!wantedItem) {
+            showToast('Select an item to spawn first.', 'error');
             return;
         }
-        updateStatus('Please Wait...', false);
+        updateStatus('Spawning...', false);
         showProgress(true, 15);
         let p = 15;
         interval = setInterval(() => { if (p < 85) p += 5; showProgress(true, p); }, 400);
-        const ownedId = (ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id).toString();
+        const ownedId = ownedItem ? (ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id).toString() : "0";
         const wantedId = (wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id).toString();
-        const swapResult = await invoke('apply_swap', {
+        const paintId = (wantedItem && itemIsPaintable(wantedItem)) ? Number(wantedPaintId || 0) : 0;
+        const spawnResult = await invoke('apply_swap', {
             ownedId,
             wantedId,
             ownedPaintId: null,
             ownedCustomHex: null,
-            paintId: 0,
+            paintId,
             customPaintHex: null,
         });
         clearInterval(interval);
         interval = null;
         showProgress(true, 100);
-        updateStatus('Swap Complete', false);
-        const ownedName = ownedItem?.product || ownedItem?.Product || 'item';
+        updateStatus('Spawn Complete', false);
         const wantedName = wantedItem?.product || wantedItem?.Product || 'item';
-        showToast(`Swapped <strong>${escHtml(ownedName)}</strong> → <strong>${escHtml(wantedName)}</strong>`, 'success');
+        showToast(`Spawned <strong>${escHtml(wantedName)}</strong> into your inventory!`, 'success');
 
-        if (swapResult && swapResult.includes && swapResult.includes('Warnings:')) {
-            const warningPart = swapResult.split('Warnings:\n')[1];
+        if (spawnResult && spawnResult.includes && spawnResult.includes('Warnings:')) {
+            const warningPart = spawnResult.split('Warnings:\n')[1];
             if (warningPart) {
                 showToast(`${escHtml(warningPart.trim())}`, 'warning');
             }
@@ -2449,7 +2446,7 @@ async function executeApply() {
         setTimeout(() => { showProgress(false); updateStatus('bitsfdb', false); }, 3000);
     } catch (err) {
         if (interval) clearInterval(interval);
-        updateStatus('Swap Failed', true);
+        updateStatus('Spawn Failed', true);
         showProgress(false);
         const msg = String(err);
         if (msg.includes('Game directory not set') || msg.includes('Game directory not configured') || msg.includes('Game directory not valid')) {
@@ -2459,7 +2456,7 @@ async function executeApply() {
         }
         console.error(err);
         invoke('report_diagnostic', { payload: {
-            event:     'swap_fail',
+            event:     'spawn_fail',
             context:   'handleApply',
             message:   String(err),
             backtrace: err?.stack ?? null,
