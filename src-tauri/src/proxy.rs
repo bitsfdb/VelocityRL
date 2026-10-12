@@ -1745,6 +1745,19 @@ async fn handle_forward_intercepted_request(
             }
         }
 
+        let path_lower = path.to_ascii_lowercase();
+        let is_ecom_ownership = path_lower.contains("ecom")
+            || path_lower.contains("entitlement")
+            || path_lower.contains("ownership")
+            || path_lower.contains("dlc");
+        if is_ecom_ownership {
+            let (new_body_own, did_patch_own) = patch_check_ownership_json(&final_body, &[]);
+            if did_patch_own {
+                final_body = new_body_own;
+                crate::applog::event(&format!("forward proxy: patched EOS/DLC ownership response from {upstream_host}"));
+            }
+        }
+
         let mut resp_builder = Response::builder().status(status);
         for (k, v) in resp_headers.iter() {
             let k_lower = k.as_str().to_ascii_lowercase();
@@ -4906,11 +4919,8 @@ pub fn patch_player_products_json(
 
 pub fn patch_check_ownership_json(
     body: &[u8],
-    items: &[(i32, i32)],
+    _items: &[(i32, i32)],
 ) -> (Vec<u8>, bool) {
-    if items.is_empty() {
-        return (body.to_vec(), false);
-    }
     let mut root: serde_json::Value = match serde_json::from_slice(body) {
         Ok(v) => v,
         Err(_) => return (body.to_vec(), false),
@@ -4918,13 +4928,41 @@ pub fn patch_check_ownership_json(
 
     let mut changed = false;
 
-    // Check direct object with boolean ownership flags
+    // Check direct object with boolean ownership flags and status fields
     if let Some(obj) = root.as_object_mut() {
         for key in ["bOwned", "isOwned", "Owned", "bHasProduct", "HasEntitlement", "bSuccess", "Success"] {
             if let Some(val) = obj.get_mut(key) {
                 if val.as_bool() == Some(false) {
                     *val = serde_json::Value::Bool(true);
                     changed = true;
+                }
+            }
+        }
+        for key in ["status", "Status", "ownershipStatus", "OwnershipStatus"] {
+            if let Some(val) = obj.get_mut(key) {
+                if let Some(s) = val.as_str() {
+                    if s.eq_ignore_ascii_case("NOT_OWNED") || s.eq_ignore_ascii_case("EXPIRED") {
+                        *val = serde_json::Value::String("OWNED".to_string());
+                        changed = true;
+                    }
+                }
+            }
+        }
+        for arr_key in ["entitlements", "Entitlements", "items", "ownership", "Ownership"] {
+            if let Some(arr) = obj.get_mut(arr_key).and_then(|v| v.as_array_mut()) {
+                for item in arr.iter_mut() {
+                    if let Some(item_obj) = item.as_object_mut() {
+                        for k in ["status", "Status"] {
+                            if let Some(v) = item_obj.get_mut(k) {
+                                if let Some(s) = v.as_str() {
+                                    if s.eq_ignore_ascii_case("NOT_OWNED") {
+                                        *v = serde_json::Value::String("ACTIVE".to_string());
+                                        changed = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
