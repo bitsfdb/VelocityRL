@@ -1697,7 +1697,7 @@ async fn spawn_items_batch(
             let base_pid = slot_idx.map(savedata::default_base_product_for_slot);
             let _ = savedata::spawn_item_native_ext(&save_path, wid, paint_id, slot_idx, base_pid);
 
-            swaps.retain(|s| s.wanted_id != wid);
+            swaps.retain(|s| !(s.wanted_id == wid && s.paint_id == paint_id));
             let new_entry = SwapEntry {
                 owned_id: wid,
                 wanted_id: wid,

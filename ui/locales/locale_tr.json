@@ -54,7 +54,8 @@
         "ctrl_hint": "Birden çok öğe seçmek için Ctrl + tıkla veya tıkla.",
         "select_page": "Sayfayı Seç",
         "clear_selection": "Seçimi Temizle",
-        "no_items_found": "Filtrelerinize uyan öğe bulunamadı."
+        "no_items_found": "Filtrelerinize uyan öğe bulunamadı.",
+        "all_paints": "Boya: Tüm Varyantlar"
     },
     "restore": {
         "title": "Aktif Öğeler & Geri Yükle",

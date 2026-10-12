@@ -57,7 +57,8 @@
         "select_page": "Select Page",
         "clear_selection": "Clear Selection",
         "no_items_found": "No items found matching your filters.",
-        "rl_running_hint": "Rocket League is running — close it before spawning or restoring."
+        "rl_running_hint": "Rocket League is running — close it before spawning or restoring.",
+        "all_paints": "Paint: All Variants"
     },
     "restore": {
         "title": "Active Spawns & Restore",

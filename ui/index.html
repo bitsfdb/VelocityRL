@@ -83,9 +83,6 @@
                         </div>
 
                         <button type="button" id="catalog-spawn-btn" class="action-btn catalog-spawn-btn" disabled>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-                            </svg>
                             <span id="catalog-spawn-btn-text" data-i18n="swapper.spawn_selected">Spawn Selected</span>
                         </button>
 
@@ -93,6 +90,7 @@
                             <span id="catalog-paint-preview" class="catalog-paint-dot"></span>
                             <select id="catalog-paint-select" class="catalog-dropdown" aria-label="Select paint color">
                                 <option value="0">Paint: None</option>
+                                <option value="all" data-i18n="swapper.all_paints">Paint: All Variants</option>
                                 <option value="1">Crimson</option>
                                 <option value="2">Lime</option>
                                 <option value="3">Black</option>

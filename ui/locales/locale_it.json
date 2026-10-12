@@ -54,7 +54,8 @@
         "ctrl_hint": "Ctrl + clic o clic per selezionare più oggetti.",
         "select_page": "Seleziona pagina",
         "clear_selection": "Cancella selezione",
-        "no_items_found": "Nessun oggetto trovato."
+        "no_items_found": "Nessun oggetto trovato.",
+        "all_paints": "Pittura: Tutte le varianti"
     },
     "restore": {
         "title": "Spawn Attivi e Ripristino",

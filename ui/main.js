@@ -533,6 +533,7 @@ function renderPaintBadgeHtml(paintIdOrName) {
 }
 
 function paintLabel(id) {
+    if (id === 'all') return 'All Paints';
     if (Number(id) === 0) return 'None';
     return PAINT_NAMES[id] || PAINT_NAMES[String(id)] || `Paint ${id}`;
 }
@@ -2582,8 +2583,14 @@ function getRarityColor(quality) {
 function updateCatalogPaintPreview() {
     const preview = document.getElementById('catalog-paint-preview');
     if (!preview) return;
-    const bg = PAINT_SWATCH_COLORS[catalogPaintId] || '#555';
-    preview.style.background = bg;
+    if (catalogPaintId === 'all') {
+        preview.style.background = 'conic-gradient(from 0deg, #ff0055, #ffaa00, #00ff66, #00bbff, #bb00ff, #ff0055)';
+        preview.style.borderColor = 'rgba(255, 255, 255, 0.7)';
+    } else {
+        const bg = PAINT_SWATCH_COLORS[catalogPaintId] || '#555';
+        preview.style.background = bg;
+        preview.style.borderColor = 'rgba(255, 255, 255, 0.4)';
+    }
 }
 
 function updateCatalogSelectionUi() {
@@ -2699,9 +2706,14 @@ function renderCatalogGridPage() {
         card.dataset.id = String(id);
         card.dataset.quality = quality;
 
-        const paintBadgeHtml = (isSelected && cardPaint > 0)
-            ? `<span class="catalog-card-paint-badge" style="color:${getPaintTextColor(cardPaint)};">${escHtml(paintLabel(cardPaint))}</span>`
-            : '';
+        let paintBadgeHtml = '';
+        if (isSelected && (cardPaint === 'all' || cardPaint > 0)) {
+            if (cardPaint === 'all') {
+                paintBadgeHtml = `<span class="catalog-card-paint-badge catalog-card-paint-all">All Paints</span>`;
+            } else {
+                paintBadgeHtml = `<span class="catalog-card-paint-badge" style="color:${getPaintTextColor(cardPaint)};">${escHtml(paintLabel(cardPaint))}</span>`;
+            }
+        }
 
         card.innerHTML = `
             <div class="catalog-card-check">✓</div>
@@ -2740,12 +2752,14 @@ function renderCatalogGridPage() {
                     item,
                 });
                 card.classList.add('is-selected');
-                if (pId > 0) {
+                if (pId === 'all' || pId > 0) {
                     const thumbWrap = card.querySelector('.catalog-card-thumb-wrap');
                     if (thumbWrap && !thumbWrap.querySelector('.catalog-card-paint-badge')) {
                         const badgeEl = document.createElement('span');
-                        badgeEl.className = 'catalog-card-paint-badge';
-                        badgeEl.style.color = getPaintTextColor(pId);
+                        badgeEl.className = `catalog-card-paint-badge${pId === 'all' ? ' catalog-card-paint-all' : ''}`;
+                        if (pId !== 'all') {
+                            badgeEl.style.color = getPaintTextColor(pId);
+                        }
                         badgeEl.textContent = paintLabel(pId);
                         thumbWrap.appendChild(badgeEl);
                     }
@@ -2866,7 +2880,7 @@ function initCatalogGrid() {
 
     if (paintSelect) {
         paintSelect.addEventListener('change', (e) => {
-            catalogPaintId = Number(e.target.value || 0);
+            catalogPaintId = e.target.value === 'all' ? 'all' : Number(e.target.value || 0);
             updateCatalogPaintPreview();
             for (const [id, entry] of selectedCatalogItems.entries()) {
                 if (itemIsPaintable(entry.item)) {
@@ -2912,10 +2926,24 @@ function initCatalogGrid() {
     if (spawnBtn) {
         spawnBtn.addEventListener('click', async () => {
             if (selectedCatalogItems.size === 0 || isAppLoading()) return;
-            const itemsToSpawn = Array.from(selectedCatalogItems.values()).map(entry => ({
-                wanted_id: String(entry.id),
-                paint_id: entry.paint_id > 0 ? entry.paint_id : null,
-            }));
+            const itemsToSpawn = [];
+            for (const entry of selectedCatalogItems.values()) {
+                if (entry.paint_id === 'all' && itemIsPaintable(entry.item)) {
+                    // Spawn unpainted (0) and all 29 paint variants
+                    for (let p = 0; p <= 29; p++) {
+                        itemsToSpawn.push({
+                            wanted_id: String(entry.id),
+                            paint_id: p,
+                        });
+                    }
+                } else {
+                    const pVal = Number(entry.paint_id || 0);
+                    itemsToSpawn.push({
+                        wanted_id: String(entry.id),
+                        paint_id: pVal > 0 ? pVal : null,
+                    });
+                }
+            }
 
             updateStatus(`Spawning ${itemsToSpawn.length} items...`, false);
             showProgress(true, 30);
