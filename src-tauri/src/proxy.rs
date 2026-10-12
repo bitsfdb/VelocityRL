@@ -2104,6 +2104,10 @@ async fn handle_broker_request(
 
             let is_products_rpc = path_lower.contains("getplayerproducts")
                 || path_lower.contains("getloadoutproducts")
+                || path_lower.contains("checkownership")
+                || path_lower.contains("verifyownership")
+                || path_lower.contains("getuserproducts")
+                || path_lower.contains("ownership")
                 || (find_bytes(&out_body, b"\"ProductData\"").is_some()
                     && find_bytes(&out_body, b"\"ProductID\"").is_some());
             if is_products_rpc {
@@ -2117,6 +2121,13 @@ async fn handle_broker_request(
                             "broker: injected {} spawned item(s) into HTTP products response",
                             spawned_items.len()
                         ));
+                    } else {
+                        let (new_body_own, did_patch_own) = patch_check_ownership_json(&out_body, &spawned_items);
+                        if did_patch_own {
+                            out_body = new_body_own;
+                            patched = true;
+                            crate::applog::event("broker: patched ownership check response to TRUE");
+                        }
                     }
                 }
             }
@@ -2586,6 +2597,10 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
     let svc_lower = svc.to_ascii_lowercase();
     let is_products = svc_lower.contains("getplayerproducts")
         || svc_lower.contains("getloadoutproducts")
+        || svc_lower.contains("checkownership")
+        || svc_lower.contains("verifyownership")
+        || svc_lower.contains("getuserproducts")
+        || svc_lower.contains("ownership")
         || (find_bytes(body_part, b"\"ProductData\"").is_some()
             && find_bytes(body_part, b"\"ProductID\"").is_some());
 
@@ -2602,6 +2617,13 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
                     frame.len(),
                     current_body.len()
                 ));
+            } else {
+                let (new_body_own, changed_own) = patch_check_ownership_json(&current_body, &spawned_items);
+                if changed_own {
+                    current_body = new_body_own;
+                    any_changed = true;
+                    crate::applog::event("proxy: patched WS ownership check frame to TRUE");
+                }
             }
         }
     }
@@ -4882,6 +4904,42 @@ pub fn patch_player_products_json(
     }
 }
 
+pub fn patch_check_ownership_json(
+    body: &[u8],
+    items: &[(i32, i32)],
+) -> (Vec<u8>, bool) {
+    if items.is_empty() {
+        return (body.to_vec(), false);
+    }
+    let mut root: serde_json::Value = match serde_json::from_slice(body) {
+        Ok(v) => v,
+        Err(_) => return (body.to_vec(), false),
+    };
+
+    let mut changed = false;
+
+    // Check direct object with boolean ownership flags
+    if let Some(obj) = root.as_object_mut() {
+        for key in ["bOwned", "isOwned", "Owned", "bHasProduct", "HasEntitlement", "bSuccess", "Success"] {
+            if let Some(val) = obj.get_mut(key) {
+                if val.as_bool() == Some(false) {
+                    *val = serde_json::Value::Bool(true);
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    if changed {
+        match serde_json::to_vec(&root) {
+            Ok(bytes) => (bytes, true),
+            Err(_) => (body.to_vec(), false),
+        }
+    } else {
+        (body.to_vec(), false)
+    }
+}
+
 pub fn patch_products_config(body: &[u8]) -> (Vec<u8>, bool) {
     let mut out = body.to_vec();
     let mut any_changed = false;
@@ -5281,6 +5339,18 @@ mod tests {
         let injected = arr.iter().find(|i| i["ProductID"] == 4284).unwrap();
         assert_eq!(injected["Attributes"][0]["Key"], "Painted");
         assert_eq!(injected["Attributes"][0]["Value"], 12);
+    }
+
+    #[test]
+    fn test_patch_check_ownership_json() {
+        let body = br#"{"bOwned":false,"Success":false,"bHasProduct":false}"#;
+        let items = vec![(4284, 0)];
+        let (patched, changed) = patch_check_ownership_json(body, &items);
+        assert!(changed);
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        assert_eq!(val["bOwned"], true);
+        assert_eq!(val["Success"], true);
+        assert_eq!(val["bHasProduct"], true);
     }
 }
 
