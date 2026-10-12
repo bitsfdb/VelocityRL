@@ -337,7 +337,7 @@ pub async fn apply_preset(app: tauri::AppHandle, id: String) -> Result<Vec<Strin
     if let Ok(save_path) = crate::savedata::locate_latest_save() {
         for s in &current_swaps {
             let slot_idx = s.slot.as_deref().and_then(crate::savedata::slot_name_to_index);
-            let base_pid = if s.owned_id > 0 {
+            let base_pid = if s.owned_id > 0 && s.owned_id != s.wanted_id {
                 Some(s.owned_id)
             } else {
                 slot_idx.map(crate::savedata::default_base_product_for_slot)
@@ -985,7 +985,7 @@ pub async fn apply_swap_plan(
     if let Ok(save_path) = crate::savedata::locate_latest_save() {
         for s in &plan {
             let slot_idx = s.slot.as_deref().and_then(crate::savedata::slot_name_to_index);
-            let base_pid = if s.owned_id > 0 {
+            let base_pid = if s.owned_id > 0 && s.owned_id != s.wanted_id {
                 Some(s.owned_id)
             } else {
                 slot_idx.map(crate::savedata::default_base_product_for_slot)

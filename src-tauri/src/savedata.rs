@@ -481,12 +481,20 @@ pub fn patch_equipped_loadouts(
             if name == "None" || name.is_empty() {
                 break;
             }
-            let (_tag, tag_cur) = read_ue3_string(sd, next_cur)?;
+            let (tag, tag_cur) = read_ue3_string(sd, next_cur)?;
             if tag_cur + 8 > sd.len() {
                 break;
             }
             let length = i32::from_le_bytes(sd[tag_cur..tag_cur + 4].try_into().unwrap()) as usize;
-            let val_cur = tag_cur + 8;
+            let mut val_cur = tag_cur + 8;
+            if tag == "StructProperty" || tag == "ByteProperty" {
+                let (_, after_type) = read_ue3_string(sd, val_cur)?;
+                val_cur = after_type;
+            } else if tag == "BoolProperty" {
+                cur = val_cur + 1;
+                continue;
+            }
+
             if name == "EquippedLoadoutSet" && length >= 4 && val_cur + 4 <= sd.len() {
                 eq_set_idx = Some(i32::from_le_bytes(sd[val_cur..val_cur + 4].try_into().unwrap()));
             }
@@ -501,12 +509,20 @@ pub fn patch_equipped_loadouts(
                     if name == "None" || name.is_empty() {
                         break;
                     }
-                    let (_tag, tag_cur) = read_ue3_string(sd, next_cur)?;
+                    let (tag, tag_cur) = read_ue3_string(sd, next_cur)?;
                     if tag_cur + 8 > sd.len() {
                         break;
                     }
                     let length = i32::from_le_bytes(sd[tag_cur..tag_cur + 4].try_into().unwrap()) as usize;
-                    let val_cur = tag_cur + 8;
+                    let mut val_cur = tag_cur + 8;
+                    if tag == "StructProperty" || tag == "ByteProperty" {
+                        let (_, after_type) = read_ue3_string(sd, val_cur)?;
+                        val_cur = after_type;
+                    } else if tag == "BoolProperty" {
+                        cur = val_cur + 1;
+                        continue;
+                    }
+
                     if name == "Loadouts" && length >= 4 && val_cur + 4 <= sd.len() {
                         let l_idx = i32::from_le_bytes(sd[val_cur..val_cur + 4].try_into().unwrap());
                         loadout_indices.push(l_idx);
@@ -538,7 +554,14 @@ pub fn patch_equipped_loadouts(
                     break;
                 }
                 let length = i32::from_le_bytes(sd[tag_cur..tag_cur + 4].try_into().unwrap()) as usize;
-                let val_cur = tag_cur + 8;
+                let mut val_cur = tag_cur + 8;
+                if tag == "StructProperty" || tag == "ByteProperty" {
+                    let (_, after_type) = read_ue3_string(sd, val_cur)?;
+                    val_cur = after_type;
+                } else if tag == "BoolProperty" {
+                    cur = val_cur + 1;
+                    continue;
+                }
 
                 if name == "Products" && tag == "ArrayProperty" && val_cur + 4 <= sd.len() {
                     let count = i32::from_le_bytes(sd[val_cur..val_cur + 4].try_into().unwrap()) as usize;
@@ -671,7 +694,10 @@ pub fn spawn_item_native_ext(
 
     // If slot is provided, patch equipped loadouts to prevent match server reset after goal
     if let Some(slot) = slot_index {
-        let base_pid = base_product_id.unwrap_or_else(|| default_base_product_for_slot(slot));
+        let base_pid = match base_product_id {
+            Some(pid) if pid > 0 && pid != product_id => pid,
+            _ => default_base_product_for_slot(slot),
+        };
         let _ = patch_equipped_loadouts(
             &mut envelope.sd,
             &envelope.table,
@@ -858,6 +884,141 @@ mod tests {
         assert!(
             output.status.success(),
             "Validation failed after loadout patch spawn:\n{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+
+        let _ = fs::remove_file(&tmp);
+        let _ = fs::remove_dir_all("/root/VelocityRL Backups");
+    }
+
+    #[test]
+    fn test_spawn_with_identical_base_and_wanted_id_falls_back_to_default_base() {
+        let real_save = Path::new("/root/test_real.save");
+        if !real_save.exists() {
+            return;
+        }
+        let tmp = PathBuf::from("/root/test_identical_base_unit.save");
+        let _ = fs::copy(real_save, &tmp);
+
+        // Spawn Fennec ZR-F (11603) passing base_product_id = Some(11603) (as happens when no separate base is selected)
+        let record = spawn_item_native_ext(&tmp, 11603, 0, Some(0), Some(11603)).expect("spawn succeeded");
+        assert_eq!(record.product_id, 11603);
+
+        // Verify that Products[0] in equipped loadout is 23 (Octane) instead of 11603
+        let env = read_envelope(&tmp).expect("read envelope");
+        let pls_entry = env.table.iter().find(|t| t.type_name == "TAGame.ProfileLoadoutSave_TA").expect("find pls");
+        let mut cur = pls_entry.file_position as usize;
+        let mut eq_set_idx: Option<i32> = None;
+        while cur < env.sd.len() {
+            let (name, next_cur) = match read_ue3_string(&env.sd, cur) {
+                Ok(res) => res,
+                Err(_) => break,
+            };
+            if name == "None" || name.is_empty() {
+                break;
+            }
+            let (_tag, tag_cur) = match read_ue3_string(&env.sd, next_cur) {
+                Ok(res) => res,
+                Err(_) => break,
+            };
+            if tag_cur + 8 > env.sd.len() {
+                break;
+            }
+            let length = i32::from_le_bytes(env.sd[tag_cur..tag_cur + 4].try_into().unwrap()) as usize;
+            let val_cur = tag_cur + 8;
+            if name == "EquippedLoadoutSet" && length >= 4 && val_cur + 4 <= env.sd.len() {
+                eq_set_idx = Some(i32::from_le_bytes(env.sd[val_cur..val_cur + 4].try_into().unwrap()));
+            }
+            cur = val_cur + length;
+        }
+
+        let mut body_product_id: Option<i32> = None;
+        if let Some(set_idx) = eq_set_idx {
+            if let Some(set_entry) = env.table.iter().find(|t| t.object_index == set_idx as u32) {
+                let mut cur = set_entry.file_position as usize;
+                let mut loadout_indices = Vec::new();
+                while cur < env.sd.len() {
+                    let (name, next_cur) = match read_ue3_string(&env.sd, cur) {
+                        Ok(res) => res,
+                        Err(_) => break,
+                    };
+                    if name == "None" || name.is_empty() {
+                        break;
+                    }
+                    let (_tag, tag_cur) = match read_ue3_string(&env.sd, next_cur) {
+                        Ok(res) => res,
+                        Err(_) => break,
+                    };
+                    if tag_cur + 8 > env.sd.len() {
+                        break;
+                    }
+                    let length = i32::from_le_bytes(env.sd[tag_cur..tag_cur + 4].try_into().unwrap()) as usize;
+                    let val_cur = tag_cur + 8;
+                    if name == "Loadouts" && length >= 4 && val_cur + 4 <= env.sd.len() {
+                        let l_idx = i32::from_le_bytes(env.sd[val_cur..val_cur + 4].try_into().unwrap());
+                        loadout_indices.push(l_idx);
+                    }
+                    cur = val_cur + length;
+                }
+
+                for l_idx in loadout_indices {
+                    if let Some(l_entry) = env.table.iter().find(|t| t.object_index == l_idx as u32) {
+                        let mut cur = l_entry.file_position as usize;
+                        while cur < env.sd.len() {
+                            let (name, next_cur) = match read_ue3_string(&env.sd, cur) {
+                                Ok(res) => res,
+                                Err(_) => break,
+                            };
+                            if name == "None" || name.is_empty() {
+                                break;
+                            }
+                            let (tag, tag_cur) = match read_ue3_string(&env.sd, next_cur) {
+                                Ok(res) => res,
+                                Err(_) => break,
+                            };
+                            if tag_cur + 8 > env.sd.len() {
+                                break;
+                            }
+                            let length = i32::from_le_bytes(env.sd[tag_cur..tag_cur + 4].try_into().unwrap()) as usize;
+                            let mut val_cur = tag_cur + 8;
+                            if tag == "StructProperty" || tag == "ByteProperty" {
+                                let (_, after_type) = match read_ue3_string(&env.sd, val_cur) {
+                                    Ok(res) => res,
+                                    Err(_) => break,
+                                };
+                                val_cur = after_type;
+                            } else if tag == "BoolProperty" {
+                                cur = val_cur + 1;
+                                continue;
+                            }
+
+                            if name == "Products" && tag == "ArrayProperty" && val_cur + 4 <= env.sd.len() {
+                                let count = i32::from_le_bytes(env.sd[val_cur..val_cur + 4].try_into().unwrap()) as usize;
+                                if count > 0 {
+                                    let pid = i32::from_le_bytes(env.sd[val_cur + 4..val_cur + 8].try_into().unwrap());
+                                    assert_eq!(pid, 23, "Loadout #{} body product must be 23", l_idx);
+                                    body_product_id = Some(pid);
+                                }
+                            }
+                            cur = val_cur + length;
+                        }
+                    }
+                }
+            }
+        }
+
+        assert_eq!(body_product_id, Some(23), "Body product in loadout must be default Octane (23) to avoid goal revert!");
+
+        // Run validate_savedata.py
+        let output = std::process::Command::new("python3")
+            .arg("tools/validate_savedata.py")
+            .arg(&tmp)
+            .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")))
+            .output()
+            .expect("run validate_savedata.py");
+        assert!(
+            output.status.success(),
+            "Validation failed after identical base fallback spawn:\n{}",
             String::from_utf8_lossy(&output.stdout)
         );
 
