@@ -100,7 +100,7 @@ function getItemDecalBody(item) {
 }
 
 function escHtml(str) {
-    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 let ownedItem = null;
@@ -146,7 +146,7 @@ async function setAppLanguage(lang) {
     if (loaded) {
         localeData = loaded;
         if (loaded.logs && typeof loaded.logs === 'object') {
-            invoke('set_app_locale_logs', { logs: loaded.logs }).catch(() => {});
+            invoke('set_app_locale_logs', { logs: loaded.logs }).catch(() => { });
         }
     }
 
@@ -169,6 +169,11 @@ async function setAppLanguage(lang) {
     const langSelect = document.getElementById('app-language');
     if (langSelect && langSelect.value !== lang) {
         langSelect.value = lang;
+    }
+
+    if (typeof catalogInitialized !== 'undefined' && catalogInitialized) {
+        updateCatalogSelectionUi();
+        renderCatalogGridPage();
     }
 }
 
@@ -227,31 +232,31 @@ async function fetchItemsFromAPI() {
                 signal: controller.signal
             });
             if (!res.ok) throw new Error(`API ${res.status}`);
-        const data = await res.json();
-        for (const p of data.products) {
-            allItems.push({
-                id: p.id,
-                product: p.name,
-                slot: p.category,
-                quality: p.quality,
-                asset_package: p.internal_name || p.asset_package,
-                asset_path: p.asset_path || p.AssetPath || '',
-                object_name: p.object_name || p.ObjectName || null,
-                object_class: p.object_class || p.ObjectClass || null,
-                is_multi_asset_package: p.is_multi_asset_package ?? p.IsMultiAssetPackage ?? null,
-                package_item_count: p.package_item_count ?? p.PackageItemCount ?? null,
-                compatible_body_id: p.compatible_body_id ?? p.CompatibleBodyId ?? null,
-                compatible_body_name: p.compatible_body_name ?? p.CompatibleBodyName ?? null,
-                image_url: p.thumbnail_url ? `${API_BASE}${p.thumbnail_url}` : '',
-                paintable: p.paintable ?? p.Paintable,
-                paints: p.paints ?? p.Paints,
-                paint: p.paint ?? p.Paint,
-                attributes: p.Attributes || p.attributes,
-            });
+            const data = await res.json();
+            for (const p of data.products) {
+                allItems.push({
+                    id: p.id,
+                    product: p.name,
+                    slot: p.category,
+                    quality: p.quality,
+                    asset_package: p.internal_name || p.asset_package,
+                    asset_path: p.asset_path || p.AssetPath || '',
+                    object_name: p.object_name || p.ObjectName || null,
+                    object_class: p.object_class || p.ObjectClass || null,
+                    is_multi_asset_package: p.is_multi_asset_package ?? p.IsMultiAssetPackage ?? null,
+                    package_item_count: p.package_item_count ?? p.PackageItemCount ?? null,
+                    compatible_body_id: p.compatible_body_id ?? p.CompatibleBodyId ?? null,
+                    compatible_body_name: p.compatible_body_name ?? p.CompatibleBodyName ?? null,
+                    image_url: p.thumbnail_url ? `${API_BASE}${p.thumbnail_url}` : '',
+                    paintable: p.paintable ?? p.Paintable,
+                    paints: p.paints ?? p.Paints,
+                    paint: p.paint ?? p.Paint,
+                    attributes: p.Attributes || p.attributes,
+                });
+            }
+            if (allItems.length >= data.meta.total_filtered || data.products.length < limit) break;
+            offset += limit;
         }
-        if (allItems.length >= data.meta.total_filtered || data.products.length < limit) break;
-        offset += limit;
-    }
     } finally {
         clearTimeout(timeoutId);
     }
@@ -570,16 +575,39 @@ function renderSelectedItem(container, item, onClear) {
         </button>
     `;
 
-    container.innerHTML = `
-        ${clearBtnHtml}
-        ${pImg ? `<img src="${escHtml(pImg)}" class="selected-img" />` : ''}
-        <h2>${escHtml(pName)}</h2>
-        <div style="display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;margin:4px 0;">
-            <span class="quality-badge ${bgClass}">${escHtml(pQuality)}</span>
-            ${decalBadge}
-        </div>
-        <p class="item-slot-label">${escHtml(pSlot)}${decalBody ? ` (${escHtml(decalBody)})` : ''}</p>
-    `;
+    if (item.isTitle) {
+        const titleStyle = item.titleColor
+            ? `color:#${item.titleColor};${item.titleGlow ? `text-shadow:0 0 12px #${item.titleGlow}, 0 0 4px #${item.titleGlow}` : ''}`
+            : 'color:var(--text);';
+        const catBadge = item.titleCategory
+            ? `<span class="quality-badge" style="background:rgba(168,85,247,0.18);color:#c084fc;border:1px solid rgba(168,85,247,0.35);">${escHtml(item.titleCategory)}</span>`
+            : '';
+        container.innerHTML = `
+            ${clearBtnHtml}
+            <div class="title-stage-showcase" style="margin: 14px 0 10px; width: 100%; display: flex; align-items: center; justify-content: center; min-height: 80px; background: rgba(0,0,0,0.35); border-radius: 6px; border: 1px solid var(--border);">
+                <div class="title-preview-chip" style="${titleStyle}; font-size: 19px; padding: 6px 16px; letter-spacing: 0.02em;">
+                    ${formatTitleHtml(pName)}
+                </div>
+            </div>
+            <h2>${formatTitleHtml(pName)}</h2>
+            <div style="display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;margin:4px 0;">
+                <span class="quality-badge ${bgClass}">Player Title</span>
+                ${catBadge}
+            </div>
+            <p class="item-slot-label">Player Title · Loadout Slot 13</p>
+        `;
+    } else {
+        container.innerHTML = `
+            ${clearBtnHtml}
+            ${pImg ? `<img src="${escHtml(pImg)}" class="selected-img" />` : ''}
+            <h2>${escHtml(pName)}</h2>
+            <div style="display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;margin:4px 0;">
+                <span class="quality-badge ${bgClass}">${escHtml(pQuality)}</span>
+                ${decalBadge}
+            </div>
+            <p class="item-slot-label">${escHtml(pSlot)}${decalBody ? ` (${escHtml(decalBody)})` : ''}</p>
+        `;
+    }
 
     const clearBtn = container.querySelector('.card-clear-btn');
     if (clearBtn && typeof onClear === 'function') {
@@ -624,16 +652,23 @@ async function init() {
     progressFill = document.getElementById('progress-fill');
     backupContainer = document.getElementById('backup-container');
 
-    setupSearch(ownedSearch, ownedResults, (item) => {
-        ownedItem = item;
-        if (!item) {
-            clearOwned();
-            return;
-        }
-        renderSelectedItem(document.getElementById('owned-selected'), item, clearOwned);
-        ownedSearch.value = item.Product || item.product || 'Unknown';
-        validateSwapInputs();
-    });
+    wirePaintSwatches('swap-paint-swatches', 'swap-paint', 'swap-paint-selected');
+    syncSwapPaintUi();
+    loadTitlesDatabase().catch(() => { });
+    initCatalogGrid();
+
+    if (ownedSearch && ownedResults) {
+        setupSearch(ownedSearch, ownedResults, (item) => {
+            ownedItem = item;
+            if (!item) {
+                clearOwned();
+                return;
+            }
+            renderSelectedItem(document.getElementById('owned-selected'), item, clearOwned);
+            ownedSearch.value = item.Product || item.product || 'Unknown';
+            validateSwapInputs();
+        });
+    }
 
     setupSearch(wantedSearch, wantedResults, (item) => {
         wantedItem = item;
@@ -653,7 +688,11 @@ async function init() {
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
             btn.classList.add('active');
             document.getElementById(btn.dataset.tab).classList.add('active');
-            if (btn.dataset.tab === 'swapper-tab') { refreshSwapRlHint(); checkMigrationPopup(); }
+            if (btn.dataset.tab === 'swapper-tab') {
+                refreshSwapRlHint();
+                checkMigrationPopup();
+                renderCatalogGridPage();
+            }
             if (btn.dataset.tab === 'titles-tab') initTitlesTab();
             if (btn.dataset.tab === 'customization-tab' || btn.dataset.tab === 'names-tab') initCustomizationTab();
             if (btn.dataset.tab === 'ranks-tab') initRanksTab();
@@ -678,6 +717,7 @@ async function init() {
             }
             btn.classList.add('active');
             document.getElementById(paneId)?.classList.add('active');
+            if (paneId === 'swaps-pane') renderCatalogGridPage();
             if (paneId === 'custom-decals-pane') initDecalsTab();
             if (paneId === 'restore-pane') refreshBackups();
             if (paneId === 'presets-pane') refreshPresets();
@@ -693,12 +733,12 @@ async function init() {
             document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             currentCategory = btn.dataset.slot;
-            ownedSearch.dispatchEvent(new Event('input'));
-            wantedSearch.dispatchEvent(new Event('input'));
+            ownedSearch?.dispatchEvent(new Event('input'));
+            wantedSearch?.dispatchEvent(new Event('input'));
         };
     });
 
-    applyBtn.onclick = handleApply;
+    if (applyBtn) applyBtn.onclick = handleApply;
     const migrationModal = document.getElementById('migration-modal');
     if (migrationModal) {
         document.getElementById('migration-modal-ok').onclick = () => migrationModal.classList.remove('active');
@@ -750,7 +790,7 @@ async function init() {
     document.getElementById('toggle-changelog-startup').onclick = async () => {
         const cfg = await invoke('get_config').catch(() => ({}));
         const newVal = cfg.changelog_on_startup === false;
-        await invoke('save_config', { config: { ...cfg, changelog_on_startup: newVal } }).catch(() => {});
+        await invoke('save_config', { config: { ...cfg, changelog_on_startup: newVal } }).catch(() => { });
         document.getElementById('toggle-changelog-startup').textContent = newVal ? "Don't show on startup" : 'Show on startup';
         showToast(newVal ? 'Changelog will show on startup' : "Changelog hidden on startup", 'success');
     };
@@ -763,21 +803,21 @@ async function init() {
         const newLang = e.target.value;
         await setAppLanguage(newLang);
         const cfg = await invoke('get_config').catch(() => ({}));
-        await invoke('save_config', { config: { ...cfg, language: newLang } }).catch(() => {});
+        await invoke('save_config', { config: { ...cfg, language: newLang } }).catch(() => { });
         invoke('get_items', { lang: newLang }).then(fetched => {
             if (fetched) {
                 items = Array.isArray(fetched) ? fetched : (fetched.items || fetched.Items || []);
             }
-        }).catch(() => {});
+        }).catch(() => { });
         const toastMsg = newLang === 'es' ? 'Idioma cambiado a Español' :
             newLang === 'fr' ? 'Langue changée en Français' :
-            newLang === 'de' ? 'Sprache auf Deutsch geändert' :
-            newLang === 'pt' ? 'Idioma alterado para Português' :
-            newLang === 'it' ? 'Lingua cambiata in Italiano' :
-            newLang === 'nl' ? 'Taal gewijzigd naar Nederlands' :
-            newLang === 'tr' ? 'Dil Türkçe olarak ayarlandı' :
-            newLang === 'ru' ? 'Язык изменён на Русский' :
-            'Language set to English';
+                newLang === 'de' ? 'Sprache auf Deutsch geändert' :
+                    newLang === 'pt' ? 'Idioma alterado para Português' :
+                        newLang === 'it' ? 'Lingua cambiata in Italiano' :
+                            newLang === 'nl' ? 'Taal gewijzigd naar Nederlands' :
+                                newLang === 'tr' ? 'Dil Türkçe olarak ayarlandı' :
+                                    newLang === 'ru' ? 'Язык изменён на Русский' :
+                                        'Language set to English';
         showToast(toastMsg, 'success');
     });
     document.getElementById('settings-modal').onclick = (e) => {
@@ -832,7 +872,7 @@ async function init() {
                 try {
                     const raw = await invoke('get_psynet_config_json');
                     cfgEl.value = JSON.stringify(JSON.parse(raw), null, 2);
-                } catch {}
+                } catch { }
             }
         } catch (e) {
             showToast('Save failed: ' + e, 'error');
@@ -907,7 +947,7 @@ async function init() {
         }
     };
     document.getElementById('settings-dev-panel-btn')?.addEventListener('click', async () => {
-    document.getElementById('dev-modal')?.classList.add('active');
+        document.getElementById('dev-modal')?.classList.add('active');
         await refreshDevPanel();
     });
 
@@ -953,7 +993,7 @@ async function init() {
             showToast('Download failed: ' + e, 'error');
         } finally {
             if (unlisten) {
-                try { unlisten(); } catch (_) {}
+                try { unlisten(); } catch (_) { }
             }
             btn.disabled = false;
             btn.textContent = 'Verify & Fetch TAGame.upk';
@@ -1078,10 +1118,12 @@ async function loadData() {
 
         if (itemsResult) {
             items = Array.isArray(itemsResult) ? itemsResult : (itemsResult.items || itemsResult.Items || []);
+            renderCatalogGridPage();
         } else {
-            invoke('get_items').catch(() => {}).then(fetched => {
+            invoke('get_items').catch(() => { }).then(fetched => {
                 if (fetched) {
                     items = Array.isArray(fetched) ? fetched : (fetched.items || fetched.Items || []);
+                    renderCatalogGridPage();
                 }
             });
         }
@@ -1099,7 +1141,7 @@ async function loadData() {
                 }
                 document.getElementById('game-dir').value = installs[0].path;
                 if (installs.length === 1) {
-                    await invoke('save_config', { config: { ...config, game_dir: installs[0].path } }).catch(() => {});
+                    await invoke('save_config', { config: { ...config, game_dir: installs[0].path } }).catch(() => { });
                     showToast(`Rocket League detected: ${installs[0].label}`, 'success');
                     refreshPaletteStatus();
                 } else {
@@ -1110,14 +1152,14 @@ async function loadData() {
         }
 
         updateStatus('bitsfdb', false);
-        invoke('cleanup_temp_files').catch(() => {});
+        invoke('cleanup_temp_files').catch(() => { });
 
         updateLoadingText('Starting proxy server...');
         // Do NOT call ensure_psynet_hosts before the native proxy is listening —
         // that orphans config.psynet.gg → 127.0.0.1 and breaks RL/EOS online.
         autoStartPsyNetProxy().catch(async (e) => {
             console.warn('proxy autostart:', e);
-            try { await invoke('stop_psynet_proxy', { revertHosts: true }); } catch (_) {}
+            try { await invoke('stop_psynet_proxy', { revertHosts: true }); } catch (_) { }
         });
 
         updateLoadingText('Starting up...');
@@ -1134,14 +1176,16 @@ async function loadData() {
     } catch (err) {
         releaseAppLoading();
         updateStatus('Init Failure', true);
-        appDialog({ title: 'Initialization Failed', message: `VelocityRL failed to start:\n${err.message || err}` }).catch(() => {});
+        appDialog({ title: 'Initialization Failed', message: `VelocityRL failed to start:\n${err.message || err}` }).catch(() => { });
         console.error(err);
-        invoke('report_diagnostic', { payload: {
-            event:     'init_fail',
-            context:   'init',
-            message:   String(err?.message ?? err),
-            backtrace: err?.stack ?? null,
-        }}).catch(() => {});
+        invoke('report_diagnostic', {
+            payload: {
+                event: 'init_fail',
+                context: 'init',
+                message: String(err?.message ?? err),
+                backtrace: err?.stack ?? null,
+            }
+        }).catch(() => { });
     }
 }
 
@@ -1651,8 +1695,8 @@ async function applyPreset(p) {
 
 async function copyText(text) {
 
-    try { await navigator.clipboard.writeText(text); return true; } catch {}
-    try { await invoke('copy_to_clipboard', { text }); return true; } catch {}
+    try { await navigator.clipboard.writeText(text); return true; } catch { }
+    try { await invoke('copy_to_clipboard', { text }); return true; } catch { }
     try {
         const ta = document.createElement('textarea');
         ta.value = text;
@@ -1822,37 +1866,12 @@ async function checkMigrationPopup() {
     } catch { /* silent */ }
 }
 
-let _swapsNoticeDismissed = localStorage.getItem('vrl_swaps_notice_dismissed') === 'true';
 async function checkSwapsNoticeBanner() {
-    const banner = document.getElementById('swaps-notice-banner');
-    if (!banner || _swapsNoticeDismissed) return;
-    try {
-        const activeSwaps = await invoke('get_swaps').catch(() => []);
-        if (activeSwaps && activeSwaps.length > 0) {
-            banner.style.display = 'flex';
-        } else {
-            banner.style.display = 'none';
-        }
-    } catch { /* silent */ }
+    // Banner deprecated in spawner mode
 }
 
 function initSwapsNoticeBannerEvents() {
-    const gotoBtn = document.getElementById('swaps-notice-goto-btn');
-    if (gotoBtn) {
-        gotoBtn.onclick = () => {
-            const restoreBtn = document.querySelector('[data-subtab="restore-pane"]');
-            if (restoreBtn) restoreBtn.click();
-        };
-    }
-    const closeBtn = document.getElementById('swaps-notice-close-btn');
-    if (closeBtn) {
-        closeBtn.onclick = () => {
-            _swapsNoticeDismissed = true;
-            try { localStorage.setItem('vrl_swaps_notice_dismissed', 'true'); } catch {}
-            const banner = document.getElementById('swaps-notice-banner');
-            if (banner) banner.style.display = 'none';
-        };
-    }
+    // Banner deprecated in spawner mode
 }
 
 async function refreshSwapHistory() {
@@ -1909,15 +1928,15 @@ function wirePresetsUI() {
                 const existingSwaps = await invoke('get_swaps').catch(() => []);
                 const list = Array.isArray(existingSwaps) ? [...existingSwaps] : [];
 
-                if (ownedItem && wantedItem) {
-                    const ownedId = Number(ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id);
+                if (wantedItem) {
                     const wantedId = Number(wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id);
+                    const ownedId = ownedItem ? Number(ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id) : wantedId;
                     const activeOwnedPaintId = Number(ownedPaintId || 0);
                     const paintId = itemIsPaintable(wantedItem) ? Number(wantedPaintId || 0) : 0;
-                    const oName = ownedItem.Product || ownedItem.product || '';
+                    const oName = (ownedItem ? (ownedItem.Product || ownedItem.product) : '') || wantedItem.Product || wantedItem.product || '';
                     const wName = wantedItem.Product || wantedItem.product || '';
-                    const pkg = wantedItem.AssetPackage || wantedItem.asset_package || ownedItem.AssetPackage || ownedItem.asset_package || '';
-                    const slot = ownedItem.Slot || ownedItem.slot || wantedItem.Slot || wantedItem.slot || '';
+                    const pkg = wantedItem.AssetPackage || wantedItem.asset_package || (ownedItem ? (ownedItem.AssetPackage || ownedItem.asset_package) : '') || '';
+                    const slot = (ownedItem ? (ownedItem.Slot || ownedItem.slot) : '') || wantedItem.Slot || wantedItem.slot || '';
 
                     const existingIdx = list.findIndex(s => s.owned_id === ownedId);
                     const stagedEntry = {
@@ -2025,14 +2044,44 @@ function wirePresetsUI() {
     });
 }
 
+function wireRestoreSavePresetButton() {
+    const savePresetBtn = document.getElementById('restore-save-preset-btn');
+    if (!savePresetBtn || savePresetBtn.dataset.wired === '1') return;
+    savePresetBtn.dataset.wired = '1';
+    savePresetBtn.onclick = async () => {
+        if (isAppLoading()) return;
+        const name = await appDialog({
+            title: 'Save Loadout as Preset',
+            message: 'Save your active spawned items as a preset:',
+            input: 'Spawned Loadout',
+            okLabel: 'Save Preset'
+        });
+        if (!name || !name.trim()) return;
+        try {
+            updateStatus('Saving preset...', false);
+            const saved = await invoke('save_preset', { name: name.trim() });
+            showToast(`Active loadout saved as <strong>${escHtml(saved?.name || name.trim())}</strong>!`, 'success');
+            await refreshPresets();
+            await refreshSwapHistory();
+        } catch (e) {
+            showToast(String(e), 'error');
+        } finally {
+            updateStatus('bitsfdb', false);
+        }
+    };
+}
+
 async function refreshBackups() {
     if (!backupContainer) return;
     wireReswapButton();
+    wireRestoreSavePresetButton();
     const countLabel = document.getElementById('restore-count-label');
+    const countPill = document.getElementById('restore-count-pill');
     const restoreAllBtn = document.getElementById('restore-btn');
     const reswapBtn = document.getElementById('reswap-btn');
+    const savePresetBtn = document.getElementById('restore-save-preset-btn');
 
-    backupContainer.innerHTML = '<div class="backup-empty"><div class="loading-spinner" style="width:20px;height:20px;margin:0 auto 8px;"></div>Scanning active modifications…</div>';
+    backupContainer.innerHTML = '<div class="backup-empty"><div class="loading-spinner" style="width:20px;height:20px;margin:0 auto 8px;"></div>Scanning active spawned items…</div>';
     try {
         const backups = await invoke('get_backups');
 
@@ -2041,20 +2090,41 @@ async function refreshBackups() {
             if (reswapBtn) reswapBtn.disabled = (!swaps || swaps.length === 0);
         } catch { }
 
-        if (restoreAllBtn) restoreAllBtn.disabled = (!backups || backups.length === 0);
-        if (countLabel) {
-            countLabel.textContent = `${backups.length} Active Modification${backups.length === 1 ? '' : 's'}`;
+        const hasActive = Boolean(backups && backups.length > 0);
+        if (restoreAllBtn) restoreAllBtn.disabled = !hasActive;
+        if (savePresetBtn) savePresetBtn.disabled = !hasActive;
+        if (countPill && countLabel) {
+            if (hasActive) {
+                countPill.style.display = 'inline-block';
+                countLabel.textContent = `${backups.length} Active Item${backups.length === 1 ? '' : 's'}`;
+            } else {
+                countPill.style.display = 'none';
+            }
         }
 
-        if (backups.length === 0) {
-            backupContainer.innerHTML = '<div class="backup-empty">No active modifications detected. Your files are clean.</div>';
+        if (!hasActive) {
+            backupContainer.innerHTML = `
+                <div class="backup-empty">
+                    <p style="margin-bottom: 6px; font-weight: 500;" data-i18n="restore.no_backups">No spawned items currently active in Rocket League.</p>
+                    <p style="font-size: 12px; color: var(--muted); margin-bottom: 12px;" data-i18n="restore.empty_hint">Spawn items from the Spawner tab or apply an existing preset from the Presets tab.</p>
+                    <div style="display: flex; gap: 8px; justify-content: center;">
+                        <button type="button" class="action-btn" id="restore-go-spawner-btn" style="padding: 6px 14px; font-size: 12px;" data-i18n="restore.spawn_items_btn">Go to Spawner</button>
+                        <button type="button" class="action-btn action-btn-secondary" id="restore-go-presets-btn" style="padding: 6px 14px; font-size: 12px;" data-i18n="restore.load_preset_btn">Browse Presets</button>
+                    </div>
+                </div>`;
+            document.getElementById('restore-go-spawner-btn')?.addEventListener('click', () => {
+                document.querySelector('[data-subtab="swaps-pane"]')?.click();
+            });
+            document.getElementById('restore-go-presets-btn')?.addEventListener('click', () => {
+                document.querySelector('[data-subtab="presets-pane"]')?.click();
+            });
             return;
         }
 
         backupContainer.innerHTML = '';
-        backups.forEach((file, i) => {
+        backups.forEach((file) => {
             const div = document.createElement('div');
-            div.className = 'backup-item';
+            div.className = 'spawned-item-row';
             let pImg = file.image_url || '';
             const fileName = file.path.split(/[/\\]/).pop();
             const cleanName = fileName.toLowerCase().replace('.bak', '').replace('.upk', '');
@@ -2064,6 +2134,9 @@ async function refreshBackups() {
                 if (!dbPkg || dbPkg === 'none') return false;
                 return dbPkg === cleanName || (dbPkg.length > 4 && (cleanName.includes(dbPkg) || dbPkg.includes(cleanName)));
             }) : null;
+            if (!matched && file.swap_to && items && items.length > 0) {
+                matched = items.find(it => it && (it.product || it.Product || '') === file.swap_to);
+            }
             if (!matched && file.swap_from && items && items.length > 0) {
                 matched = items.find(it => it && (it.product || it.Product || '') === file.swap_from);
             }
@@ -2071,47 +2144,40 @@ async function refreshBackups() {
                 pImg = matched.image_url;
             }
 
-            const targetName = file.swap_to || file.name || cleanName;
-            const fromName = file.swap_from || file.name || cleanName;
-            const paintName = file.paint_name || '';
-            const targetImg = file.swap_to_image || pImg;
+            const itemName = (file.swap_to && file.swap_to !== 'Item' && file.swap_to !== 'None')
+                ? file.swap_to
+                : (file.swap_from && file.swap_from !== 'Item') ? file.swap_from : (file.name || cleanName || 'Spawned Item');
+            const itemImg = file.swap_to_image || pImg;
+            const itemPaint = file.paint_name || file.paint_id || 0;
+            const itemSlot = file.slot || (matched ? (matched.slot || matched.Slot) : '') || '';
 
             const renderThumb = (src, title) => src
                 ? `<img src="${escHtml(src)}" class="backup-thumb" alt="${escHtml(title || '')}" onerror="this.style.display='none'" />`
                 : `<div class="backup-thumb backup-thumb-placeholder"></div>`;
 
             div.innerHTML = `
-                <div class="backup-card-flow">
-                    <div class="backup-col">
-                        <span class="backup-col-name" title="${escHtml(fromName)}">${escHtml(fromName)}</span>
-                        <div class="backup-col-thumb-wrap">
-                            ${renderThumb(pImg, fromName)}
-                        </div>
-                        ${renderPaintBadgeHtml(file.swap_from_paint || 0)}
+                <div class="spawned-item-flow">
+                    <div class="spawned-item-thumb-wrap">
+                        ${renderThumb(itemImg, itemName)}
                     </div>
-
-                    <div class="backup-arrow-divider">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                            <line x1="5" y1="12" x2="19" y2="12"></line>
-                            <polyline points="12 5 19 12 12 19"></polyline>
-                        </svg>
-                    </div>
-
-                    <div class="backup-col">
-                        <span class="backup-col-name" title="${escHtml(targetName)}">${escHtml(targetName)}</span>
-                        <div class="backup-col-thumb-wrap">
-                            ${renderThumb(targetImg, targetName)}
+                    <div class="spawned-item-meta">
+                        <div class="spawned-item-name" title="${escHtml(itemName)}">${escHtml(itemName)}</div>
+                        <div class="spawned-item-badges">
+                            ${itemSlot ? `<span class="spawn-slot-pill">${escHtml(itemSlot)}</span>` : ''}
+                            ${renderPaintBadgeHtml(itemPaint)}
+                            <span class="spawn-status-tag" data-i18n="restore.item_active">Active</span>
                         </div>
-                        ${renderPaintBadgeHtml(paintName || file.paint_id || 0)}
                     </div>
                 </div>
-                <button type="button" class="restore-mini-btn" title="Restore this file">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="1 4 1 10 7 10"/>
-                        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
-                    </svg>
-                    <span>Restore</span>
-                </button>`;
+                <div class="spawned-item-actions">
+                    <button type="button" class="restore-mini-btn" title="Remove this spawned item">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                        <span data-i18n="restore.remove_item">Remove</span>
+                    </button>
+                </div>`;
 
             div.querySelector('.restore-mini-btn').onclick = (e) => {
                 e.stopPropagation();
@@ -2121,17 +2187,17 @@ async function refreshBackups() {
         });
     } catch (err) {
         console.error(err);
-        backupContainer.innerHTML = '<div class="backup-empty backup-empty-error">Failed to retrieve backup list.</div>';
-        try { await invoke('append_launch_log', { message: `ui: get_backups failed: ${String(err)}` }); } catch {}
+        backupContainer.innerHTML = '<div class="backup-empty backup-empty-error">Failed to retrieve active item list.</div>';
+        try { await invoke('append_launch_log', { message: `ui: get_backups failed: ${String(err)}` }); } catch { }
     }
 }
 
 async function restoreSingle(path) {
     if (isAppLoading()) return;
     try {
-        updateStatus('Restoring...', false);
+        updateStatus('Removing...', false);
         await invoke('restore_single_backup', { path });
-        updateStatus('Restored', false);
+        updateStatus('Removed', false);
         refreshBackups();
         setTimeout(() => updateStatus('bitsfdb', false), 2000);
     } catch (err) {
@@ -2156,44 +2222,103 @@ function showProgress(show, percent = 0) {
     }
 }
 
+function getTitleAsItem(t) {
+    const text = t.text || t.Text || t.id || 'Title';
+    return {
+        ID: 3036,
+        id: 3036,
+        Product: text,
+        product: text,
+        Slot: 'Player Title',
+        slot: 'Player Title',
+        Quality: t.category ? 'Special' : 'Limited',
+        quality: t.category ? 'Special' : 'Limited',
+        AssetPackage: 'title_generic',
+        asset_package: 'title_generic',
+        isTitle: true,
+        titleId: t.id || t.Id || '',
+        titleText: text,
+        titleCategory: t.category || t.Category || '',
+        titleColor: t.color || t.Color || '',
+        titleGlow: t.glow || t.GlowColor || t.glow_color || '',
+        Paintable: false,
+    };
+}
+
 function setupSearch(input, resultsDiv, selectionHandler) {
     if (!input || !resultsDiv) return;
     input.addEventListener('input', (e) => {
-        const term = e.target.value.toLowerCase();
+        const term = e.target.value.toLowerCase().trim();
 
         let lockCategory = currentCategory;
         if (input.id === 'wanted-search' && ownedItem) {
             lockCategory = (ownedItem.Slot || ownedItem.slot || 'All');
         }
+
+        const isTitleCategory = normSlot(lockCategory) === 'playertitle' || normSlot(lockCategory) === 'title';
 
         if (term.length < 2 && lockCategory === 'All') {
             resultsDiv.style.display = 'none';
             return;
         }
 
-        const matches = items.filter(item => {
-            if (!item) return false;
-            const pName = (item.Product || item.product || '').toLowerCase();
-            const pAsset = (item.AssetPackage || item.asset_package || '').toLowerCase();
-            const pSlot = item.Slot || item.slot || '';
+        let matches = [];
 
-            const invalidTypes = ['series', 'crate', 'currency', 'premium', 'unknown'];
-            if (invalidTypes.includes(normSlot(pSlot))) return false;
+        if (isTitleCategory) {
+            const titleList = (titlesDb && Array.isArray(titlesDb.titles)) ? titlesDb.titles : [];
+            matches = titleList.filter(t => {
+                if (!t) return false;
+                const text = (t.text || t.Text || '').toLowerCase();
+                const id = (t.id || t.Id || '').toLowerCase();
+                const cat = (t.category || t.Category || '').toLowerCase();
+                return term.length < 2 || text.includes(term) || id.includes(term) || cat.includes(term);
+            }).slice(0, 50).map(getTitleAsItem);
+        } else {
+            const itemMatches = items.filter(item => {
+                if (!item) return false;
+                const pName = (item.Product || item.product || '').toLowerCase();
+                const pAsset = (item.AssetPackage || item.asset_package || '').toLowerCase();
+                const pSlot = item.Slot || item.slot || '';
 
-            const pLong = (item.LongLabel || item.long_label || '').toLowerCase();
-            const matchesTerm = term.length < 2 || pName.includes(term) || pAsset.includes(term) || pLong.includes(term) || (term.trim() === 'ai' && (pName.includes('bot') || pAsset.includes('bot')));
-            const matchesCat = lockCategory === 'All' || normSlot(pSlot) === normSlot(lockCategory);
-            return matchesTerm && matchesCat;
-        }).slice(0, 50);
+                const invalidTypes = ['series', 'crate', 'currency', 'premium', 'unknown'];
+                if (invalidTypes.includes(normSlot(pSlot))) return false;
+
+                const pLong = (item.LongLabel || item.long_label || '').toLowerCase();
+                const matchesTerm = term.length < 2 || pName.includes(term) || pAsset.includes(term) || pLong.includes(term) || (term.trim() === 'ai' && (pName.includes('bot') || pAsset.includes('bot')));
+                const matchesCat = lockCategory === 'All' || normSlot(pSlot) === normSlot(lockCategory);
+                return matchesTerm && matchesCat;
+            }).slice(0, 50);
+
+            matches = itemMatches;
+
+            if (lockCategory === 'All' && term.length >= 2 && titlesDb && Array.isArray(titlesDb.titles)) {
+                const titleMatches = titlesDb.titles.filter(t => {
+                    if (!t) return false;
+                    const text = (t.text || t.Text || '').toLowerCase();
+                    const id = (t.id || t.Id || '').toLowerCase();
+                    return text.includes(term) || id.includes(term);
+                }).slice(0, 10).map(getTitleAsItem);
+
+                matches = [...matches.slice(0, 40), ...titleMatches];
+            }
+        }
+
         renderResults(matches, resultsDiv, selectionHandler);
     });
+
     input.addEventListener('focus', () => {
         let lockCategory = currentCategory;
         if (input.id === 'wanted-search' && ownedItem) {
             lockCategory = (ownedItem.Slot || ownedItem.slot || 'All');
         }
 
-        if (lockCategory !== 'All' && input.value === '') {
+        const isTitleCategory = normSlot(lockCategory) === 'playertitle' || normSlot(lockCategory) === 'title';
+
+        if (isTitleCategory && input.value === '') {
+            const titleList = (titlesDb && Array.isArray(titlesDb.titles)) ? titlesDb.titles : [];
+            const matches = titleList.slice(0, 50).map(getTitleAsItem);
+            renderResults(matches, resultsDiv, selectionHandler);
+        } else if (lockCategory !== 'All' && input.value === '') {
             const matches = items.filter(item => {
                 if (!item) return false;
                 return normSlot(item.Slot || item.slot) === normSlot(lockCategory);
@@ -2201,6 +2326,7 @@ function setupSearch(input, resultsDiv, selectionHandler) {
             renderResults(matches, resultsDiv, selectionHandler);
         }
     });
+
     document.addEventListener('click', (e) => {
         if (!input.contains(e.target) && !resultsDiv.contains(e.target)) {
             resultsDiv.style.display = 'none';
@@ -2223,16 +2349,31 @@ function renderResults(matches, resultsDiv, selectionHandler) {
         const pId = item.ID ?? item.id;
         const pImg = item.image_url || item.src || '';
 
-        const decalBody = getItemDecalBody(item);
-        const decalPill = decalBody ? ` <span style="font-size:10px;padding:1px 5px;background:rgba(91,140,255,0.15);color:#93c5fd;border-radius:3px;font-weight:600;">${escHtml(decalBody)}</span>` : '';
+        if (item.isTitle) {
+            const style = item.titleColor ? `color:#${item.titleColor};${item.titleGlow ? `text-shadow:0 0 8px #${item.titleGlow}` : ''}` : '';
+            div.innerHTML = `
+                <div class="flyout-img" style="display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.06);border-radius:4px;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent, #3b82f6)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                    </svg>
+                </div>
+                <div class="flyout-info">
+                    <span class="item-name" style="${style}">${formatTitleHtml(pName)}</span>
+                    <span style="font-size: 10px; color: var(--text-secondary)">Player Title${item.titleCategory ? ` · ${escHtml(item.titleCategory)}` : ''}</span>
+                </div>
+            `;
+        } else {
+            const decalBody = getItemDecalBody(item);
+            const decalPill = decalBody ? ` <span style="font-size:10px;padding:1px 5px;background:rgba(91,140,255,0.15);color:#93c5fd;border-radius:3px;font-weight:600;">${escHtml(decalBody)}</span>` : '';
 
-        div.innerHTML = `
-            ${pImg ? `<img src="${escHtml(pImg)}" class="flyout-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="flyout-img" style="display:none;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>` : '<div class="flyout-img" style="display:flex;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>'}
-            <div class="flyout-info">
-                <span class="item-name">${escHtml(pName)}${decalPill}</span>
-                <span style="font-size: 10px; color: var(--text-secondary)">${escHtml(pSlot)}${decalBody ? ` (${escHtml(decalBody)})` : ''}</span>
-            </div>
-        `;
+            div.innerHTML = `
+                ${pImg ? `<img src="${escHtml(pImg)}" class="flyout-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="flyout-img" style="display:none;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>` : '<div class="flyout-img" style="display:flex;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>'}
+                <div class="flyout-info">
+                    <span class="item-name">${escHtml(pName)}${decalPill}</span>
+                    <span style="font-size: 10px; color: var(--text-secondary)">${escHtml(pSlot)}${decalBody ? ` (${escHtml(decalBody)})` : ''}</span>
+                </div>
+            `;
+        }
         div.onclick = () => {
             selectionHandler(item);
             resultsDiv.style.display = 'none';
@@ -2288,7 +2429,11 @@ function attrValue(entry) {
 }
 
 function itemIsPaintable(item) {
-    return false;
+    if (!item) return false;
+    if (item.isTitle) return false;
+    const slot = normSlot(item.Slot || item.slot || '');
+    if (UNPAINTABLE_SLOTS.has(slot)) return false;
+    return true;
 }
 
 function findItemByProductId(productId) {
@@ -2349,16 +2494,27 @@ function setPaintBlockEnabled(opts) {
 }
 
 function syncSwapPaintUi() {
+    const isPaintable = wantedItem ? itemIsPaintable(wantedItem) : false;
+    const paintCard = document.getElementById('spawner-paint-card');
+    const gridEl = document.getElementById('spawner-grid') || document.querySelector('.swapper-grid');
+
+    if (paintCard) {
+        paintCard.hidden = !isPaintable;
+        paintCard.style.display = isPaintable ? 'flex' : 'none';
+    }
+    if (gridEl) {
+        gridEl.classList.toggle('has-paint-card', isPaintable);
+    }
+
     if (!document.getElementById('swap-paint-block')) return;
-    const enabled = wantedItem ? itemIsPaintable(wantedItem) : false;
     setPaintBlockEnabled({
         blockId: 'swap-paint-block',
         swatchId: 'swap-paint-swatches',
         selectId: 'swap-paint',
         selectedLabelId: 'swap-paint-selected',
         hintId: 'swap-paint-hint',
-        enabled,
-        hideHintWhenEnabled: true,
+        enabled: isPaintable,
+        hideHintWhenEnabled: false,
     });
 }
 
@@ -2380,8 +2536,8 @@ async function refreshSwapRlHint() {
     }
 }
 
-function startRlRunningPoll() {}
-function showRlRunningToast() {}
+function startRlRunningPoll() { }
+function showRlRunningToast() { }
 
 async function openSettingsForPath() {
     const cfg = await invoke('get_config').catch(() => ({ game_dir: '' }));
@@ -2392,7 +2548,401 @@ async function openSettingsForPath() {
     setTimeout(() => btn.classList.remove('path-btn-highlight'), 2000);
     invoke('detect_game_dir').then(installs => {
         if (installs && installs.length > 1) showInstallChooser(installs);
-    }).catch(() => {});
+    }).catch(() => { });
+}
+
+const selectedCatalogItems = new Map();
+let catalogCategory = 'All';
+let catalogSearchQuery = '';
+let catalogRarity = 'All';
+let catalogPaintId = 0;
+let currentCatalogPage = 1;
+const CATALOG_PAGE_SIZE = 48;
+let catalogInitialized = false;
+
+const RARITY_COLORS = {
+    'Common': '#9ca3af',
+    'Uncommon': '#38bdf8',
+    'Rare': '#3b82f6',
+    'Very Rare': '#a855f7',
+    'Import': '#ef4444',
+    'Exotic': '#facc15',
+    'Black Market': '#e879f9',
+    'BlackMarket': '#e879f9',
+    'Limited': '#fb923c',
+    'Premium': '#34d399',
+    'Legacy': '#fcd34d',
+};
+
+function getRarityColor(quality) {
+    if (!quality) return '#9ca3af';
+    return RARITY_COLORS[quality] || '#9ca3af';
+}
+
+function updateCatalogPaintPreview() {
+    const preview = document.getElementById('catalog-paint-preview');
+    if (!preview) return;
+    const bg = PAINT_SWATCH_COLORS[catalogPaintId] || '#555';
+    preview.style.background = bg;
+}
+
+function updateCatalogSelectionUi() {
+    const count = selectedCatalogItems.size;
+    const countEl = document.getElementById('catalog-selection-count');
+    const spawnBtn = document.getElementById('catalog-spawn-btn');
+    const spawnText = document.getElementById('catalog-spawn-btn-text');
+    const clearBtn = document.getElementById('catalog-clear-sel-btn');
+
+    const spawnBaseLabel = t('swapper.spawn_selected', 'Spawn Selected');
+    if (countEl) countEl.textContent = `${count} item${count === 1 ? '' : 's'} selected`;
+    if (spawnText) spawnText.textContent = count > 0 ? `${spawnBaseLabel} (${count})` : spawnBaseLabel;
+    if (spawnBtn) spawnBtn.disabled = (count === 0);
+    if (clearBtn) clearBtn.style.display = count > 0 ? 'inline-block' : 'none';
+}
+
+function getFilteredCatalogItems() {
+    if (!items || !items.length) return [];
+    let list = items;
+
+    // Filter by Category / Slot
+    if (catalogCategory && catalogCategory !== 'All') {
+        if (catalogCategory === 'Player Title') {
+            const catalogTitles = (typeof titlesDatabase !== 'undefined' && Array.isArray(titlesDatabase)) ? titlesDatabase : [];
+            const mappedTitles = catalogTitles.map(t => getTitleAsItem(t));
+            list = [...items.filter(i => (i.slot || i.Slot) === 'Player Title'), ...mappedTitles];
+        } else {
+            list = list.filter(i => {
+                const s = (i.slot || i.Slot || '');
+                return s.toLowerCase() === catalogCategory.toLowerCase();
+            });
+        }
+    }
+
+    // Filter by Rarity
+    if (catalogRarity && catalogRarity !== 'All') {
+        list = list.filter(i => {
+            const q = (i.quality || i.Quality || 'Common');
+            if (catalogRarity === 'Black Market') {
+                return q === 'Black Market' || q === 'BlackMarket';
+            }
+            return q.toLowerCase() === catalogRarity.toLowerCase();
+        });
+    }
+
+    // Filter by Search Query
+    if (catalogSearchQuery) {
+        const q = catalogSearchQuery.toLowerCase().trim();
+        list = list.filter(i => {
+            const name = (i.product || i.Product || '').toLowerCase();
+            const slot = (i.slot || i.Slot || '').toLowerCase();
+            return name.includes(q) || slot.includes(q);
+        });
+    }
+
+    return list;
+}
+
+function renderCatalogGridPage() {
+    const grid = document.getElementById('catalog-grid');
+    const countInfo = document.getElementById('catalog-count-info');
+    const paginationControls = document.getElementById('catalog-pagination-controls');
+    if (!grid) return;
+
+    if (!items || !items.length) {
+        grid.innerHTML = `
+            <div class="catalog-loading">
+                <div class="loading-spinner"></div>
+                <span>Loading items database...</span>
+            </div>`;
+        return;
+    }
+
+    const filtered = getFilteredCatalogItems();
+    const total = filtered.length;
+    const totalPages = Math.max(1, Math.ceil(total / CATALOG_PAGE_SIZE));
+
+    if (currentCatalogPage > totalPages) currentCatalogPage = totalPages;
+    if (currentCatalogPage < 1) currentCatalogPage = 1;
+
+    const startIdx = (currentCatalogPage - 1) * CATALOG_PAGE_SIZE;
+    const endIdx = Math.min(startIdx + CATALOG_PAGE_SIZE, total);
+    const pageItems = filtered.slice(startIdx, endIdx);
+
+    if (countInfo) {
+        countInfo.textContent = total > 0
+            ? `${(startIdx + 1).toLocaleString()}–${endIdx.toLocaleString()} of ${total.toLocaleString()} items`
+            : '0 items found';
+    }
+
+    if (pageItems.length === 0) {
+        grid.innerHTML = `
+            <div class="catalog-empty">
+                <p>${escHtml(t('swapper.no_items_found', 'No items found matching your filters.'))}</p>
+            </div>`;
+        if (paginationControls) paginationControls.innerHTML = '';
+        return;
+    }
+
+    grid.innerHTML = '';
+    pageItems.forEach((item) => {
+        const id = Number(item.id !== undefined ? item.id : item.ID);
+        const name = item.product || item.Product || 'Item';
+        const quality = item.quality || item.Quality || 'Common';
+        const img = item.image_url || item.src || '';
+        const isSelected = selectedCatalogItems.has(id);
+        const entry = selectedCatalogItems.get(id);
+        const cardPaint = entry ? entry.paint_id : 0;
+        const rarityCol = getRarityColor(quality);
+
+        const card = document.createElement('div');
+        card.className = `catalog-card${isSelected ? ' is-selected' : ''}`;
+        card.dataset.id = String(id);
+        card.dataset.quality = quality;
+
+        const paintBadgeHtml = (isSelected && cardPaint > 0)
+            ? `<span class="catalog-card-paint-badge" style="color:${getPaintTextColor(cardPaint)};">${escHtml(paintLabel(cardPaint))}</span>`
+            : '';
+
+        card.innerHTML = `
+            <div class="catalog-card-check">✓</div>
+            <div class="catalog-card-thumb-wrap">
+                ${img
+                ? `<img src="${escHtml(img)}" class="catalog-card-thumb" alt="${escHtml(name)}" loading="lazy" onerror="this.style.opacity='0';" />`
+                : `<div style="font-size:24px;color:#444;">✦</div>`
+            }
+                ${paintBadgeHtml}
+            </div>
+            <div class="catalog-card-info">
+                <div class="catalog-card-name" title="${escHtml(name)}">${escHtml(name)}</div>
+                <div class="catalog-card-meta">
+                    <span class="catalog-rarity-dot" style="background:${rarityCol};"></span>
+                    <span class="catalog-rarity-label">${escHtml(quality)}</span>
+                </div>
+            </div>
+        `;
+
+        card.addEventListener('click', () => {
+            const isToggledOn = !selectedCatalogItems.has(id);
+            if (!isToggledOn) {
+                selectedCatalogItems.delete(id);
+                card.classList.remove('is-selected');
+                const badge = card.querySelector('.catalog-card-paint-badge');
+                if (badge) badge.remove();
+            } else {
+                const pId = itemIsPaintable(item) ? catalogPaintId : 0;
+                selectedCatalogItems.set(id, {
+                    id,
+                    product: name,
+                    slot: item.slot || item.Slot || 'Body',
+                    quality,
+                    image_url: img,
+                    paint_id: pId,
+                    item,
+                });
+                card.classList.add('is-selected');
+                if (pId > 0) {
+                    const thumbWrap = card.querySelector('.catalog-card-thumb-wrap');
+                    if (thumbWrap && !thumbWrap.querySelector('.catalog-card-paint-badge')) {
+                        const badgeEl = document.createElement('span');
+                        badgeEl.className = 'catalog-card-paint-badge';
+                        badgeEl.style.color = getPaintTextColor(pId);
+                        badgeEl.textContent = paintLabel(pId);
+                        thumbWrap.appendChild(badgeEl);
+                    }
+                }
+            }
+            updateCatalogSelectionUi();
+        });
+
+        grid.appendChild(card);
+    });
+
+    renderCatalogPagination(paginationControls, currentCatalogPage, totalPages);
+}
+
+function renderCatalogPagination(container, current, total) {
+    if (!container) return;
+    if (total <= 1) {
+        container.innerHTML = '';
+        return;
+    }
+
+    let html = '';
+    html += `<button type="button" class="catalog-page-btn" ${current === 1 ? 'disabled' : ''} data-page="${current - 1}" title="Previous page">‹</button>`;
+
+    const maxVisible = 5;
+    let start = Math.max(1, current - 2);
+    let end = Math.min(total, start + maxVisible - 1);
+    if (end - start < maxVisible - 1) {
+        start = Math.max(1, end - maxVisible + 1);
+    }
+
+    if (start > 1) {
+        html += `<button type="button" class="catalog-page-btn" data-page="1">1</button>`;
+        if (start > 2) html += `<span class="catalog-page-ellipsis">…</span>`;
+    }
+
+    for (let p = start; p <= end; p++) {
+        html += `<button type="button" class="catalog-page-btn${p === current ? ' is-active' : ''}" data-page="${p}">${p}</button>`;
+    }
+
+    if (end < total) {
+        if (end < total - 1) html += `<span class="catalog-page-ellipsis">…</span>`;
+        html += `<button type="button" class="catalog-page-btn" data-page="${total}">${total}</button>`;
+    }
+
+    html += `<button type="button" class="catalog-page-btn" ${current === total ? 'disabled' : ''} data-page="${current + 1}" title="Next page">›</button>`;
+
+    container.innerHTML = html;
+    container.querySelectorAll('.catalog-page-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetPage = Number(btn.dataset.page);
+            if (!isNaN(targetPage) && targetPage >= 1 && targetPage <= total && targetPage !== current) {
+                currentCatalogPage = targetPage;
+                renderCatalogGridPage();
+                document.getElementById('catalog-grid-wrap')?.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        });
+    });
+}
+
+function initCatalogGrid() {
+    if (catalogInitialized) {
+        renderCatalogGridPage();
+        return;
+    }
+    catalogInitialized = true;
+
+    const catSelect = document.getElementById('catalog-category-select');
+    const searchInput = document.getElementById('catalog-search-input');
+    const searchClear = document.getElementById('catalog-search-clear');
+    const raritySelect = document.getElementById('catalog-rarity-select');
+    const paintSelect = document.getElementById('catalog-paint-select');
+    const spawnBtn = document.getElementById('catalog-spawn-btn');
+    const selectPageBtn = document.getElementById('catalog-select-page-btn');
+    const clearSelBtn = document.getElementById('catalog-clear-sel-btn');
+
+    if (catSelect) {
+        catSelect.addEventListener('change', (e) => {
+            catalogCategory = e.target.value;
+            currentCatalogPage = 1;
+            renderCatalogGridPage();
+        });
+    }
+
+    if (searchInput) {
+        let debounceTimer;
+        searchInput.addEventListener('input', (e) => {
+            catalogSearchQuery = e.target.value || '';
+            if (searchClear) searchClear.style.display = catalogSearchQuery ? 'inline-block' : 'none';
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                currentCatalogPage = 1;
+                renderCatalogGridPage();
+            }, 180);
+        });
+    }
+
+    if (searchClear) {
+        searchClear.addEventListener('click', () => {
+            if (searchInput) {
+                searchInput.value = '';
+                searchInput.focus();
+            }
+            catalogSearchQuery = '';
+            searchClear.style.display = 'none';
+            currentCatalogPage = 1;
+            renderCatalogGridPage();
+        });
+    }
+
+    if (raritySelect) {
+        raritySelect.addEventListener('change', (e) => {
+            catalogRarity = e.target.value;
+            currentCatalogPage = 1;
+            renderCatalogGridPage();
+        });
+    }
+
+    if (paintSelect) {
+        paintSelect.addEventListener('change', (e) => {
+            catalogPaintId = Number(e.target.value || 0);
+            updateCatalogPaintPreview();
+            for (const [id, entry] of selectedCatalogItems.entries()) {
+                if (itemIsPaintable(entry.item)) {
+                    entry.paint_id = catalogPaintId;
+                }
+            }
+            renderCatalogGridPage();
+        });
+        updateCatalogPaintPreview();
+    }
+
+    if (selectPageBtn) {
+        selectPageBtn.addEventListener('click', () => {
+            const filtered = getFilteredCatalogItems();
+            const startIdx = (currentCatalogPage - 1) * CATALOG_PAGE_SIZE;
+            const endIdx = Math.min(startIdx + CATALOG_PAGE_SIZE, filtered.length);
+            const pageItems = filtered.slice(startIdx, endIdx);
+            pageItems.forEach(item => {
+                const id = Number(item.id !== undefined ? item.id : item.ID);
+                selectedCatalogItems.set(id, {
+                    id,
+                    product: item.product || item.Product || 'Item',
+                    slot: item.slot || item.Slot || 'Body',
+                    quality: item.quality || item.Quality || 'Common',
+                    image_url: item.image_url || item.src || '',
+                    paint_id: itemIsPaintable(item) ? catalogPaintId : 0,
+                    item,
+                });
+            });
+            updateCatalogSelectionUi();
+            renderCatalogGridPage();
+        });
+    }
+
+    if (clearSelBtn) {
+        clearSelBtn.addEventListener('click', () => {
+            selectedCatalogItems.clear();
+            updateCatalogSelectionUi();
+            renderCatalogGridPage();
+        });
+    }
+
+    if (spawnBtn) {
+        spawnBtn.addEventListener('click', async () => {
+            if (selectedCatalogItems.size === 0 || isAppLoading()) return;
+            const itemsToSpawn = Array.from(selectedCatalogItems.values()).map(entry => ({
+                wanted_id: String(entry.id),
+                paint_id: entry.paint_id > 0 ? entry.paint_id : null,
+            }));
+
+            updateStatus(`Spawning ${itemsToSpawn.length} items...`, false);
+            showProgress(true, 30);
+            spawnBtn.disabled = true;
+            try {
+                const spawnedCount = await invoke('spawn_items_batch', { items: itemsToSpawn });
+                showProgress(true, 100);
+                showToast(`Successfully spawned <strong>${spawnedCount}</strong> items into your Rocket League inventory!`, 'success');
+                selectedCatalogItems.clear();
+                updateCatalogSelectionUi();
+                renderCatalogGridPage();
+                await refreshBackups();
+            } catch (err) {
+                showToast(String(err), 'error');
+                updateStatus('Error', true);
+            } finally {
+                setTimeout(() => {
+                    showProgress(false);
+                    updateStatus('bitsfdb', false);
+                    updateCatalogSelectionUi();
+                }, 1500);
+            }
+        });
+    }
+
+    updateCatalogSelectionUi();
+    renderCatalogGridPage();
 }
 
 async function handleApply() {
@@ -2419,23 +2969,64 @@ async function executeApply() {
         showProgress(true, 15);
         let p = 15;
         interval = setInterval(() => { if (p < 85) p += 5; showProgress(true, p); }, 400);
-        const ownedId = ownedItem ? (ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id).toString() : "0";
-        const wantedId = (wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id).toString();
-        const paintId = (wantedItem && itemIsPaintable(wantedItem)) ? Number(wantedPaintId || 0) : 0;
-        const spawnResult = await invoke('apply_swap', {
-            ownedId,
-            wantedId,
-            ownedPaintId: null,
-            ownedCustomHex: null,
-            paintId,
-            customPaintHex: null,
-        });
+        let spawnResult;
+        const wantedName = wantedItem?.product || wantedItem?.Product || 'item';
+
+        if (wantedItem.isTitle) {
+            const titleId = wantedItem.titleId || 'custom';
+            const titleText = wantedItem.titleText || wantedName;
+            const titleCat = wantedItem.titleCategory || '';
+            const titleCol = wantedItem.titleColor ? { color: wantedItem.titleColor, glow_color: wantedItem.titleGlow || wantedItem.titleColor } : null;
+
+            ensureTitleSwapsLoaded();
+            titleSwaps = titleSwaps.filter(s => s.display_title_id !== titleId && s.equip_title_id !== titleId);
+            const entry = normalizeSwapEntry({
+                equip_title_id: titleId,
+                display_title_id: titleId,
+                custom_text: titleText,
+                category: titleCat,
+                title_color: titleCol,
+            });
+            titleSwaps.unshift(entry);
+            try {
+                persistTitleSpoofLocal();
+                await runToolSave(null, 'titles', titleSpoofPayload(), { enabled: true });
+                renderTitleSwapList();
+            } catch (proxyErr) {
+                console.warn('Proxy title registration:', proxyErr);
+            }
+
+            spawnResult = await invoke('apply_swap', {
+                ownedId: "0",
+                wantedId: "3036",
+                ownedPaintId: null,
+                ownedCustomHex: null,
+                paintId: 0,
+                customPaintHex: null,
+            });
+        } else {
+            const ownedId = ownedItem ? (ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id).toString() : "0";
+            const wantedId = (wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id).toString();
+            const paintId = (wantedItem && itemIsPaintable(wantedItem)) ? Number(wantedPaintId || 0) : 0;
+            spawnResult = await invoke('apply_swap', {
+                ownedId,
+                wantedId,
+                ownedPaintId: null,
+                ownedCustomHex: null,
+                paintId,
+                customPaintHex: null,
+            });
+        }
+
         clearInterval(interval);
         interval = null;
         showProgress(true, 100);
         updateStatus('Spawn Complete', false);
-        const wantedName = wantedItem?.product || wantedItem?.Product || 'item';
-        showToast(`Spawned <strong>${escHtml(wantedName)}</strong> into your inventory!`, 'success');
+        if (wantedItem.isTitle) {
+            showToast(`Spawned title <strong>${formatTitleHtml(wantedName)}</strong> into your inventory!`, 'success');
+        } else {
+            showToast(`Spawned <strong>${escHtml(wantedName)}</strong> into your inventory!`, 'success');
+        }
 
         if (spawnResult && spawnResult.includes && spawnResult.includes('Warnings:')) {
             const warningPart = spawnResult.split('Warnings:\n')[1];
@@ -2455,14 +3046,16 @@ async function executeApply() {
             showToast(msg, 'error');
         }
         console.error(err);
-        invoke('report_diagnostic', { payload: {
-            event:     'spawn_fail',
-            context:   'handleApply',
-            message:   String(err),
-            backtrace: err?.stack ?? null,
-            owned_id:  ownedItem ? String(ownedItem.id ?? ownedItem.ID ?? '') : null,
-            wanted_id: wantedItem ? String(wantedItem.id ?? wantedItem.ID ?? '') : null,
-        }}).catch(() => {});
+        invoke('report_diagnostic', {
+            payload: {
+                event: 'spawn_fail',
+                context: 'handleApply',
+                message: String(err),
+                backtrace: err?.stack ?? null,
+                owned_id: ownedItem ? String(ownedItem.id ?? ownedItem.ID ?? '') : null,
+                wanted_id: wantedItem ? String(wantedItem.id ?? wantedItem.ID ?? '') : null,
+            }
+        }).catch(() => { });
     } finally {
         if (interval) clearInterval(interval);
         swapBusy = false;
@@ -2557,7 +3150,7 @@ async function handleAutoDetect() {
     } else if (installs.length === 1) {
         document.getElementById('game-dir').value = installs[0].path;
         const existing = await invoke('get_config').catch(() => ({}));
-        await invoke('save_config', { config: { ...existing, game_dir: installs[0].path } }).catch(() => {});
+        await invoke('save_config', { config: { ...existing, game_dir: installs[0].path } }).catch(() => { });
         showToast(`${installs[0].label} install detected and saved`, 'success');
         refreshPaletteStatus();
     } else {
@@ -2579,7 +3172,7 @@ function showInstallChooser(installs) {
         btn.onclick = async () => {
             document.getElementById('game-dir').value = install.path;
             const existing = await invoke('get_config').catch(() => ({}));
-            await invoke('save_config', { config: { ...existing, game_dir: install.path } }).catch(() => {});
+            await invoke('save_config', { config: { ...existing, game_dir: install.path } }).catch(() => { });
             container.innerHTML = '';
             container.style.display = 'none';
             showToast(`${install.label} selected and saved`, 'success');
@@ -2597,10 +3190,10 @@ async function handleBrowse() {
         try {
             const resolved = await invoke('validate_game_dir', { path: dir });
             if (resolved) finalDir = resolved;
-        } catch (_) {}
+        } catch (_) { }
         document.getElementById('game-dir').value = finalDir;
         const existing = await invoke('get_config').catch(() => ({}));
-        await invoke('save_config', { config: { ...existing, game_dir: finalDir } }).catch(() => {});
+        await invoke('save_config', { config: { ...existing, game_dir: finalDir } }).catch(() => { });
         showToast('Game path selected and saved', 'success');
         refreshPaletteStatus();
     }
@@ -2619,13 +3212,13 @@ async function checkForUpdates() {
                 const data = await res.json();
                 const latest = (data.tag_name || '').replace(/^v/, '');
                 if (!latest || latest === current) return;
-                invoke('append_launch_log', { message: `updater: github fallback sees v${latest}` }).catch(() => {});
+                invoke('append_launch_log', { message: `updater: github fallback sees v${latest}` }).catch(() => { });
                 const url = escHtml(data.html_url || 'https://github.com/bitsfdb/VelocityRL/releases/latest');
                 showToast(
                     `Update v${escHtml(latest)} available - <a href="#" class="toast-link" onclick="event.preventDefault(); window.__TAURI__.core.invoke('plugin:shell|open', { path: '${url}' })">Download</a>`,
                     'warning'
                 );
-            } catch (_) {}
+            } catch (_) { }
             return;
         }
         const toast = document.createElement('div');
@@ -2683,7 +3276,7 @@ async function checkForUpdates() {
             }
         });
     } catch (err) {
-        invoke('append_launch_log', { message: `updater: unexpected invoke error: ${err}` }).catch(() => {});
+        invoke('append_launch_log', { message: `updater: unexpected invoke error: ${err}` }).catch(() => { });
     }
 }
 
@@ -2753,7 +3346,7 @@ async function refreshDevPanel() {
                 const id = await invoke('get_replay_identity');
                 if (document.activeElement !== pidEl) pidEl.value = id.player_id || '';
                 if (document.activeElement !== rnEl) rnEl.value = id.real_name || '';
-            } catch {}
+            } catch { }
         }
 
         const logEl = document.getElementById('dev-log-output');
@@ -2833,7 +3426,7 @@ function formatChangelogNotes(raw) {
         .map(line => {
             const escaped = escHtml(line).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
             if (/^\+/.test(line)) return `<span class="cl-add">${escaped}</span>`;
-            if (/^-/.test(line))  return `<span class="cl-remove">${escaped}</span>`;
+            if (/^-/.test(line)) return `<span class="cl-remove">${escaped}</span>`;
             return escaped;
         })
         .join('\n');
@@ -2902,7 +3495,7 @@ function flashButtonLabel(el, feedback, ms = 1500, onDone) {
 
 function loadSavedSpoof() {
     let titles = {};
-    try { titles = JSON.parse(localStorage.getItem(TITLE_SPOOF_KEY) || '{}'); } catch {  }
+    try { titles = JSON.parse(localStorage.getItem(TITLE_SPOOF_KEY) || '{}'); } catch { }
     return { ...titles };
 }
 
@@ -3040,7 +3633,7 @@ function migrateTitleSwaps(saved) {
 
 function loadTitleSwapsFromStorage() {
     let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(TITLE_SPOOF_KEY) || '{}'); } catch {  }
+    try { saved = JSON.parse(localStorage.getItem(TITLE_SPOOF_KEY) || '{}'); } catch { }
     titleSwaps = migrateTitleSwaps(saved);
     titleSwapsLoaded = true;
 }
@@ -3101,7 +3694,7 @@ function titleSpoofPayload() {
         enabled: titleSwaps.length > 0,
         method: 'raw',
         swaps: titleSwaps.map((s) => ({ ...s })),
-        equip_title_id: first.equip_title_id || '',
+        equip_title_id: first.equip_title_id || first.display_title_id || '',
         display_title_id: first.display_title_id || '',
         custom_text: first.custom_text || '',
         category: first.category || '',
@@ -3143,7 +3736,7 @@ async function hydrateSpoofToolsFromDisk() {
     try {
         disk = await invoke('get_psynet_spoof') || {};
     } catch (e) {
-        invoke('append_launch_log', { message: `psynet: get_psynet_spoof failed: ${e}` }).catch(() => {});
+        invoke('append_launch_log', { message: `psynet: get_psynet_spoof failed: ${e}` }).catch(() => { });
         disk = {};
     }
 
@@ -3219,11 +3812,11 @@ async function hydrateSpoofToolsFromDisk() {
     {
         const cs = toolSliceFromDiskOrLocal(disk, CREDIT_SPOOF_KEY, 'credit_spoof');
         const credit_spoof = (cs && typeof cs === 'object' && ('enabled' in cs || cs.amount != null || cs.tournament_amount != null))
-            ? { 
-                enabled: !!cs.enabled, 
+            ? {
+                enabled: !!cs.enabled,
                 amount: Number(cs.amount) || 100000,
-                tournament_amount: Number(cs.tournament_amount ?? cs.tournament_credits) || 100000 
-              }
+                tournament_amount: Number(cs.tournament_amount ?? cs.tournament_credits) || 100000
+            }
             : { enabled: false, amount: 100000, tournament_amount: 100000 };
         localStorage.setItem(CREDIT_SPOOF_KEY, JSON.stringify({ credit_spoof }));
     }
@@ -3416,7 +4009,7 @@ async function anySpoofToolEnabled(payload) {
     try {
         const pal = await invoke('get_palette_status');
         if (pal?.applied) return true;
-    } catch {   }
+    } catch { }
     return false;
 }
 
@@ -3527,21 +4120,21 @@ async function autoStartPsyNetProxy() {
         const disk = await invoke('get_psynet_spoof') || {};
         payload = preserveEnabledLogoBlogFromDisk(payload, disk);
         applyHydratedToolsToUi();
-    } catch {   }
+    } catch { }
     try {
 
         await invoke('save_psynet_spoof', { payload });
     } catch (e) {
-        invoke('append_launch_log', { message: `psynet: boot write spoof failed: ${e}` }).catch(() => {});
+        invoke('append_launch_log', { message: `psynet: boot write spoof failed: ${e}` }).catch(() => { });
     }
     try {
         const st = await invoke('get_psynet_status');
         if (st.running) {
             setProxyUi(true);
-            invoke('append_launch_log', { message: 'psynet: existing proxy healthy - boot config written, skip restart' }).catch(() => {});
+            invoke('append_launch_log', { message: 'psynet: existing proxy healthy - boot config written, skip restart' }).catch(() => { });
             return;
         }
-    } catch {   }
+    } catch { }
     try {
         showToast('Starting PsyNet proxy…', 'success');
         const st = await invoke('start_psynet_proxy', {});
@@ -3551,7 +4144,7 @@ async function autoStartPsyNetProxy() {
         }
     } catch (e) {
         setProxyUi(false);
-        invoke('append_launch_log', { message: `psynet: auto-start failed: ${e}` }).catch(() => {});
+        invoke('append_launch_log', { message: `psynet: auto-start failed: ${e}` }).catch(() => { });
         showToast(e, 'error');
     }
 }
@@ -3663,7 +4256,7 @@ async function stopProxyOnClose(revertHosts) {
 function finishAppClose(appWindow, revertHosts) {
     closeInProgress = true;
     invoke('force_exit').catch(() => {
-        try { appWindow.destroy(); } catch {}
+        try { appWindow.destroy(); } catch { }
     });
 }
 
@@ -4091,11 +4684,11 @@ function openFakeRanksPicker(target, anchorEl) {
         <div class="rank-picker-section-label">Rank</div>
         <div class="rank-picker-tier-list" role="listbox">
             ${RL_RANKS.map((r) => (
-                `<button type="button" class="rank-tier-btn rank-tier-btn-compact${Number(r.tier) === activeTier ? ' is-active' : ''}" data-tier="${r.tier}" role="option" title="${escHtml(r.name)}">`
-                + `<img src="${rankIconSrc(r.tier)}" width="26" height="26" alt="">`
-                + `<span>${escHtml(r.name)}</span>`
-                + '</button>'
-            )).join('')}
+        `<button type="button" class="rank-tier-btn rank-tier-btn-compact${Number(r.tier) === activeTier ? ' is-active' : ''}" data-tier="${r.tier}" role="option" title="${escHtml(r.name)}">`
+        + `<img src="${rankIconSrc(r.tier)}" width="26" height="26" alt="">`
+        + `<span>${escHtml(r.name)}</span>`
+        + '</button>'
+    )).join('')}
         </div>
     `;
 
@@ -4296,7 +4889,7 @@ function initRanksTab() {
     if (!enabledEl || !saveBtn) return;
 
     let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(FAKE_RANKS_KEY) || '{}'); } catch {  }
+    try { saved = JSON.parse(localStorage.getItem(FAKE_RANKS_KEY) || '{}'); } catch { }
     loadFakeRanksFromSaved(saved);
 
     if (ranksTabReady) return;
@@ -4440,7 +5033,7 @@ function initCameraTab() {
     if (!enabledEl || !saveBtn) return;
 
     let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(CAMERA_SPOOF_KEY) || '{}'); } catch {  }
+    try { saved = JSON.parse(localStorage.getItem(CAMERA_SPOOF_KEY) || '{}'); } catch { }
     if (!saved.camera_spoof) {
         applyCameraDefaultsToUi();
         if (enabledEl) {
@@ -4501,7 +5094,7 @@ function initNamesTab() {
     if (!enabledEl || !saveBtn) return;
 
     let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(NAME_SPOOF_KEY) || '{}'); } catch {}
+    try { saved = JSON.parse(localStorage.getItem(NAME_SPOOF_KEY) || '{}'); } catch { }
     const ns = saved.name_spoof || {};
     enabledEl.checked = !!ns.enabled;
     syncNameSpoofSwitchAria(enabledEl);
@@ -4524,11 +5117,11 @@ function initNamesTab() {
                                 cur.name_spoof.player_id = ident.player_id;
                                 localStorage.setItem(NAME_SPOOF_KEY, JSON.stringify(cur));
                             }
-                        } catch {}
+                        } catch { }
                     }
                 }
-            }).catch(() => {});
-        } catch {}
+            }).catch(() => { });
+        } catch { }
     };
 
     refreshLearnedIdentity();
@@ -4548,7 +5141,7 @@ function initNamesTab() {
                 if (nameCard) nameCard.style.opacity = '1';
                 syncNameSpoofSwitchAria(enabledEl);
             }
-        } catch {}
+        } catch { }
     };
 
     updateSteamUiState();
@@ -4593,7 +5186,7 @@ function initCreditsTab() {
     if (!enabledEl || !saveBtn) return;
 
     let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(CREDIT_SPOOF_KEY) || '{}'); } catch {}
+    try { saved = JSON.parse(localStorage.getItem(CREDIT_SPOOF_KEY) || '{}'); } catch { }
     const cs = saved.credit_spoof || {};
     enabledEl.checked = !!cs.enabled;
     syncNameSpoofSwitchAria(enabledEl);
@@ -4656,7 +5249,7 @@ function initLeaderboardTab() {
     if (!enabledEl || !saveBtn) return;
 
     let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(LEADERBOARD_SPOOF_KEY) || '{}'); } catch {}
+    try { saved = JSON.parse(localStorage.getItem(LEADERBOARD_SPOOF_KEY) || '{}'); } catch { }
     const lb = saved.leaderboard_spoof || {};
     enabledEl.checked = !!lb.enabled;
     syncNameSpoofSwitchAria(enabledEl);
@@ -4760,7 +5353,7 @@ function initDecalsTab() {
                 catalogItems = await invoke('get_items');
             }
             const carName = (carId === 4284 ? 'fennec' : carId === 403 ? 'dominus' : carId === 1624 ? 'breakout' : carId === 1151 ? 'skyline' : 'octane');
-            
+
             currentCarDecals = Array.isArray(catalogItems) ? catalogItems.filter(item => {
                 if (!item) return false;
                 const s = (item.Slot || item.slot || '').toLowerCase();
@@ -4786,7 +5379,7 @@ function initDecalsTab() {
             }
             const activeCarId = car ? car.car_id : 23;
             loadDonorDecals(activeCarId);
-        } catch {}
+        } catch { }
     };
 
     const loadDecalConfig = async () => {
@@ -4803,7 +5396,7 @@ function initDecalsTab() {
                     loadDonorDecals(cfg.car_id);
                 }
             }
-        } catch {}
+        } catch { }
     };
 
     if (decalsTabReady) return;
@@ -5016,7 +5609,7 @@ function setPaletteUnavailable() {
     if (applyBtn) applyBtn.disabled = true;
     if (restoreBtn) restoreBtn.disabled = true;
     document.getElementById('palette-switch-row')?.classList.remove('is-applied');
-    invoke('sync_palette_psynet_config', { forceEnabled: false }).catch(() => {});
+    invoke('sync_palette_psynet_config', { forceEnabled: false }).catch(() => { });
 }
 
 function setPaletteBusy(busy) {
@@ -5061,7 +5654,7 @@ async function refreshPaletteStatus() {
     try {
         const st = await invoke('get_palette_status');
         syncPaletteUi(!!st.applied, st);
-        await invoke('sync_palette_psynet_config').catch(() => {});
+        await invoke('sync_palette_psynet_config').catch(() => { });
     } catch {
         syncPaletteUi(false);
     }
@@ -5117,7 +5710,7 @@ async function wireReplayOptIn() {
     syncNameSpoofSwitchAria(toggle);
     toggle.addEventListener('change', async () => {
         const c = await invoke('get_config').catch(() => ({ game_dir: '' }));
-        await invoke('save_config', { config: { ...c, replay_opt_in: toggle.checked } }).catch(() => {});
+        await invoke('save_config', { config: { ...c, replay_opt_in: toggle.checked } }).catch(() => { });
         if (hint) {
             hint.style.display = 'block';
             hint.textContent = toggle.checked
@@ -5129,11 +5722,11 @@ async function wireReplayOptIn() {
         if (toggle.checked) {
             const status = await invoke('replay_token_status').catch(() => null);
             if (status && !status.registered) {
-                await invoke('register_replay_token').catch(() => {});
+                await invoke('register_replay_token').catch(() => { });
             }
         }
         updateReplayVaultVisibility(toggle.checked);
-        invoke('append_launch_log', { message: `replays: opt-in ${toggle.checked ? 'enabled' : 'disabled'}` }).catch(() => {});
+        invoke('append_launch_log', { message: `replays: opt-in ${toggle.checked ? 'enabled' : 'disabled'}` }).catch(() => { });
     });
 
     wireReplayVault();
@@ -5157,7 +5750,7 @@ function wireReplayVault() {
             let data = await invoke('get_my_replays');
             if (!data.registered) {
 
-                await invoke('register_replay_token').catch(() => {});
+                await invoke('register_replay_token').catch(() => { });
                 data = await invoke('get_my_replays').catch(() => ({ registered: false, total: 0, replays: [] }));
             }
             renderReplayVault(data);
@@ -5286,7 +5879,7 @@ function initMiscTab() {
             localStorage.setItem(LOGO_SPOOF_KEY, JSON.stringify({ logo_spoof }));
             invoke('append_launch_log', {
                 message: `psynet: season logo save enabled=${enabled} url_len=${logo_url.length}`,
-            }).catch(() => {});
+            }).catch(() => { });
             await runToolSave(saveBtn, 'season logo', { logo_spoof }, { enabled });
             flashButtonLabel(saveBtn, enabled ? 'Saved' : 'Saved (off)');
             if (!enabled) showToast('Season logo off.', 'success');
@@ -5314,7 +5907,7 @@ function initMiscTab() {
     });
 }
 
-let setGlobalPaint = (id) => {};
+let setGlobalPaint = (id) => { };
 
 function wirePaintSwatches(swatchId, selectId, selectedLabelId) {
     const wrap = document.getElementById(swatchId);
@@ -5324,9 +5917,11 @@ function wirePaintSwatches(swatchId, selectId, selectedLabelId) {
     wrap.dataset.wired = '1';
 
     if (!wrap.querySelector('.paint-swatch')) {
-        wrap.innerHTML = Object.entries(PAINT_NAMES).map(([id, name]) => (
-            `<button type="button" class="paint-swatch${id === '0' ? ' is-active' : ''}" data-paint="${id}" aria-label="${escHtml(name)}" aria-checked="${id === '0' ? 'true' : 'false'}"></button>`
-        )).join('');
+        wrap.innerHTML = Object.entries(PAINT_NAMES).map(([id, name]) => {
+            const bg = PAINT_SWATCH_COLORS[id] || '';
+            const bgStyle = bg ? ` background: ${bg};` : '';
+            return `<button type="button" class="paint-swatch${id === '0' ? ' is-active' : ''}" data-paint="${id}" style="${bgStyle}" aria-label="${escHtml(name)}" aria-checked="${id === '0' ? 'true' : 'false'}"></button>`;
+        }).join('');
     }
 
     setGlobalPaint = (id) => {
@@ -5396,7 +5991,7 @@ function findTitleById(id) {
 function loadTitleSpoofForm() {
     ensureTitleSwapsLoaded();
     let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(TITLE_SPOOF_KEY) || '{}'); } catch {  }
+    try { saved = JSON.parse(localStorage.getItem(TITLE_SPOOF_KEY) || '{}'); } catch { }
     const last = titleSwaps[titleSwaps.length - 1];
     const equipId = last?.equip_title_id || saved.equip_title_id || 'Team_Iraq_World_Cup_2026';
     const displayId = last?.display_title_id || saved.display_title_id || '';
@@ -5476,7 +6071,7 @@ function wireTitleSpoofControls() {
     });
 }
 
-window.insertTitleTag = function(tag) {
+window.insertTitleTag = function (tag) {
     const input = document.getElementById('title-custom-text');
     if (!input) return;
     const start = input.selectionStart ?? input.value.length;
@@ -5950,9 +6545,20 @@ async function saveTitleSpoof() {
     const applyBtn = document.getElementById('title-apply-btn');
     if (applyBtn?.dataset.labelFlashing === '1' || applyBtn?.dataset.saving === '1') return;
     const entry = pickerSwapEntry();
-    if (!entry?.equip_title_id) {
-        showToast('Pick a donor title first.', 'error');
+    if (!entry?.equip_title_id && !entry?.display_title_id && !entry?.custom_text) {
+        showToast('Pick a title look or enter custom text.', 'error');
         return;
+    }
+    if (!entry.equip_title_id) {
+        entry.equip_title_id = entry.display_title_id || 'custom';
+        invoke('apply_swap', {
+            ownedId: "0",
+            wantedId: "3036",
+            ownedPaintId: null,
+            ownedCustomHex: null,
+            paintId: 0,
+            customPaintHex: null,
+        }).catch((err) => console.warn('Could not inject base title into SaveData:', err));
     }
     // Empty custom text → use the look title's normal catalog text (proxy also
     // copies Text from display_title_id in BattleCars config when custom is blank).
@@ -5978,7 +6584,7 @@ async function saveTitleSpoof() {
         return;
     }
     ensureTitleSwapsLoaded();
-    titleSwaps = titleSwaps.filter((s) => s.equip_title_id !== entry.equip_title_id);
+    titleSwaps = titleSwaps.filter((s) => s.equip_title_id !== entry.equip_title_id && s.display_title_id !== entry.display_title_id);
     titleSwaps.unshift(entry);
     try {
         persistTitleSpoofLocal();
@@ -6087,7 +6693,7 @@ function renderChangelog(releases) {
 
     body.innerHTML = list.map(r => {
         const tag = r.tag_name || r.name || 'Release';
-        const date = r.published_at ? new Date(r.published_at).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' }) : '';
+        const date = r.published_at ? new Date(r.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '';
         return `
             <div class="changelog-release" style="margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid rgba(255,255,255,0.08);">
                 <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;">
@@ -6114,7 +6720,7 @@ async function openChangelog(forceRefresh = false) {
                 renderChangelog(cached.releases);
                 return;
             }
-        } catch {}
+        } catch { }
     }
 
     try {
@@ -6129,7 +6735,7 @@ async function openChangelog(forceRefresh = false) {
                 if (Array.isArray(data)) releases = data;
                 else if (Array.isArray(data?.releases)) releases = data.releases;
             }
-        } catch (_) {}
+        } catch (_) { }
 
         if (!releases) {
             try {
@@ -6138,13 +6744,13 @@ async function openChangelog(forceRefresh = false) {
                 const ghRes = await fetch('https://api.github.com/repos/bitsfdb/VelocityRL/releases?per_page=50', { signal: ctrl.signal });
                 clearTimeout(tid);
                 if (ghRes.ok) releases = await ghRes.json();
-            } catch (_) {}
+            } catch (_) { }
         }
 
         if (releases && Array.isArray(releases) && releases.length) {
             try {
                 localStorage.setItem(CHANGELOG_CACHE_KEY, JSON.stringify({ ts: Date.now(), releases }));
-            } catch {}
+            } catch { }
             renderChangelog(releases);
             return;
         }
@@ -6217,7 +6823,7 @@ async function loadWorkshopCatalog(page = 1, query = '') {
                 try {
                     localStorage.setItem('vrl_map_thumb_' + map.name.toLowerCase().trim(), banner);
                     if (map.id) localStorage.setItem('vrl_map_thumb_id_' + map.id, banner);
-                } catch {}
+                } catch { }
             }
             const author = (map.member && map.member.displayName) ? map.member.displayName : 'Community';
             const desc = map.shortDescription || '';
@@ -6292,8 +6898,8 @@ async function loadWorkshopCatalog(page = 1, query = '') {
                             try {
                                 localStorage.setItem('vrl_map_thumb_' + mapName.toLowerCase().trim(), banner);
                                 localStorage.setItem('vrl_map_thumb_path_' + imported.path, banner);
-                            } catch {}
-                            await invoke('workshop_set_map_thumbnail', { pathOrName: imported.path, thumbnailUrl: banner }).catch(() => {});
+                            } catch { }
+                            await invoke('workshop_set_map_thumbnail', { pathOrName: imported.path, thumbnailUrl: banner }).catch(() => { });
                         }
                     } else {
                         await invoke('workshop_install_map_from_url', {
@@ -6303,8 +6909,8 @@ async function loadWorkshopCatalog(page = 1, query = '') {
                         if (banner) {
                             try {
                                 localStorage.setItem('vrl_map_thumb_' + mapName.toLowerCase().trim(), banner);
-                            } catch {}
-                            await invoke('workshop_set_map_thumbnail', { pathOrName: mapName, thumbnailUrl: banner }).catch(() => {});
+                            } catch { }
+                            await invoke('workshop_set_map_thumbnail', { pathOrName: mapName, thumbnailUrl: banner }).catch(() => { });
                         }
                     }
 
@@ -6562,7 +7168,7 @@ async function autoFetchMissingThumbnail(mapName) {
             localStorage.setItem('vrl_map_thumb_' + clean, match.bannerUrl);
             return match.bannerUrl;
         }
-    } catch {}
+    } catch { }
     return null;
 }
 
@@ -6585,7 +7191,7 @@ async function refreshWorkshopLibrary() {
     list.appendChild(guideBanner);
 
     let installed = null;
-    try { installed = await invoke('workshop_get_installed'); } catch {}
+    try { installed = await invoke('workshop_get_installed'); } catch { }
 
     const replacedWrap = document.createElement('div');
     replacedWrap.style.cssText = 'margin-bottom:14px;';
@@ -6865,7 +7471,7 @@ async function refreshWorkshopInstalled() {
     const status = document.getElementById('workshop-installed-status');
     if (!status) return;
     let inst = null;
-    try { inst = await invoke('workshop_get_installed'); } catch {}
+    try { inst = await invoke('workshop_get_installed'); } catch { }
     if (inst) {
         status.style.display = 'block';
         status.textContent = `Loaded map: ${inst.map_name}`;
@@ -6953,7 +7559,7 @@ async function initTrackerModule() {
     try {
         const config = await invoke('get_config').catch(() => ({ game_dir: '' }));
         if (config && config.game_dir) {
-            invoke('tracker_ensure_stats_api', { gameDir: config.game_dir }).catch(() => {});
+            invoke('tracker_ensure_stats_api', { gameDir: config.game_dir }).catch(() => { });
         }
         const session = await invoke('tracker_load_session');
         trackerSessionCache = session;
@@ -7038,9 +7644,9 @@ function bindTrackerEvents() {
             lockBtn.className = isOverlayLocked ? 'action-btn action-btn-secondary' : 'action-btn';
             if (!trackerSessionCache) trackerSessionCache = await invoke('tracker_load_session');
             if (trackerSessionCache.master_enabled) {
-                await invoke('tracker_open_overlay_window', { style: trackerSessionCache.overlay_style || 'circle' }).catch(() => {});
+                await invoke('tracker_open_overlay_window', { style: trackerSessionCache.overlay_style || 'circle' }).catch(() => { });
             }
-            await invoke('tracker_set_overlay_locked', { locked: isOverlayLocked }).catch(() => {});
+            await invoke('tracker_set_overlay_locked', { locked: isOverlayLocked }).catch(() => { });
             showToast(isOverlayLocked ? 'Overlay locked in position for gameplay.' : 'Overlay unlocked! Drag it anywhere on your screen.', 'success');
         };
 
@@ -7072,8 +7678,8 @@ function bindTrackerEvents() {
         centerBtn.onclick = async (e) => {
             e.preventDefault();
             if (!trackerSessionCache) trackerSessionCache = await invoke('tracker_load_session');
-            await invoke('tracker_open_overlay_window', { style: trackerSessionCache.overlay_style || 'circle' }).catch(() => {});
-            await invoke('tracker_center_overlay').catch(() => {});
+            await invoke('tracker_open_overlay_window', { style: trackerSessionCache.overlay_style || 'circle' }).catch(() => { });
+            await invoke('tracker_center_overlay').catch(() => { });
             showToast('Tracker overlay centered on primary screen.', 'success');
         };
     }
@@ -7081,7 +7687,7 @@ function bindTrackerEvents() {
     if (closeBtn) {
         closeBtn.onclick = async (e) => {
             e.preventDefault();
-            await invoke('tracker_close_overlay_window').catch(() => {});
+            await invoke('tracker_close_overlay_window').catch(() => { });
             showToast('Tracker overlay hidden.', 'info');
         };
     }
@@ -7092,7 +7698,7 @@ function bindTrackerEvents() {
             trackerSessionCache.master_enabled = masterSw.checked;
             await saveTrackerSession(trackerSessionCache);
             if (trackerSessionCache.master_enabled) {
-                await invoke('tracker_open_overlay_window', { style: trackerSessionCache.overlay_style || 'circle' }).catch(() => {});
+                await invoke('tracker_open_overlay_window', { style: trackerSessionCache.overlay_style || 'circle' }).catch(() => { });
 
                 try {
                     const config = await invoke('get_config').catch(() => ({ game_dir: '' }));
@@ -7110,7 +7716,7 @@ function bindTrackerEvents() {
                     showToast(`Stats API check failed: ${err.message || err}`, 'error');
                 }
             } else {
-                await invoke('tracker_close_overlay_window').catch(() => {});
+                await invoke('tracker_close_overlay_window').catch(() => { });
             }
         };
     }
@@ -7120,7 +7726,7 @@ function bindTrackerEvents() {
             if (!trackerSessionCache) trackerSessionCache = await invoke('tracker_load_session');
             trackerSessionCache.position = posSel.value;
             await saveTrackerSession(trackerSessionCache);
-            await invoke('tracker_position_overlay', { pos: posSel.value }).catch(() => {});
+            await invoke('tracker_position_overlay', { pos: posSel.value }).catch(() => { });
         };
     }
 
@@ -7138,7 +7744,7 @@ function bindTrackerEvents() {
         invoke('tracker_apply_scale_opacity', {
             scale: num,
             opacity: trackerSessionCache.opacity ?? 85
-        }).catch(() => {});
+        }).catch(() => { });
         await saveTrackerSession(trackerSessionCache);
     };
 
@@ -7151,7 +7757,7 @@ function bindTrackerEvents() {
         invoke('tracker_apply_scale_opacity', {
             scale: trackerSessionCache.scale ?? 100,
             opacity: num
-        }).catch(() => {});
+        }).catch(() => { });
         await saveTrackerSession(trackerSessionCache);
     };
 
@@ -7188,7 +7794,7 @@ function bindTrackerEvents() {
             trackerSessionCache.overlay_style = opt.dataset.style;
             await saveTrackerSession(trackerSessionCache);
             window.__TAURI__?.event?.emit('tracker-style-changed', opt.dataset.style);
-            await invoke('tracker_open_overlay_window', { style: opt.dataset.style }).catch(() => {});
+            await invoke('tracker_open_overlay_window', { style: opt.dataset.style }).catch(() => { });
         };
     });
 }
@@ -7393,13 +7999,13 @@ function showOutdatedBuildModal(feat) {
 
     if (websiteBtn) {
         websiteBtn.onclick = () => {
-            invoke('open_external_url', { url: 'https://velocityrl.tech' }).catch(() => {});
+            invoke('open_external_url', { url: 'https://velocityrl.tech' }).catch(() => { });
         };
     }
 
     if (exitBtn) {
         exitBtn.onclick = () => {
-            invoke('force_exit').catch(() => {});
+            invoke('force_exit').catch(() => { });
         };
     }
 }
@@ -7411,10 +8017,10 @@ document.addEventListener('click', (e) => {
     e.stopPropagation();
     if (e.shiftKey) {
         document.getElementById('dev-modal')?.classList.add('active');
-        refreshDevPanel().catch(() => {});
+        refreshDevPanel().catch(() => { });
         return;
     }
-    openChangelog().catch(() => {});
+    openChangelog().catch(() => { });
 }, true);
 
 document.addEventListener('keydown', (e) => {
@@ -7423,10 +8029,10 @@ document.addEventListener('keydown', (e) => {
         e.stopPropagation();
         if (e.shiftKey) {
             document.getElementById('dev-modal')?.classList.add('active');
-            refreshDevPanel().catch(() => {});
+            refreshDevPanel().catch(() => { });
             return;
         }
-        openChangelog().catch(() => {});
+        openChangelog().catch(() => { });
     }
 }, true);
 

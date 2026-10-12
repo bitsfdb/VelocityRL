@@ -1,6 +1,6 @@
 {
     "nav": {
-        "swapper": "Swapper",
+        "swapper": "Spawner",
         "titles": "Titles",
         "customization": "Customization",
         "ranks": "Fake Ranks",
@@ -19,7 +19,7 @@
         "swaps_notice_btn": "Restore Tab"
     },
     "subtabs": {
-        "swaps": "Swaps",
+        "swaps": "Spawner",
         "restore": "Restore",
         "presets": "Presets"
     },
@@ -36,27 +36,42 @@
         "trails": "Trails",
         "borders": "Avatar Borders",
         "paint_finishes": "Paint Finishes",
-        "engine_audio": "Engine Audio"
+        "engine_audio": "Engine Audio",
+        "titles": "Titles"
     },
     "swapper": {
+        "item_to_spawn": "Item to Spawn",
+        "customization": "Paint & Customization",
         "owned_item": "Owned Item",
-        "target_asset": "Target Asset",
+        "target_asset": "Item to Spawn",
         "search_owned": "Search your items...",
-        "search_target": "Search target assets...",
+        "search_target": "Search items or titles to spawn...",
         "no_item_selected": "No item selected",
         "paint": "Paint",
         "coming_soon": "None",
-        "paint_hint": "Select a paint color to apply to the target item.",
+        "paint_hint": "Select a paint color to apply to the item.",
         "swap_btn": "Spawn Item",
+        "spawn_selected": "Spawn Selected",
+        "any_rarity": "Any rarity",
+        "ctrl_hint": "Ctrl + click or click to select multiple items.",
+        "select_page": "Select Page",
+        "clear_selection": "Clear Selection",
+        "no_items_found": "No items found matching your filters.",
         "rl_running_hint": "Rocket League is running — close it before spawning or restoring."
     },
     "restore": {
-        "title": "Restore / Revert",
-        "desc": "Revert individual files or restore everything from backups.",
-        "scanning": "Scanning for backups...",
-        "restore_all": "Restore All Items",
+        "title": "Active Spawns & Restore",
+        "desc": "Manage active spawned items or save your current setup as a preset.",
+        "scanning": "Scanning active spawned items...",
+        "restore_all": "Remove All Items",
+        "save_preset": "Save as Preset",
         "reswap_all": "Reswap All Items",
-        "no_backups": "No backups found."
+        "no_backups": "No spawned items currently active in Rocket League.",
+        "empty_hint": "Spawn items from the Spawner tab or apply an existing preset from the Presets tab.",
+        "spawn_items_btn": "Go to Spawner",
+        "load_preset_btn": "Browse Presets",
+        "remove_item": "Remove",
+        "item_active": "Active"
     },
     "presets": {
         "title": "Presets",
@@ -72,8 +87,8 @@
     },
     "titles": {
         "title": "Titles",
-        "donor_step": "Donor",
-        "donor_desc": "Title you have equipped.",
+        "donor_step": "Donor (optional)",
+        "donor_desc": "Title you have equipped (optional — leave blank to spawn directly).",
         "not_picked": "Not picked",
         "search_below": "Search below",
         "search_equipped": "Search your equipped title…",

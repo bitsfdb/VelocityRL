@@ -1,6 +1,6 @@
 {
     "nav": {
-        "swapper": "Scambiatore",
+        "swapper": "Spawner",
         "titles": "Titoli",
         "customization": "Personalizzazione",
         "ranks": "Gradi Falsi",
@@ -16,7 +16,7 @@
         "keep_open_desc": "VelocityRL deve rimanere in esecuzione in background affinché titoli, spoofing e nomi appaiano in Rocket League."
     },
     "subtabs": {
-        "swaps": "Scambi",
+        "swaps": "Spawner",
         "restore": "Ripristina",
         "presets": "Preset"
     },
@@ -33,27 +33,42 @@
         "trails": "Scie",
         "borders": "Bordi avatar",
         "paint_finishes": "Finiture vernice",
-        "engine_audio": "Audio motore"
+        "engine_audio": "Audio motore",
+        "titles": "Titoli"
     },
     "swapper": {
+        "item_to_spawn": "Oggetto da generare",
+        "customization": "Vernice e personalizzazione",
         "owned_item": "Oggetto Posseduto",
-        "target_asset": "Oggetto Desiderato",
+        "target_asset": "Oggetto da generare",
         "search_owned": "Cerca tra i tuoi oggetti...",
-        "search_target": "Cerca oggetti desiderati...",
+        "search_target": "Cerca oggetti o titoli da generare...",
         "no_item_selected": "Nessun oggetto selezionato",
         "paint": "Verniciatura",
-        "coming_soon": "Prossimamente",
-        "paint_hint": "Non disponibile — gli scambi di verniciatura rendono gli oggetti invisibili. Disponibile in un prossimo aggiornamento.",
-        "swap_btn": "Scambia Oggetti",
-        "rl_running_hint": "Rocket League è in esecuzione — chiudilo prima di effettuare scambi o ripristini."
+        "coming_soon": "Nessuna",
+        "paint_hint": "Seleziona un colore di verniciatura per l'oggetto.",
+        "swap_btn": "Genera oggetto",
+        "rl_running_hint": "Rocket League è in esecuzione — chiudilo prima di generare o ripristinare.",
+        "spawn_selected": "Genera selezionati",
+        "any_rarity": "Qualsiasi rarità",
+        "ctrl_hint": "Ctrl + clic o clic per selezionare più oggetti.",
+        "select_page": "Seleziona pagina",
+        "clear_selection": "Cancella selezione",
+        "no_items_found": "Nessun oggetto trovato."
     },
     "restore": {
-        "title": "Ripristina / Annulla",
-        "desc": "Annulla singoli file o ripristina tutto dai backup.",
-        "scanning": "Ricerca backup in corso...",
-        "restore_all": "Ripristina Tutti gli Oggetti",
-        "reswap_all": "Riscambia Tutti gli Oggetti",
-        "no_backups": "Nessun backup trovato."
+        "title": "Spawn Attivi e Ripristino",
+        "desc": "Gestisci gli oggetti generati attivi o salva la tua configurazione come preset.",
+        "scanning": "Scansione degli oggetti generati attivi...",
+        "restore_all": "Rimuovi tutti gli oggetti",
+        "save_preset": "Salva come Preset",
+        "reswap_all": "Riapplica tutti gli oggetti",
+        "no_backups": "Nessun oggetto generato attivo al momento in Rocket League.",
+        "empty_hint": "Genera oggetti dalla scheda Spawner o applica un preset esistente.",
+        "spawn_items_btn": "Vai a Spawner",
+        "load_preset_btn": "Sfoglia Preset",
+        "remove_item": "Rimuovi",
+        "item_active": "Attivo"
     },
     "presets": {
         "title": "Preset",
@@ -69,8 +84,8 @@
     },
     "titles": {
         "title": "Titoli",
-        "donor_step": "Donatore",
-        "donor_desc": "Titolo attualmente equipaggiato.",
+        "donor_step": "Donatore (opzionale)",
+        "donor_desc": "Titolo equipaggiato (opzionale — lascia vuoto per generare direttamente).",
         "not_picked": "Non selezionato",
         "search_below": "Cerca sotto",
         "search_equipped": "Cerca il tuo titolo equipaggiato…",
