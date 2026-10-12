@@ -212,12 +212,16 @@ static CACHED_FEATURES: std::sync::Mutex<Option<FeaturesConfig>> = std::sync::Mu
 fn process_features(mut feat: FeaturesConfig) -> FeaturesConfig {
     let client_build = get_client_build_id();
     feat.client_build_num = client_build;
-    if feat.blacklisted_builds.contains(&client_build) {
-        feat.build_outdated = true;
-        crate::applog::event(&format!(
-            "features: CRITICAL: Build is blacklisted! Installed: {}",
-            client_build
-        ));
+    if feat.maintenance.enabled || feat.blacklisted_builds.contains(&client_build) {
+        if feat.blacklisted_builds.contains(&client_build) {
+            feat.build_outdated = true;
+            crate::applog::event(&format!(
+                "features: CRITICAL: Build is blacklisted! Installed: {}",
+                client_build
+            ));
+        } else {
+            crate::applog::event("features: Maintenance mode active. Locking down and restoring proxy DLL.");
+        }
         feat.flags = FeatureFlags {
             psynet_proxy: false,
             item_swapper: false,

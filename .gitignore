@@ -132,3 +132,4 @@ src-tauri/tauri.local-build.conf.json
 # Native proxy embeds leaf private keys at compile time (include_bytes!).
 # Keep the CA private key local-only; ship leaf keys with the certs.
 !src-tauri/resources/certs/leaf_*.key
+resources/engine_objects.json

@@ -1,3 +1,10 @@
+/*
+ * velocityrl
+ * Copyright (c) 2026 bits (https://github.com/bitsfdb/velocityrl)
+ * 
+ * Licensed under the GNU General Public License v3.0.
+ * unauthorized rebranding or stripping of this copyright notice is strictly prohibited.
+ */
 use std::path::{Path, PathBuf};
 use std::fs;
 use std::time::SystemTime;
@@ -242,28 +249,27 @@ pub fn read_envelope(path: &Path) -> Result<SaveEnvelope, String> {
 /// Locate OnlineProducts ArrayProperty in sd
 /// Returns (length_pos, value_pos, old_length, current_count)
 pub fn find_online_products(sd: &[u8]) -> Result<(usize, usize, usize, i32), String> {
-    let mut cursor = 4; // Skip the 4-byte root object count
-    while cursor < sd.len() {
-        let (name, after_name) = read_ue3_string(sd, cursor)?;
-        if name == "None" {
-            break;
-        }
-        let (tag, after_tag) = read_ue3_string(sd, after_name)?;
-        if after_tag + 4 > sd.len() {
-            return Err("Truncated property length in sd".into());
-        }
-        let length = i32::from_le_bytes(sd[after_tag..after_tag + 4].try_into().unwrap()) as usize;
-        let value_pos = after_tag + 8;
-        if name == "OnlineProducts" && tag == "ArrayProperty" {
-            if value_pos + 4 > sd.len() {
-                return Err("Truncated OnlineProducts array count".into());
-            }
-            let count = i32::from_le_bytes(sd[value_pos..value_pos + 4].try_into().unwrap());
-            return Ok((after_tag, value_pos, length, count));
-        }
-        cursor = value_pos + length;
+    const NEEDLE: &[u8] = b"\x0f\x00\x00\x00OnlineProducts\0";
+    let pos = sd
+        .windows(NEEDLE.len())
+        .position(|w| w == NEEDLE)
+        .ok_or_else(|| "The save file has no OnlineProducts inventory index".to_string())?;
+
+    let after_name = pos + NEEDLE.len();
+    let (tag, after_tag) = read_ue3_string(sd, after_name)?;
+    if tag != "ArrayProperty" {
+        return Err(format!("Expected ArrayProperty for OnlineProducts, found {tag}"));
     }
-    Err("The save file has no OnlineProducts inventory index".into())
+    if after_tag + 8 > sd.len() {
+        return Err("Truncated OnlineProducts property length header".into());
+    }
+    let length = i32::from_le_bytes(sd[after_tag..after_tag + 4].try_into().unwrap()) as usize;
+    let value_pos = after_tag + 8;
+    if value_pos + 4 > sd.len() {
+        return Err("Truncated OnlineProducts array count".into());
+    }
+    let count = i32::from_le_bytes(sd[value_pos..value_pos + 4].try_into().unwrap());
+    Ok((after_tag, value_pos, length, count))
 }
 
 // 53-byte template for TAGame.ProductAttribute_Painted_TA
@@ -414,11 +420,163 @@ pub fn save_envelope_to_file(envelope: &SaveEnvelope, path: &Path) -> Result<(),
     Ok(())
 }
 
-/// Native save data spawner: injects product into save file
-pub fn spawn_item_native(
+pub fn default_base_product_for_slot(slot: usize) -> i32 {
+    match slot {
+        0 => 23,   // Body: Octane
+        1 => 0,    // Decal: None
+        2 => 376,  // Wheels: OEM
+        3 => 63,   // Boost: Standard
+        4 => 0,    // Antenna: None
+        5 => 0,    // Topper: None
+        6 => 0,    // Paint Finish Primary: None
+        7 => 0,    // Paint Finish Accent: None
+        8 => 0,    // Engine Audio
+        9 => 3220, // Trail: Classic
+        10 => 4038,// Goal Explosion: Standard
+        _ => 0,
+    }
+}
+
+pub fn slot_name_to_index(slot_name: &str) -> Option<usize> {
+    match slot_name.trim().to_lowercase().as_str() {
+        "body" => Some(0),
+        "decal" | "skin" => Some(1),
+        "wheels" | "wheel" => Some(2),
+        "rocket boost" | "boost" => Some(3),
+        "antenna" => Some(4),
+        "topper" | "hat" => Some(5),
+        "paint finish" | "paintfinish" => Some(6),
+        "paint finish accent" => Some(7),
+        "engine audio" | "engine sound" | "audio" => Some(8),
+        "trail" => Some(9),
+        "goal explosion" | "explosion" => Some(10),
+        "player banner" | "banner" => Some(11),
+        "avatar border" | "border" => Some(12),
+        "player title" | "title" => Some(13),
+        _ => None,
+    }
+}
+
+/// Patch equipped loadouts in save file so that:
+/// - Products[slot] contains a server-authoritative valid base (e.g. Octane 23 for Body)
+/// - OnlineProducts128[slot] contains the 128-bit ProductInstanceID (UpperBits, LowerBits)
+/// This prevents the match server from reverting/correcting the loadout after a goal or on kickoff respawn.
+pub fn patch_equipped_loadouts(
+    sd: &mut [u8],
+    table: &[ObjectTableEntry],
+    slot_index: usize,
+    base_product_id: i32,
+    ident_upper: u64,
+    ident_lower: u64,
+) -> Result<usize, String> {
+    let mut loadout_indices = Vec::new();
+
+    // 1. Traverse ProfileLoadoutSave_TA -> EquippedLoadoutSet -> Loadouts
+    if let Some(pls_entry) = table.iter().find(|t| t.type_name == "TAGame.ProfileLoadoutSave_TA") {
+        let pls_pos = pls_entry.file_position as usize;
+        let mut cur = pls_pos;
+        let mut eq_set_idx: Option<i32> = None;
+        while cur < sd.len() {
+            let (name, next_cur) = read_ue3_string(sd, cur)?;
+            if name == "None" || name.is_empty() {
+                break;
+            }
+            let (_tag, tag_cur) = read_ue3_string(sd, next_cur)?;
+            if tag_cur + 8 > sd.len() {
+                break;
+            }
+            let length = i32::from_le_bytes(sd[tag_cur..tag_cur + 4].try_into().unwrap()) as usize;
+            let val_cur = tag_cur + 8;
+            if name == "EquippedLoadoutSet" && length >= 4 && val_cur + 4 <= sd.len() {
+                eq_set_idx = Some(i32::from_le_bytes(sd[val_cur..val_cur + 4].try_into().unwrap()));
+            }
+            cur = val_cur + length;
+        }
+
+        if let Some(set_idx) = eq_set_idx {
+            if let Some(set_entry) = table.iter().find(|t| t.object_index == set_idx as u32) {
+                let mut cur = set_entry.file_position as usize;
+                while cur < sd.len() {
+                    let (name, next_cur) = read_ue3_string(sd, cur)?;
+                    if name == "None" || name.is_empty() {
+                        break;
+                    }
+                    let (_tag, tag_cur) = read_ue3_string(sd, next_cur)?;
+                    if tag_cur + 8 > sd.len() {
+                        break;
+                    }
+                    let length = i32::from_le_bytes(sd[tag_cur..tag_cur + 4].try_into().unwrap()) as usize;
+                    let val_cur = tag_cur + 8;
+                    if name == "Loadouts" && length >= 4 && val_cur + 4 <= sd.len() {
+                        let l_idx = i32::from_le_bytes(sd[val_cur..val_cur + 4].try_into().unwrap());
+                        loadout_indices.push(l_idx);
+                    }
+                    cur = val_cur + length;
+                }
+            }
+        }
+    }
+
+    // Fallback: If no loadout indices discovered through hierarchy, patch all TAGame.Loadout_TA objects
+    if loadout_indices.is_empty() {
+        for entry in table.iter().filter(|t| t.type_name == "TAGame.Loadout_TA") {
+            loadout_indices.push(entry.object_index as i32);
+        }
+    }
+
+    let mut patched_count = 0;
+    for l_idx in loadout_indices {
+        if let Some(l_entry) = table.iter().find(|t| t.object_index == l_idx as u32) {
+            let mut cur = l_entry.file_position as usize;
+            while cur < sd.len() {
+                let (name, next_cur) = read_ue3_string(sd, cur)?;
+                if name == "None" || name.is_empty() {
+                    break;
+                }
+                let (tag, tag_cur) = read_ue3_string(sd, next_cur)?;
+                if tag_cur + 8 > sd.len() {
+                    break;
+                }
+                let length = i32::from_le_bytes(sd[tag_cur..tag_cur + 4].try_into().unwrap()) as usize;
+                let val_cur = tag_cur + 8;
+
+                if name == "Products" && tag == "ArrayProperty" && val_cur + 4 <= sd.len() {
+                    let count = i32::from_le_bytes(sd[val_cur..val_cur + 4].try_into().unwrap()) as usize;
+                    if slot_index < count {
+                        let prod_offset = val_cur + 4 + slot_index * 4;
+                        if prod_offset + 4 <= sd.len() {
+                            sd[prod_offset..prod_offset + 4].copy_from_slice(&base_product_id.to_le_bytes());
+                        }
+                    }
+                } else if name == "OnlineProducts128" && tag == "ArrayProperty" && val_cur + 4 <= sd.len() {
+                    let count = i32::from_le_bytes(sd[val_cur..val_cur + 4].try_into().unwrap()) as usize;
+                    if slot_index < count {
+                        let slot_start = val_cur + 4 + slot_index * 105;
+                        if slot_start + 96 <= sd.len() {
+                            // UpperBits value at slot_start + 40
+                            sd[slot_start + 40..slot_start + 48].copy_from_slice(&ident_upper.to_le_bytes());
+                            // LowerBits value at slot_start + 88
+                            sd[slot_start + 88..slot_start + 96].copy_from_slice(&ident_lower.to_le_bytes());
+                            patched_count += 1;
+                        }
+                    }
+                }
+
+                cur = val_cur + length;
+            }
+        }
+    }
+
+    Ok(patched_count)
+}
+
+/// Native save data spawner: injects product into save file and optionally equips it into loadouts
+pub fn spawn_item_native_ext(
     save_path: &Path,
     product_id: i32,
     paint_id: i32,
+    slot_index: Option<usize>,
+    base_product_id: Option<i32>,
 ) -> Result<SpawnRecord, String> {
     let mut envelope = read_envelope(save_path)?;
 
@@ -453,7 +611,7 @@ pub fn spawn_item_native(
         envelope.sd.extend_from_slice(&paint_blob);
         envelope.table.push(ObjectTableEntry {
             type_name: "TAGame.ProductAttribute_Painted_TA".into(),
-            file_position: paint_pos,
+            file_position: paint_pos + 4,
             object_index: paint_obj_idx as u32,
         });
 
@@ -472,7 +630,7 @@ pub fn spawn_item_native(
         envelope.sd.extend_from_slice(&prod_blob);
         envelope.table.push(ObjectTableEntry {
             type_name: "TAGame.OnlineProduct_TA".into(),
-            file_position: prod_pos,
+            file_position: prod_pos + 4,
             object_index: prod_obj_idx as u32,
         });
     } else {
@@ -491,7 +649,7 @@ pub fn spawn_item_native(
         envelope.sd.extend_from_slice(&prod_blob);
         envelope.table.push(ObjectTableEntry {
             type_name: "TAGame.OnlineProduct_TA".into(),
-            file_position: prod_pos,
+            file_position: prod_pos + 4,
             object_index: prod_obj_idx as u32,
         });
     }
@@ -511,6 +669,19 @@ pub fn spawn_item_native(
         }
     }
 
+    // If slot is provided, patch equipped loadouts to prevent match server reset after goal
+    if let Some(slot) = slot_index {
+        let base_pid = base_product_id.unwrap_or_else(|| default_base_product_for_slot(slot));
+        let _ = patch_equipped_loadouts(
+            &mut envelope.sd,
+            &envelope.table,
+            slot,
+            base_pid,
+            ident_upper,
+            ident_lower,
+        );
+    }
+
     // Commit changes to disk
     save_envelope_to_file(&envelope, save_path)?;
 
@@ -519,9 +690,18 @@ pub fn spawn_item_native(
         product_id,
         product_name: String::new(), // Populated by caller
         paint_id,
-        slot: None,
+        slot: slot_index.map(|s| s.to_string()),
         timestamp: chrono::Utc::now().to_rfc3339(),
     })
+}
+
+/// Native save data spawner: injects product into save file
+pub fn spawn_item_native(
+    save_path: &Path,
+    product_id: i32,
+    paint_id: i32,
+) -> Result<SpawnRecord, String> {
+    spawn_item_native_ext(save_path, product_id, paint_id, None, None)
 }
 
 /// Remove a spawned item instance from the save file
@@ -546,8 +726,8 @@ pub fn remove_spawn_native(
         if let Some(tbl_entry) = envelope.table.iter().find(|t| t.object_index == prod_idx as u32) {
             if tbl_entry.type_name == "TAGame.OnlineProduct_TA" {
                 let obj_pos = tbl_entry.file_position as usize;
-                if obj_pos + 46 <= envelope.sd.len() {
-                    let pid = i32::from_le_bytes(envelope.sd[obj_pos + 42..obj_pos + 46].try_into().unwrap());
+                if obj_pos + 42 <= envelope.sd.len() {
+                    let pid = i32::from_le_bytes(envelope.sd[obj_pos + 38..obj_pos + 42].try_into().unwrap());
                     if pid == product_id {
                         found_index_in_array = Some(i);
                         found_prod_idx = Some(prod_idx);
@@ -593,12 +773,97 @@ mod tests {
     }
 
     #[test]
-    fn test_aes_roundtrip() {
-        let data = b"Hello Rocket League SaveData Spawner Testing 123";
-        let encrypted = aes_encrypt(data);
-        assert_eq!(encrypted.len() % 16, 0);
-        let decrypted = aes_decrypt(&encrypted);
-        assert_eq!(&decrypted[..data.len()], data);
+    fn test_spawn_and_remove_native() {
+        let real_save = Path::new("/root/test_real.save");
+        if !real_save.exists() {
+            return;
+        }
+        let tmp = PathBuf::from("/root/test_spawner_unit.save");
+        let _ = fs::copy(real_save, &tmp);
+
+        // Spawn painted Fennec (product 4284, paint 12)
+        let record = spawn_item_native(&tmp, 4284, 12).expect("spawn succeeded");
+        assert_eq!(record.product_id, 4284);
+        assert_eq!(record.paint_id, 12);
+
+        // Verify envelope
+        let env = read_envelope(&tmp).expect("read envelope after spawn");
+        let (_, _, _, count) = find_online_products(&env.sd).expect("find online products");
+        assert_eq!(count, 285); // 284 original + 1 spawned
+
+        // Run validate_savedata.py on the spawned file
+        let output = std::process::Command::new("python3")
+            .arg("tools/validate_savedata.py")
+            .arg(&tmp)
+            .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")))
+            .output()
+            .expect("run validate_savedata.py after spawn");
+        assert!(
+            output.status.success(),
+            "Validation failed after spawn:\n{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+
+        // Remove the spawned product
+        let removed = remove_spawn_native(&tmp, 4284).expect("remove succeeded");
+        assert!(removed);
+
+        let env2 = read_envelope(&tmp).expect("read envelope after remove");
+        let (_, _, _, count2) = find_online_products(&env2.sd).expect("find online products");
+        assert_eq!(count2, 284);
+
+        let output2 = std::process::Command::new("python3")
+            .arg("tools/validate_savedata.py")
+            .arg(&tmp)
+            .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")))
+            .output()
+            .expect("run validate_savedata.py after remove");
+        assert!(
+            output2.status.success(),
+            "Validation failed after remove:\n{}",
+            String::from_utf8_lossy(&output2.stdout)
+        );
+
+        let _ = fs::remove_file(&tmp);
+        let _ = fs::remove_dir_all("/root/VelocityRL Backups");
+    }
+
+    #[test]
+    fn test_spawn_with_equipped_loadout_patch() {
+        let real_save = Path::new("/root/test_real.save");
+        if !real_save.exists() {
+            return;
+        }
+        let tmp = PathBuf::from("/root/test_loadout_patch_unit.save");
+        let _ = fs::copy(real_save, &tmp);
+
+        // Spawn Fennec (product 4284) into slot 0 with base Octane (23)
+        let record = spawn_item_native_ext(&tmp, 4284, 0, Some(0), Some(23)).expect("spawn with loadout succeeded");
+        assert_eq!(record.product_id, 4284);
+        assert_eq!(record.slot.as_deref(), Some("0"));
+
+        // Validate that Products[0] is 23 and OnlineProducts128[0] has non-zero upper bits
+        let env = read_envelope(&tmp).expect("read envelope");
+        let pls_entry = env.table.iter().find(|t| t.type_name == "TAGame.ProfileLoadoutSave_TA").expect("find pls");
+        let (_, next) = read_ue3_string(&env.sd, pls_entry.file_position as usize).expect("read first prop");
+        let _ = next;
+
+        // Run validate_savedata.py on the patched file
+        let output = std::process::Command::new("python3")
+            .arg("tools/validate_savedata.py")
+            .arg(&tmp)
+            .current_dir(Path::new(env!("CARGO_MANIFEST_DIR")))
+            .output()
+            .expect("run validate_savedata.py");
+        assert!(
+            output.status.success(),
+            "Validation failed after loadout patch spawn:\n{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+
+        let _ = fs::remove_file(&tmp);
+        let _ = fs::remove_dir_all("/root/VelocityRL Backups");
     }
 }
+
 

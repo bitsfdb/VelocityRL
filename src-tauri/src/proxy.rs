@@ -2102,6 +2102,25 @@ async fn handle_broker_request(
                 }
             }
 
+            let is_products_rpc = path_lower.contains("getplayerproducts")
+                || path_lower.contains("getloadoutproducts")
+                || (find_bytes(&out_body, b"\"ProductData\"").is_some()
+                    && find_bytes(&out_body, b"\"ProductID\"").is_some());
+            if is_products_rpc {
+                let spawned_items = load_active_spawned_items(Some(cfg));
+                if !spawned_items.is_empty() {
+                    let (new_body, did_patch) = patch_player_products_json(&out_body, &spawned_items);
+                    if did_patch {
+                        out_body = new_body;
+                        patched = true;
+                        crate::applog::event(&format!(
+                            "broker: injected {} spawned item(s) into HTTP products response",
+                            spawned_items.len()
+                        ));
+                    }
+                }
+            }
+
             if let Some(ns) = &cfg.name_spoof {
                 if ns.enabled && !ns.display_name.trim().is_empty() {
                     let learned_pid = get_learned_player_id();
@@ -2564,6 +2583,29 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         }
     }
 
+    let svc_lower = svc.to_ascii_lowercase();
+    let is_products = svc_lower.contains("getplayerproducts")
+        || svc_lower.contains("getloadoutproducts")
+        || (find_bytes(body_part, b"\"ProductData\"").is_some()
+            && find_bytes(body_part, b"\"ProductID\"").is_some());
+
+    if is_products {
+        let spawned_items = load_active_spawned_items(Some(&cfg));
+        if !spawned_items.is_empty() {
+            let (new_body, changed) = patch_player_products_json(&current_body, &spawned_items);
+            if changed {
+                current_body = new_body;
+                any_changed = true;
+                crate::applog::event(&format!(
+                    "proxy: injected {} spawned item(s) into WS products frame ({} -> {} bytes)",
+                    spawned_items.len(),
+                    frame.len(),
+                    current_body.len()
+                ));
+            }
+        }
+    }
+
     // Leaderboard spoofing disabled per user request
     let is_leaderboard = false;
 
@@ -2672,12 +2714,17 @@ fn replace_ws_header_value(headers: &[u8], key: &str, new_val: &str) -> Vec<u8> 
 }
 
 fn resign_ws_headers(headers: &[u8], body: &[u8]) -> Vec<u8> {
-    let psy_time = get_ws_header_value(headers, "PsyTime");
-    let has_psysig = find_bytes(headers, b"PsySig:").is_some() || find_bytes(headers, b"psysig:").is_some();
-    let has_psysignature = find_bytes(headers, b"Psysignature:").is_some() || find_bytes(headers, b"psysignature:").is_some();
+    let mut hdrs = headers.to_vec();
+    if !get_ws_header_value(&hdrs, "Content-Length").is_empty() {
+        hdrs = replace_ws_header_value(&hdrs, "Content-Length", &body.len().to_string());
+    }
+
+    let psy_time = get_ws_header_value(&hdrs, "PsyTime");
+    let has_psysig = find_bytes(&hdrs, b"PsySig:").is_some() || find_bytes(&hdrs, b"psysig:").is_some();
+    let has_psysignature = find_bytes(&hdrs, b"Psysignature:").is_some() || find_bytes(&hdrs, b"psysignature:").is_some();
 
     if !has_psysig && !has_psysignature {
-        return headers.to_vec();
+        return hdrs;
     }
 
     let sig = if !psy_time.is_empty() {
@@ -2693,7 +2740,7 @@ fn resign_ws_headers(headers: &[u8], body: &[u8]) -> Vec<u8> {
     };
 
     let key_to_replace = if has_psysig { "PsySig" } else { "Psysignature" };
-    replace_ws_header_value(headers, key_to_replace, &sig)
+    replace_ws_header_value(&hdrs, key_to_replace, &sig)
 }
 
 #[allow(dead_code)]
@@ -3601,12 +3648,20 @@ async fn handle_http_config(
         } else if let Some(next) = patch_psynet_url(&out_body) {
             out_body = next;
             patched = true;
+            let (next_prod, prod_changed) = patch_products_config(&out_body);
+            if prod_changed {
+                out_body = next_prod;
+            }
             crate::applog::event("proxy: patched PsyNetUrl to broker (unsupported build fallback)");
         }
     } else {
         if let Some(next) = patch_psynet_url(&out_body) {
             out_body = next;
             patched = true;
+            let (next_prod, prod_changed) = patch_products_config(&out_body);
+            if prod_changed {
+                out_body = next_prod;
+            }
             crate::applog::event("proxy: patched PsyNetUrl to broker (default config)");
         }
     }
@@ -4236,6 +4291,12 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
         any_change = true;
     }
 
+    let (next_prod, prod_changed) = patch_products_config(&out);
+    if prod_changed {
+        out = next_prod;
+        any_change = true;
+    }
+
     (out, any_change)
 }
 
@@ -4684,6 +4745,244 @@ fn upsert_class_property_override(
     (patched, true)
 }
 
+pub fn load_active_spawned_items(cfg: Option<&crate::psynet::SpoofPayload>) -> Vec<(i32, i32)> {
+    let mut items = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    let mut candidate_paths = vec![
+        crate::psynet::config_dir().join("swaps.json"),
+    ];
+
+    if let Some(parent) = crate::psynet::config_dir().parent() {
+        candidate_paths.push(parent.join("swaps.json"));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            candidate_paths.push(std::path::PathBuf::from(&appdata).join("com.velocityrl.app").join("swaps.json"));
+            candidate_paths.push(std::path::PathBuf::from(&appdata).join("VelocityRL").join("swaps.json"));
+        }
+        if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
+            candidate_paths.push(std::path::PathBuf::from(&localappdata).join("com.velocityrl.app").join("swaps.json"));
+            candidate_paths.push(std::path::PathBuf::from(&localappdata).join("VelocityRL").join("swaps.json"));
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Ok(home) = std::env::var("HOME") {
+            candidate_paths.push(std::path::PathBuf::from(&home).join(".config").join("com.velocityrl.app").join("swaps.json"));
+            candidate_paths.push(std::path::PathBuf::from(&home).join(".config").join("VelocityRL").join("swaps.json"));
+        }
+    }
+
+    for path in candidate_paths {
+        if path.is_file() {
+            if let Ok(raw) = std::fs::read_to_string(&path) {
+                if let Ok(list) = serde_json::from_str::<Vec<serde_json::Value>>(&raw) {
+                    for entry in list {
+                        let wid = entry.get("wanted_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                        let pid = entry.get("paint_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                        if wid > 0 && seen.insert(wid) {
+                            items.push((wid, pid));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(c) = cfg {
+        if let Some(inv) = &c.inventory_spoof {
+            if inv.enabled {
+                for it in &inv.items {
+                    if it.product_id > 0 && seen.insert(it.product_id) {
+                        items.push((it.product_id, it.paint_id));
+                    }
+                }
+            }
+        }
+    }
+
+    items
+}
+
+pub fn patch_player_products_json(
+    body: &[u8],
+    items: &[(i32, i32)],
+) -> (Vec<u8>, bool) {
+    if items.is_empty() {
+        return (body.to_vec(), false);
+    }
+    let mut root: serde_json::Value = match serde_json::from_slice(body) {
+        Ok(v) => v,
+        Err(_) => return (body.to_vec(), false),
+    };
+
+    let prod_array = if let Some(arr) = root.get_mut("ProductData").and_then(|v| v.as_array_mut()) {
+        Some(arr)
+    } else if let Some(arr) = root.get_mut("Products").and_then(|v| v.as_array_mut()) {
+        Some(arr)
+    } else {
+        None
+    };
+
+    let Some(arr) = prod_array else {
+        return (body.to_vec(), false);
+    };
+
+    let mut changed = false;
+    for &(wanted_id, paint_id) in items {
+        if wanted_id <= 0 {
+            continue;
+        }
+
+        let already_present = arr.iter().any(|item| {
+            let pid = item.get("ProductID")
+                .or_else(|| item.get("ProductId"))
+                .or_else(|| item.get("id"))
+                .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())));
+            pid == Some(wanted_id as i64)
+        });
+
+        if !already_present {
+            let u1: u64 = rand::random();
+            let u2: u64 = rand::random();
+            let inst_hex = format!("{u1:016x}{u2:016x}");
+
+            let mut prod_obj = serde_json::json!({
+                "ProductID": wanted_id,
+                "InstanceID": inst_hex,
+                "SeriesID": 1,
+                "TradeHold": -1,
+            });
+
+            if paint_id > 0 {
+                prod_obj["Attributes"] = serde_json::json!([
+                    {
+                        "Key": "Painted",
+                        "Value": paint_id
+                    }
+                ]);
+            }
+
+            arr.push(prod_obj);
+            changed = true;
+        }
+    }
+
+    if changed {
+        match serde_json::to_vec(&root) {
+            Ok(bytes) => (bytes, true),
+            Err(_) => (body.to_vec(), false),
+        }
+    } else {
+        (body.to_vec(), false)
+    }
+}
+
+pub fn patch_products_config(body: &[u8]) -> (Vec<u8>, bool) {
+    let mut out = body.to_vec();
+    let mut any_changed = false;
+
+    let overrides = [
+        ("ProductsConfig_TA", "bUseSaveDataCacheProducts", "True"),
+        ("SaveData_TA", "bClearSyncTimestampOnMissingProduct", "False"),
+        ("ProductsConfig_TA", "bEnableOfflineItemsDuplicationPrevention", "False"),
+        ("ProductsConfig_TA", "MaxSecondsBetweenFullProductSyncs", "2147483647"),
+    ];
+
+    for (cls, prop, val) in overrides {
+        let (next, ch) = upsert_class_property_override(&out, cls, prop, val);
+        if ch {
+            out = next;
+            any_changed = true;
+        }
+    }
+
+    if let Some((start, end)) = find_named_object(&out, "ProductsConfig")
+        .or_else(|| find_named_object(&out, "ProductsConfig_TA"))
+    {
+        let obj = &out[start..end];
+        let mut obj_str = String::from_utf8_lossy(obj).into_owned();
+        let mut obj_changed = false;
+
+        if let Some(pos) = obj_str.find("\"bUseSaveDataCacheProducts\"") {
+            if let Some(fpos) = obj_str[pos..].find("false") {
+                let abs_fpos = pos + fpos;
+                obj_str.replace_range(abs_fpos..abs_fpos + 5, "true");
+                obj_changed = true;
+            }
+        } else if let Some(last_brace) = obj_str.rfind('}') {
+            obj_str.insert_str(last_brace, ",\"bUseSaveDataCacheProducts\":true");
+            obj_changed = true;
+        }
+
+        if let Some(pos) = obj_str.find("\"bClearSyncTimestampOnMissingProduct\"") {
+            if let Some(tpos) = obj_str[pos..].find("true") {
+                let abs_tpos = pos + tpos;
+                obj_str.replace_range(abs_tpos..abs_tpos + 4, "false");
+                obj_changed = true;
+            }
+        } else if let Some(last_brace) = obj_str.rfind('}') {
+            obj_str.insert_str(last_brace, ",\"bClearSyncTimestampOnMissingProduct\":false");
+            obj_changed = true;
+        }
+
+        if let Some(pos) = obj_str.find("\"bEnableOfflineItemsDuplicationPrevention\"") {
+            if let Some(tpos) = obj_str[pos..].find("true") {
+                let abs_tpos = pos + tpos;
+                obj_str.replace_range(abs_tpos..abs_tpos + 4, "false");
+                obj_changed = true;
+            }
+        } else if let Some(last_brace) = obj_str.rfind('}') {
+            obj_str.insert_str(last_brace, ",\"bEnableOfflineItemsDuplicationPrevention\":false");
+            obj_changed = true;
+        }
+
+        if let Some(pos) = obj_str.find("\"MaxSecondsBetweenFullProductSyncs\"") {
+            if let Some(col) = obj_str[pos..].find(':') {
+                let num_start = pos + col + 1;
+                let trimmed = obj_str[num_start..].trim_start();
+                let skip = obj_str[num_start..].len() - trimmed.len();
+                let actual_num_start = num_start + skip;
+                let num_end = actual_num_start + obj_str[actual_num_start..]
+                    .find(|c: char| !c.is_ascii_digit())
+                    .unwrap_or(obj_str.len() - actual_num_start);
+                if &obj_str[actual_num_start..num_end] != "2147483647" {
+                    obj_str.replace_range(actual_num_start..num_end, "2147483647");
+                    obj_changed = true;
+                }
+            }
+        } else if let Some(last_brace) = obj_str.rfind('}') {
+            obj_str.insert_str(last_brace, ",\"MaxSecondsBetweenFullProductSyncs\":2147483647");
+            obj_changed = true;
+        }
+
+        if obj_changed {
+            let mut next = Vec::with_capacity(out.len() + 64);
+            next.extend_from_slice(&out[..start]);
+            next.extend_from_slice(obj_str.as_bytes());
+            next.extend_from_slice(&out[end..]);
+            out = next;
+            any_changed = true;
+        }
+    } else {
+        if let Some(close_idx) = out.iter().rposition(|&c| c == b'}') {
+            let block = ",\"ProductsConfig\":{\"Class\":\"ProductsConfig_X\",\"bUseSaveDataCacheProducts\":true,\"MaxSecondsBetweenFullProductSyncs\":2147483647,\"bClearSyncTimestampOnMissingProduct\":false,\"bEnableOfflineItemsDuplicationPrevention\":false}";
+            let mut res = Vec::with_capacity(out.len() + block.len());
+            res.extend_from_slice(&out[..close_idx]);
+            res.extend_from_slice(block.as_bytes());
+            res.extend_from_slice(&out[close_idx..]);
+            out = res;
+            any_changed = true;
+        }
+    }
+
+    (out, any_changed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4955,6 +5254,33 @@ mod tests {
             assert!(c.is_some(), "Currency ID {tid} must be present for season compatibility");
             assert_eq!(c.unwrap()["Amount"], 500000);
         }
+    }
+
+    #[test]
+    fn test_patch_products_config_and_overrides() {
+        let body = br#"{"Config":{},"ClassPropertyConfig":{"Class":"ClassPropertyConfig_X","Overrides":[]}}"#;
+        let (patched, changed) = patch_products_config(body);
+        assert!(changed);
+        let s = String::from_utf8(patched).unwrap();
+        assert!(s.contains("\"bUseSaveDataCacheProducts\",\"Value\":\"True\""));
+        assert!(s.contains("\"MaxSecondsBetweenFullProductSyncs\",\"Value\":\"2147483647\""));
+        assert!(s.contains("\"bClearSyncTimestampOnMissingProduct\",\"Value\":\"False\""));
+        assert!(s.contains("\"bEnableOfflineItemsDuplicationPrevention\",\"Value\":\"False\""));
+        assert!(s.contains("\"ProductsConfig\":{"));
+    }
+
+    #[test]
+    fn test_patch_player_products_json_injection() {
+        let body = br#"{"ProductData":[{"ProductID":100,"InstanceID":"00000000000000000000000000000001","SeriesID":1}]}"#;
+        let items = vec![(4284, 12), (100, 0)]; // 4284 should be injected, 100 already exists
+        let (patched, changed) = patch_player_products_json(body, &items);
+        assert!(changed);
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        let arr = val["ProductData"].as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        let injected = arr.iter().find(|i| i["ProductID"] == 4284).unwrap();
+        assert_eq!(injected["Attributes"][0]["Key"], "Painted");
+        assert_eq!(injected["Attributes"][0]["Value"], 12);
     }
 }
 
