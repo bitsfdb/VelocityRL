@@ -1,6 +1,6 @@
 {
     "nav": {
-        "swapper": "Değiştirici",
+        "swapper": "Spawner",
         "titles": "Unvanlar",
         "customization": "Özelleştirme",
         "ranks": "Sahte Rütbeler",
@@ -16,7 +16,7 @@
         "keep_open_desc": "Unvanların, sahte ayarların ve isimlerin Rocket League'de görünmesi için VelocityRL arka planda çalışmalıdır."
     },
     "subtabs": {
-        "swaps": "Değişimler",
+        "swaps": "Spawner",
         "restore": "Geri Yükle",
         "presets": "Ön Ayarlar"
     },
@@ -33,27 +33,42 @@
         "trails": "İzler",
         "borders": "Avatar Kenarlıkları",
         "paint_finishes": "Boya Kaplamaları",
-        "engine_audio": "Motor Sesi"
+        "engine_audio": "Motor Sesi",
+        "titles": "Unvanlar"
     },
     "swapper": {
+        "item_to_spawn": "Üretilecek Öğe",
+        "customization": "Boya ve Özelleştirme",
         "owned_item": "Sahip Olunan Öğe",
-        "target_asset": "Hedef Öğe",
+        "target_asset": "Üretilecek Öğe",
         "search_owned": "Öğelerinizi arayın...",
-        "search_target": "Hedef öğeleri arayın...",
+        "search_target": "Üretilecek öğeleri veya unvanları arayın...",
         "no_item_selected": "Öğe seçilmedi",
         "paint": "Boya",
-        "coming_soon": "Yakında",
-        "paint_hint": "Kullanılamıyor — boya değişimleri öğelerin oyunda görünmez olmasına neden olur. Sonraki güncellemede gelecek.",
-        "swap_btn": "Öğeleri Değiştir",
-        "rl_running_hint": "Rocket League çalışıyor — değiştirmeden veya geri yüklemeden önce oyunu kapatın."
+        "coming_soon": "Yok",
+        "paint_hint": "Öğeye uygulamak için bir boya rengi seçin.",
+        "swap_btn": "Öğeyi Üret",
+        "rl_running_hint": "Rocket League çalışıyor — üretmeden veya geri yüklemeden önce oyunu kapatın.",
+        "spawn_selected": "Seçilenleri Oluştur",
+        "any_rarity": "Tüm nadirlikler",
+        "ctrl_hint": "Birden çok öğe seçmek için Ctrl + tıkla veya tıkla.",
+        "select_page": "Sayfayı Seç",
+        "clear_selection": "Seçimi Temizle",
+        "no_items_found": "Filtrelerinize uyan öğe bulunamadı."
     },
     "restore": {
-        "title": "Geri Yükle / Eskiye Döndür",
-        "desc": "Tek tek dosyaları eskiye döndürün veya yedeklerden her şeyi geri yükleyin.",
-        "scanning": "Yedekler taranıyor...",
-        "restore_all": "Tüm Öğeleri Geri Yükle",
+        "title": "Aktif Öğeler & Geri Yükle",
+        "desc": "Aktif oluşturulan öğeleri yönetin veya mevcut düzeni ön ayar olarak kaydedin.",
+        "scanning": "Aktif öğeler taranıyor...",
+        "restore_all": "Tüm Öğeleri Kaldır",
+        "save_preset": "Ön Ayar Olarak Kaydet",
         "reswap_all": "Tümünü Yeniden Değiştir",
-        "no_backups": "Yedek bulunamadı."
+        "no_backups": "Rocket League'de şu anda aktif oluşturulmuş öğe yok.",
+        "empty_hint": "Spawner sekmesinden öğe oluşturun veya Ön Ayarlar sekmesinden bir ön ayar uygulayın.",
+        "spawn_items_btn": "Spawner'a Git",
+        "load_preset_btn": "Ön Ayarlara Göz At",
+        "remove_item": "Kaldır",
+        "item_active": "Aktif"
     },
     "presets": {
         "title": "Ön Ayarlar",
@@ -69,8 +84,8 @@
     },
     "titles": {
         "title": "Unvanlar",
-        "donor_step": "Kaynak",
-        "donor_desc": "Kullandığınız unvan.",
+        "donor_step": "Donör (isteğe bağlı)",
+        "donor_desc": "Kuşandığınız unvan (isteğe bağlı — doğrudan üretmek için boş bırakın).",
         "not_picked": "Seçilmedi",
         "search_below": "Aşağıdan arayın",
         "search_equipped": "Kullandığınız unvanı arayın…",

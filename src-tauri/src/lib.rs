@@ -1653,6 +1653,78 @@ async fn spawn_item(
     apply_swap(app, "0".to_string(), wanted_id, None, None, paint_id, None).await
 }
 
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
+pub struct SpawnBatchItem {
+    pub wanted_id: String,
+    pub paint_id: Option<i32>,
+}
+
+#[tauri::command]
+async fn spawn_items_batch(
+    app: tauri::AppHandle,
+    items: Vec<SpawnBatchItem>,
+) -> Result<usize, String> {
+    if !features::is_build_supported() {
+        return Err("VelocityRL build is outdated. Please update to the latest version.".into());
+    }
+    if items.is_empty() {
+        return Ok(0);
+    }
+    let all_items = get_items(app.clone(), None).await
+        .map_err(|e| format!("Failed to load items database: {}", e))?;
+    let save_path = savedata::locate_latest_save()?;
+
+    if let Ok(config) = get_config(app.clone()).await {
+        if !config.game_dir.is_empty() {
+            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                let _ = sync_all_swaps_to_tagame(&app, &cooked, &[]).await;
+            }
+        }
+    }
+
+    let mut swaps = load_swaps(&app);
+    let mut spawned_entries = Vec::new();
+    let mut count = 0;
+
+    for entry in &items {
+        let wid: i32 = entry.wanted_id.parse().unwrap_or(0);
+        if let Some(wanted) = all_items.iter().find(|i| i.id == wid) {
+            let mut paint_id = entry.paint_id.unwrap_or(0);
+            if !(0..=29).contains(&paint_id) || !item_is_paintable(wanted) {
+                paint_id = 0;
+            }
+            let slot_idx = savedata::slot_name_to_index(&wanted.slot);
+            let base_pid = slot_idx.map(savedata::default_base_product_for_slot);
+            let _ = savedata::spawn_item_native_ext(&save_path, wid, paint_id, slot_idx, base_pid);
+
+            swaps.retain(|s| s.wanted_id != wid);
+            let new_entry = SwapEntry {
+                owned_id: wid,
+                wanted_id: wid,
+                owned_name: wanted.product.clone(),
+                wanted_name: wanted.product.clone(),
+                owned_paint_id: None,
+                owned_custom_hex: None,
+                paint_id,
+                custom_paint_hex: None,
+                asset_package: wanted.asset_package.clone(),
+                slot: Some(wanted.slot.clone()),
+                timestamp: Some(chrono::Utc::now().to_rfc3339()),
+            };
+            swaps.push(new_entry.clone());
+            spawned_entries.push(new_entry);
+            count += 1;
+        }
+    }
+
+    save_swaps(&app, &swaps);
+    if !spawned_entries.is_empty() {
+        record_swap_history(&app, "spawn", &spawned_entries, "batch spawn");
+    }
+    applog::event(&format!("spawn_items_batch: successfully spawned {count} items into save {}", save_path.display()));
+    Ok(count)
+}
+
 pub(crate) fn build_swap_opts(game_dir: PathBuf, items_json: String) -> upk::SwapOptions {
     upk::SwapOptions {
         game_dir,
@@ -3436,6 +3508,7 @@ pub fn run() {
             get_backups,
             apply_swap,
             spawn_item,
+            spawn_items_batch,
             reswap_all,
             restore_backups,
             restore_single_backup,

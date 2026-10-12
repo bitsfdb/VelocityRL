@@ -1,6 +1,6 @@
 {
     "nav": {
-        "swapper": "Swapper",
+        "swapper": "Spawner",
         "titles": "Titel",
         "customization": "Anpassung",
         "ranks": "Fake Ranks",
@@ -16,7 +16,7 @@
         "keep_open_desc": "VelocityRL muss im Hintergrund laufen, damit Titel, Spoofing und Namen in Rocket League sichtbar sind."
     },
     "subtabs": {
-        "swaps": "Swaps",
+        "swaps": "Spawner",
         "restore": "Wiederherstellen",
         "presets": "Voreinstellungen"
     },
@@ -33,27 +33,42 @@
         "trails": "Spuren",
         "borders": "Avatar-Rahmen",
         "paint_finishes": "Lackierungen",
-        "engine_audio": "Motorsound"
+        "engine_audio": "Motorsound",
+        "titles": "Titel"
     },
     "swapper": {
+        "item_to_spawn": "Gegenstand zum Spawnen",
+        "customization": "Farbe & Anpassung",
         "owned_item": "Eigener Gegenstand",
-        "target_asset": "Zielgegenstand",
+        "target_asset": "Gegenstand zum Spawnen",
         "search_owned": "Eigene Gegenstände suchen...",
-        "search_target": "Zielgegenstände suchen...",
+        "search_target": "Gegenstände oder Titel zum Spawnen suchen...",
         "no_item_selected": "Kein Gegenstand ausgewählt",
         "paint": "Farbe",
-        "coming_soon": "Demnächst verfügbar",
-        "paint_hint": "Nicht verfügbar — Farb-Swaps führen im Spiel zur Unsichtbarkeit. Folgt in einem späteren Update.",
-        "swap_btn": "Gegenstände tauschen",
-        "rl_running_hint": "Rocket League läuft — bitte vor dem Tauschen oder Wiederherstellen schließen."
+        "coming_soon": "Keine",
+        "paint_hint": "Wähle eine Lackierung für diesen Gegenstand.",
+        "swap_btn": "Gegenstand spawnen",
+        "rl_running_hint": "Rocket League läuft — bitte vor dem Spawnen oder Wiederherstellen schließen.",
+        "spawn_selected": "Ausgewählte spawnen",
+        "any_rarity": "Beliebige Seltenheit",
+        "ctrl_hint": "Strg + Klick oder Klick für Mehrfachauswahl.",
+        "select_page": "Seite auswählen",
+        "clear_selection": "Auswahl aufheben",
+        "no_items_found": "Keine passenden Gegenstände gefunden."
     },
     "restore": {
-        "title": "Wiederherstellen / Zurücksetzen",
-        "desc": "Einzelne Dateien zurücksetzen oder alles aus Backups wiederherstellen.",
-        "scanning": "Suche nach Backups...",
-        "restore_all": "Alle Gegenstände wiederherstellen",
+        "title": "Aktive Spawns & Zurücksetzen",
+        "desc": "Aktive gespawnte Items verwalten oder das aktuelle Setup als Preset speichern.",
+        "scanning": "Aktive gespawnte Items werden gescannt...",
+        "restore_all": "Alle Items entfernen",
+        "save_preset": "Als Preset speichern",
         "reswap_all": "Alle Gegenstände erneut tauschen",
-        "no_backups": "Keine Backups gefunden."
+        "no_backups": "Derzeit keine gespawnten Items in Rocket League aktiv.",
+        "empty_hint": "Spawne Items im Spawner-Tab oder wende ein bestehendes Preset an.",
+        "spawn_items_btn": "Zum Spawner",
+        "load_preset_btn": "Presets durchsuchen",
+        "remove_item": "Entfernen",
+        "item_active": "Aktiv"
     },
     "presets": {
         "title": "Voreinstellungen",
@@ -69,8 +84,8 @@
     },
     "titles": {
         "title": "Titel",
-        "donor_step": "Spender",
-        "donor_desc": "Dein aktuell ausgerüsteter Titel.",
+        "donor_step": "Spender (optional)",
+        "donor_desc": "Ausgerüsteter Titel (optional — leer lassen, um direkt zu spawnen).",
         "not_picked": "Nicht ausgewählt",
         "search_below": "Unten suchen",
         "search_equipped": "Ausgerüsteten Titel suchen…",

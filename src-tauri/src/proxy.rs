@@ -4059,7 +4059,11 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
     let mut any_change = false;
 
     if cfg.enabled {
-        let equip_id = cfg.equip_title_id.trim();
+        let equip_id = if !cfg.equip_title_id.trim().is_empty() {
+            cfg.equip_title_id.trim()
+        } else {
+            cfg.display_title_id.trim()
+        };
         let display_id = cfg.display_title_id.trim();
         let mut custom_text = cfg.custom_text.trim();
         if custom_text.is_empty() {
