@@ -1505,14 +1505,42 @@ async fn get_swaps(app: tauri::AppHandle) -> Result<Vec<SwapEntry>, String> {
 pub(crate) async fn sync_all_swaps_to_tagame(
     app: &tauri::AppHandle,
     cooked: &Path,
-    _swaps: &[SwapEntry],
+    swaps: &[SwapEntry],
 ) -> Result<(), String> {
-    // UPK bytecode patching is replaced by native SaveData spawning.
-    // Ensure TAGame.upk and companion packages are restored to vanilla stock so the game never crashes.
     let state = load_integrity(app);
-    if !state.palette_active {
-        let _ = upk::tagame_swapper::restore_tagame_upk(cooked);
+    if swaps.is_empty() {
+        if !state.palette_active {
+            let _ = upk::tagame_swapper::restore_tagame_upk(cooked);
+        }
+    } else {
+        let keys_txt = include_str!("../resources/keys.txt");
+        let keys_map_json = include_str!("../resources/keys_map.json");
+        let tagame_items: Vec<upk::TagameSwapItem> = swaps
+            .iter()
+            .map(|s| {
+                let slot_str = s.slot.clone().unwrap_or_else(|| "Body".to_string());
+                let slot_idx = crate::presets::upk_slot_index_from_str(&slot_str) as i32;
+                upk::TagameSwapItem {
+                    slot: slot_str,
+                    slot_index: Some(slot_idx),
+                    owned_id: Some(s.owned_id),
+                    product_id: s.wanted_id,
+                    paint_id: if s.paint_id > 0 { Some(s.paint_id) } else { None },
+                    custom_paint_hex: s.custom_paint_hex.clone(),
+                    package_name: if !s.asset_package.is_empty() { Some(s.asset_package.clone()) } else { None },
+                }
+            })
+            .collect();
+
+        let _ = upk::tagame_swapper::apply_tagame_modifications(
+            cooked,
+            &tagame_items,
+            keys_txt,
+            keys_map_json,
+            Some(state.palette_active),
+        );
     }
+
     if let Ok(entries) = std::fs::read_dir(cooked) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -1539,6 +1567,14 @@ async fn delete_swap(app: tauri::AppHandle, owned_id: i32) -> Result<(), String>
     if let Some(s) = target {
         if let Ok(save_path) = savedata::locate_latest_save() {
             let _ = savedata::remove_spawn_native(&save_path, s.wanted_id);
+        }
+    }
+
+    if let Ok(config) = get_config(app.clone()).await {
+        if !config.game_dir.is_empty() {
+            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
+            }
         }
     }
     Ok(())
@@ -1592,15 +1628,6 @@ async fn apply_swap(
         paint_id = 0;
     }
 
-    // Ensure game directory TAGame.upk is restored to vanilla stock
-    if let Ok(config) = get_config(app.clone()).await {
-        if !config.game_dir.is_empty() {
-            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                let _ = sync_all_swaps_to_tagame(&app, &cooked, &[]).await;
-            }
-        }
-    }
-
     // Locate player save file and inject item
     let save_path = savedata::locate_latest_save()?;
     let slot_idx = savedata::slot_name_to_index(&wanted.slot);
@@ -1632,6 +1659,15 @@ async fn apply_swap(
     };
     swaps.push(new_entry.clone());
     save_swaps(&app, &swaps);
+
+    // Latch bytecode modifications into TAGame.upk
+    if let Ok(config) = get_config(app.clone()).await {
+        if !config.game_dir.is_empty() {
+            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
+            }
+        }
+    }
 
     record_swap_history(&app, "spawn", std::slice::from_ref(&new_entry), "");
     applog::event(&format!("spawn: succeeded for product_id={} into save {}", wid, save_path.display()));
@@ -1674,14 +1710,6 @@ async fn spawn_items_batch(
         .map_err(|e| format!("Failed to load items database: {}", e))?;
     let save_path = savedata::locate_latest_save()?;
 
-    if let Ok(config) = get_config(app.clone()).await {
-        if !config.game_dir.is_empty() {
-            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                let _ = sync_all_swaps_to_tagame(&app, &cooked, &[]).await;
-            }
-        }
-    }
-
     let mut swaps = load_swaps(&app);
     let mut spawned_entries = Vec::new();
     let mut count = 0;
@@ -1718,6 +1746,16 @@ async fn spawn_items_batch(
     }
 
     save_swaps(&app, &swaps);
+
+    // Latch bytecode modifications into TAGame.upk
+    if let Ok(config) = get_config(app.clone()).await {
+        if !config.game_dir.is_empty() {
+            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
+            }
+        }
+    }
+
     if !spawned_entries.is_empty() {
         record_swap_history(&app, "spawn", &spawned_entries, "batch spawn");
     }
@@ -1736,14 +1774,6 @@ pub(crate) fn build_swap_opts(game_dir: PathBuf, items_json: String) -> upk::Swa
 
 #[tauri::command]
 async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<(), String> {
-    if let Ok(config) = get_config(app.clone()).await {
-        if !config.game_dir.is_empty() {
-            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                let _ = sync_all_swaps_to_tagame(&app, &cooked, &[]).await;
-            }
-        }
-    }
-
     let mut swaps = load_swaps(&app);
     let target_id = path
         .strip_prefix("item_")
@@ -1756,6 +1786,14 @@ async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<()
         swaps.retain(|s| s.owned_id != id && s.wanted_id != id);
         save_swaps(&app, &swaps);
         record_swap_history(&app, "restore", &[], &format!("restored item #{id}"));
+    }
+
+    if let Ok(config) = get_config(app.clone()).await {
+        if !config.game_dir.is_empty() {
+            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
+            }
+        }
     }
 
     applog::event(&format!("restore_single_backup: restored {path}"));
@@ -1796,14 +1834,6 @@ async fn reswap_all(app: tauri::AppHandle) -> Result<String, String> {
         return Err("No recorded items to re-apply.".into());
     }
 
-    if let Ok(config) = get_config(app.clone()).await {
-        if !config.game_dir.is_empty() {
-            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                let _ = sync_all_swaps_to_tagame(&app, &cooked, &[]).await;
-            }
-        }
-    }
-
     let save_path = savedata::locate_latest_save()?;
     for s in &swaps {
         let slot_idx = s.slot.as_deref().and_then(savedata::slot_name_to_index);
@@ -1813,6 +1843,14 @@ async fn reswap_all(app: tauri::AppHandle) -> Result<String, String> {
             slot_idx.map(savedata::default_base_product_for_slot)
         };
         let _ = savedata::spawn_item_native_ext(&save_path, s.wanted_id, s.paint_id, slot_idx, base_pid);
+    }
+
+    if let Ok(config) = get_config(app.clone()).await {
+        if !config.game_dir.is_empty() {
+            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
+            }
+        }
     }
     Ok(format!("Re-spawned {} active item(s) into your inventory", swaps.len()))
 }
