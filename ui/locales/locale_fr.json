@@ -54,7 +54,8 @@
         "ctrl_hint": "Ctrl + clic ou clic pour sélectionner plusieurs objets.",
         "select_page": "Sélectionner la page",
         "clear_selection": "Effacer la sélection",
-        "no_items_found": "Aucun objet correspondant trouvé."
+        "no_items_found": "Aucun objet correspondant trouvé.",
+        "all_paints": "Peinture : Toutes les variantes"
     },
     "restore": {
         "title": "Spawns Actifs et Restauration",

@@ -54,7 +54,8 @@
         "ctrl_hint": "Strg + Klick oder Klick für Mehrfachauswahl.",
         "select_page": "Seite auswählen",
         "clear_selection": "Auswahl aufheben",
-        "no_items_found": "Keine passenden Gegenstände gefunden."
+        "no_items_found": "Keine passenden Gegenstände gefunden.",
+        "all_paints": "Farbe: Alle Varianten"
     },
     "restore": {
         "title": "Aktive Spawns & Zurücksetzen",

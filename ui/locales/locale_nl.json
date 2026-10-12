@@ -54,7 +54,8 @@
         "ctrl_hint": "Ctrl + klik of klik om meerdere items te selecteren.",
         "select_page": "Pagina selecteren",
         "clear_selection": "Selectie wissen",
-        "no_items_found": "Geen items gevonden die overeenkomen."
+        "no_items_found": "Geen items gevonden die overeenkomen.",
+        "all_paints": "Lak: Alle varianten"
     },
     "restore": {
         "title": "Actieve Spawns & Herstellen",

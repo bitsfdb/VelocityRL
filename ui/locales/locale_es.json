@@ -55,7 +55,8 @@
         "ctrl_hint": "Ctrl + clic o clic para seleccionar múltiples objetos.",
         "select_page": "Seleccionar página",
         "clear_selection": "Borrar selección",
-        "no_items_found": "No se encontraron objetos que coincidan."
+        "no_items_found": "No se encontraron objetos que coincidan.",
+        "all_paints": "Pintura: Todas las variantes"
     },
     "restore": {
         "title": "Spawns Activos y Restaurar",

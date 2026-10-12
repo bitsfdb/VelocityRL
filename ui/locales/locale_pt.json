@@ -54,7 +54,8 @@
         "ctrl_hint": "Ctrl + clique ou clique para selecionar múltiplos itens.",
         "select_page": "Selecionar página",
         "clear_selection": "Limpar seleção",
-        "no_items_found": "Nenhum item correspondente encontrado."
+        "no_items_found": "Nenhum item correspondente encontrado.",
+        "all_paints": "Pintura: Todas as variantes"
     },
     "restore": {
         "title": "Spawns Ativos e Restaurar",
