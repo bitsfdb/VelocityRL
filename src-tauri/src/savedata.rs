@@ -466,8 +466,8 @@ pub fn patch_equipped_loadouts(
     table: &[ObjectTableEntry],
     slot_index: usize,
     base_product_id: i32,
-    _ident_upper: u64,
-    _ident_lower: u64,
+    ident_upper: u64,
+    ident_lower: u64,
 ) -> Result<usize, String> {
     let mut loadout_indices = Vec::new();
 
@@ -576,14 +576,10 @@ pub fn patch_equipped_loadouts(
                     if slot_index < count {
                         let slot_start = val_cur + 4 + slot_index * 105;
                         if slot_start + 96 <= sd.len() {
-                            // Standard verified base product online ID reference: UpperBits = 0, LowerBits = base_product_id.
-                            // Rocket League dedicated servers validate OnlineProducts128 upon goal and demolition respawns.
-                            // A zero upper and standard base product ID lower prevents match servers from rejecting
-                            // unknown online instance IDs and resetting the slot to stock defaults.
-                            let online_upper: u64 = 0;
-                            let online_lower: u64 = base_product_id as u64;
-                            sd[slot_start + 40..slot_start + 48].copy_from_slice(&online_upper.to_le_bytes());
-                            sd[slot_start + 88..slot_start + 96].copy_from_slice(&online_lower.to_le_bytes());
+                            // UpperBits value at slot_start + 40
+                            sd[slot_start + 40..slot_start + 48].copy_from_slice(&ident_upper.to_le_bytes());
+                            // LowerBits value at slot_start + 88
+                            sd[slot_start + 88..slot_start + 96].copy_from_slice(&ident_lower.to_le_bytes());
                             patched_count += 1;
                         }
                     }

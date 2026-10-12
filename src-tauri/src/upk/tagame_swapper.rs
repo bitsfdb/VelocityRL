@@ -165,45 +165,31 @@ pub fn emit_car_set_loadout_bytecode(
     }
     unique_rules.reverse();
 
-    // Prioritize slot 0 (Car Body) first, then other unique rules
-    let mut ordered_rules = Vec::new();
-    if let Some(body_rule) = unique_rules.iter().find(|r| r.slot_idx == 0).cloned() {
-        ordered_rules.push(body_rule);
-    }
-    for r in &unique_rules {
-        if r.slot_idx != 0 {
-            ordered_rules.push(r.clone());
-        }
-    }
+    let trigger_opt = unique_rules.iter().find(|r| r.slot_idx == 0 && r.owned_id.is_some())
+        .or_else(|| unique_rules.iter().find(|r| r.owned_id.is_some()))
+        .cloned();
 
     let vanilla_tail_len = 97;
     let available_space = max_disk_size.saturating_sub(vanilla_tail_len);
 
-    // Latch all unique slot rules unconditionally directly into Data.Products[slot_idx]
-    // This guarantees that upon match start, goal score, or demolition respawn,
-    // the car never reverts to stock Octane.
-    for rule in ordered_rules {
-        let index_disk_len = if rule.slot_idx == 0 { 1 } else { 2 };
-        let (target_disk_len, target_mem_len) = if rule.target_id <= 255 && rule.target_id >= 0 {
-            (2, 2u32)
-        } else {
-            (5, 5u32)
-        };
-        let assign_disk_len = 21 + index_disk_len + target_disk_len;
-        if bc.len() + assign_disk_len > available_space {
-            break;
-        }
+    if let Some(trigger) = trigger_opt {
+        let owned_id = trigger.owned_id.unwrap();
 
-        bc.push(opcodes::EX_LET);
+        // 1. Unified condition header: if (Data.Products[trigger.slot_idx] == owned_id)
+        bc.push(opcodes::EX_JUMP_IF_NOT);
+        let jump_pos = bc.len();
+        bc.extend_from_slice(&[0x00, 0x00]);
+
+        bc.push(opcodes::EX_EQUAL_EQUAL_INT_INT);
         bc.push(opcodes::EX_DYN_ARRAY_OP);
         bc.extend_from_slice(&[0x00, 0x00]);
         bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
-        let assign_index_mem = if rule.slot_idx == 0 {
+        let cond_index_mem = if trigger.slot_idx == 0 {
             bc.push(opcodes::EX_INT_ZERO);
             1u32
         } else {
             bc.push(opcodes::EX_INT_CONST_BYTE);
-            bc.push(rule.slot_idx);
+            bc.push(trigger.slot_idx);
             2u32
         };
         bc.push(opcodes::EX_STRUCT_MEMBER);
@@ -212,16 +198,109 @@ pub fn emit_car_set_loadout_bytecode(
         bc.extend_from_slice(&[0x00, 0x01]);
         bc.push(opcodes::EX_LOCAL_VARIABLE);
         bc.extend_from_slice(&data_var_id.to_le_bytes());
-        if rule.target_id <= 255 && rule.target_id >= 0 {
-            bc.push(opcodes::EX_INT_CONST_BYTE);
-            bc.push(rule.target_id as u8);
-        } else {
-            bc.push(opcodes::EX_INT_CONST);
-            bc.extend_from_slice(&rule.target_id.to_le_bytes());
+        bc.push(opcodes::EX_INT_CONST);
+        bc.extend_from_slice(&owned_id.to_le_bytes());
+        bc.push(opcodes::EX_END_FUNCTION_PARMS);
+
+        let cond_mem = 3 + 1 + 3 + 1 + cond_index_mem + 28 + 5 + 1;
+        mem_sz += cond_mem;
+
+        // 2. Body assignments: trigger rule first, then remaining unique rules
+        let mut ordered_rules = Vec::new();
+        ordered_rules.push(trigger);
+        for r in &unique_rules {
+            if r.slot_idx != trigger.slot_idx {
+                ordered_rules.push(r.clone());
+            }
         }
 
-        let assign_mem = 1 + 3 + 1 + assign_index_mem + 28 + target_mem_len;
-        mem_sz += assign_mem;
+        for rule in ordered_rules {
+            let index_disk_len = if rule.slot_idx == 0 { 1 } else { 2 };
+            let (target_disk_len, target_mem_len) = if rule.target_id <= 255 && rule.target_id >= 0 {
+                (2, 2u32)
+            } else {
+                (5, 5u32)
+            };
+            let assign_disk_len = 21 + index_disk_len + target_disk_len;
+            if bc.len() + assign_disk_len > available_space {
+                break;
+            }
+
+            bc.push(opcodes::EX_LET);
+            bc.push(opcodes::EX_DYN_ARRAY_OP);
+            bc.extend_from_slice(&[0x00, 0x00]);
+            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
+            let assign_index_mem = if rule.slot_idx == 0 {
+                bc.push(opcodes::EX_INT_ZERO);
+                1u32
+            } else {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(rule.slot_idx);
+                2u32
+            };
+            bc.push(opcodes::EX_STRUCT_MEMBER);
+            bc.extend_from_slice(&products_id.to_le_bytes());
+            bc.extend_from_slice(&cld_id.to_le_bytes());
+            bc.extend_from_slice(&[0x00, 0x01]);
+            bc.push(opcodes::EX_LOCAL_VARIABLE);
+            bc.extend_from_slice(&data_var_id.to_le_bytes());
+            if rule.target_id <= 255 && rule.target_id >= 0 {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(rule.target_id as u8);
+            } else {
+                bc.push(opcodes::EX_INT_CONST);
+                bc.extend_from_slice(&rule.target_id.to_le_bytes());
+            }
+
+            let assign_mem = 1 + 3 + 1 + assign_index_mem + 28 + target_mem_len;
+            mem_sz += assign_mem;
+        }
+
+        // Jump target is local UScript memory offset immediately after body
+        let jump_target = mem_sz as u16;
+        bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
+    } else {
+        // Pure unconditional rules (only if caller explicitly provided no owned_ids)
+        for rule in &unique_rules {
+            let index_disk_len = if rule.slot_idx == 0 { 1 } else { 2 };
+            let (target_disk_len, target_mem_len) = if rule.target_id <= 255 && rule.target_id >= 0 {
+                (2, 2u32)
+            } else {
+                (5, 5u32)
+            };
+            let assign_disk_len = 21 + index_disk_len + target_disk_len;
+            if bc.len() + assign_disk_len > available_space {
+                break;
+            }
+            bc.push(opcodes::EX_LET);
+            bc.push(opcodes::EX_DYN_ARRAY_OP);
+            bc.extend_from_slice(&[0x00, 0x00]);
+            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
+            let assign_index_mem = if rule.slot_idx == 0 {
+                bc.push(opcodes::EX_INT_ZERO);
+                1u32
+            } else {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(rule.slot_idx);
+                2u32
+            };
+            bc.push(opcodes::EX_STRUCT_MEMBER);
+            bc.extend_from_slice(&products_id.to_le_bytes());
+            bc.extend_from_slice(&cld_id.to_le_bytes());
+            bc.extend_from_slice(&[0x00, 0x01]);
+            bc.push(opcodes::EX_LOCAL_VARIABLE);
+            bc.extend_from_slice(&data_var_id.to_le_bytes());
+            if rule.target_id <= 255 && rule.target_id >= 0 {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(rule.target_id as u8);
+            } else {
+                bc.push(opcodes::EX_INT_CONST);
+                bc.extend_from_slice(&rule.target_id.to_le_bytes());
+            }
+
+            let assign_mem = 1 + 3 + 1 + assign_index_mem + 28 + target_mem_len;
+            mem_sz += assign_mem;
+        }
     }
 
     // 2. Exact vanilla execution body:
@@ -288,43 +367,33 @@ pub fn emit_car_preview_set_loadout_bytecode(
     }
     unique_rules.reverse();
 
-    let mut ordered_rules = Vec::new();
-    if let Some(body_rule) = unique_rules.iter().find(|r| r.slot_idx == 0).cloned() {
-        ordered_rules.push(body_rule);
-    }
-    for r in &unique_rules {
-        if r.slot_idx != 0 {
-            ordered_rules.push(r.clone());
-        }
-    }
+    let trigger_opt = unique_rules.iter().find(|r| r.slot_idx == 0 && r.owned_id.is_some())
+        .or_else(|| unique_rules.iter().find(|r| r.owned_id.is_some()))
+        .cloned();
 
     // 2. Slot override rules on NewLoadout
     // ForceSetLoadout tail call is 19 bytes disk
     let tail_disk_len = 19;
     let available_space = max_disk_size.saturating_sub(tail_disk_len);
 
-    for rule in ordered_rules {
-        let index_disk_len = if rule.slot_idx == 0 { 1 } else { 2 };
-        let (target_disk_len, target_mem_len) = if rule.target_id <= 255 && rule.target_id >= 0 {
-            (2, 2u32)
-        } else {
-            (5, 5u32)
-        };
-        let assign_disk_len = 21 + index_disk_len + target_disk_len;
-        if bc.len() + assign_disk_len > available_space {
-            break;
-        }
+    if let Some(trigger) = trigger_opt {
+        let owned_id = trigger.owned_id.unwrap();
 
-        bc.push(opcodes::EX_LET);
+        // Unified condition: if (NewLoadout.Products[trigger.slot_idx] == owned_id)
+        bc.push(opcodes::EX_JUMP_IF_NOT);
+        let jump_pos = bc.len();
+        bc.extend_from_slice(&[0x00, 0x00]);
+
+        bc.push(opcodes::EX_EQUAL_EQUAL_INT_INT);
         bc.push(opcodes::EX_DYN_ARRAY_OP);
         bc.extend_from_slice(&[0x00, 0x00]);
         bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
-        let assign_index_mem = if rule.slot_idx == 0 {
+        let cond_index_mem = if trigger.slot_idx == 0 {
             bc.push(opcodes::EX_INT_ZERO);
             1u32
         } else {
             bc.push(opcodes::EX_INT_CONST_BYTE);
-            bc.push(rule.slot_idx);
+            bc.push(trigger.slot_idx);
             2u32
         };
         bc.push(opcodes::EX_STRUCT_MEMBER);
@@ -333,16 +402,106 @@ pub fn emit_car_preview_set_loadout_bytecode(
         bc.extend_from_slice(&[0x00, 0x01]);
         bc.push(opcodes::EX_INSTANCE_VARIABLE);
         bc.extend_from_slice(&new_loadout_id.to_le_bytes());
-        if rule.target_id <= 255 && rule.target_id >= 0 {
-            bc.push(opcodes::EX_INT_CONST_BYTE);
-            bc.push(rule.target_id as u8);
-        } else {
-            bc.push(opcodes::EX_INT_CONST);
-            bc.extend_from_slice(&rule.target_id.to_le_bytes());
+        bc.push(opcodes::EX_INT_CONST);
+        bc.extend_from_slice(&owned_id.to_le_bytes());
+        bc.push(opcodes::EX_END_FUNCTION_PARMS);
+
+        let cond_mem = 3 + 1 + 3 + 1 + cond_index_mem + 28 + 5 + 1;
+        mem_sz += cond_mem;
+
+        let mut ordered_rules = Vec::new();
+        ordered_rules.push(trigger);
+        for r in &unique_rules {
+            if r.slot_idx != trigger.slot_idx {
+                ordered_rules.push(r.clone());
+            }
         }
 
-        let assign_mem = 1 + 3 + 1 + assign_index_mem + 28 + target_mem_len;
-        mem_sz += assign_mem;
+        for rule in ordered_rules {
+            let index_disk_len = if rule.slot_idx == 0 { 1 } else { 2 };
+            let (target_disk_len, target_mem_len) = if rule.target_id <= 255 && rule.target_id >= 0 {
+                (2, 2u32)
+            } else {
+                (5, 5u32)
+            };
+            let assign_disk_len = 21 + index_disk_len + target_disk_len;
+            if bc.len() + assign_disk_len > available_space {
+                break;
+            }
+
+            bc.push(opcodes::EX_LET);
+            bc.push(opcodes::EX_DYN_ARRAY_OP);
+            bc.extend_from_slice(&[0x00, 0x00]);
+            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
+            let assign_index_mem = if rule.slot_idx == 0 {
+                bc.push(opcodes::EX_INT_ZERO);
+                1u32
+            } else {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(rule.slot_idx);
+                2u32
+            };
+            bc.push(opcodes::EX_STRUCT_MEMBER);
+            bc.extend_from_slice(&products_id.to_le_bytes());
+            bc.extend_from_slice(&loadout_data_id.to_le_bytes());
+            bc.extend_from_slice(&[0x00, 0x01]);
+            bc.push(opcodes::EX_INSTANCE_VARIABLE);
+            bc.extend_from_slice(&new_loadout_id.to_le_bytes());
+            if rule.target_id <= 255 && rule.target_id >= 0 {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(rule.target_id as u8);
+            } else {
+                bc.push(opcodes::EX_INT_CONST);
+                bc.extend_from_slice(&rule.target_id.to_le_bytes());
+            }
+
+            let assign_mem = 1 + 3 + 1 + assign_index_mem + 28 + target_mem_len;
+            mem_sz += assign_mem;
+        }
+
+        let jump_target = mem_sz as u16;
+        bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
+    } else {
+        for rule in &unique_rules {
+            let index_disk_len = if rule.slot_idx == 0 { 1 } else { 2 };
+            let (target_disk_len, target_mem_len) = if rule.target_id <= 255 && rule.target_id >= 0 {
+                (2, 2u32)
+            } else {
+                (5, 5u32)
+            };
+            let assign_disk_len = 21 + index_disk_len + target_disk_len;
+            if bc.len() + assign_disk_len > available_space {
+                break;
+            }
+            bc.push(opcodes::EX_LET);
+            bc.push(opcodes::EX_DYN_ARRAY_OP);
+            bc.extend_from_slice(&[0x00, 0x00]);
+            bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
+            let assign_index_mem = if rule.slot_idx == 0 {
+                bc.push(opcodes::EX_INT_ZERO);
+                1u32
+            } else {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(rule.slot_idx);
+                2u32
+            };
+            bc.push(opcodes::EX_STRUCT_MEMBER);
+            bc.extend_from_slice(&products_id.to_le_bytes());
+            bc.extend_from_slice(&loadout_data_id.to_le_bytes());
+            bc.extend_from_slice(&[0x00, 0x01]);
+            bc.push(opcodes::EX_INSTANCE_VARIABLE);
+            bc.extend_from_slice(&new_loadout_id.to_le_bytes());
+            if rule.target_id <= 255 && rule.target_id >= 0 {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(rule.target_id as u8);
+            } else {
+                bc.push(opcodes::EX_INT_CONST);
+                bc.extend_from_slice(&rule.target_id.to_le_bytes());
+            }
+
+            let assign_mem = 1 + 3 + 1 + assign_index_mem + 28 + target_mem_len;
+            mem_sz += assign_mem;
+        }
     }
 
     // 3. Stmt: ForceSetLoadout(NewLoadout, false); return;
@@ -1395,7 +1554,7 @@ mod tests {
     }
 
     #[test]
-    fn test_emit_car_set_loadout_bytecode_latches_unconditionally() {
+    fn test_emit_car_set_loadout_bytecode_conditional() {
         let rules = [
             SlotSwapRule { slot_idx: 2, owned_id: Some(376), target_id: 30 },
             SlotSwapRule { slot_idx: 2, owned_id: Some(400), target_id: 50 },
@@ -1403,7 +1562,9 @@ mod tests {
         ];
         let (bc, mem_sz) = emit_car_set_loadout_bytecode(&rules, 300, None, None, None, None).unwrap();
         assert_eq!(bc.len(), 300);
-        assert_eq!(bc[0], opcodes::EX_LET);
+        assert_eq!(bc[0], opcodes::EX_JUMP_IF_NOT);
+        assert_eq!(bc[3], opcodes::EX_EQUAL_EQUAL_INT_INT);
+        assert_eq!(bc[4], opcodes::EX_DYN_ARRAY_OP);
         assert!(mem_sz >= 300);
     }
 
