@@ -336,7 +336,13 @@ pub async fn apply_preset(app: tauri::AppHandle, id: String) -> Result<Vec<Strin
     // Inject preset items into player save file
     if let Ok(save_path) = crate::savedata::locate_latest_save() {
         for s in &current_swaps {
-            let _ = crate::savedata::spawn_item_native(&save_path, s.wanted_id, s.paint_id);
+            let slot_idx = s.slot.as_deref().and_then(crate::savedata::slot_name_to_index);
+            let base_pid = if s.owned_id > 0 {
+                Some(s.owned_id)
+            } else {
+                slot_idx.map(crate::savedata::default_base_product_for_slot)
+            };
+            let _ = crate::savedata::spawn_item_native_ext(&save_path, s.wanted_id, s.paint_id, slot_idx, base_pid);
         }
     }
 
@@ -978,7 +984,13 @@ pub async fn apply_swap_plan(
     // Inject random loadout items into player save file
     if let Ok(save_path) = crate::savedata::locate_latest_save() {
         for s in &plan {
-            let _ = crate::savedata::spawn_item_native(&save_path, s.wanted_id, s.paint_id);
+            let slot_idx = s.slot.as_deref().and_then(crate::savedata::slot_name_to_index);
+            let base_pid = if s.owned_id > 0 {
+                Some(s.owned_id)
+            } else {
+                slot_idx.map(crate::savedata::default_base_product_for_slot)
+            };
+            let _ = crate::savedata::spawn_item_native_ext(&save_path, s.wanted_id, s.paint_id, slot_idx, base_pid);
         }
     }
 

@@ -1482,7 +1482,12 @@ fn save_swaps(app: &tauri::AppHandle, swaps: &[SwapEntry]) {
     if let Some(path) = swaps_path(app) {
         if let Ok(json) = serde_json::to_string_pretty(swaps) {
             let _ = fs::create_dir_all(path.parent().unwrap_or(&path));
-            let _ = fs::write(path, json);
+            let _ = fs::write(&path, &json);
+            let proxy_swaps = crate::psynet::config_dir().join("swaps.json");
+            if let Some(p) = proxy_swaps.parent() {
+                let _ = fs::create_dir_all(p);
+            }
+            let _ = fs::write(proxy_swaps, &json);
         }
     }
 }
@@ -1598,7 +1603,13 @@ async fn apply_swap(
 
     // Locate player save file and inject item
     let save_path = savedata::locate_latest_save()?;
-    let _ = savedata::spawn_item_native(&save_path, wid, paint_id)?;
+    let slot_idx = savedata::slot_name_to_index(&wanted.slot);
+    let base_pid = if oid > 0 {
+        Some(oid)
+    } else {
+        slot_idx.map(savedata::default_base_product_for_slot)
+    };
+    let _ = savedata::spawn_item_native_ext(&save_path, wid, paint_id, slot_idx, base_pid)?;
 
     let owned_name = all_items.iter().find(|i| i.id == oid)
         .map(|i| i.product.clone())
@@ -1723,7 +1734,13 @@ async fn reswap_all(app: tauri::AppHandle) -> Result<String, String> {
 
     let save_path = savedata::locate_latest_save()?;
     for s in &swaps {
-        let _ = savedata::spawn_item_native(&save_path, s.wanted_id, s.paint_id);
+        let slot_idx = s.slot.as_deref().and_then(savedata::slot_name_to_index);
+        let base_pid = if s.owned_id > 0 {
+            Some(s.owned_id)
+        } else {
+            slot_idx.map(savedata::default_base_product_for_slot)
+        };
+        let _ = savedata::spawn_item_native_ext(&save_path, s.wanted_id, s.paint_id, slot_idx, base_pid);
     }
     Ok(format!("Re-spawned {} active item(s) into your inventory", swaps.len()))
 }
