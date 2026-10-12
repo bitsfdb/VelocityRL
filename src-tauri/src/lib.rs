@@ -1604,7 +1604,7 @@ async fn apply_swap(
     // Locate player save file and inject item
     let save_path = savedata::locate_latest_save()?;
     let slot_idx = savedata::slot_name_to_index(&wanted.slot);
-    let base_pid = if oid > 0 {
+    let base_pid = if oid > 0 && oid != wid {
         Some(oid)
     } else {
         slot_idx.map(savedata::default_base_product_for_slot)
@@ -1735,7 +1735,7 @@ async fn reswap_all(app: tauri::AppHandle) -> Result<String, String> {
     let save_path = savedata::locate_latest_save()?;
     for s in &swaps {
         let slot_idx = s.slot.as_deref().and_then(savedata::slot_name_to_index);
-        let base_pid = if s.owned_id > 0 {
+        let base_pid = if s.owned_id > 0 && s.owned_id != s.wanted_id {
             Some(s.owned_id)
         } else {
             slot_idx.map(savedata::default_base_product_for_slot)
