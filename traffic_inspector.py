@@ -191,7 +191,7 @@ def format_pretty_body(body_raw):
                 pass
         return body_raw
 
-def print_frame(frame, line_num=None, show_body=True, show_headers=True):
+def print_frame(frame, line_num=None, show_body=True, show_headers=True, raw_hex=False):
     kind = frame.get("kind", "unknown")
     seq = frame.get("seq", 0)
     ts = frame.get("ts", "")
@@ -231,12 +231,17 @@ def print_frame(frame, line_num=None, show_body=True, show_headers=True):
         for pid, pname, ldata in loadouts:
             print(f"   {Colors.BOLD}{pname} ({pid}):{Colors.RESET}{format_loadout_display(ldata)}")
 
-    # Full Payload Body (zero truncation)
+    # Full Payload Body (zero truncation or raw hex)
     if show_body and body_raw:
-        pretty = format_pretty_body(body_raw)
-        print(f" {Colors.YELLOW}Payload ({len(body_raw)} bytes):{Colors.RESET}")
-        for line in pretty.splitlines():
-            print(f"   {line}")
+        if raw_hex:
+            hex_str = body_raw.encode("utf-8", errors="replace").hex()
+            print(f" {Colors.YELLOW}Raw Hex Payload ({len(hex_str)//2} bytes):{Colors.RESET}")
+            print(f"   {hex_str}")
+        else:
+            pretty = format_pretty_body(body_raw)
+            print(f" {Colors.YELLOW}Payload ({len(body_raw)} bytes):{Colors.RESET}")
+            for line in pretty.splitlines():
+                print(f"   {line}")
     elif show_body and not body_raw:
         print(f" {Colors.GRAY}Payload: (none){Colors.RESET}")
 
@@ -347,7 +352,7 @@ def run_inspector(file_path, args):
                         continue
 
                 # Dump this frame completely
-                print_frame(frame, line_num=line_num, show_body=not args.headers_only, show_headers=True)
+                print_frame(frame, line_num=line_num, show_body=not args.headers_only, show_headers=True, raw_hex=args.hex)
 
     # Summary
     if args.summary or (not should_dump_frames and not args.loadouts and not args.timeline):
@@ -415,7 +420,7 @@ def tail_file(file_path, args):
                 continue
             try:
                 frame = json.loads(line)
-                print_frame(frame, show_body=not args.headers_only, show_headers=True)
+                print_frame(frame, show_body=not args.headers_only, show_headers=True, raw_hex=args.hex)
             except Exception:
                 pass
 
@@ -504,6 +509,7 @@ def main():
     parser.add_argument("--seq", type=str, default=None, help="Inspect specific sequence number or range (e.g. 97 or 90-105)")
     parser.add_argument("--filter", type=str, default="", help="Search packets by keyword across headers and body (untruncated)")
     parser.add_argument("--service", type=str, default="", help="Filter packets by PsyService name")
+    parser.add_argument("--hex", action="store_true", help="Dump all payloads as clean raw hexadecimal bytes")
     parser.add_argument("--summary", action="store_true", help="Print overall traffic summary")
     parser.add_argument("--timeline", action="store_true", help="Show chronological match lifecycle timeline")
     parser.add_argument("--loadouts", action="store_true", help="Detailed loadout history and reversion alerts")
