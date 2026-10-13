@@ -1697,11 +1697,6 @@ async fn handle_forward_intercepted_request(
 
                 if modified {
                     if let Ok(serialized) = serde_json::to_vec(&json_val) {
-                        crate::applog::event(&format!(
-                            "forward proxy: spoofed displayName -> '{}' in response from {}",
-                            ns.display_name.trim(),
-                            upstream_host
-                        ));
                         final_body = serialized;
                     }
                 }
@@ -1713,11 +1708,6 @@ async fn handle_forward_intercepted_request(
                         target_pid,
                     );
                     if ws_changed {
-                        crate::applog::event(&format!(
-                            "forward proxy: spoofed name fields -> '{}' in response from {}",
-                            ns.display_name.trim(),
-                            upstream_host
-                        ));
                         final_body = ws_patched;
                     }
                 }
@@ -1736,10 +1726,6 @@ async fn handle_forward_intercepted_request(
             if is_wallet {
                 let (new_body, did_patch) = patch_player_wallet_json(&final_body, cs);
                 if did_patch {
-                    crate::applog::event(&format!(
-                        "forward proxy: patched wallet credits -> {} / tourney {} in response from {}",
-                        cs.amount, cs.tournament_amount, upstream_host
-                    ));
                     final_body = new_body;
                 }
             }
@@ -1754,7 +1740,6 @@ async fn handle_forward_intercepted_request(
             let (new_body_own, did_patch_own) = patch_check_ownership_json(&final_body, &[]);
             if did_patch_own {
                 final_body = new_body_own;
-                crate::applog::event(&format!("forward proxy: patched EOS/DLC ownership response from {upstream_host}"));
             }
         }
 
@@ -2106,10 +2091,6 @@ async fn handle_broker_request(
                         if did_patch {
                             out_body = new_body;
                             patched = true;
-                            crate::applog::event(&format!(
-                                "broker: patched wallet credits in RPC response -> credits: {}, tourney: {}",
-                                cs.amount, cs.tournament_amount
-                            ));
                         }
                     }
                 }
@@ -2130,16 +2111,11 @@ async fn handle_broker_request(
                     if did_patch {
                         out_body = new_body;
                         patched = true;
-                        crate::applog::event(&format!(
-                            "broker: injected {} spawned item(s) into HTTP products response",
-                            spawned_items.len()
-                        ));
                     } else {
                         let (new_body_own, did_patch_own) = patch_check_ownership_json(&out_body, &spawned_items);
                         if did_patch_own {
                             out_body = new_body_own;
                             patched = true;
-                            crate::applog::event("broker: patched ownership check response to TRUE");
                         }
                     }
                 }
@@ -2158,10 +2134,6 @@ async fn handle_broker_request(
                     if did_patch {
                         out_body = new_body;
                         patched = true;
-                        crate::applog::event(&format!(
-                            "broker: patched name in RPC response -> '{}'",
-                            ns.display_name.trim()
-                        ));
                     }
                 }
             }
@@ -2583,11 +2555,6 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         if changed {
             current_body = new_body;
             any_changed = true;
-            crate::applog::event(&format!(
-                "proxy: patched match reservation with UDP proxy and loadout products ({} -> {} bytes)",
-                frame.len(),
-                current_body.len()
-            ));
         }
     }
 
@@ -2608,13 +2575,6 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
                 if changed {
                     current_body = new_body;
                     any_changed = true;
-                    crate::applog::event(&format!(
-                        "proxy: patched wallet credits -> {} / tourney {} ({} -> {} bytes)",
-                        cs.amount,
-                        cs.tournament_amount,
-                        frame.len(),
-                        current_body.len()
-                    ));
                 }
             }
         }
@@ -2637,18 +2597,11 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
             if changed {
                 current_body = new_body;
                 any_changed = true;
-                crate::applog::event(&format!(
-                    "proxy: injected {} spawned item(s) into WS products frame ({} -> {} bytes)",
-                    spawned_items.len(),
-                    frame.len(),
-                    current_body.len()
-                ));
             } else {
                 let (new_body_own, changed_own) = patch_check_ownership_json(&current_body, &spawned_items);
                 if changed_own {
                     current_body = new_body_own;
                     any_changed = true;
-                    crate::applog::event("proxy: patched WS ownership check frame to TRUE");
                 }
             }
         }
@@ -2662,11 +2615,6 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         if changed {
             current_body = new_body;
             any_changed = true;
-            crate::applog::event(&format!(
-                "proxy: patched leaderboard ws frame ({} -> {} bytes)",
-                frame.len(),
-                current_body.len()
-            ));
         }
     }
 
@@ -2677,11 +2625,6 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
                 if changed {
                     current_body = new_body;
                     any_changed = true;
-                    crate::applog::event(&format!(
-                        "proxy: patched fake ranks ws frame ({} -> {} bytes)",
-                        frame.len(),
-                        current_body.len()
-                    ));
                 }
             }
         }
@@ -2699,11 +2642,6 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
                     target_pid,
                 );
                 if changed {
-                    crate::applog::event(&format!(
-                        "proxy: patched name in WS frame -> '{}' (target_pid={:?})",
-                        ns.display_name.trim(),
-                        target_pid
-                    ));
                     current_body = new_body;
                     any_changed = true;
                 }
@@ -2717,10 +2655,6 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
             if changed {
                 current_body = new_body;
                 any_changed = true;
-                crate::applog::event(&format!(
-                    "proxy: patched ping metrics in WS frame (interval {}-{} ms)",
-                    ps.min_ms, ps.max_ms
-                ));
             }
         }
     }
