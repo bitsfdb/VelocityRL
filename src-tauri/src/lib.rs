@@ -23,6 +23,7 @@ pub mod winprobe;
 pub mod proxy;
 pub mod features;
 pub mod savedata;
+pub mod udp_proxy;
 
 
 #[allow(dead_code)]
@@ -1544,24 +1545,6 @@ async fn delete_swap(app: tauri::AppHandle, owned_id: i32) -> Result<(), String>
     Ok(())
 }
 
-pub(crate) fn run_swap_caught(
-    owned_id: &str,
-    wanted_id: &str,
-    paint_id: i32,
-    opts: &upk::SwapOptions,
-) -> Result<String, String> {
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        upk::swap_asset(owned_id, wanted_id, paint_id, opts)
-    })) {
-        Ok(Ok(s)) => Ok(s),
-        Ok(Err(e)) => Err(explain_upk_lock(e.to_string(), "the UPK")),
-        Err(_) => Err(
-            "Swap failed unexpectedly. If a .bak exists, restore it from the Restore tab — the app did not crash."
-                .into(),
-        ),
-    }
-}
-
 #[tauri::command]
 async fn apply_swap(
     app: tauri::AppHandle,
@@ -1723,15 +1706,6 @@ async fn spawn_items_batch(
     }
     applog::event(&format!("spawn_items_batch: successfully spawned {count} items into save {}", save_path.display()));
     Ok(count)
-}
-
-pub(crate) fn build_swap_opts(game_dir: PathBuf, items_json: String) -> upk::SwapOptions {
-    upk::SwapOptions {
-        game_dir,
-        items_json,
-        keys_txt: include_str!("../resources/keys.txt").to_string(),
-        keys_map_json: include_str!("../resources/keys_map.json").to_string(),
-    }
 }
 
 #[tauri::command]

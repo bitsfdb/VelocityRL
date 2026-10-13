@@ -2572,14 +2572,27 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         None => get_spoof_config().await,
     };
 
-    let Some(cfg) = cfg_opt else {
-        return (frame.to_vec(), false);
-    };
-
     let mut current_body = body_part.to_vec();
     let mut any_changed = false;
 
-    let is_wallet = svc.contains("shops/getplayerwallet")
+    let is_reservation = find_bytes(body_part, b"ServerAddress").is_some()
+        || find_bytes(body_part, b"AddReservationMessage").is_some();
+    if is_reservation {
+        let spawned_items = load_active_spawned_items(cfg_opt.as_ref());
+        let (new_body, changed) = patch_reservation_json(&current_body, &spawned_items).await;
+        if changed {
+            current_body = new_body;
+            any_changed = true;
+            crate::applog::event(&format!(
+                "proxy: patched match reservation with UDP proxy and loadout products ({} -> {} bytes)",
+                frame.len(),
+                current_body.len()
+            ));
+        }
+    }
+
+    if let Some(cfg) = &cfg_opt {
+        let is_wallet = svc.contains("shops/getplayerwallet")
         || svc.contains("getplayerwallet")
         || svc.contains("wallet")
         || svc.contains("tournament")
@@ -2696,6 +2709,7 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
                 }
             }
         }
+    }
     }
 
     if !any_changed {
@@ -4847,6 +4861,281 @@ pub fn load_active_spawned_items(cfg: Option<&crate::psynet::SpoofPayload>) -> V
     items
 }
 
+fn find_server_address(val: &serde_json::Value) -> Option<String> {
+    match val {
+        serde_json::Value::Object(map) => {
+            if let Some(s) = map.get("ServerAddress").and_then(|v| v.as_str()) {
+                if !s.starts_with("127.0.0.1") {
+                    return Some(s.to_string());
+                }
+            }
+            for (_k, v) in map {
+                if let Some(s) = v.as_str() {
+                    let trimmed = s.trim();
+                    if trimmed.starts_with('{') && trimmed.ends_with('}') {
+                        if let Ok(inner) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                            if let Some(found) = find_server_address(&inner) {
+                                return Some(found);
+                            }
+                        }
+                    }
+                } else if let Some(found) = find_server_address(v) {
+                    return Some(found);
+                }
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr {
+                if let Some(found) = find_server_address(v) {
+                    return Some(found);
+                }
+            }
+        }
+        _ => {}
+    }
+    None
+}
+
+fn patch_product_ids_node(
+    node: &mut serde_json::Value,
+    items: &[(i32, i32)],
+    changed: &mut bool,
+) {
+    if let Some(arr) = node.as_array_mut() {
+        let mut existing: std::collections::HashSet<i32> = arr
+            .iter()
+            .filter_map(|v| v.as_i64().map(|n| n as i32))
+            .collect();
+        for &(wanted_id, _) in items {
+            if wanted_id > 0 && existing.insert(wanted_id) {
+                arr.push(serde_json::json!(wanted_id));
+                *changed = true;
+            }
+        }
+    }
+}
+
+fn patch_loadout_node(
+    loadout: &mut serde_json::Value,
+    items: &[(i32, i32)],
+    changed: &mut bool,
+) {
+    if items.is_empty() {
+        return;
+    }
+
+    if let Some(map) = loadout.as_object_mut() {
+        if let Some(products_val) = map.get_mut("Products") {
+            if let Some(arr) = products_val.as_array_mut() {
+                let is_int_arr = arr.iter().any(|v| v.is_i64() || v.is_u64());
+                if is_int_arr {
+                    let mut existing: std::collections::HashSet<i32> = arr
+                        .iter()
+                        .filter_map(|v| v.as_i64().map(|n| n as i32))
+                        .collect();
+                    for &(wanted_id, _) in items {
+                        if wanted_id > 0 && existing.insert(wanted_id) {
+                            arr.push(serde_json::json!(wanted_id));
+                            *changed = true;
+                        }
+                    }
+                } else {
+                    for &(wanted_id, paint_id) in items {
+                        if wanted_id <= 0 {
+                            continue;
+                        }
+                        let already_has = arr.iter().any(|obj| {
+                            obj.get("ProductID")
+                                .or_else(|| obj.get("ProductId"))
+                                .or_else(|| obj.get("id"))
+                                .and_then(|v| v.as_i64())
+                                .map(|n| n as i32)
+                                == Some(wanted_id)
+                        });
+                        if !already_has {
+                            let mut obj = serde_json::json!({
+                                "ProductID": wanted_id,
+                                "SlotIndex": 0,
+                                "PaintID": paint_id,
+                            });
+                            if paint_id > 0 {
+                                obj["Attributes"] = serde_json::json!([
+                                    { "Key": "Painted", "Value": paint_id }
+                                ]);
+                            }
+                            arr.push(obj);
+                            *changed = true;
+                        }
+                    }
+                }
+            }
+        } else {
+            let mut arr = Vec::new();
+            for &(wanted_id, paint_id) in items {
+                if wanted_id > 0 {
+                    let mut obj = serde_json::json!({
+                        "ProductID": wanted_id,
+                        "SlotIndex": 0,
+                        "PaintID": paint_id,
+                    });
+                    if paint_id > 0 {
+                        obj["Attributes"] = serde_json::json!([
+                            { "Key": "Painted", "Value": paint_id }
+                        ]);
+                    }
+                    arr.push(obj);
+                }
+            }
+            if !arr.is_empty() {
+                map.insert("Products".to_string(), serde_json::Value::Array(arr));
+                *changed = true;
+            }
+        }
+
+        if let Some(prod_ids_val) = map.get_mut("ProductIDs") {
+            patch_product_ids_node(prod_ids_val, items, changed);
+        }
+    } else if let Some(arr) = loadout.as_array_mut() {
+        let is_int_arr = arr.iter().any(|v| v.is_i64() || v.is_u64());
+        if is_int_arr {
+            let mut existing: std::collections::HashSet<i32> = arr
+                .iter()
+                .filter_map(|v| v.as_i64().map(|n| n as i32))
+                .collect();
+            for &(wanted_id, _) in items {
+                if wanted_id > 0 && existing.insert(wanted_id) {
+                    arr.push(serde_json::json!(wanted_id));
+                    *changed = true;
+                }
+            }
+        }
+    }
+}
+
+fn patch_reservation_value_sync(
+    val: &mut serde_json::Value,
+    proxy_port: u16,
+    items: &[(i32, i32)],
+    learned_pid: Option<&str>,
+    changed: &mut bool,
+) {
+    match val {
+        serde_json::Value::Object(map) => {
+            if let Some(addr_val) = map.get_mut("ServerAddress") {
+                if let Some(addr_str) = addr_val.as_str() {
+                    if !addr_str.starts_with("127.0.0.1") && proxy_port > 0 {
+                        *addr_val = serde_json::json!(format!("127.0.0.1:{proxy_port}"));
+                        *changed = true;
+                    }
+                }
+            }
+
+            if let Some(players_val) = map.get_mut("Players") {
+                if let Some(players_arr) = players_val.as_array_mut() {
+                    let total_players = players_arr.len();
+                    for player in players_arr.iter_mut() {
+                        let is_remote = player.get("bRemotePlayer").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let is_primary = player.get("bPrimaryPlayer").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let mut is_local = is_primary || (!is_remote && total_players <= 1);
+
+                        if !is_remote {
+                            is_local = true;
+                        }
+
+                        if let Some(pid_val) = player.get("PlayerID") {
+                            if let Some(s) = pid_val.as_str() {
+                                if let Some(learned) = learned_pid {
+                                    if normalize_player_id(s) == learned {
+                                        is_local = true;
+                                    }
+                                }
+                            }
+                        }
+
+                        if is_local {
+                            if let Some(loadout_val) = player.get_mut("Loadout") {
+                                patch_loadout_node(loadout_val, items, changed);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let Some(loadout_val) = map.get_mut("Loadout") {
+                patch_loadout_node(loadout_val, items, changed);
+            }
+
+            if let Some(prod_ids_val) = map.get_mut("ProductIDs") {
+                patch_product_ids_node(prod_ids_val, items, changed);
+            }
+
+            for (k, v) in map.iter_mut() {
+                if k == "ServerAddress" || k == "Players" || k == "Loadout" || k == "ProductIDs" {
+                    continue;
+                }
+                if let Some(s) = v.as_str() {
+                    let trimmed = s.trim();
+                    if (trimmed.starts_with('{') && trimmed.ends_with('}'))
+                        || (trimmed.starts_with('[') && trimmed.ends_with(']'))
+                    {
+                        if let Ok(mut inner_val) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                            let mut inner_changed = false;
+                            patch_reservation_value_sync(&mut inner_val, proxy_port, items, learned_pid, &mut inner_changed);
+                            if inner_changed {
+                                if let Ok(serialized) = serde_json::to_string(&inner_val) {
+                                    *v = serde_json::json!(serialized);
+                                    *changed = true;
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    patch_reservation_value_sync(v, proxy_port, items, learned_pid, changed);
+                }
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr.iter_mut() {
+                patch_reservation_value_sync(v, proxy_port, items, learned_pid, changed);
+            }
+        }
+        _ => {}
+    }
+}
+
+pub async fn patch_reservation_json(
+    body: &[u8],
+    items: &[(i32, i32)],
+) -> (Vec<u8>, bool) {
+    let Ok(mut root) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return (body.to_vec(), false);
+    };
+
+    let server_addr_opt = find_server_address(&root);
+    let proxy_port = if let Some(addr_str) = &server_addr_opt {
+        match crate::udp_proxy::set_active_reservation(addr_str).await {
+            Ok(p) => p,
+            Err(e) => {
+                crate::applog::event(&format!("proxy: error setting UDP reservation target {addr_str}: {e}"));
+                crate::udp_proxy::ensure_udp_proxy().await.unwrap_or(0)
+            }
+        }
+    } else {
+        crate::udp_proxy::ensure_udp_proxy().await.unwrap_or(0)
+    };
+
+    let learned_pid = get_learned_player_id();
+    let mut changed = false;
+    patch_reservation_value_sync(&mut root, proxy_port, items, learned_pid.as_deref(), &mut changed);
+
+    if changed {
+        if let Ok(out) = serde_json::to_vec(&root) {
+            return (out, true);
+        }
+    }
+    (body.to_vec(), false)
+}
+
 pub fn patch_player_products_json(
     body: &[u8],
     items: &[(i32, i32)],
@@ -5393,6 +5682,83 @@ mod tests {
         assert_eq!(val["bOwned"], true);
         assert_eq!(val["Success"], true);
         assert_eq!(val["bHasProduct"], true);
+    }
+
+    #[tokio::test]
+    async fn test_patch_reservation_json_reroutes_and_injects_loadout() {
+        let inner = serde_json::json!({
+            "ServerAddress": "162.245.204.12:7777",
+            "ReservationID": "test-res-uuid",
+            "Players": [
+                {
+                    "PlayerID": "Epic|testuser|0",
+                    "bRemotePlayer": false,
+                    "bPrimaryPlayer": true,
+                    "Loadout": {
+                        "Products": [23, 100]
+                    }
+                }
+            ],
+            "Settings": { "MapName": "stadium_p" }
+        });
+        let root = serde_json::json!({
+            "MessageType": "AddReservationMessagePrivate_X",
+            "MessagePayload": inner.to_string()
+        });
+        let raw = serde_json::to_vec(&root).unwrap();
+
+        let items = vec![(803, 12)]; // Titanium White Octane
+        let (patched, changed) = patch_reservation_json(&raw, &items).await;
+        assert!(changed, "Reservation frame must be patched");
+
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        let payload_str = val["MessagePayload"].as_str().expect("Payload should be stringified");
+        let parsed_inner: serde_json::Value = serde_json::from_str(payload_str).unwrap();
+
+        let server_addr = parsed_inner["ServerAddress"].as_str().unwrap();
+        assert!(
+            server_addr.starts_with("127.0.0.1:"),
+            "ServerAddress must be rerouted to 127.0.0.1 UDP proxy, got: {server_addr}"
+        );
+
+        let players = parsed_inner["Players"].as_array().unwrap();
+        let prods = players[0]["Loadout"]["Products"].as_array().unwrap();
+        assert!(
+            prods.iter().any(|v| v == 803),
+            "Injected item 803 must be present in player's Loadout.Products: {prods:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_patch_reservation_direct_object() {
+        let root = serde_json::json!({
+            "MessageType": "AddReservationMessagePublic_X",
+            "ServerAddress": "198.51.100.50:7777",
+            "Players": [
+                {
+                    "bRemotePlayer": false,
+                    "Loadout": {
+                        "Products": [
+                            { "ProductID": 23, "SlotIndex": 0, "PaintID": 0 }
+                        ]
+                    }
+                }
+            ]
+        });
+        let raw = serde_json::to_vec(&root).unwrap();
+
+        let items = vec![(803, 1)];
+        let (patched, changed) = patch_reservation_json(&raw, &items).await;
+        assert!(changed);
+
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        let server_addr = val["ServerAddress"].as_str().unwrap();
+        assert!(server_addr.starts_with("127.0.0.1:"));
+
+        let prods = val["Players"][0]["Loadout"]["Products"].as_array().unwrap();
+        assert_eq!(prods.len(), 2);
+        let injected = prods.iter().find(|p| p["ProductID"] == 803).unwrap();
+        assert_eq!(injected["PaintID"], 1);
     }
 }
 
