@@ -5993,6 +5993,11 @@ function initMiscTab() {
             try {
                 localStorage.setItem(PING_SPOOF_KEY, JSON.stringify({ ping_spoof }));
                 await runToolSave(pingSaveBtn, 'ping spoof', { ping_spoof }, { enabled });
+                if (enabled) {
+                    invoke('apply_ping_spoof_upk', { min_ms, max_ms }).catch(() => { });
+                } else {
+                    invoke('restore_ping_spoof_upk').catch(() => { });
+                }
                 flashButtonLabel(pingSaveBtn, enabled ? 'Saved' : 'Saved (off)');
                 if (enabled) {
                     showToast(`Ping spoof active (${min_ms}-${max_ms} ms).`, 'success');

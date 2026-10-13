@@ -759,6 +759,39 @@ pub fn emit_get_asset_by_id_bytecode(
     Ok((bc, mem_sz))
 }
 
+pub fn emit_pri_get_ping_bytecode(min_ms: u32, max_ms: u32, orig_disk_sz: usize) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(orig_disk_sz);
+    let min_f = (min_ms.min(max_ms)) as f32;
+    let max_f = (min_ms.max(max_ms)) as f32;
+
+    // EX_RETURN: 0x04
+    payload.push(opcodes::EX_RETURN);
+    // EX_PRIMITIVE_CAST (to int): 0x38, 0x44
+    payload.extend_from_slice(&[0x38, 0x44]);
+    // EX_FINAL_FUNCTION: 0x1C
+    payload.push(opcodes::EX_FINAL_FUNCTION);
+    // RandRange import index in TAGame.upk: -1885
+    payload.extend_from_slice(&(-1885i32).to_le_bytes());
+    // EX_FLOAT_CONST: 0x1E, min_f
+    payload.push(opcodes::EX_FLOAT_CONST);
+    payload.extend_from_slice(&min_f.to_le_bytes());
+    // EX_FLOAT_CONST: 0x1E, max_f
+    payload.push(opcodes::EX_FLOAT_CONST);
+    payload.extend_from_slice(&max_f.to_le_bytes());
+    // EX_END_FUNCTION_PARMS: 0x16
+    payload.push(opcodes::EX_END_FUNCTION_PARMS);
+    // EX_RETURN: 0x04, EX_INT_ZERO: 0x25
+    payload.push(opcodes::EX_RETURN);
+    payload.push(opcodes::EX_INT_ZERO);
+    // EX_END_OF_SCRIPT: 0x4C
+    payload.push(opcodes::EX_END_OF_SCRIPT);
+
+    while payload.len() < orig_disk_sz {
+        payload.push(opcodes::EX_NOTHING);
+    }
+    payload
+}
+
 pub fn hex_to_linear_rgba(hex: &str) -> [u8; 16] {
     let clean = hex.trim().trim_start_matches('#');
     let (r_srgb, g_srgb, b_srgb) = if clean.len() >= 6 {
@@ -1025,7 +1058,10 @@ pub fn apply_tagame_modifications(
         }
     }
 
-    if !swaps.is_empty() {
+    let ping_cfg = crate::udp_proxy::get_ping_spoof();
+    let ping_active = ping_cfg.as_ref().map(|p| p.enabled).unwrap_or(false);
+
+    if !swaps.is_empty() || ping_active {
         if file_bytes.len() < 32 {
             return Err(TagameSwapError::Msg("TAGame.upk too small".into()));
         }
@@ -1346,9 +1382,46 @@ pub fn apply_tagame_modifications(
             }
         }
 
+        // 3. Patch Chunk 2: PRI_TA::GetPing if ping spoof is active
+        if ping_active {
+            if let Some(ps) = &ping_cfg {
+                if chunks.len() > 2 {
+                    let c2_uncomp_offset = chunks[2].uncomp_offset;
+                    let c2_comp_offset = chunks[2].comp_offset;
+                    let c2_comp_size = chunks[2].comp_size;
+                    let c2_start = c2_comp_offset as usize;
+                    let c2_end = c2_start + c2_comp_size as usize;
+                    if c2_end <= file_bytes.len() {
+                        if let Ok(mut decomp2) = crate::upk::compression::decompress_chunk(&file_bytes[c2_start..c2_end]) {
+                            if let Some(exp_ping) = exports.iter().find(|e| e.name == "GetPing" && e.outer_name == "PRI_TA") {
+                                let func_off = (exp_ping.serial_offset - c2_uncomp_offset) as usize;
+                                if func_off + 48 <= decomp2.len() {
+                                    let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                                    if orig_disk_sz >= 22 && func_off + 48 + orig_disk_sz <= decomp2.len() {
+                                        let payload = emit_pri_get_ping_bytecode(ps.min_ms, ps.max_ms, orig_disk_sz);
+                                        decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                    }
+                                }
+                            }
 
-
-
+                            if let Ok(mut recomp2) = crate::upk::compression::compress_chunk(&decomp2) {
+                                let orig_c2_sz = c2_comp_size as usize;
+                                if recomp2.len() <= orig_c2_sz {
+                                    recomp2.resize(orig_c2_sz, 0);
+                                    file_bytes[c2_start..c2_start + orig_c2_sz].copy_from_slice(&recomp2);
+                                } else {
+                                    crate::applog::event(&format!(
+                                        "tagame_swapper: Recompressed Chunk 2 ({} bytes) exceeds allocation ({} bytes)",
+                                        recomp2.len(),
+                                        orig_c2_sz
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Ensure TAGame.upk references the exact Engine package GUID from Engine.upk (prevents version mismatch error)
         let engine_path = cooked_dir.join("Engine.upk");
@@ -1369,7 +1442,7 @@ pub fn apply_tagame_modifications(
 
         fs::write(&tagame_path, &file_bytes)?;
     } else {
-        if !should_apply_palette && backup_path.is_file() {
+        if !should_apply_palette && !ping_active && backup_path.is_file() {
             let _ = fs::copy(&backup_path, &tagame_path);
         }
     }
@@ -1458,6 +1531,34 @@ pub fn restore_tagame_upk(cooked_dir: &Path) -> Result<TagameSwapperStatus, Taga
         active_swaps: Vec::new(),
         message: "TAGame.upk and backups restored successfully.".to_string(),
     })
+}
+
+pub fn apply_tagame_ping_spoof(
+    cooked_dir: &Path,
+    min_ms: u32,
+    max_ms: u32,
+    keys_txt: &str,
+    keys_map_json: &str,
+) -> Result<TagameSwapperStatus, TagameSwapError> {
+    crate::udp_proxy::set_ping_spoof(Some(crate::psynet::PingSpoofPayload {
+        enabled: true,
+        min_ms,
+        max_ms,
+    }));
+    apply_tagame_modifications(cooked_dir, &[], keys_txt, keys_map_json, None)
+}
+
+pub fn restore_tagame_ping_spoof(
+    cooked_dir: &Path,
+    keys_txt: &str,
+    keys_map_json: &str,
+) -> Result<TagameSwapperStatus, TagameSwapError> {
+    crate::udp_proxy::set_ping_spoof(Some(crate::psynet::PingSpoofPayload {
+        enabled: false,
+        min_ms: 16,
+        max_ms: 24,
+    }));
+    apply_tagame_modifications(cooked_dir, &[], keys_txt, keys_map_json, None)
 }
 
 /// Download clean, official TAGame.upk from VelocityRL asset endpoint with progress reporting.
@@ -1648,5 +1749,29 @@ mod tests {
 
         let modified_bytes = fs::read(&tagame_test).expect("read modified TAGame.upk");
         assert!(modified_bytes.len() > 1024 * 1024);
+    }
+
+    #[test]
+    fn test_emit_pri_get_ping_bytecode() {
+        let bc = emit_pri_get_ping_bytecode(16, 24, 199);
+        assert_eq!(bc.len(), 199);
+        assert_eq!(bc[0], opcodes::EX_RETURN);
+        assert_eq!(bc[1], 0x38);
+        assert_eq!(bc[2], 0x44);
+        assert_eq!(bc[3], opcodes::EX_FINAL_FUNCTION);
+        let token = i32::from_le_bytes(bc[4..8].try_into().unwrap());
+        assert_eq!(token, -1885);
+        assert_eq!(bc[8], opcodes::EX_FLOAT_CONST);
+        let min_val = f32::from_le_bytes(bc[9..13].try_into().unwrap());
+        assert_eq!(min_val, 16.0);
+        assert_eq!(bc[13], opcodes::EX_FLOAT_CONST);
+        let max_val = f32::from_le_bytes(bc[14..18].try_into().unwrap());
+        assert_eq!(max_val, 24.0);
+        assert_eq!(bc[18], opcodes::EX_END_FUNCTION_PARMS);
+        assert_eq!(bc[19], opcodes::EX_RETURN);
+        assert_eq!(bc[20], opcodes::EX_INT_ZERO);
+        assert_eq!(bc[21], opcodes::EX_END_OF_SCRIPT);
+        assert_eq!(bc[22], opcodes::EX_NOTHING);
+        assert_eq!(bc[198], opcodes::EX_NOTHING);
     }
 }

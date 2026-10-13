@@ -1942,6 +1942,42 @@ async fn restore_tagame_swaps(app: tauri::AppHandle) -> Result<upk::TagameSwappe
 }
 
 #[tauri::command]
+async fn apply_ping_spoof_upk(app: tauri::AppHandle, min_ms: u32, max_ms: u32) -> Result<(), String> {
+    let config = get_config(app.clone()).await?;
+    if config.game_dir.is_empty() {
+        return Ok(());
+    }
+    let cooked = match upk::tagame_swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
+        Ok(c) => c,
+        Err(_) => return Ok(()),
+    };
+    let keys_txt = include_str!("../resources/keys.txt");
+    let keys_map_json = include_str!("../resources/keys_map.json");
+    upk::tagame_swapper::apply_tagame_ping_spoof(&cooked, min_ms, max_ms, keys_txt, keys_map_json)
+        .map_err(|e| e.to_string())?;
+    applog::event(&format!("ping_spoof: applied TAGame.upk GetPing spoof [{min_ms}..{max_ms}] ms"));
+    Ok(())
+}
+
+#[tauri::command]
+async fn restore_ping_spoof_upk(app: tauri::AppHandle) -> Result<(), String> {
+    let config = get_config(app.clone()).await?;
+    if config.game_dir.is_empty() {
+        return Ok(());
+    }
+    let cooked = match upk::tagame_swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
+        Ok(c) => c,
+        Err(_) => return Ok(()),
+    };
+    let keys_txt = include_str!("../resources/keys.txt");
+    let keys_map_json = include_str!("../resources/keys_map.json");
+    upk::tagame_swapper::restore_tagame_ping_spoof(&cooked, keys_txt, keys_map_json)
+        .map_err(|e| e.to_string())?;
+    applog::event("ping_spoof: restored vanilla TAGame.upk GetPing");
+    Ok(())
+}
+
+#[tauri::command]
 async fn get_tagame_swapper_status(app: tauri::AppHandle) -> Result<upk::TagameSwapperStatus, String> {
     let config = get_config(app.clone()).await?;
     let tagame_path = if !config.game_dir.is_empty() {
@@ -3540,6 +3576,8 @@ pub fn run() {
             sync_palette_psynet_config,
             apply_tagame_swaps,
             restore_tagame_swaps,
+            apply_ping_spoof_upk,
+            restore_ping_spoof_upk,
             get_tagame_swapper_status,
             download_official_tagame,
             get_detected_car_body,
