@@ -123,13 +123,27 @@ body.is-loading main {
 }
 
 ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-    background: #333;
+    background: #2e2e33;
     border-radius: 4px;
+    transition: background 0.15s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #44444c;
+}
+
+:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.35);
 }
 
 .sidebar {
@@ -172,6 +186,8 @@ body.is-loading main {
     border-radius: 6px;
     color: var(--muted);
     cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    border-left: 2px solid transparent;
 }
 
 .nav-item:hover {
@@ -180,8 +196,10 @@ body.is-loading main {
 }
 
 .nav-item.active {
-    background: #2a2a2a;
+    background: #252529;
     color: var(--text);
+    border-left-color: var(--accent);
+    font-weight: 500;
 }
 
 .nav-wip {
@@ -1347,10 +1365,15 @@ select::-ms-expand {
     font: inherit;
     font-weight: 600;
     cursor: pointer;
+    transition: opacity 0.15s ease, transform 0.1s ease, background 0.15s ease, border-color 0.15s ease;
 }
 
 .action-btn:hover:not(:disabled) {
-    opacity: 0.9;
+    opacity: 0.92;
+}
+
+.action-btn:active:not(:disabled) {
+    transform: scale(0.98);
 }
 
 .action-btn:disabled {
@@ -1362,6 +1385,11 @@ select::-ms-expand {
     background: var(--panel);
     color: var(--text);
     border: 1px solid var(--border);
+}
+
+.action-btn-secondary:hover:not(:disabled) {
+    background: var(--panel-hover);
+    border-color: rgba(255, 255, 255, 0.2);
 }
 
 .restoration-grid {
@@ -1688,7 +1716,8 @@ select::-ms-expand {
 .modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.7);
+    background: rgba(0, 0, 0, 0.72);
+    backdrop-filter: blur(4px);
     display: none;
     align-items: center;
     justify-content: center;
@@ -1713,6 +1742,19 @@ select::-ms-expand {
     display: flex;
     flex-direction: column;
     min-height: 0;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.65);
+    animation: modal-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modal-in {
+    from {
+        opacity: 0;
+        transform: scale(0.97);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
 }
 
 .modal-wide {
@@ -1946,6 +1988,19 @@ select::-ms-expand {
     gap: 12px;
     align-items: flex-start;
     font-size: 13px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+    animation: toast-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes toast-in {
+    from {
+        opacity: 0;
+        transform: translateY(-6px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 .toast.success {

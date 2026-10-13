@@ -3867,14 +3867,7 @@ async function hydrateSpoofToolsFromDisk() {
     }
 
     {
-        const ps = toolSliceFromDiskOrLocal(disk, PING_SPOOF_KEY, 'ping_spoof');
-        const ping_spoof = (ps && typeof ps === 'object' && ('enabled' in ps || ps.min_ms != null || ps.max_ms != null))
-            ? {
-                enabled: !!ps.enabled,
-                min_ms: Math.max(1, Number(ps.min_ms) || 16),
-                max_ms: Math.max(1, Number(ps.max_ms) || 24),
-            }
-            : { enabled: false, min_ms: 16, max_ms: 24 };
+        const ping_spoof = { enabled: false, min_ms: 16, max_ms: 24 };
         localStorage.setItem(PING_SPOOF_KEY, JSON.stringify({ ping_spoof }));
     }
 
