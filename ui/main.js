@@ -3469,6 +3469,7 @@ const NAME_SPOOF_KEY = 'velocityrl_name_spoof';
 const CREDIT_SPOOF_KEY = 'velocityrl_credit_spoof';
 const LEADERBOARD_SPOOF_KEY = 'velocityrl_leaderboard_spoof';
 const MENU_BG_SPOOF_KEY = 'velocityrl_menu_bg_spoof';
+const PING_SPOOF_KEY = 'velocityrl_ping_spoof';
 const DEFAULT_SEASON23_LOGO_URL = 'https://api.velocityrl.tech/thumbnails/rl_jpn.png';
 const DEFAULT_BLOG_MOTD = 'Use VelocityRL';
 const DEFAULT_CAMERA_LIMITS = {
@@ -3865,6 +3866,18 @@ async function hydrateSpoofToolsFromDisk() {
         localStorage.setItem(MENU_BG_SPOOF_KEY, JSON.stringify({ menu_bg_spoof }));
     }
 
+    {
+        const ps = toolSliceFromDiskOrLocal(disk, PING_SPOOF_KEY, 'ping_spoof');
+        const ping_spoof = (ps && typeof ps === 'object' && ('enabled' in ps || ps.min_ms != null || ps.max_ms != null))
+            ? {
+                enabled: !!ps.enabled,
+                min_ms: Math.max(1, Number(ps.min_ms) || 16),
+                max_ms: Math.max(1, Number(ps.max_ms) || 24),
+            }
+            : { enabled: false, min_ms: 16, max_ms: 24 };
+        localStorage.setItem(PING_SPOOF_KEY, JSON.stringify({ ping_spoof }));
+    }
+
     applyHydratedToolsToUi();
 
     return payloadFromHydratedLocal();
@@ -3949,6 +3962,17 @@ function applyHydratedToolsToUi() {
         syncNameSpoofSwitchAria(bgEn);
     }
     if (bgSelect) bgSelect.value = bgData.background || 'MMBG_Default';
+
+    const pingData = readLocalJson(PING_SPOOF_KEY).ping_spoof || {};
+    const pingEn = document.getElementById('ping-spoof-enabled');
+    const pingMin = document.getElementById('ping-spoof-min');
+    const pingMax = document.getElementById('ping-spoof-max');
+    if (pingEn) {
+        pingEn.checked = !!pingData.enabled;
+        syncNameSpoofSwitchAria(pingEn);
+    }
+    if (pingMin) pingMin.value = String(pingData.min_ms ?? 16);
+    if (pingMax) pingMax.value = String(pingData.max_ms ?? 24);
 }
 
 function isSteamGameDir(gameDir) {
@@ -3978,6 +4002,7 @@ function payloadFromHydratedLocal() {
     const credit_spoof = readLocalJson(CREDIT_SPOOF_KEY).credit_spoof || { enabled: false, amount: 100000, tournament_amount: 100000 };
     const leaderboard_spoof = readLocalJson(LEADERBOARD_SPOOF_KEY).leaderboard_spoof || { enabled: false, sync_from_fake_ranks: true };
     const menu_bg_spoof = readLocalJson(MENU_BG_SPOOF_KEY).menu_bg_spoof || { enabled: false, background: 'MMBG_Default' };
+    const ping_spoof = readLocalJson(PING_SPOOF_KEY).ping_spoof || { enabled: false, min_ms: 16, max_ms: 24 };
     const gameDirInput = document.getElementById('game-dir')?.value || '';
     const is_steam = isSteamGameDir(gameDirInput);
 
@@ -3993,6 +4018,7 @@ function payloadFromHydratedLocal() {
         credit_spoof,
         leaderboard_spoof,
         menu_bg_spoof,
+        ping_spoof,
     };
 }
 
@@ -4031,6 +4057,7 @@ async function anySpoofToolEnabled(payload) {
     if (p.credit_spoof?.enabled) return true;
     if (p.leaderboard_spoof?.enabled) return true;
     if (p.menu_bg_spoof?.enabled) return true;
+    if (p.ping_spoof?.enabled) return true;
     if (p.boost_meter_spoof?.enabled) return true;
     if (p.sfx_spoof?.enabled) return true;
     if (PALETTE_UI_DISABLED) return false;
@@ -5933,6 +5960,50 @@ function initMiscTab() {
             showToast(String(e), 'error');
         }
     });
+
+    const pingEnabledEl = document.getElementById('ping-spoof-enabled');
+    const pingMinEl = document.getElementById('ping-spoof-min');
+    const pingMaxEl = document.getElementById('ping-spoof-max');
+    const pingSaveBtn = document.getElementById('ping-spoof-save-btn');
+
+    if (pingEnabledEl && pingMinEl && pingMaxEl && pingSaveBtn) {
+        let pingSaved = {};
+        try { pingSaved = JSON.parse(localStorage.getItem(PING_SPOOF_KEY) || '{}'); } catch { }
+        const ps = pingSaved.ping_spoof || {};
+        pingEnabledEl.checked = !!ps.enabled;
+        syncNameSpoofSwitchAria(pingEnabledEl);
+        pingMinEl.value = String(ps.min_ms ?? 16);
+        pingMaxEl.value = String(ps.max_ms ?? 24);
+
+        pingEnabledEl.addEventListener('change', () => syncNameSpoofSwitchAria(pingEnabledEl));
+
+        pingSaveBtn.addEventListener('click', async () => {
+            if (isAppLoading() || spoofSaveInFlight) return;
+            const enabled = !!pingEnabledEl.checked;
+            let min_ms = Math.max(1, parseInt(pingMinEl.value, 10) || 16);
+            let max_ms = Math.max(1, parseInt(pingMaxEl.value, 10) || 24);
+            if (min_ms > max_ms) {
+                const tmp = min_ms;
+                min_ms = max_ms;
+                max_ms = tmp;
+                pingMinEl.value = String(min_ms);
+                pingMaxEl.value = String(max_ms);
+            }
+            const ping_spoof = { enabled, min_ms, max_ms };
+            try {
+                localStorage.setItem(PING_SPOOF_KEY, JSON.stringify({ ping_spoof }));
+                await runToolSave(pingSaveBtn, 'ping spoof', { ping_spoof }, { enabled });
+                flashButtonLabel(pingSaveBtn, enabled ? 'Saved' : 'Saved (off)');
+                if (enabled) {
+                    showToast(`Ping spoof active (${min_ms}-${max_ms} ms).`, 'success');
+                } else {
+                    showToast('Ping spoof off.', 'success');
+                }
+            } catch (e) {
+                showToast(String(e), 'error');
+            }
+        });
+    }
 }
 
 let setGlobalPaint = (id) => { };
