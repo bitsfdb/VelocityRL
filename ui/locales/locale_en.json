@@ -225,8 +225,12 @@
         "bottom_text": "Bottom Main Menu Text",
         "text_label": "Text",
         "save_text": "Save",
-        "ping_spoof": "Network Ping Spoof",
+        "ping_spoof": "Ping Spoof",
         "ping_spoof_desc": "Simulate realistic scoreboard ping and network jitter via UDP proxy",
+        "ping_mode": "Mode",
+        "ping_mode_interval": "Interval",
+        "ping_mode_fixed": "Fixed",
+        "ping_fixed": "Ping (ms)",
         "ping_min": "Min Ping (ms)",
         "ping_max": "Max Ping (ms)",
         "save_ping": "Save ping spoof"

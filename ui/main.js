@@ -3967,18 +3967,42 @@ function applyHydratedToolsToUi() {
     const pingEn = document.getElementById('ping-spoof-enabled');
     const pingMin = document.getElementById('ping-spoof-min');
     const pingMax = document.getElementById('ping-spoof-max');
+    const pingFixed = document.getElementById('ping-spoof-fixed');
+    const pingModeIntervalBtn = document.getElementById('ping-mode-interval-btn');
+    const pingModeFixedBtn = document.getElementById('ping-mode-fixed-btn');
+    const pingIntervalGroup = document.getElementById('ping-spoof-interval-group');
+    const pingFixedGroup = document.getElementById('ping-spoof-fixed-group');
+
     if (pingEn) {
         pingEn.checked = !!pingData.enabled;
         syncNameSpoofSwitchAria(pingEn);
     }
+    const isFixed = pingData.mode === 'fixed' || (pingData.min_ms != null && pingData.min_ms === pingData.max_ms && pingData.mode !== 'interval');
+    if (pingModeIntervalBtn && pingModeFixedBtn && pingIntervalGroup && pingFixedGroup) {
+        if (isFixed) {
+            pingModeFixedBtn.classList.add('active');
+            pingModeIntervalBtn.classList.remove('active');
+            pingFixedGroup.style.display = 'flex';
+            pingIntervalGroup.style.display = 'none';
+        } else {
+            pingModeIntervalBtn.classList.add('active');
+            pingModeFixedBtn.classList.remove('active');
+            pingIntervalGroup.style.display = 'flex';
+            pingFixedGroup.style.display = 'none';
+        }
+    }
     if (pingMin) pingMin.value = String(pingData.min_ms ?? 16);
     if (pingMax) pingMax.value = String(pingData.max_ms ?? 24);
+    if (pingFixed) pingFixed.value = String(pingData.fixed_ms ?? pingData.min_ms ?? 20);
+
     if (pingData.enabled) {
+        const minMs = isFixed ? (parseInt(pingFixed?.value, 10) || pingData.min_ms || 20) : (pingData.min_ms ?? 16);
+        const maxMs = isFixed ? minMs : (pingData.max_ms ?? 24);
         invoke('apply_ping_spoof_upk', {
-            minMs: pingData.min_ms ?? 16,
-            maxMs: pingData.max_ms ?? 24,
-            min_ms: pingData.min_ms ?? 16,
-            max_ms: pingData.max_ms ?? 24,
+            minMs,
+            maxMs,
+            min_ms: minMs,
+            max_ms: maxMs,
         }).catch(() => { });
     }
 }
@@ -5972,6 +5996,11 @@ function initMiscTab() {
     const pingEnabledEl = document.getElementById('ping-spoof-enabled');
     const pingMinEl = document.getElementById('ping-spoof-min');
     const pingMaxEl = document.getElementById('ping-spoof-max');
+    const pingFixedEl = document.getElementById('ping-spoof-fixed');
+    const pingModeIntervalBtn = document.getElementById('ping-mode-interval-btn');
+    const pingModeFixedBtn = document.getElementById('ping-mode-fixed-btn');
+    const pingIntervalGroup = document.getElementById('ping-spoof-interval-group');
+    const pingFixedGroup = document.getElementById('ping-spoof-fixed-group');
     const pingSaveBtn = document.getElementById('ping-spoof-save-btn');
 
     if (pingEnabledEl && pingMinEl && pingMaxEl && pingSaveBtn) {
@@ -5980,24 +6009,59 @@ function initMiscTab() {
         const ps = pingSaved.ping_spoof || {};
         pingEnabledEl.checked = !!ps.enabled;
         syncNameSpoofSwitchAria(pingEnabledEl);
+
+        let currentMode = ps.mode === 'fixed' || (ps.min_ms != null && ps.min_ms === ps.max_ms && ps.mode !== 'interval') ? 'fixed' : 'interval';
+        const setPingMode = (mode) => {
+            currentMode = mode;
+            if (mode === 'fixed') {
+                pingModeFixedBtn?.classList.add('active');
+                pingModeIntervalBtn?.classList.remove('active');
+                if (pingFixedGroup) pingFixedGroup.style.display = 'flex';
+                if (pingIntervalGroup) pingIntervalGroup.style.display = 'none';
+            } else {
+                pingModeIntervalBtn?.classList.add('active');
+                pingModeFixedBtn?.classList.remove('active');
+                if (pingIntervalGroup) pingIntervalGroup.style.display = 'flex';
+                if (pingFixedGroup) pingFixedGroup.style.display = 'none';
+            }
+        };
+
+        setPingMode(currentMode);
+
+        pingModeIntervalBtn?.addEventListener('click', () => setPingMode('interval'));
+        pingModeFixedBtn?.addEventListener('click', () => setPingMode('fixed'));
+
         pingMinEl.value = String(ps.min_ms ?? 16);
         pingMaxEl.value = String(ps.max_ms ?? 24);
+        if (pingFixedEl) pingFixedEl.value = String(ps.fixed_ms ?? ps.min_ms ?? 20);
 
         pingEnabledEl.addEventListener('change', () => syncNameSpoofSwitchAria(pingEnabledEl));
 
         pingSaveBtn.addEventListener('click', async () => {
             if (isAppLoading() || spoofSaveInFlight) return;
             const enabled = !!pingEnabledEl.checked;
-            let min_ms = Math.max(1, parseInt(pingMinEl.value, 10) || 16);
-            let max_ms = Math.max(1, parseInt(pingMaxEl.value, 10) || 24);
-            if (min_ms > max_ms) {
-                const tmp = min_ms;
-                min_ms = max_ms;
-                max_ms = tmp;
-                pingMinEl.value = String(min_ms);
-                pingMaxEl.value = String(max_ms);
+            let min_ms = 16;
+            let max_ms = 24;
+            let fixed_ms = 20;
+
+            if (currentMode === 'fixed') {
+                fixed_ms = Math.max(1, parseInt(pingFixedEl?.value, 10) || 20);
+                if (pingFixedEl) pingFixedEl.value = String(fixed_ms);
+                min_ms = fixed_ms;
+                max_ms = fixed_ms;
+            } else {
+                min_ms = Math.max(1, parseInt(pingMinEl.value, 10) || 16);
+                max_ms = Math.max(1, parseInt(pingMaxEl.value, 10) || 24);
+                if (min_ms > max_ms) {
+                    const tmp = min_ms;
+                    min_ms = max_ms;
+                    max_ms = tmp;
+                    pingMinEl.value = String(min_ms);
+                    pingMaxEl.value = String(max_ms);
+                }
             }
-            const ping_spoof = { enabled, min_ms, max_ms };
+
+            const ping_spoof = { enabled, mode: currentMode, min_ms, max_ms, fixed_ms };
             try {
                 localStorage.setItem(PING_SPOOF_KEY, JSON.stringify({ ping_spoof }));
                 await runToolSave(pingSaveBtn, 'ping spoof', { ping_spoof }, { enabled });
@@ -6012,7 +6076,11 @@ function initMiscTab() {
                 }
                 flashButtonLabel(pingSaveBtn, enabled ? 'Saved' : 'Saved (off)');
                 if (enabled) {
-                    showToast(`Ping spoof active (${min_ms}-${max_ms} ms).`, 'success');
+                    if (currentMode === 'fixed') {
+                        showToast(`Ping spoof active (${fixed_ms} ms).`, 'success');
+                    } else {
+                        showToast(`Ping spoof active (${min_ms}-${max_ms} ms).`, 'success');
+                    }
                 } else {
                     showToast('Ping spoof off.', 'success');
                 }
