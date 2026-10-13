@@ -792,6 +792,17 @@ pub fn emit_pri_get_ping_bytecode(min_ms: u32, max_ms: u32, orig_disk_sz: usize)
     payload
 }
 
+pub fn emit_noop_void_function_bytecode(orig_disk_sz: usize) -> (Vec<u8>, u32) {
+    let mut payload = Vec::with_capacity(orig_disk_sz);
+    payload.push(opcodes::EX_RETURN); // 0x04
+    payload.push(opcodes::EX_NOTHING); // 0x0B
+    payload.push(opcodes::EX_END_OF_SCRIPT); // 0x4C
+    while payload.len() < orig_disk_sz {
+        payload.push(opcodes::EX_NOTHING); // 0x0B
+    }
+    (payload, orig_disk_sz as u32)
+}
+
 pub fn hex_to_linear_rgba(hex: &str) -> [u8; 16] {
     let clean = hex.trim().trim_start_matches('#');
     let (r_srgb, g_srgb, b_srgb) = if clean.len() >= 6 {
@@ -1187,9 +1198,16 @@ pub fn apply_tagame_modifications(
                 crate::presets::upk_slot_index_from_str(&s.slot)
             };
 
+            // For Body (slot 0), treat spawns and default-base swaps unconditionally so post-goal respawns never revert
+            let owned_id = if slot_idx == 0 && (s.owned_id.is_none() || s.owned_id == Some(pid) || s.owned_id == Some(23)) {
+                None
+            } else {
+                s.owned_id
+            };
+
             slot_overrides.push(SlotSwapRule {
                 slot_idx,
-                owned_id: s.owned_id,
+                owned_id,
                 target_id: pid,
             });
         }
@@ -1382,40 +1400,75 @@ pub fn apply_tagame_modifications(
             }
         }
 
-        // 3. Patch Chunk 2: PRI_TA::GetPing if ping spoof is active
-        if ping_active {
-            if let Some(ps) = &ping_cfg {
-                if chunks.len() > 2 {
-                    let c2_uncomp_offset = chunks[2].uncomp_offset;
-                    let c2_comp_offset = chunks[2].comp_offset;
-                    let c2_comp_size = chunks[2].comp_size;
-                    let c2_start = c2_comp_offset as usize;
-                    let c2_end = c2_start + c2_comp_size as usize;
-                    if c2_end <= file_bytes.len() {
-                        if let Ok(mut decomp2) = crate::upk::compression::decompress_chunk(&file_bytes[c2_start..c2_end]) {
-                            if let Some(exp_ping) = exports.iter().find(|e| e.name == "GetPing" && e.outer_name == "PRI_TA") {
-                                let func_off = (exp_ping.serial_offset - c2_uncomp_offset) as usize;
+        // 3. Patch Chunk 2: Neutralize post-goal validation functions and apply PRI_TA::GetPing if ping spoof is active
+        if chunks.len() > 2 {
+            let c2_uncomp_offset = chunks[2].uncomp_offset;
+            let c2_comp_offset = chunks[2].comp_offset;
+            let c2_comp_size = chunks[2].comp_size;
+            let c2_start = c2_comp_offset as usize;
+            let c2_end = c2_start + c2_comp_size as usize;
+            if c2_end <= file_bytes.len() {
+                if let Ok(mut decomp2) = crate::upk::compression::decompress_chunk(&file_bytes[c2_start..c2_end]) {
+                    let mut c2_modified = false;
+
+                    // Neutralize loadout validator reset functions to prevent car body reversion after goals
+                    let noop_targets = [
+                        ("SetLoadoutSlotToDefaultID", "PRI_TA"),
+                        ("SetLoadoutSlotToDefaultID", "LoadoutValidation_TA"),
+                        ("CorrectLoadoutData", "PRI_TA"),
+                        ("OnLoadoutValidationError", "PRI_TA"),
+                        ("CorrectDLCOwnership", "LoadoutValidation_TA"),
+                        ("ValidateLoadout", "PRI_TA"),
+                    ];
+
+                    for (fn_name, outer_name) in noop_targets {
+                        if let Some(exp) = exports.iter().find(|e| e.name == fn_name && e.outer_name == outer_name) {
+                            if exp.serial_offset >= c2_uncomp_offset && exp.serial_offset < (c2_uncomp_offset + chunks[2].uncomp_size as i64) {
+                                let func_off = (exp.serial_offset - c2_uncomp_offset) as usize;
                                 if func_off + 48 <= decomp2.len() {
                                     let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                                    if orig_disk_sz >= 22 && func_off + 48 + orig_disk_sz <= decomp2.len() {
-                                        let payload = emit_pri_get_ping_bytecode(ps.min_ms, ps.max_ms, orig_disk_sz);
+                                    if orig_disk_sz >= 3 && func_off + 48 + orig_disk_sz <= decomp2.len() {
+                                        let (payload, mem_sz) = emit_noop_void_function_bytecode(orig_disk_sz);
+                                        decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
                                         decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                        c2_modified = true;
                                     }
                                 }
                             }
+                        }
+                    }
 
-                            if let Ok(mut recomp2) = crate::upk::compression::compress_chunk(&decomp2) {
-                                let orig_c2_sz = c2_comp_size as usize;
-                                if recomp2.len() <= orig_c2_sz {
-                                    recomp2.resize(orig_c2_sz, 0);
-                                    file_bytes[c2_start..c2_start + orig_c2_sz].copy_from_slice(&recomp2);
-                                } else {
-                                    crate::applog::event(&format!(
-                                        "tagame_swapper: Recompressed Chunk 2 ({} bytes) exceeds allocation ({} bytes)",
-                                        recomp2.len(),
-                                        orig_c2_sz
-                                    ));
+                    // Patch PRI_TA::GetPing if ping spoof is active
+                    if ping_active {
+                        if let Some(ps) = &ping_cfg {
+                            if let Some(exp_ping) = exports.iter().find(|e| e.name == "GetPing" && e.outer_name == "PRI_TA") {
+                                if exp_ping.serial_offset >= c2_uncomp_offset && exp_ping.serial_offset < (c2_uncomp_offset + chunks[2].uncomp_size as i64) {
+                                    let func_off = (exp_ping.serial_offset - c2_uncomp_offset) as usize;
+                                    if func_off + 48 <= decomp2.len() {
+                                        let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                                        if orig_disk_sz >= 22 && func_off + 48 + orig_disk_sz <= decomp2.len() {
+                                            let payload = emit_pri_get_ping_bytecode(ps.min_ms, ps.max_ms, orig_disk_sz);
+                                            decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                            c2_modified = true;
+                                        }
+                                    }
                                 }
+                            }
+                        }
+                    }
+
+                    if c2_modified {
+                        if let Ok(mut recomp2) = crate::upk::compression::compress_chunk(&decomp2) {
+                            let orig_c2_sz = c2_comp_size as usize;
+                            if recomp2.len() <= orig_c2_sz {
+                                recomp2.resize(orig_c2_sz, 0);
+                                file_bytes[c2_start..c2_start + orig_c2_sz].copy_from_slice(&recomp2);
+                            } else {
+                                crate::applog::event(&format!(
+                                    "tagame_swapper: Recompressed Chunk 2 ({} bytes) exceeds allocation ({} bytes)",
+                                    recomp2.len(),
+                                    orig_c2_sz
+                                ));
                             }
                         }
                     }
@@ -1776,6 +1829,19 @@ mod tests {
     }
 
     #[test]
+    fn test_emit_noop_void_function_bytecode() {
+        let (payload, mem_sz) = emit_noop_void_function_bytecode(191);
+        assert_eq!(payload.len(), 191);
+        assert_eq!(payload[0], opcodes::EX_RETURN);
+        assert_eq!(payload[1], opcodes::EX_NOTHING);
+        assert_eq!(payload[2], opcodes::EX_END_OF_SCRIPT);
+        for i in 3..191 {
+            assert_eq!(payload[i], opcodes::EX_NOTHING);
+        }
+        assert_eq!(mem_sz, 191);
+    }
+
+    #[test]
     fn test_dump_validation_exports() {
         let tagame_path = Path::new("/root/TAGame_clean.upk");
         if !tagame_path.exists() {
@@ -1851,6 +1917,8 @@ mod tests {
             idx: usize,
             uncomp_offset: i64,
             uncomp_size: i32,
+            comp_offset: i64,
+            comp_size: i32,
         }
         let mut c_pos = depends_rel;
         let chunk_count = i32::from_le_bytes(plain_header[c_pos..c_pos + 4].try_into().unwrap()) as usize;
@@ -1860,10 +1928,14 @@ mod tests {
             if c_pos + 36 > plain_header.len() { break; }
             let uncomp_offset = i64::from_le_bytes(plain_header[c_pos..c_pos + 8].try_into().unwrap());
             let uncomp_size = i32::from_le_bytes(plain_header[c_pos + 8..c_pos + 12].try_into().unwrap());
+            let comp_offset = i64::from_le_bytes(plain_header[c_pos + 12..c_pos + 20].try_into().unwrap());
+            let comp_size = i32::from_le_bytes(plain_header[c_pos + 20..c_pos + 24].try_into().unwrap());
             chunks.push(ChunkItem {
                 idx: i,
                 uncomp_offset,
                 uncomp_size,
+                comp_offset,
+                comp_size,
             });
             c_pos += 36;
         }
@@ -1882,16 +1954,28 @@ mod tests {
             "ValidateReplicatedLoadout",
         ];
 
-        for exp in &exports {
-            if targets.iter().any(|t| exp.name.eq_ignore_ascii_case(t)) {
-                let chunk_idx = chunks.iter().find(|c| {
-                    exp.serial_offset >= c.uncomp_offset && exp.serial_offset < (c.uncomp_offset + c.uncomp_size as i64)
-                }).map(|c| c.idx);
-
-                println!(
-                    "VALIDATOR_EXP: Export #{}: {}::{} (outer_idx={}) serial_size={} serial_offset={} -> Chunk {:?}",
-                    exp.idx, exp.outer_name, exp.name, exp.outer_idx, exp.serial_size, exp.serial_offset, chunk_idx
-                );
+        if chunks.len() > 2 {
+            let c2_start = chunks[2].comp_offset as usize;
+            let c2_end = c2_start + chunks[2].comp_size as usize;
+            if let Ok(decomp2) = crate::upk::compression::decompress_chunk(&file_bytes[c2_start..c2_end]) {
+                for exp in &exports {
+                    if exp.serial_offset >= chunks[2].uncomp_offset && exp.serial_offset < (chunks[2].uncomp_offset + chunks[2].uncomp_size as i64) {
+                        if targets.iter().any(|t| exp.name.eq_ignore_ascii_case(t)) {
+                            let rel = (exp.serial_offset - chunks[2].uncomp_offset) as usize;
+                            if rel + 48 <= decomp2.len() {
+                                let mem_sz = u32::from_le_bytes(decomp2[rel + 40..rel + 44].try_into().unwrap());
+                                let disk_sz = u32::from_le_bytes(decomp2[rel + 44..rel + 48].try_into().unwrap());
+                                let script_head = &decomp2[rel + 48..rel + 48 + (disk_sz as usize).min(12)];
+                                let tail_start = rel + 48 + (disk_sz as usize).saturating_sub(8);
+                                let script_tail = &decomp2[tail_start..rel + 48 + disk_sz as usize];
+                                println!(
+                                    "VALIDATOR_EXP: Export #{}: {}::{} mem={} disk={} head={:02x?} tail={:02x?}",
+                                    exp.idx, exp.outer_name, exp.name, mem_sz, disk_sz, script_head, script_tail
+                                );
+                            }
+                        }
+                    }
+                }
             }
         }
     }
