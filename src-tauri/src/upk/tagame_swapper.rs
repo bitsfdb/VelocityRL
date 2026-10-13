@@ -1774,4 +1774,125 @@ mod tests {
         assert_eq!(bc[22], opcodes::EX_NOTHING);
         assert_eq!(bc[198], opcodes::EX_NOTHING);
     }
+
+    #[test]
+    fn test_dump_validation_exports() {
+        let tagame_path = Path::new("/root/TAGame_clean.upk");
+        if !tagame_path.exists() {
+            return;
+        }
+
+        let file_bytes = fs::read(tagame_path).unwrap();
+        let total_header_size = u32::from_le_bytes(file_bytes[8..12].try_into().unwrap()) as usize;
+        let mut p = 12;
+        let flen = i32::from_le_bytes(file_bytes[p..p + 4].try_into().unwrap());
+        p += 4 + if flen > 0 { flen as usize } else { (-flen * 2) as usize };
+        p += 4;
+        let name_count = i32::from_le_bytes(file_bytes[p..p + 4].try_into().unwrap());
+        p += 4;
+        let name_offset = u32::from_le_bytes(file_bytes[p..p + 4].try_into().unwrap()) as usize;
+
+        let enc_size = (total_header_size - name_offset + 15) & !15;
+        let enc_end = name_offset + enc_size;
+
+        let plain_header = crypto::decrypt_ecb(&TAGAME_KEY, &file_bytes[name_offset..enc_end]);
+        let names = crate::upk::palette::parse_names_in_block(&plain_header, name_count).unwrap();
+
+        let p_sum = 12 + 4 + (if flen > 0 { flen as usize } else { (-flen * 2) as usize }) + 4 + 8;
+        let export_count = i32::from_le_bytes(file_bytes[p_sum..p_sum + 4].try_into().unwrap()) as usize;
+        let export_offset = i32::from_le_bytes(file_bytes[p_sum + 4..p_sum + 8].try_into().unwrap()) as usize;
+        let depends_offset = i32::from_le_bytes(file_bytes[p_sum + 16..p_sum + 20].try_into().unwrap()) as usize;
+
+        let export_rel = export_offset - name_offset;
+        let depends_rel = depends_offset - name_offset;
+
+        struct ExportItem {
+            idx: usize,
+            name: String,
+            outer_idx: i32,
+            outer_name: String,
+            serial_size: i32,
+            serial_offset: i64,
+        }
+        let mut exports: Vec<ExportItem> = Vec::new();
+        let mut pos = export_rel;
+        while pos + 72 <= depends_rel && pos + 72 <= plain_header.len() && exports.len() < export_count {
+            let i32_at = |a: usize| i32::from_le_bytes(plain_header[pos + a..pos + a + 4].try_into().unwrap());
+            let outer_idx = i32_at(8);
+            let name_idx = i32_at(12);
+            let serial_size = i32_at(32);
+            let serial_offset = i64::from_le_bytes(plain_header[pos + 36..pos + 44].try_into().unwrap());
+            let noc = i32_at(48);
+
+            let nm = if name_idx >= 0 && (name_idx as usize) < names.len() {
+                names[name_idx as usize].clone()
+            } else { String::new() };
+
+            let cur_idx = exports.len() + 1;
+            exports.push(ExportItem {
+                idx: cur_idx,
+                name: nm,
+                outer_idx,
+                outer_name: String::new(),
+                serial_size,
+                serial_offset,
+            });
+            pos += 72 + (noc.max(0) as usize) * 4;
+        }
+
+        for i in 0..exports.len() {
+            let out_idx = exports[i].outer_idx;
+            if out_idx > 0 && (out_idx as usize) <= exports.len() {
+                exports[i].outer_name = exports[out_idx as usize - 1].name.clone();
+            }
+        }
+
+        struct ChunkItem {
+            idx: usize,
+            uncomp_offset: i64,
+            uncomp_size: i32,
+        }
+        let mut c_pos = depends_rel;
+        let chunk_count = i32::from_le_bytes(plain_header[c_pos..c_pos + 4].try_into().unwrap()) as usize;
+        c_pos += 4;
+        let mut chunks = Vec::with_capacity(chunk_count);
+        for i in 0..chunk_count {
+            if c_pos + 36 > plain_header.len() { break; }
+            let uncomp_offset = i64::from_le_bytes(plain_header[c_pos..c_pos + 8].try_into().unwrap());
+            let uncomp_size = i32::from_le_bytes(plain_header[c_pos + 8..c_pos + 12].try_into().unwrap());
+            chunks.push(ChunkItem {
+                idx: i,
+                uncomp_offset,
+                uncomp_size,
+            });
+            c_pos += 36;
+        }
+
+        let targets = [
+            "ValidateLoadout",
+            "SetLoadoutSlotToDefaultID",
+            "CorrectLoadoutData",
+            "ValidateLoadoutSlots",
+            "CorrectDLCOwnership",
+            "SetLoadout",
+            "AllowCarRespawn",
+            "ServerSetTeamLoadout",
+            "ReplicateLoadoutToServer",
+            "OnLoadoutValidationError",
+            "ValidateReplicatedLoadout",
+        ];
+
+        for exp in &exports {
+            if targets.iter().any(|t| exp.name.eq_ignore_ascii_case(t)) {
+                let chunk_idx = chunks.iter().find(|c| {
+                    exp.serial_offset >= c.uncomp_offset && exp.serial_offset < (c.uncomp_offset + c.uncomp_size as i64)
+                }).map(|c| c.idx);
+
+                println!(
+                    "VALIDATOR_EXP: Export #{}: {}::{} (outer_idx={}) serial_size={} serial_offset={} -> Chunk {:?}",
+                    exp.idx, exp.outer_name, exp.name, exp.outer_idx, exp.serial_size, exp.serial_offset, chunk_idx
+                );
+            }
+        }
+    }
 }
