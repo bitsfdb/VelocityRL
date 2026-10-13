@@ -712,49 +712,6 @@
                     </div>
                 </div>
 
-                <div class="card spoof-card">
-                    <div class="settings-group">
-                        <label class="switch-row" for="ping-spoof-enabled">
-                            <input type="checkbox" id="ping-spoof-enabled" class="switch-input">
-                            <span class="switch-slider">
-                                <span class="switch-thumb">
-                                    <span class="switch-state-on">On</span>
-                                    <span class="switch-state-off">Off</span>
-                                </span>
-                            </span>
-                            <span class="switch-copy">
-                                <span class="switch-title" data-i18n="misc.ping_spoof">Ping Spoof</span>
-                                <span class="switch-hint" data-i18n="misc.ping_spoof_desc">Simulate realistic scoreboard ping and network jitter via UDP proxy</span>
-                            </span>
-                        </label>
-                    </div>
-                    <div class="settings-group" style="margin-top: 10px;">
-                        <label data-i18n="misc.ping_mode">Mode</label>
-                        <div class="ping-mode-toggle" style="display: flex; gap: 8px; margin-top: 6px;">
-                            <button type="button" id="ping-mode-interval-btn" class="subtab-btn active" data-i18n="misc.ping_mode_interval">Interval</button>
-                            <button type="button" id="ping-mode-fixed-btn" class="subtab-btn" data-i18n="misc.ping_mode_fixed">Fixed</button>
-                        </div>
-                    </div>
-                    <div id="ping-spoof-interval-group" class="settings-group" style="display: flex; gap: 12px; margin-top: 10px;">
-                        <div style="flex: 1;">
-                            <label for="ping-spoof-min" data-i18n="misc.ping_min">Min Ping (ms)</label>
-                            <input type="number" id="ping-spoof-min" min="1" max="999" value="16" placeholder="16">
-                        </div>
-                        <div style="flex: 1;">
-                            <label for="ping-spoof-max" data-i18n="misc.ping_max">Max Ping (ms)</label>
-                            <input type="number" id="ping-spoof-max" min="1" max="999" value="24" placeholder="24">
-                        </div>
-                    </div>
-                    <div id="ping-spoof-fixed-group" class="settings-group" style="display: none; gap: 12px; margin-top: 10px;">
-                        <div style="flex: 1;">
-                            <label for="ping-spoof-fixed" data-i18n="misc.ping_fixed">Ping (ms)</label>
-                            <input type="number" id="ping-spoof-fixed" min="1" max="999" value="20" placeholder="20">
-                        </div>
-                    </div>
-                    <div class="swapper-controls">
-                        <button id="ping-spoof-save-btn" class="action-btn" type="button" data-i18n="misc.save_ping">Save ping spoof</button>
-                    </div>
-                </div>
             </div>
 
             <div id="tracker-tab" class="tab-content">
