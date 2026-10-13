@@ -2464,7 +2464,18 @@ async fn tunnel_websocket<S1, S2>(
         while let Some(msg_res) = client_rx.next().await {
             match msg_res {
                 Ok(msg) => {
-                    if up_tx.send(msg).await.is_err() {
+                    let out_msg = match msg {
+                        tokio_tungstenite::tungstenite::Message::Text(t) => {
+                            let (patched_text, _) = patch_ws_frame_text(&t).await;
+                            tokio_tungstenite::tungstenite::Message::Text(patched_text.into())
+                        }
+                        tokio_tungstenite::tungstenite::Message::Binary(b) => {
+                            let (patched_b, _) = patch_ws_frame_binary(&b).await;
+                            tokio_tungstenite::tungstenite::Message::Binary(patched_b.into())
+                        }
+                        other => other,
+                    };
+                    if up_tx.send(out_msg).await.is_err() {
                         break;
                     }
                 }
@@ -2548,10 +2559,12 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
     let mut any_changed = false;
 
     let is_reservation = find_bytes(body_part, b"ServerAddress").is_some()
-        || find_bytes(body_part, b"AddReservationMessage").is_some();
+        || find_bytes(body_part, b"AddReservationMessage").is_some()
+        || find_bytes(body_part, b"\"Loadout\"").is_some()
+        || find_bytes(body_part, b"\\\"Loadout\\\"").is_some();
     if is_reservation {
-        let spawned_items = load_active_spawned_items(cfg_opt.as_ref());
-        let (new_body, changed) = patch_reservation_json(&current_body, &spawned_items).await;
+        let swap_rules = load_active_swap_rules(cfg_opt.as_ref());
+        let (new_body, changed) = patch_reservation_json_with_rules(&current_body, &swap_rules).await;
         if changed {
             current_body = new_body;
             any_changed = true;
@@ -4746,8 +4759,36 @@ fn upsert_class_property_override(
     (patched, true)
 }
 
-pub fn load_active_spawned_items(cfg: Option<&crate::psynet::SpoofPayload>) -> Vec<(i32, i32)> {
-    let mut items = Vec::new();
+#[derive(Debug, Clone)]
+pub struct ActiveSwapRule {
+    pub owned_id: i32,
+    pub wanted_id: i32,
+    pub paint_id: i32,
+    pub slot: String,
+    pub slot_idx: u8,
+}
+
+pub fn is_known_body_id(id: i32) -> bool {
+    matches!(
+        id,
+        21 | 22 | 23 | 24 | 25 | 26 | 27 | 28 | 29 | 30
+            | 31 | 382 | 402 | 403 | 404 | 523 | 532 | 533 | 597
+            | 803 | 1018 | 1075 | 1159 | 1171 | 1172 | 1286 | 1300
+            | 1317 | 1416 | 1475 | 1533 | 1568 | 1603 | 1623 | 1624
+            | 1675 | 1686 | 1853 | 1960 | 2000 | 2043 | 2289 | 2305
+            | 2358 | 2664 | 2719 | 2720 | 2838 | 2840 | 2919 | 3037
+            | 3155 | 3219 | 3220 | 3379 | 3600 | 3601 | 3740 | 3840
+            | 3977 | 4025 | 4038 | 4284 | 4337 | 4513 | 4625 | 4744
+            | 4802 | 5073 | 5250 | 5373 | 5576 | 5723 | 5865 | 6007
+            | 6098 | 6176 | 6323 | 6479 | 6608 | 6695 | 6790 | 6940
+            | 7098 | 7274 | 7430 | 7597 | 7800 | 7980 | 8150 | 8325
+            | 8500 | 8700 | 8900 | 9100 | 9300 | 9500 | 9700 | 9900
+            | 11603 | 12000
+    )
+}
+
+pub fn load_active_swap_rules(cfg: Option<&crate::psynet::SpoofPayload>) -> Vec<ActiveSwapRule> {
+    let mut rules = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
     let mut candidate_paths = vec![
@@ -4784,9 +4825,21 @@ pub fn load_active_spawned_items(cfg: Option<&crate::psynet::SpoofPayload>) -> V
                 if let Ok(list) = serde_json::from_str::<Vec<serde_json::Value>>(&raw) {
                     for entry in list {
                         let wid = entry.get("wanted_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                        let oid = entry.get("owned_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
                         let pid = entry.get("paint_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-                        if wid > 0 && seen.insert(wid) {
-                            items.push((wid, pid));
+                        let slot = entry.get("slot").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let slot_idx = entry.get("slot_index")
+                            .and_then(|v| v.as_i64())
+                            .map(|n| n as u8)
+                            .unwrap_or_else(|| crate::presets::upk_slot_index_from_str(&slot));
+                        if wid > 0 && seen.insert((oid, wid, slot_idx)) {
+                            rules.push(ActiveSwapRule {
+                                owned_id: oid,
+                                wanted_id: wid,
+                                paint_id: pid,
+                                slot,
+                                slot_idx,
+                            });
                         }
                     }
                 }
@@ -4798,14 +4851,32 @@ pub fn load_active_spawned_items(cfg: Option<&crate::psynet::SpoofPayload>) -> V
         if let Some(inv) = &c.inventory_spoof {
             if inv.enabled {
                 for it in &inv.items {
-                    if it.product_id > 0 && seen.insert(it.product_id) {
-                        items.push((it.product_id, it.paint_id));
+                    if it.product_id > 0 && seen.insert((0, it.product_id, 0)) {
+                        let is_body = is_known_body_id(it.product_id);
+                        rules.push(ActiveSwapRule {
+                            owned_id: 0,
+                            wanted_id: it.product_id,
+                            paint_id: it.paint_id,
+                            slot: if is_body { "Body".to_string() } else { "".to_string() },
+                            slot_idx: if is_body { 0 } else { 255 },
+                        });
                     }
                 }
             }
         }
     }
 
+    rules
+}
+
+pub fn load_active_spawned_items(cfg: Option<&crate::psynet::SpoofPayload>) -> Vec<(i32, i32)> {
+    let mut items = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for r in load_active_swap_rules(cfg) {
+        if r.wanted_id > 0 && seen.insert(r.wanted_id) {
+            items.push((r.wanted_id, r.paint_id));
+        }
+    }
     items
 }
 
@@ -4846,17 +4917,89 @@ fn find_server_address(val: &serde_json::Value) -> Option<String> {
 
 fn patch_product_ids_node(
     node: &mut serde_json::Value,
-    items: &[(i32, i32)],
+    rules: &[ActiveSwapRule],
     changed: &mut bool,
 ) {
     if let Some(arr) = node.as_array_mut() {
-        let mut existing: std::collections::HashSet<i32> = arr
-            .iter()
-            .filter_map(|v| v.as_i64().map(|n| n as i32))
-            .collect();
-        for &(wanted_id, _) in items {
-            if wanted_id > 0 && existing.insert(wanted_id) {
-                arr.push(serde_json::json!(wanted_id));
+        for r in rules {
+            if r.wanted_id <= 0 {
+                continue;
+            }
+            if r.owned_id > 0 {
+                for v in arr.iter_mut() {
+                    if v.as_i64().map(|n| n as i32) == Some(r.owned_id) {
+                        if v.as_i64().map(|n| n as i32) != Some(r.wanted_id) {
+                            *v = serde_json::json!(r.wanted_id);
+                            *changed = true;
+                        }
+                    }
+                }
+            }
+            let is_body = r.slot_idx == 0 || r.slot.eq_ignore_ascii_case("Body") || is_known_body_id(r.wanted_id);
+            if is_body {
+                for v in arr.iter_mut() {
+                    let id = v.as_i64().map(|n| n as i32).unwrap_or(0);
+                    if (id == 11603 || (r.owned_id == 23 && id == 23)) && id != r.wanted_id {
+                        *v = serde_json::json!(r.wanted_id);
+                        *changed = true;
+                    }
+                }
+            }
+            let already = arr.iter().any(|v| v.as_i64().map(|n| n as i32) == Some(r.wanted_id));
+            if !already {
+                arr.push(serde_json::json!(r.wanted_id));
+                *changed = true;
+            }
+        }
+    }
+}
+
+fn patch_loadout_int_array(
+    arr: &mut Vec<serde_json::Value>,
+    rules: &[ActiveSwapRule],
+    changed: &mut bool,
+) {
+    for r in rules {
+        if r.wanted_id <= 0 {
+            continue;
+        }
+
+        let mut replaced = false;
+
+        // 1. If owned_id is specified (> 0) and present in arr, replace it in place
+        if r.owned_id > 0 {
+            for val in arr.iter_mut() {
+                if val.as_i64().map(|n| n as i32) == Some(r.owned_id) {
+                    if val.as_i64().map(|n| n as i32) != Some(r.wanted_id) {
+                        *val = serde_json::json!(r.wanted_id);
+                        *changed = true;
+                    }
+                    replaced = true;
+                    break;
+                }
+            }
+        }
+
+        // 2. If not replaced yet, check if this rule is for a Body
+        let is_body = r.slot_idx == 0
+            || r.slot.eq_ignore_ascii_case("Body")
+            || is_known_body_id(r.wanted_id)
+            || (r.owned_id > 0 && is_known_body_id(r.owned_id));
+
+        if !replaced && is_body && !arr.is_empty() {
+            // Index 0 in Rocket League positional loadout array is ALWAYS the Body slot
+            if arr[0].as_i64().map(|n| n as i32) != Some(r.wanted_id) {
+                arr[0] = serde_json::json!(r.wanted_id);
+                *changed = true;
+            }
+            replaced = true;
+        }
+
+        // 3. If not replaced and wanted_id not already in array, append
+        if !replaced {
+            let already_present = arr.iter().any(|v| v.as_i64().map(|n| n as i32) == Some(r.wanted_id));
+            if !already_present {
+                arr.push(serde_json::json!(r.wanted_id));
                 *changed = true;
             }
         }
@@ -4865,10 +5008,10 @@ fn patch_product_ids_node(
 
 fn patch_loadout_node(
     loadout: &mut serde_json::Value,
-    items: &[(i32, i32)],
+    rules: &[ActiveSwapRule],
     changed: &mut bool,
 ) {
-    if items.is_empty() {
+    if rules.is_empty() {
         return;
     }
 
@@ -4877,38 +5020,51 @@ fn patch_loadout_node(
             if let Some(arr) = products_val.as_array_mut() {
                 let is_int_arr = arr.iter().any(|v| v.is_i64() || v.is_u64());
                 if is_int_arr {
-                    let mut existing: std::collections::HashSet<i32> = arr
-                        .iter()
-                        .filter_map(|v| v.as_i64().map(|n| n as i32))
-                        .collect();
-                    for &(wanted_id, _) in items {
-                        if wanted_id > 0 && existing.insert(wanted_id) {
-                            arr.push(serde_json::json!(wanted_id));
-                            *changed = true;
-                        }
-                    }
+                    patch_loadout_int_array(arr, rules, changed);
                 } else {
-                    for &(wanted_id, paint_id) in items {
-                        if wanted_id <= 0 {
+                    for r in rules {
+                        if r.wanted_id <= 0 {
                             continue;
                         }
-                        let already_has = arr.iter().any(|obj| {
-                            obj.get("ProductID")
+                        let mut replaced = false;
+                        for obj in arr.iter_mut() {
+                            let pid = obj.get("ProductID")
                                 .or_else(|| obj.get("ProductId"))
                                 .or_else(|| obj.get("id"))
                                 .and_then(|v| v.as_i64())
-                                .map(|n| n as i32)
-                                == Some(wanted_id)
-                        });
-                        if !already_has {
+                                .map(|n| n as i32);
+                            let slot_idx = obj.get("SlotIndex").and_then(|v| v.as_i64()).map(|n| n as u8);
+
+                            let is_body_slot = r.owned_id > 0
+                                && (r.slot_idx == 0 || r.slot.eq_ignore_ascii_case("Body"))
+                                && (slot_idx == Some(0) || is_known_body_id(pid.unwrap_or(0)));
+                            let is_matching_owned = r.owned_id > 0 && pid == Some(r.owned_id);
+
+                            if is_body_slot || is_matching_owned {
+                                if pid != Some(r.wanted_id) {
+                                    obj["ProductID"] = serde_json::json!(r.wanted_id);
+                                    *changed = true;
+                                }
+                                if r.paint_id > 0 {
+                                    obj["PaintID"] = serde_json::json!(r.paint_id);
+                                    obj["Attributes"] = serde_json::json!([
+                                        { "Key": "Painted", "Value": r.paint_id }
+                                    ]);
+                                    *changed = true;
+                                }
+                                replaced = true;
+                                break;
+                            }
+                        }
+                        if !replaced {
                             let mut obj = serde_json::json!({
-                                "ProductID": wanted_id,
-                                "SlotIndex": 0,
-                                "PaintID": paint_id,
+                                "ProductID": r.wanted_id,
+                                "SlotIndex": r.slot_idx,
+                                "PaintID": r.paint_id,
                             });
-                            if paint_id > 0 {
+                            if r.paint_id > 0 {
                                 obj["Attributes"] = serde_json::json!([
-                                    { "Key": "Painted", "Value": paint_id }
+                                    { "Key": "Painted", "Value": r.paint_id }
                                 ]);
                             }
                             arr.push(obj);
@@ -4919,16 +5075,16 @@ fn patch_loadout_node(
             }
         } else {
             let mut arr = Vec::new();
-            for &(wanted_id, paint_id) in items {
-                if wanted_id > 0 {
+            for r in rules {
+                if r.wanted_id > 0 {
                     let mut obj = serde_json::json!({
-                        "ProductID": wanted_id,
-                        "SlotIndex": 0,
-                        "PaintID": paint_id,
+                        "ProductID": r.wanted_id,
+                        "SlotIndex": r.slot_idx,
+                        "PaintID": r.paint_id,
                     });
-                    if paint_id > 0 {
+                    if r.paint_id > 0 {
                         obj["Attributes"] = serde_json::json!([
-                            { "Key": "Painted", "Value": paint_id }
+                            { "Key": "Painted", "Value": r.paint_id }
                         ]);
                     }
                     arr.push(obj);
@@ -4941,21 +5097,12 @@ fn patch_loadout_node(
         }
 
         if let Some(prod_ids_val) = map.get_mut("ProductIDs") {
-            patch_product_ids_node(prod_ids_val, items, changed);
+            patch_product_ids_node(prod_ids_val, rules, changed);
         }
     } else if let Some(arr) = loadout.as_array_mut() {
         let is_int_arr = arr.iter().any(|v| v.is_i64() || v.is_u64());
         if is_int_arr {
-            let mut existing: std::collections::HashSet<i32> = arr
-                .iter()
-                .filter_map(|v| v.as_i64().map(|n| n as i32))
-                .collect();
-            for &(wanted_id, _) in items {
-                if wanted_id > 0 && existing.insert(wanted_id) {
-                    arr.push(serde_json::json!(wanted_id));
-                    *changed = true;
-                }
-            }
+            patch_loadout_int_array(arr, rules, changed);
         }
     }
 }
@@ -4963,7 +5110,7 @@ fn patch_loadout_node(
 fn patch_reservation_value_sync(
     val: &mut serde_json::Value,
     proxy_port: u16,
-    items: &[(i32, i32)],
+    rules: &[ActiveSwapRule],
     learned_pid: Option<&str>,
     changed: &mut bool,
 ) {
@@ -5002,7 +5149,7 @@ fn patch_reservation_value_sync(
 
                         if is_local {
                             if let Some(loadout_val) = player.get_mut("Loadout") {
-                                patch_loadout_node(loadout_val, items, changed);
+                                patch_loadout_node(loadout_val, rules, changed);
                             }
                         }
                     }
@@ -5010,11 +5157,11 @@ fn patch_reservation_value_sync(
             }
 
             if let Some(loadout_val) = map.get_mut("Loadout") {
-                patch_loadout_node(loadout_val, items, changed);
+                patch_loadout_node(loadout_val, rules, changed);
             }
 
             if let Some(prod_ids_val) = map.get_mut("ProductIDs") {
-                patch_product_ids_node(prod_ids_val, items, changed);
+                patch_product_ids_node(prod_ids_val, rules, changed);
             }
 
             for (k, v) in map.iter_mut() {
@@ -5028,7 +5175,7 @@ fn patch_reservation_value_sync(
                     {
                         if let Ok(mut inner_val) = serde_json::from_str::<serde_json::Value>(trimmed) {
                             let mut inner_changed = false;
-                            patch_reservation_value_sync(&mut inner_val, proxy_port, items, learned_pid, &mut inner_changed);
+                            patch_reservation_value_sync(&mut inner_val, proxy_port, rules, learned_pid, &mut inner_changed);
                             if inner_changed {
                                 if let Ok(serialized) = serde_json::to_string(&inner_val) {
                                     *v = serde_json::json!(serialized);
@@ -5038,13 +5185,13 @@ fn patch_reservation_value_sync(
                         }
                     }
                 } else {
-                    patch_reservation_value_sync(v, proxy_port, items, learned_pid, changed);
+                    patch_reservation_value_sync(v, proxy_port, rules, learned_pid, changed);
                 }
             }
         }
         serde_json::Value::Array(arr) => {
             for v in arr.iter_mut() {
-                patch_reservation_value_sync(v, proxy_port, items, learned_pid, changed);
+                patch_reservation_value_sync(v, proxy_port, rules, learned_pid, changed);
             }
         }
         _ => {}
@@ -5054,6 +5201,26 @@ fn patch_reservation_value_sync(
 pub async fn patch_reservation_json(
     body: &[u8],
     items: &[(i32, i32)],
+) -> (Vec<u8>, bool) {
+    let rules: Vec<ActiveSwapRule> = items
+        .iter()
+        .map(|&(w, p)| {
+            let is_b = is_known_body_id(w);
+            ActiveSwapRule {
+                owned_id: 0,
+                wanted_id: w,
+                paint_id: p,
+                slot: if is_b { "Body".to_string() } else { "".to_string() },
+                slot_idx: if is_b { 0 } else { 255 },
+            }
+        })
+        .collect();
+    patch_reservation_json_with_rules(body, &rules).await
+}
+
+pub async fn patch_reservation_json_with_rules(
+    body: &[u8],
+    rules: &[ActiveSwapRule],
 ) -> (Vec<u8>, bool) {
     let Ok(mut root) = serde_json::from_slice::<serde_json::Value>(body) else {
         return (body.to_vec(), false);
@@ -5074,7 +5241,7 @@ pub async fn patch_reservation_json(
 
     let learned_pid = get_learned_player_id();
     let mut changed = false;
-    patch_reservation_value_sync(&mut root, proxy_port, items, learned_pid.as_deref(), &mut changed);
+    patch_reservation_value_sync(&mut root, proxy_port, rules, learned_pid.as_deref(), &mut changed);
 
     if changed {
         if let Ok(out) = serde_json::to_vec(&root) {
@@ -5798,6 +5965,46 @@ mod tests {
         assert!((16..=24).contains(&ping), "Ping should be within interval: {ping}");
         let avg_ping = val["Players"][0]["Metrics"]["AveragePing"].as_u64().unwrap();
         assert!((16..=24).contains(&avg_ping), "AveragePing should be within interval: {avg_ping}");
+    }
+
+    #[tokio::test]
+    async fn test_patch_reservation_flat_array_c2u() {
+        let inner = serde_json::json!({
+            "ReservationID": "test-c2u",
+            "Players": [
+                {
+                    "PlayerID": "Steam|76561198643170831|0",
+                    "PlayerName": "one",
+                    "bRemotePlayer": false,
+                    "Loadout": [11603, 376, 63, 1948, 1903]
+                }
+            ]
+        });
+        let root = serde_json::json!({
+            "MessageType": "AddReservationMessagePublic_X",
+            "MessagePayload": inner.to_string()
+        });
+        let raw = serde_json::to_vec(&root).unwrap();
+
+        let rules = vec![
+            ActiveSwapRule {
+                owned_id: 4284,
+                wanted_id: 4284,
+                paint_id: 5,
+                slot: "Body".to_string(),
+                slot_idx: 0,
+            }
+        ];
+        let (patched, changed) = patch_reservation_json_with_rules(&raw, &rules).await;
+        assert!(changed, "Flat array loadout must be patched");
+
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        let payload_str = val["MessagePayload"].as_str().unwrap();
+        let parsed_inner: serde_json::Value = serde_json::from_str(payload_str).unwrap();
+        let loadout = parsed_inner["Players"][0]["Loadout"].as_array().unwrap();
+
+        assert_eq!(loadout[0], 4284, "Index 0 must be replaced from fallback 11603 to 4284 (Fennec)");
+        assert_eq!(loadout.len(), 5, "Loadout array length should remain intact");
     }
 }
 
