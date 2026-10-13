@@ -3973,6 +3973,14 @@ function applyHydratedToolsToUi() {
     }
     if (pingMin) pingMin.value = String(pingData.min_ms ?? 16);
     if (pingMax) pingMax.value = String(pingData.max_ms ?? 24);
+    if (pingData.enabled) {
+        invoke('apply_ping_spoof_upk', {
+            minMs: pingData.min_ms ?? 16,
+            maxMs: pingData.max_ms ?? 24,
+            min_ms: pingData.min_ms ?? 16,
+            max_ms: pingData.max_ms ?? 24,
+        }).catch(() => { });
+    }
 }
 
 function isSteamGameDir(gameDir) {
@@ -5994,9 +6002,13 @@ function initMiscTab() {
                 localStorage.setItem(PING_SPOOF_KEY, JSON.stringify({ ping_spoof }));
                 await runToolSave(pingSaveBtn, 'ping spoof', { ping_spoof }, { enabled });
                 if (enabled) {
-                    invoke('apply_ping_spoof_upk', { min_ms, max_ms }).catch(() => { });
+                    await invoke('apply_ping_spoof_upk', { minMs: min_ms, maxMs: max_ms, min_ms, max_ms }).catch((err) => {
+                        console.error('apply_ping_spoof_upk failed:', err);
+                    });
                 } else {
-                    invoke('restore_ping_spoof_upk').catch(() => { });
+                    await invoke('restore_ping_spoof_upk').catch((err) => {
+                        console.error('restore_ping_spoof_upk failed:', err);
+                    });
                 }
                 flashButtonLabel(pingSaveBtn, enabled ? 'Saved' : 'Saved (off)');
                 if (enabled) {

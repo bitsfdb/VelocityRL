@@ -148,11 +148,7 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                     // Forward to real game server
                     let target_opt = *state_c2s.target_server.read().await;
                     if let Some(target) = target_opt {
-                        if let Err(e) = us_c2s.send_to(&buf[..len], target).await {
-                            crate::applog::event(&format!(
-                                "udp_proxy: send to game server {target} failed: {e}"
-                            ));
-                        }
+                        let _ = us_c2s.send_to(&buf[..len], target).await;
                     }
                 }
                 Err(e) => {
@@ -175,11 +171,7 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                     // Forward to client endpoint
                     let client_opt = *state_s2c.client_endpoint.read().await;
                     if let Some(client) = client_opt {
-                        if let Err(e) = cs_s2c.send_to(&buf[..len], client).await {
-                            crate::applog::event(&format!(
-                                "udp_proxy: forward to client {client} failed: {e}"
-                            ));
-                        }
+                        let _ = cs_s2c.send_to(&buf[..len], client).await;
                     }
                 }
                 Err(e) => {
@@ -199,26 +191,36 @@ pub async fn set_active_reservation(target_addr_str: &str) -> Result<u16, String
     let proxy_port = ensure_udp_proxy().await?;
     let state = PROXY_STATE.get();
 
+    let clean = target_addr_str
+        .trim()
+        .trim_start_matches("udp://")
+        .trim_start_matches("http://")
+        .trim_start_matches("https://");
+    let host_port = clean
+        .split('?')
+        .next()
+        .unwrap_or(clean)
+        .split('/')
+        .next()
+        .unwrap_or(clean)
+        .trim();
+
     // Resolve address
-    let resolved: SocketAddr = match target_addr_str.parse() {
+    let resolved: SocketAddr = match host_port.parse() {
         Ok(sa) => sa,
         Err(_) => {
             // Try resolving via tokio
-            let addrs = tokio::net::lookup_host(target_addr_str)
+            let addrs = tokio::net::lookup_host(host_port)
                 .await
-                .map_err(|e| format!("Failed to resolve target server '{target_addr_str}': {e}"))?;
+                .map_err(|e| format!("Failed to resolve target server '{host_port}': {e}"))?;
             let mut found = None;
             for addr in addrs {
                 found = Some(addr);
                 break;
             }
-            found.ok_or_else(|| format!("Could not resolve host: {target_addr_str}"))?
+            found.ok_or_else(|| format!("Could not resolve host: {host_port}"))?
         }
     };
-
-    crate::applog::event(&format!(
-        "udp_proxy: active reservation set -> real server {resolved} (proxied on 127.0.0.1:{proxy_port})"
-    ));
 
     {
         let mut target_lock = state.target_server.write().await;

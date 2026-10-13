@@ -1511,8 +1511,16 @@ pub(crate) async fn sync_all_swaps_to_tagame(
     // UPK bytecode patching is replaced by native SaveData spawning.
     // Ensure TAGame.upk and companion packages are restored to vanilla stock so the game never crashes.
     let state = load_integrity(app);
-    if !state.palette_active {
+    let ping_cfg = crate::udp_proxy::get_ping_spoof();
+    let ping_active = ping_cfg.as_ref().map(|p| p.enabled).unwrap_or(false);
+    if !state.palette_active && !ping_active {
         let _ = upk::tagame_swapper::restore_tagame_upk(cooked);
+    } else if ping_active {
+        if let Some(ps) = ping_cfg {
+            let keys_txt = include_str!("../resources/keys.txt");
+            let keys_map_json = include_str!("../resources/keys_map.json");
+            let _ = upk::tagame_swapper::apply_tagame_ping_spoof(cooked, ps.min_ms, ps.max_ms, keys_txt, keys_map_json);
+        }
     }
     if let Ok(entries) = std::fs::read_dir(cooked) {
         for entry in entries.flatten() {
@@ -1942,7 +1950,17 @@ async fn restore_tagame_swaps(app: tauri::AppHandle) -> Result<upk::TagameSwappe
 }
 
 #[tauri::command]
-async fn apply_ping_spoof_upk(app: tauri::AppHandle, min_ms: u32, max_ms: u32) -> Result<(), String> {
+async fn apply_ping_spoof_upk(
+    app: tauri::AppHandle,
+    min_ms: Option<u32>,
+    max_ms: Option<u32>,
+    #[allow(non_snake_case)]
+    minMs: Option<u32>,
+    #[allow(non_snake_case)]
+    maxMs: Option<u32>,
+) -> Result<(), String> {
+    let min = min_ms.or(minMs).unwrap_or(16);
+    let max = max_ms.or(maxMs).unwrap_or(24);
     let config = get_config(app.clone()).await?;
     if config.game_dir.is_empty() {
         return Ok(());
@@ -1953,9 +1971,9 @@ async fn apply_ping_spoof_upk(app: tauri::AppHandle, min_ms: u32, max_ms: u32) -
     };
     let keys_txt = include_str!("../resources/keys.txt");
     let keys_map_json = include_str!("../resources/keys_map.json");
-    upk::tagame_swapper::apply_tagame_ping_spoof(&cooked, min_ms, max_ms, keys_txt, keys_map_json)
+    upk::tagame_swapper::apply_tagame_ping_spoof(&cooked, min, max, keys_txt, keys_map_json)
         .map_err(|e| e.to_string())?;
-    applog::event(&format!("ping_spoof: applied TAGame.upk GetPing spoof [{min_ms}..{max_ms}] ms"));
+    applog::event(&format!("ping_spoof: applied TAGame.upk GetPing spoof [{min}..{max}] ms"));
     Ok(())
 }
 
