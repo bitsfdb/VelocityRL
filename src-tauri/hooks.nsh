@@ -164,6 +164,13 @@ vrl_done_proc:
   DetailPrint "Restoring hosts file if redirected..."
   nsExec::Exec 'powershell -NoProfile -ExecutionPolicy Bypass -Command "$h = [System.IO.Path]::Combine($env:SystemRoot, \"System32\drivers\etc\hosts\"); if (Test-Path $h) { (Get-Content $h) | Where-Object { $_ -notmatch \"config\.psynet\.gg\" -and $_ -notmatch \"ws\.rlpp\.psynet\.gg\" -and $_ -notmatch \"api\.rlpp\.psynet\.gg\" } | Set-Content $h }"'
 
+  DetailPrint "Restoring original Rocket League files from .bak backups..."
+  nsExec::Exec 'powershell -NoProfile -ExecutionPolicy Bypass -Command "$cfg = \"$APPDATA\VelocityRL\config.json\"; if (Test-Path $cfg) { try { $j = Get-Content $cfg -Raw | ConvertFrom-Json; $gd = $j.game_dir; if ($gd -and (Test-Path $gd)) { $baks = Get-ChildItem -Path $gd -Filter \"*.upk.bak\"; foreach ($b in $baks) { $orig = $b.FullName.Substring(0, $b.FullName.Length - 4); Copy-Item -Force $b.FullName $orig; Remove-Item -Force $b.FullName } } } catch {} }"'
+
+  DetailPrint "Removing startup entry and scheduled task..."
+  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "VelocityRL"
+  nsExec::Exec 'schtasks /Delete /TN VelocityRL /F'
+
   DetailPrint "Removing VelocityRL data directories..."
   RMDir /r "$APPDATA\VelocityRL"
   RMDir /r "$LOCALAPPDATA\com.velocityrl.app"
