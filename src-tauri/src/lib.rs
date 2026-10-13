@@ -1120,22 +1120,26 @@ const STARTUP_TASK_NAME: &str = "VelocityRL";
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[cfg(windows)]
-fn scheduled_task_exists() -> bool {
-    let mut cmd = std::process::Command::new("schtasks");
-    cmd.args(["/Query", "/TN", STARTUP_TASK_NAME])
+fn windows_startup_exists() -> bool {
+    let mut cmd = std::process::Command::new("reg");
+    cmd.args(["query", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run", "/v", "VelocityRL"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
     use std::os::windows::process::CommandExt;
     cmd.creation_flags(CREATE_NO_WINDOW);
-    let out = cmd.status();
-    matches!(out, Ok(s) if s.success())
+    if let Ok(s) = cmd.status() {
+        if s.success() {
+            return true;
+        }
+    }
+    scheduled_task_exists()
 }
 
 #[tauri::command]
 async fn get_launch_on_startup() -> Result<bool, String> {
     #[cfg(windows)]
     {
-        Ok(scheduled_task_exists())
+        Ok(windows_startup_exists())
     }
     #[cfg(target_os = "linux")]
     {
@@ -1158,42 +1162,46 @@ async fn set_launch_on_startup(enable: bool) -> Result<(), String> {
     #[cfg(windows)]
     {
         let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        use std::os::windows::process::CommandExt;
         if enable {
-            let mut cmd = std::process::Command::new("schtasks");
-            cmd.args([
-                "/Create",
-                "/TN", STARTUP_TASK_NAME,
-                "/TR", &format!("\"{}\"", exe.display()),
-                "/SC", "ONLOGON",
-                "/RL", "HIGHEST",
-                "/F",
+            let exe_str = format!("\"{}\"", exe.display());
+            let mut reg_cmd = std::process::Command::new("reg");
+            reg_cmd.args([
+                "add",
+                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+                "/v",
+                "VelocityRL",
+                "/t",
+                "REG_SZ",
+                "/d",
+                &exe_str,
+                "/f",
             ]);
-            #[cfg(windows)]
-            {
-                use std::os::windows::process::CommandExt;
-                cmd.creation_flags(CREATE_NO_WINDOW);
-            }
-            let out = cmd.output().map_err(|e| e.to_string())?;
+            reg_cmd.creation_flags(CREATE_NO_WINDOW);
+            let out = reg_cmd.output().map_err(|e| e.to_string())?;
             if !out.status.success() {
                 return Err(format!(
-                    "Could not create startup task: {}",
+                    "Could not register startup: {}",
                     String::from_utf8_lossy(&out.stderr).trim()
                 ));
             }
-        } else if scheduled_task_exists() {
-            let mut cmd = std::process::Command::new("schtasks");
-            cmd.args(["/Delete", "/TN", STARTUP_TASK_NAME, "/F"]);
-            #[cfg(windows)]
-            {
-                use std::os::windows::process::CommandExt;
+        } else {
+            let mut reg_cmd = std::process::Command::new("reg");
+            reg_cmd.args([
+                "delete",
+                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+                "/v",
+                "VelocityRL",
+                "/f",
+            ]);
+            reg_cmd.creation_flags(CREATE_NO_WINDOW);
+            let _ = reg_cmd.output();
+
+            if scheduled_task_exists() {
+                let mut cmd = std::process::Command::new("schtasks");
+                cmd.args(["/Delete", "/TN", STARTUP_TASK_NAME, "/F"]);
                 cmd.creation_flags(CREATE_NO_WINDOW);
-            }
-            let out = cmd.output().map_err(|e| e.to_string())?;
-            if !out.status.success() {
-                return Err(format!(
-                    "Could not remove startup task: {}",
-                    String::from_utf8_lossy(&out.stderr).trim()
-                ));
+                let _ = cmd.output();
             }
         }
         Ok(())
@@ -1567,6 +1575,18 @@ async fn delete_swap(app: tauri::AppHandle, owned_id: i32) -> Result<(), String>
             let _ = savedata::remove_spawn_native(&save_path, s.wanted_id);
         }
     }
+
+    if let Ok(config) = get_config(app.clone()).await {
+        if !config.game_dir.is_empty() {
+            if let Ok(cooked) = upk::tagame_swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                if swaps.is_empty() {
+                    let _ = upk::tagame_swapper::restore_tagame_upk(&cooked);
+                } else {
+                    let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
+                }
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1640,6 +1660,14 @@ async fn apply_swap(
     };
     swaps.push(new_entry.clone());
     save_swaps(&app, &swaps);
+
+    if let Ok(config) = get_config(app.clone()).await {
+        if !config.game_dir.is_empty() {
+            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
+            }
+        }
+    }
 
     record_swap_history(&app, "spawn", std::slice::from_ref(&new_entry), "");
     applog::event(&format!("spawn: succeeded for product_id={} into save {}", wid, save_path.display()));
@@ -1726,6 +1754,13 @@ async fn spawn_items_batch(
     }
 
     save_swaps(&app, &swaps);
+    if let Ok(config) = get_config(app.clone()).await {
+        if !config.game_dir.is_empty() {
+            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
+            }
+        }
+    }
     if !spawned_entries.is_empty() {
         record_swap_history(&app, "spawn", &spawned_entries, "batch spawn");
     }
@@ -1735,14 +1770,6 @@ async fn spawn_items_batch(
 
 #[tauri::command]
 async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<(), String> {
-    if let Ok(config) = get_config(app.clone()).await {
-        if !config.game_dir.is_empty() {
-            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                let _ = sync_all_swaps_to_tagame(&app, &cooked, &[]).await;
-            }
-        }
-    }
-
     let mut swaps = load_swaps(&app);
     let target_id = path
         .strip_prefix("item_")
@@ -1757,20 +1784,24 @@ async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<()
         record_swap_history(&app, "restore", &[], &format!("restored item #{id}"));
     }
 
+    if let Ok(config) = get_config(app.clone()).await {
+        if !config.game_dir.is_empty() {
+            if let Ok(cooked) = upk::tagame_swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                if swaps.is_empty() {
+                    let _ = upk::tagame_swapper::restore_tagame_upk(&cooked);
+                } else {
+                    let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
+                }
+            }
+        }
+    }
+
     applog::event(&format!("restore_single_backup: restored {path}"));
     Ok(())
 }
 
 #[tauri::command]
 async fn restore_backups(app: tauri::AppHandle) -> Result<String, String> {
-    if let Ok(config) = get_config(app.clone()).await {
-        if !config.game_dir.is_empty() {
-            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                let _ = sync_all_swaps_to_tagame(&app, &cooked, &[]).await;
-            }
-        }
-    }
-
     let swaps = load_swaps(&app);
     let count = swaps.len();
     if let Ok(save_path) = savedata::locate_latest_save() {
@@ -1780,6 +1811,15 @@ async fn restore_backups(app: tauri::AppHandle) -> Result<String, String> {
     }
 
     save_swaps(&app, &[]);
+
+    if let Ok(config) = get_config(app.clone()).await {
+        if !config.game_dir.is_empty() {
+            if let Ok(cooked) = upk::tagame_swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                let _ = upk::tagame_swapper::restore_tagame_upk(&cooked);
+            }
+        }
+    }
+
     record_swap_history(&app, "restore_all", &[], "restored all active items");
     applog::event(&format!("restore_backups: restored {count} items"));
     Ok(format!("Restored {} item(s) from inventory", count))

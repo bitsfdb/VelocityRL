@@ -783,23 +783,20 @@ pub fn emit_pri_get_ping_bytecode(min_ms: u32, max_ms: u32, orig_disk_sz: usize)
     // EX_RETURN: 0x04, EX_INT_ZERO: 0x25
     payload.push(opcodes::EX_RETURN);
     payload.push(opcodes::EX_INT_ZERO);
-    // EX_END_OF_SCRIPT: 0x4C
-    payload.push(opcodes::EX_END_OF_SCRIPT);
-
-    while payload.len() < orig_disk_sz {
+    while payload.len() + 1 < orig_disk_sz {
         payload.push(opcodes::EX_NOTHING);
     }
+    payload.push(opcodes::EX_END_OF_SCRIPT);
     payload
 }
 
 pub fn emit_noop_void_function_bytecode(orig_disk_sz: usize) -> (Vec<u8>, u32) {
     let mut payload = Vec::with_capacity(orig_disk_sz);
     payload.push(opcodes::EX_RETURN); // 0x04
-    payload.push(opcodes::EX_NOTHING); // 0x0B
-    payload.push(opcodes::EX_END_OF_SCRIPT); // 0x4C
-    while payload.len() < orig_disk_sz {
+    while payload.len() + 1 < orig_disk_sz {
         payload.push(opcodes::EX_NOTHING); // 0x0B
     }
+    payload.push(opcodes::EX_END_OF_SCRIPT); // 0x4C
     (payload, orig_disk_sz as u32)
 }
 
@@ -1072,7 +1069,9 @@ pub fn apply_tagame_modifications(
     let ping_cfg = crate::udp_proxy::get_ping_spoof();
     let ping_active = ping_cfg.as_ref().map(|p| p.enabled).unwrap_or(false);
 
-    if !swaps.is_empty() || ping_active {
+    let should_patch = !swaps.is_empty() || ping_active;
+
+    if should_patch {
         if file_bytes.len() < 32 {
             return Err(TagameSwapError::Msg("TAGame.upk too small".into()));
         }
@@ -1198,18 +1197,17 @@ pub fn apply_tagame_modifications(
                 crate::presets::upk_slot_index_from_str(&s.slot)
             };
 
-            // For Body (slot 0), treat spawns and default-base swaps unconditionally so post-goal respawns never revert
-            let owned_id = if slot_idx == 0 && (s.owned_id.is_none() || s.owned_id == Some(pid) || s.owned_id == Some(23)) {
-                None
-            } else {
-                s.owned_id
-            };
+            let owned_id = s.owned_id;
 
-            slot_overrides.push(SlotSwapRule {
-                slot_idx,
-                owned_id,
-                target_id: pid,
-            });
+            // Only add a slot override rule if it's an actual swap (donor != target),
+            // or if owned_id is specified, so that other cars in the garage are never overwritten
+            if owned_id != Some(pid) {
+                slot_overrides.push(SlotSwapRule {
+                    slot_idx,
+                    owned_id,
+                    target_id: pid,
+                });
+            }
         }
 
         // 1. Patch Chunk 0: Car_TA::SetLoadout strictly within vanilla allocation (186 bytes)
@@ -1823,9 +1821,8 @@ mod tests {
         assert_eq!(bc[18], opcodes::EX_END_FUNCTION_PARMS);
         assert_eq!(bc[19], opcodes::EX_RETURN);
         assert_eq!(bc[20], opcodes::EX_INT_ZERO);
-        assert_eq!(bc[21], opcodes::EX_END_OF_SCRIPT);
-        assert_eq!(bc[22], opcodes::EX_NOTHING);
-        assert_eq!(bc[198], opcodes::EX_NOTHING);
+        assert_eq!(bc[21], opcodes::EX_NOTHING);
+        assert_eq!(bc[198], opcodes::EX_END_OF_SCRIPT);
     }
 
     #[test]
@@ -1833,11 +1830,10 @@ mod tests {
         let (payload, mem_sz) = emit_noop_void_function_bytecode(191);
         assert_eq!(payload.len(), 191);
         assert_eq!(payload[0], opcodes::EX_RETURN);
-        assert_eq!(payload[1], opcodes::EX_NOTHING);
-        assert_eq!(payload[2], opcodes::EX_END_OF_SCRIPT);
-        for i in 3..191 {
+        for i in 1..190 {
             assert_eq!(payload[i], opcodes::EX_NOTHING);
         }
+        assert_eq!(payload[190], opcodes::EX_END_OF_SCRIPT);
         assert_eq!(mem_sz, 191);
     }
 
