@@ -224,7 +224,12 @@
         "save_logo": "Save season logo",
         "bottom_text": "Bottom Main Menu Text",
         "text_label": "Text",
-        "save_text": "Save"
+        "save_text": "Save",
+        "ping_spoof": "Network Ping Spoof",
+        "ping_spoof_desc": "Simulate realistic scoreboard ping and network jitter via UDP proxy",
+        "ping_min": "Min Ping (ms)",
+        "ping_max": "Max Ping (ms)",
+        "save_ping": "Save ping spoof"
     },
     "tracker": {
         "title": "Tracker Overlay",

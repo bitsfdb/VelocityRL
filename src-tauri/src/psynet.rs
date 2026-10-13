@@ -91,12 +91,32 @@ pub struct PaletteSpoofPayload {
     pub enabled: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct PingSpoofPayload {
     #[serde(default)]
     pub enabled: bool,
-    #[serde(default)]
-    pub ms: i32,
+    #[serde(default = "default_ping_min")]
+    pub min_ms: u32,
+    #[serde(default = "default_ping_max")]
+    pub max_ms: u32,
+}
+
+impl Default for PingSpoofPayload {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            min_ms: default_ping_min(),
+            max_ms: default_ping_max(),
+        }
+    }
+}
+
+pub fn default_ping_min() -> u32 {
+    16
+}
+
+pub fn default_ping_max() -> u32 {
+    24
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -314,7 +334,7 @@ pub struct SpoofPayload {
     #[serde(default)]
     pub camera_spoof: Option<CameraSpoofPayload>,
 
-    #[serde(default, skip_serializing)]
+    #[serde(default)]
     pub ping_spoof: Option<PingSpoofPayload>,
 
     #[serde(default)]
@@ -722,7 +742,20 @@ fn write_spoof(dir: &Path, payload: &SpoofPayload) -> Result<PathBuf, String> {
 
         obj.remove("observe_only");
         obj.remove("inventory_spoof");
-        obj.remove("ping_spoof");
+        if let Some(ps) = &payload.ping_spoof {
+            obj.insert(
+                "ping_spoof".into(),
+                serde_json::json!({
+                    "enabled": ps.enabled,
+                    "min_ms": ps.min_ms,
+                    "max_ms": ps.max_ms,
+                }),
+            );
+            crate::udp_proxy::set_ping_spoof(Some(ps.clone()));
+        } else {
+            obj.remove("ping_spoof");
+            crate::udp_proxy::set_ping_spoof(None);
+        }
         if !payload.custom_name.is_empty() {
             obj.insert("custom_name".into(), serde_json::json!(payload.custom_name));
         }

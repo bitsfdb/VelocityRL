@@ -2710,6 +2710,20 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
             }
         }
     }
+
+    if let Some(ps) = &cfg.ping_spoof {
+        if ps.enabled {
+            let (new_body, changed) = patch_ping_metrics_json(&current_body, ps.min_ms, ps.max_ms);
+            if changed {
+                current_body = new_body;
+                any_changed = true;
+                crate::applog::event(&format!(
+                    "proxy: patched ping metrics in WS frame (interval {}-{} ms)",
+                    ps.min_ms, ps.max_ms
+                ));
+            }
+        }
+    }
     }
 
     if !any_changed {
@@ -5136,6 +5150,85 @@ pub async fn patch_reservation_json(
     (body.to_vec(), false)
 }
 
+pub fn patch_ping_metrics_json(
+    body: &[u8],
+    min_ms: u32,
+    max_ms: u32,
+) -> (Vec<u8>, bool) {
+    let Ok(mut root) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return (body.to_vec(), false);
+    };
+
+    let mut changed = false;
+    patch_ping_metrics_value(&mut root, min_ms, max_ms, &mut changed);
+
+    if changed {
+        if let Ok(out) = serde_json::to_vec(&root) {
+            return (out, true);
+        }
+    }
+    (body.to_vec(), false)
+}
+
+fn patch_ping_metrics_value(
+    val: &mut serde_json::Value,
+    min_ms: u32,
+    max_ms: u32,
+    changed: &mut bool,
+) {
+    match val {
+        serde_json::Value::Object(map) => {
+            const PING_KEYS: &[&str] = &[
+                "Ping",
+                "PingInMs",
+                "AveragePing",
+                "AvgPing",
+                "PingAvg",
+                "Latency",
+                "PingResult",
+                "LastPing",
+            ];
+            for (k, v) in map.iter_mut() {
+                let is_ping_key = PING_KEYS.iter().any(|pk| pk.eq_ignore_ascii_case(k));
+                if is_ping_key {
+                    if v.is_number() {
+                        use rand::Rng;
+                        let min = min_ms.min(max_ms);
+                        let max = min_ms.max(max_ms);
+                        let sample = if min == max { min } else { rand::thread_rng().gen_range(min..=max) };
+                        *v = serde_json::json!(sample);
+                        *changed = true;
+                    }
+                } else if let Some(s) = v.as_str() {
+                    let trimmed = s.trim();
+                    if (trimmed.starts_with('{') && trimmed.ends_with('}'))
+                        || (trimmed.starts_with('[') && trimmed.ends_with(']'))
+                    {
+                        if let Ok(mut inner) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                            let mut inner_changed = false;
+                            patch_ping_metrics_value(&mut inner, min_ms, max_ms, &mut inner_changed);
+                            if inner_changed {
+                                if let Ok(s_out) = serde_json::to_string(&inner) {
+                                    *v = serde_json::json!(s_out);
+                                    *changed = true;
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    patch_ping_metrics_value(v, min_ms, max_ms, changed);
+                }
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr.iter_mut() {
+                patch_ping_metrics_value(v, min_ms, max_ms, changed);
+            }
+        }
+        _ => {}
+    }
+}
+
 pub fn patch_player_products_json(
     body: &[u8],
     items: &[(i32, i32)],
@@ -5759,6 +5852,18 @@ mod tests {
         assert_eq!(prods.len(), 2);
         let injected = prods.iter().find(|p| p["ProductID"] == 803).unwrap();
         assert_eq!(injected["PaintID"], 1);
+    }
+
+    #[test]
+    fn test_patch_ping_metrics_json_random_interval() {
+        let body = br#"{"Players":[{"PlayerID":"Epic|123|0","Ping":120,"Metrics":{"AveragePing":95.5}}]}"#;
+        let (patched, changed) = patch_ping_metrics_json(body, 16, 24);
+        assert!(changed);
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        let ping = val["Players"][0]["Ping"].as_u64().unwrap();
+        assert!((16..=24).contains(&ping), "Ping should be within interval: {ping}");
+        let avg_ping = val["Players"][0]["Metrics"]["AveragePing"].as_u64().unwrap();
+        assert!((16..=24).contains(&avg_ping), "AveragePing should be within interval: {avg_ping}");
     }
 }
 

@@ -711,6 +711,37 @@
                         <button id="blog-spoof-save-btn" class="action-btn" type="button" data-i18n="misc.save_text">Save</button>
                     </div>
                 </div>
+
+                <div class="card spoof-card">
+                    <div class="settings-group">
+                        <label class="switch-row" for="ping-spoof-enabled">
+                            <input type="checkbox" id="ping-spoof-enabled" class="switch-input">
+                            <span class="switch-slider">
+                                <span class="switch-thumb">
+                                    <span class="switch-state-on">On</span>
+                                    <span class="switch-state-off">Off</span>
+                                </span>
+                            </span>
+                            <span class="switch-copy">
+                                <span class="switch-title" data-i18n="misc.ping_spoof">Network Ping Spoof</span>
+                                <span class="switch-hint" data-i18n="misc.ping_spoof_desc">Simulate realistic scoreboard ping and network jitter via UDP proxy</span>
+                            </span>
+                        </label>
+                    </div>
+                    <div class="settings-group" style="display: flex; gap: 12px; margin-top: 10px;">
+                        <div style="flex: 1;">
+                            <label for="ping-spoof-min" data-i18n="misc.ping_min">Min Ping (ms)</label>
+                            <input type="number" id="ping-spoof-min" min="1" max="999" value="16" placeholder="16">
+                        </div>
+                        <div style="flex: 1;">
+                            <label for="ping-spoof-max" data-i18n="misc.ping_max">Max Ping (ms)</label>
+                            <input type="number" id="ping-spoof-max" min="1" max="999" value="24" placeholder="24">
+                        </div>
+                    </div>
+                    <div class="swapper-controls">
+                        <button id="ping-spoof-save-btn" class="action-btn" type="button" data-i18n="misc.save_ping">Save ping spoof</button>
+                    </div>
+                </div>
             </div>
 
             <div id="tracker-tab" class="tab-content">

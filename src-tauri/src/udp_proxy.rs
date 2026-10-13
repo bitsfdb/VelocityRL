@@ -25,6 +25,45 @@ struct ProxyState {
 }
 
 static PROXY_STATE: once_cell_or_lazy::LazyState = once_cell_or_lazy::LazyState::new();
+static PING_SPOOF: std::sync::RwLock<Option<crate::psynet::PingSpoofPayload>> =
+    std::sync::RwLock::new(None);
+
+pub fn set_ping_spoof(cfg: Option<crate::psynet::PingSpoofPayload>) {
+    if let Ok(mut lock) = PING_SPOOF.write() {
+        *lock = cfg;
+    }
+}
+
+pub fn get_ping_spoof() -> Option<crate::psynet::PingSpoofPayload> {
+    if let Ok(lock) = PING_SPOOF.read() {
+        if lock.is_some() {
+            return lock.clone();
+        }
+    }
+    if let Some(disk) = crate::psynet::load_active_spoof_from_disk() {
+        if let Some(ps) = disk.ping_spoof {
+            set_ping_spoof(Some(ps.clone()));
+            return Some(ps);
+        }
+    }
+    None
+}
+
+/// Sample a random simulated ping in milliseconds from the configured interval [min_ms..=max_ms]
+pub fn sample_spoofed_ping_ms() -> Option<u32> {
+    let cfg = get_ping_spoof()?;
+    if !cfg.enabled {
+        return None;
+    }
+    let min = cfg.min_ms.min(cfg.max_ms);
+    let max = cfg.min_ms.max(cfg.max_ms);
+    if min == max {
+        Some(min)
+    } else {
+        use rand::Rng;
+        Some(rand::thread_rng().gen_range(min..=max))
+    }
+}
 
 mod once_cell_or_lazy {
     use super::*;
@@ -109,11 +148,19 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                     // Forward to real game server
                     let target_opt = *state_c2s.target_server.read().await;
                     if let Some(target) = target_opt {
-                        if let Err(e) = us_c2s.send_to(&buf[..len], target).await {
-                            crate::applog::event(&format!(
-                                "udp_proxy: send to game server {target} failed: {e}"
-                            ));
-                        }
+                        let packet_data = buf[..len].to_vec();
+                        let us_clone = us_c2s.clone();
+                        tokio::spawn(async move {
+                            if let Some(target_ms) = sample_spoofed_ping_ms() {
+                                let delay_ms = (target_ms / 2).max(1) as u64;
+                                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                            }
+                            if let Err(e) = us_clone.send_to(&packet_data, target).await {
+                                crate::applog::event(&format!(
+                                    "udp_proxy: send to game server {target} failed: {e}"
+                                ));
+                            }
+                        });
                     }
                 }
                 Err(e) => {
@@ -136,11 +183,19 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                     // Forward to client endpoint
                     let client_opt = *state_s2c.client_endpoint.read().await;
                     if let Some(client) = client_opt {
-                        if let Err(e) = cs_s2c.send_to(&buf[..len], client).await {
-                            crate::applog::event(&format!(
-                                "udp_proxy: forward to client {client} failed: {e}"
-                            ));
-                        }
+                        let packet_data = buf[..len].to_vec();
+                        let cs_clone = cs_s2c.clone();
+                        tokio::spawn(async move {
+                            if let Some(target_ms) = sample_spoofed_ping_ms() {
+                                let delay_ms = (target_ms / 2).max(1) as u64;
+                                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                            }
+                            if let Err(e) = cs_clone.send_to(&packet_data, client).await {
+                                crate::applog::event(&format!(
+                                    "udp_proxy: forward to client {client} failed: {e}"
+                                ));
+                            }
+                        });
                     }
                 }
                 Err(e) => {
