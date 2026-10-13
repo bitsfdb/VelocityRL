@@ -148,19 +148,11 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                     // Forward to real game server
                     let target_opt = *state_c2s.target_server.read().await;
                     if let Some(target) = target_opt {
-                        let packet_data = buf[..len].to_vec();
-                        let us_clone = us_c2s.clone();
-                        tokio::spawn(async move {
-                            if let Some(target_ms) = sample_spoofed_ping_ms() {
-                                let delay_ms = (target_ms / 2).max(1) as u64;
-                                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
-                            }
-                            if let Err(e) = us_clone.send_to(&packet_data, target).await {
-                                crate::applog::event(&format!(
-                                    "udp_proxy: send to game server {target} failed: {e}"
-                                ));
-                            }
-                        });
+                        if let Err(e) = us_c2s.send_to(&buf[..len], target).await {
+                            crate::applog::event(&format!(
+                                "udp_proxy: send to game server {target} failed: {e}"
+                            ));
+                        }
                     }
                 }
                 Err(e) => {
@@ -183,19 +175,11 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                     // Forward to client endpoint
                     let client_opt = *state_s2c.client_endpoint.read().await;
                     if let Some(client) = client_opt {
-                        let packet_data = buf[..len].to_vec();
-                        let cs_clone = cs_s2c.clone();
-                        tokio::spawn(async move {
-                            if let Some(target_ms) = sample_spoofed_ping_ms() {
-                                let delay_ms = (target_ms / 2).max(1) as u64;
-                                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
-                            }
-                            if let Err(e) = cs_clone.send_to(&packet_data, client).await {
-                                crate::applog::event(&format!(
-                                    "udp_proxy: forward to client {client} failed: {e}"
-                                ));
-                            }
-                        });
+                        if let Err(e) = cs_s2c.send_to(&buf[..len], client).await {
+                            crate::applog::event(&format!(
+                                "udp_proxy: forward to client {client} failed: {e}"
+                            ));
+                        }
                     }
                 }
                 Err(e) => {
