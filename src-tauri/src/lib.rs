@@ -1506,22 +1506,39 @@ async fn get_swaps(app: tauri::AppHandle) -> Result<Vec<SwapEntry>, String> {
 pub(crate) async fn sync_all_swaps_to_tagame(
     app: &tauri::AppHandle,
     cooked: &Path,
-    _swaps: &[SwapEntry],
+    swaps: &[SwapEntry],
 ) -> Result<(), String> {
-    // UPK bytecode patching is replaced by native SaveData spawning.
-    // Ensure TAGame.upk and companion packages are restored to vanilla stock so the game never crashes.
     let state = load_integrity(app);
-    let ping_cfg = crate::udp_proxy::get_ping_spoof();
-    let ping_active = ping_cfg.as_ref().map(|p| p.enabled).unwrap_or(false);
-    if !state.palette_active && !ping_active {
-        let _ = upk::tagame_swapper::restore_tagame_upk(cooked);
-    } else if ping_active {
-        if let Some(ps) = ping_cfg {
-            let keys_txt = include_str!("../resources/keys.txt");
-            let keys_map_json = include_str!("../resources/keys_map.json");
-            let _ = upk::tagame_swapper::apply_tagame_ping_spoof(cooked, ps.min_ms, ps.max_ms, keys_txt, keys_map_json);
-        }
-    }
+    let all_swaps = if swaps.is_empty() {
+        load_swaps(app)
+    } else {
+        swaps.to_vec()
+    };
+
+    let keys_txt = include_str!("../resources/keys.txt");
+    let keys_map_json = include_str!("../resources/keys_map.json");
+
+    let tagame_items: Vec<upk::TagameSwapItem> = all_swaps
+        .iter()
+        .map(|s| upk::TagameSwapItem {
+            slot: s.wanted_name.clone(),
+            slot_index: None,
+            owned_id: Some(s.owned_id),
+            product_id: s.wanted_id,
+            paint_id: if s.paint_id > 0 { Some(s.paint_id) } else { None },
+            custom_paint_hex: s.custom_paint_hex.clone(),
+            package_name: if s.asset_package.is_empty() { None } else { Some(s.asset_package.clone()) },
+        })
+        .collect();
+
+    let _ = upk::tagame_swapper::apply_tagame_modifications(
+        cooked,
+        &tagame_items,
+        keys_txt,
+        keys_map_json,
+        Some(state.palette_active),
+    );
+
     if let Ok(entries) = std::fs::read_dir(cooked) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -3320,6 +3337,18 @@ pub fn run() {
                 env!("VRL_BUILD_HASH"),
                 dir.display()
             ));
+
+            let boot_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Ok(config) = get_config(boot_app.clone()).await {
+                    if !config.game_dir.is_empty() {
+                        if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                            let swaps = load_swaps(&boot_app);
+                            let _ = sync_all_swaps_to_tagame(&boot_app, &cooked, &swaps).await;
+                        }
+                    }
+                }
+            });
 
             let ttl_app = app.handle().clone();
             tauri::async_runtime::spawn(async move {
