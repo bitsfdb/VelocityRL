@@ -1599,7 +1599,7 @@ pub(crate) async fn sync_all_swaps_to_tagame(
     let tagame_items: Vec<upk::TagameSwapItem> = all_swaps
         .iter()
         .map(|s| upk::TagameSwapItem {
-            slot: s.wanted_name.clone(),
+            slot: s.slot.clone().unwrap_or_else(|| "Body".to_string()),
             slot_index: None,
             owned_id: Some(s.owned_id),
             product_id: s.wanted_id,
@@ -1705,7 +1705,7 @@ async fn apply_swap(
     let base_pid = if oid > 0 && oid != wid {
         Some(oid)
     } else {
-        slot_idx.map(savedata::default_base_product_for_slot)
+        Some(wid)
     };
     let _ = savedata::spawn_item_native_ext(&save_path, wid, paint_id, slot_idx, base_pid)?;
 
@@ -1800,7 +1800,7 @@ async fn spawn_items_batch(
                 paint_id = 0;
             }
             let slot_idx = savedata::slot_name_to_index(&wanted.slot);
-            let base_pid = slot_idx.map(savedata::default_base_product_for_slot);
+            let base_pid = Some(wid);
             let _ = savedata::spawn_item_native_ext(&save_path, wid, paint_id, slot_idx, base_pid);
 
             swaps.retain(|s| !(s.wanted_id == wid && s.paint_id == paint_id));
