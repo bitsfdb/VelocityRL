@@ -655,6 +655,8 @@ async function init() {
 
     wirePaintSwatches('swap-paint-swatches', 'swap-paint', 'swap-paint-selected');
     syncSwapPaintUi();
+    wireLaunchOnStartup();
+    wireReplayOptIn();
     loadTitlesDatabase().catch(() => { });
     initCatalogGrid();
 
@@ -760,6 +762,16 @@ async function init() {
         if (minTrayToggle) {
             minTrayToggle.checked = !!cfg.minimize_to_tray;
             syncNameSpoofSwitchAria(minTrayToggle);
+        }
+        const startupToggle = document.getElementById('launch-on-startup');
+        if (startupToggle) {
+            startupToggle.checked = await invoke('get_launch_on_startup').catch(() => !!cfg.launch_on_startup);
+            syncNameSpoofSwitchAria(startupToggle);
+        }
+        const replayToggle = document.getElementById('replay-opt-in');
+        if (replayToggle) {
+            replayToggle.checked = !!cfg.replay_opt_in;
+            syncNameSpoofSwitchAria(replayToggle);
         }
         document.getElementById('settings-modal').classList.add('active');
     };
@@ -2614,7 +2626,7 @@ function getFilteredCatalogItems() {
     // Filter by Category / Slot
     if (catalogCategory && catalogCategory !== 'All') {
         if (catalogCategory === 'Player Title') {
-            const catalogTitles = (typeof titlesDatabase !== 'undefined' && Array.isArray(titlesDatabase)) ? titlesDatabase : [];
+            const catalogTitles = (titlesDb && Array.isArray(titlesDb.titles)) ? titlesDb.titles : ((typeof titlesDatabase !== 'undefined' && Array.isArray(titlesDatabase)) ? titlesDatabase : []);
             const mappedTitles = catalogTitles.map(t => getTitleAsItem(t));
             list = [...items.filter(i => (i.slot || i.Slot) === 'Player Title'), ...mappedTitles];
         } else {
@@ -3147,7 +3159,11 @@ async function handleSaveSettings() {
     const selectedLang = langSelect ? langSelect.value : (existing.language || currentLanguage || 'en');
     const minTrayToggle = document.getElementById('minimize-to-tray');
     const minimizeToTray = minTrayToggle ? minTrayToggle.checked : (existing.minimize_to_tray || false);
-    const savedDir = await invoke('save_config', { config: { ...existing, game_dir: input.value.trim(), language: selectedLang, minimize_to_tray: minimizeToTray } })
+    const startupToggle = document.getElementById('launch-on-startup');
+    if (startupToggle) {
+        await invoke('set_launch_on_startup', { enable: startupToggle.checked }).catch(() => { });
+    }
+    const savedDir = await invoke('save_config', { config: { ...existing, game_dir: input.value.trim(), language: selectedLang, minimize_to_tray: minimizeToTray, launch_on_startup: startupToggle ? startupToggle.checked : (existing.launch_on_startup || false) } })
         .catch(e => { console.warn('Save config failed:', e); return input.value.trim(); });
     if (savedDir) input.value = savedDir;
     await setAppLanguage(selectedLang);
@@ -3166,6 +3182,11 @@ async function handleCancelSettings() {
     if (minTrayToggle) {
         minTrayToggle.checked = !!existing.minimize_to_tray;
         syncNameSpoofSwitchAria(minTrayToggle);
+    }
+    const startupToggle = document.getElementById('launch-on-startup');
+    if (startupToggle) {
+        startupToggle.checked = await invoke('get_launch_on_startup').catch(() => !!existing.launch_on_startup);
+        syncNameSpoofSwitchAria(startupToggle);
     }
     document.getElementById('settings-modal').classList.remove('active');
     document.getElementById('install-chooser').style.display = 'none';
@@ -5892,11 +5913,66 @@ async function initProfileCardTab() {
     }
 
     const titlePresetSelect = document.getElementById('profile-title-preset-select');
+    const populateProfileTitlePresets = () => {
+        if (!titlePresetSelect) return;
+        const defaults = [
+            { text: 'EST. 2015', color: '#FFD700', glow: '#FFB300' },
+            { text: 'SUPERSONIC LEGEND', color: '#FFFFFF', glow: '#FF69B4' },
+            { text: 'RLCS WORLD CHAMPION', color: '#00D2FF', glow: '#0099FF' },
+            { text: 'GRAND CHAMPION', color: '#E74C3C', glow: '#C0392B' },
+            { text: 'BALL CHASER', color: '#FFD700', glow: '#FFB300' },
+            { text: 'THE COLLECTOR', color: '#A855F7', glow: '#9333EA' },
+            { text: 'ROCKETEER', color: '#FFD700', glow: '#FFB300' },
+            { text: 'TACTICIAN', color: '#2ECC71', glow: '#27AE60' }
+        ];
+
+        let html = '<option value="">Preset Titles...</option>';
+        html += '<optgroup label="Popular Titles">';
+        defaults.forEach(d => {
+            html += `<option value="${escHtml(d.text)}">${escHtml(d.text)}</option>`;
+        });
+        html += '</optgroup>';
+
+        if (titlesDb && Array.isArray(titlesDb.titles) && titlesDb.titles.length > 0) {
+            html += '<optgroup label="All Game Titles">';
+            titlesDb.titles.slice(0, 300).forEach(t => {
+                const txt = t.text || t.Text || t.id;
+                if (txt && !defaults.some(d => d.text.toLowerCase() === txt.toLowerCase())) {
+                    html += `<option value="${escHtml(txt)}">${escHtml(formatTitleText(txt))}</option>`;
+                }
+            });
+            html += '</optgroup>';
+        }
+        titlePresetSelect.innerHTML = html;
+    };
+    populateProfileTitlePresets();
+
     if (titlePresetSelect) {
         titlePresetSelect.onchange = () => {
             if (titlePresetSelect.value) {
-                if (titleInput) titleInput.value = titlePresetSelect.value;
-                profileCardState.title_text = titlePresetSelect.value;
+                const val = titlePresetSelect.value;
+                if (titleInput) titleInput.value = val;
+                profileCardState.title_text = val;
+
+                // Lookup authentic color & glow from title database
+                const found = (titlesDb?.titles || []).find(t => (t.text || t.Text || t.id || '').toLowerCase() === val.toLowerCase());
+                if (found) {
+                    const { color, glow } = titleColors(found);
+                    if (color && color !== '#c8c8c8') {
+                        profileCardState.title_color = color;
+                        const picker = document.getElementById('profile-title-color');
+                        const hex = document.getElementById('profile-title-color-hex');
+                        if (picker) picker.value = color;
+                        if (hex) hex.value = color.toUpperCase();
+                    }
+                    if (glow) {
+                        profileCardState.title_glow = glow;
+                        const gPicker = document.getElementById('profile-title-glow');
+                        const gHex = document.getElementById('profile-title-glow-hex');
+                        if (gPicker) gPicker.value = glow;
+                        if (gHex) gHex.value = glow.toUpperCase();
+                    }
+                }
                 updateProfileCardPreview();
             }
         };
@@ -6024,6 +6100,51 @@ async function initProfileCardTab() {
         };
     }
 
+    // Wire Equip Title In-Game button
+    const equipTitleBtn = document.getElementById('profile-equip-title-btn');
+    const equipProfileTitleToGame = async (silent = false) => {
+        const text = profileCardState.title_text || 'EST. 2015';
+        const color = profileCardState.title_color ? profileCardState.title_color.replace('#', '') : 'FFD700';
+        const glow = profileCardState.title_glow ? profileCardState.title_glow.replace('#', '') : 'FFB300';
+
+        const match = (titlesDb?.titles || []).find(t => (t.text || t.Text || '').toLowerCase() === text.toLowerCase());
+        const displayId = match ? (match.id || match.Id) : 'custom';
+        const cat = match ? (match.category || match.Category || '') : '';
+
+        const swap = {
+            equip_title_id: 'Team_Iraq_World_Cup_2026',
+            display_title_id: displayId,
+            custom_text: text,
+            category: cat,
+            title_color: {
+                color: color,
+                glow_color: glow
+            }
+        };
+
+        ensureTitleSwapsLoaded();
+        titleSwaps = [swap];
+        await writeTitleSpoofConfig();
+        if (!silent) {
+            showProfileStatus(`Title "${text}" equipped in-game via PsyNet!`, 'success');
+        }
+    };
+
+    if (equipTitleBtn) {
+        equipTitleBtn.onclick = async () => {
+            equipTitleBtn.disabled = true;
+            equipTitleBtn.textContent = 'Equipping...';
+            try {
+                await equipProfileTitleToGame(false);
+            } catch (err) {
+                showProfileStatus(`Failed to equip title: ${err}`, 'error');
+            } finally {
+                equipTitleBtn.disabled = false;
+                equipTitleBtn.textContent = 'Equip Title to Game';
+            }
+        };
+    }
+
     // Wire Save Profile Card Setup
     const saveCardBtn = document.getElementById('profile-save-card-btn');
     if (saveCardBtn) {
@@ -6031,7 +6152,8 @@ async function initProfileCardTab() {
             try {
                 localStorage.setItem('velocityrl_profile_card', JSON.stringify(profileCardState));
                 await invoke('save_profile_card_config', { config: profileCardState });
-                showProfileStatus('Profile card setup saved successfully!', 'success');
+                await equipProfileTitleToGame(true).catch(() => { });
+                showProfileStatus('Profile card setup & in-game title saved successfully!', 'success');
             } catch (e) {
                 showProfileStatus(`Setup saved locally (${e})`, 'success');
             }
@@ -6942,6 +7064,7 @@ async function loadTitlesDatabase(force = false) {
     const applyLoadedTitles = (raw) => {
         titlesDb = normalizeTitlesPayload(raw);
         titlesDb.categories = { ...titlesDb.categories, ...bundledCats };
+        window.titlesDatabase = titlesDb.titles;
         localStorage.setItem('titles_fetched_at', String(Date.now()));
     };
 
