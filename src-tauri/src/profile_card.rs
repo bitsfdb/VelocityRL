@@ -96,8 +96,21 @@ pub fn get_profile_catalog(_app: tauri::AppHandle) -> Result<serde_json::Value, 
     Err("profile_catalog.json not found".into())
 }
 
+pub fn save_cached_avatar(app: &tauri::AppHandle, png_bytes: &[u8]) -> Option<PathBuf> {
+    if let Ok(dir) = app.path().app_config_dir() {
+        let avatar_dir = dir.join("custom_avatars");
+        if fs::create_dir_all(&avatar_dir).is_ok() {
+            let file_path = avatar_dir.join("active_avatar.png");
+            if fs::write(&file_path, png_bytes).is_ok() {
+                return Some(file_path);
+            }
+        }
+    }
+    None
+}
+
 #[tauri::command]
-pub async fn fetch_image_from_url(url: String) -> Result<String, String> {
+pub async fn fetch_image_from_url(app: tauri::AppHandle, url: String) -> Result<String, String> {
     let clean_url = url.trim();
     if clean_url.is_empty() {
         return Err("URL is empty".into());
@@ -151,11 +164,14 @@ pub async fn fetch_image_from_url(url: String) -> Result<String, String> {
     img.write_to(&mut cursor, image::ImageFormat::Png)
         .map_err(|e| format!("Failed to encode image to PNG: {e}"))?;
 
+    // Cache downloaded avatar image to local filesystem
+    let _ = save_cached_avatar(&app, &png_bytes);
+
     let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &png_bytes);
     Ok(format!("data:image/png;base64,{b64}"))
 }
 
-pub fn process_avatar_to_bgra256(raw_bytes: &[u8]) -> Result<Vec<u8>, String> {
+pub fn process_avatar_image(raw_bytes: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String> {
     let img = image::load_from_memory(raw_bytes)
         .map_err(|e| format!("Failed to decode image: {e}"))?;
 
@@ -182,6 +198,17 @@ pub fn process_avatar_to_bgra256(raw_bytes: &[u8]) -> Result<Vec<u8>, String> {
     if bgra.len() != 262_144 {
         return Err(format!("Unexpected raw BGRA buffer size: {} (expected 262144)", bgra.len()));
     }
+
+    let mut png_bytes = Vec::new();
+    let mut cursor = Cursor::new(&mut png_bytes);
+    resized.write_to(&mut cursor, image::ImageFormat::Png)
+        .map_err(|e| format!("Failed to encode processed avatar to PNG: {e}"))?;
+
+    Ok((bgra, png_bytes))
+}
+
+pub fn process_avatar_to_bgra256(raw_bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let (bgra, _) = process_avatar_image(raw_bytes)?;
     Ok(bgra)
 }
 
@@ -238,7 +265,9 @@ pub async fn apply_custom_avatar_upk(app: tauri::AppHandle, avatar_source: Strin
         fs::read(path).map_err(|e| format!("Failed to read avatar file: {e}"))?
     };
 
-    let bgra_bytes = process_avatar_to_bgra256(&image_bytes)?;
+    let (bgra_bytes, processed_png) = process_avatar_image(&image_bytes)?;
+    // Persist downloaded/processed avatar to local disk cache
+    let _ = save_cached_avatar(&app, &processed_png);
 
     // Locate TAGame.upk
     let tagame_path = if let Some(game_dir) = get_game_dir(&app) {
