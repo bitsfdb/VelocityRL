@@ -1197,16 +1197,16 @@ pub fn apply_tagame_modifications(
                 crate::presets::upk_slot_index_from_str(&s.slot)
             };
 
-            let owned_id = s.owned_id;
-
-            // Only add a slot override rule if it's an actual swap (donor != target),
-            // or if owned_id is specified, so that other cars in the garage are never overwritten
-            if owned_id != Some(pid) {
-                slot_overrides.push(SlotSwapRule {
-                    slot_idx,
-                    owned_id,
-                    target_id: pid,
-                });
+            // Only add a slot override rule if an explicit donor was specified and donor != target.
+            // Slot 0 (Body) is never marked unconditional (owned_id: None), preventing other cars from being overwritten.
+            if let Some(oid) = s.owned_id {
+                if oid > 0 && oid != pid {
+                    slot_overrides.push(SlotSwapRule {
+                        slot_idx,
+                        owned_id: Some(oid),
+                        target_id: pid,
+                    });
+                }
             }
         }
 
