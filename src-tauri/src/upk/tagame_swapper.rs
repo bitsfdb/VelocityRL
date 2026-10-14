@@ -1658,10 +1658,23 @@ where
         return Err(format!("Downloaded TAGame.upk file too small ({} bytes)", bytes.len()));
     }
 
+    if bytes.len() < 4 || &bytes[..4] != &[0xC1, 0x83, 0x2A, 0x9E] {
+        return Err("Downloaded file is not a valid Unreal Package (invalid magic header)".into());
+    }
+
     if let Some(parent) = target_path.parent() {
         let _ = fs::create_dir_all(parent);
     }
-    fs::write(target_path, &bytes).map_err(|e| format!("Failed to write TAGame.upk: {e}"))?;
+    let temp_target = target_path.with_extension("upk.tmp");
+    fs::write(&temp_target, &bytes).map_err(|e| format!("Failed to write TAGame.upk: {e}"))?;
+    if let Err(e) = fs::rename(&temp_target, target_path) {
+        // Fallback if cross-device rename or filesystem lock prevents rename
+        if let Err(write_err) = fs::write(target_path, &bytes) {
+            let _ = fs::remove_file(&temp_target);
+            return Err(format!("Failed to finalize TAGame.upk: {e} / {write_err}"));
+        }
+        let _ = fs::remove_file(&temp_target);
+    }
 
     crate::applog::event(&format!(
         "tagame: official TAGame.upk downloaded successfully ({} bytes)",
