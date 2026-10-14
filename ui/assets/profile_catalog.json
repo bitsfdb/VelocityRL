@@ -1,0 +1,564 @@
+{
+  "banners": [
+    {
+      "id": "Playerbanner_retroscreen",
+      "name": "Retroscreen",
+      "category": "Featured",
+      "url": "assets/banners/Playerbanner_retroscreen.png"
+    },
+    {
+      "id": "bbaz",
+      "name": "Bbaz",
+      "category": "Featured",
+      "url": "assets/banners/bbaz.png"
+    },
+    {
+      "id": "bbcol",
+      "name": "Bbcol",
+      "category": "Featured",
+      "url": "assets/banners/bbcol.png"
+    },
+    {
+      "id": "bbsd",
+      "name": "Bbsd",
+      "category": "Featured",
+      "url": "assets/banners/bbsd.png"
+    },
+    {
+      "id": "circuitboard",
+      "name": "Circuitboard",
+      "category": "Featured",
+      "url": "assets/banners/circuitboard.png"
+    },
+    {
+      "id": "copper",
+      "name": "Copper",
+      "category": "Featured",
+      "url": "assets/banners/copper.png"
+    },
+    {
+      "id": "dumpsterfire",
+      "name": "Dumpsterfire",
+      "category": "Featured",
+      "url": "assets/banners/dumpsterfire.png"
+    },
+    {
+      "id": "ghosts",
+      "name": "Ghosts",
+      "category": "Featured",
+      "url": "assets/banners/ghosts.png"
+    },
+    {
+      "id": "goldenlychee",
+      "name": "Goldenlychee",
+      "category": "Featured",
+      "url": "assets/banners/goldenlychee.png"
+    },
+    {
+      "id": "gullwing",
+      "name": "Gullwing",
+      "category": "Featured",
+      "url": "assets/banners/gullwing.png"
+    },
+    {
+      "id": "icepop",
+      "name": "Icepop",
+      "category": "Featured",
+      "url": "assets/banners/icepop.png"
+    },
+    {
+      "id": "liquidgold",
+      "name": "Liquidgold",
+      "category": "Featured",
+      "url": "assets/banners/liquidgold.png"
+    },
+    {
+      "id": "neonnight",
+      "name": "Neonnight",
+      "category": "Featured",
+      "url": "assets/banners/neonnight.png"
+    },
+    {
+      "id": "neonoctane",
+      "name": "Neonoctane",
+      "category": "Featured",
+      "url": "assets/banners/neonoctane.png"
+    },
+    {
+      "id": "octopus",
+      "name": "Octopus",
+      "category": "Featured",
+      "url": "assets/banners/octopus.png"
+    },
+    {
+      "id": "rlcs24_spacestation",
+      "name": "Rlcs24 Spacestation",
+      "category": "Featured",
+      "url": "assets/banners/rlcs24_spacestation.png"
+    },
+    {
+      "id": "rlshield",
+      "name": "Rlshield",
+      "category": "Featured",
+      "url": "assets/banners/rlshield.png"
+    },
+    {
+      "id": "rocketeer",
+      "name": "Rocketeer",
+      "category": "Featured",
+      "url": "assets/banners/rocketeer.png"
+    },
+    {
+      "id": "rodo",
+      "name": "Rodo",
+      "category": "Featured",
+      "url": "assets/banners/rodo.png"
+    },
+    {
+      "id": "s15gold",
+      "name": "S15Gold",
+      "category": "Featured",
+      "url": "assets/banners/s15gold.png"
+    },
+    {
+      "id": "s22gold",
+      "name": "S22Gold",
+      "category": "Featured",
+      "url": "assets/banners/s22gold.png"
+    },
+    {
+      "id": "s5reward_bronze",
+      "name": "S5Reward Bronze",
+      "category": "Featured",
+      "url": "assets/banners/s5reward_bronze.png"
+    },
+    {
+      "id": "s5reward_bronze_alt",
+      "name": "S5Reward Bronze Alt",
+      "category": "Featured",
+      "url": "assets/banners/s5reward_bronze_alt.png"
+    },
+    {
+      "id": "s5reward_champion",
+      "name": "S5Reward Champion",
+      "category": "Featured",
+      "url": "assets/banners/s5reward_champion.png"
+    },
+    {
+      "id": "s5reward_champion_alt",
+      "name": "S5Reward Champion Alt",
+      "category": "Featured",
+      "url": "assets/banners/s5reward_champion_alt.png"
+    },
+    {
+      "id": "s5reward_diamond",
+      "name": "S5Reward Diamond",
+      "category": "Featured",
+      "url": "assets/banners/s5reward_diamond.png"
+    },
+    {
+      "id": "s5reward_diamond_alt",
+      "name": "S5Reward Diamond Alt",
+      "category": "Featured",
+      "url": "assets/banners/s5reward_diamond_alt.png"
+    },
+    {
+      "id": "s5reward_gold",
+      "name": "S5Reward Gold",
+      "category": "Featured",
+      "url": "assets/banners/s5reward_gold.png"
+    },
+    {
+      "id": "s5reward_gold_alt",
+      "name": "S5Reward Gold Alt",
+      "category": "Featured",
+      "url": "assets/banners/s5reward_gold_alt.png"
+    },
+    {
+      "id": "s5reward_grandchamp",
+      "name": "S5Reward Grandchamp",
+      "category": "Featured",
+      "url": "assets/banners/s5reward_grandchamp.png"
+    },
+    {
+      "id": "s5reward_grandchamp_alt",
+      "name": "S5Reward Grandchamp Alt",
+      "category": "Featured",
+      "url": "assets/banners/s5reward_grandchamp_alt.png"
+    },
+    {
+      "id": "s5reward_platinum",
+      "name": "S5Reward Platinum",
+      "category": "Featured",
+      "url": "assets/banners/s5reward_platinum.png"
+    },
+    {
+      "id": "s5reward_platinum_alt",
+      "name": "S5Reward Platinum Alt",
+      "category": "Featured",
+      "url": "assets/banners/s5reward_platinum_alt.png"
+    },
+    {
+      "id": "s5reward_silver",
+      "name": "S5Reward Silver",
+      "category": "Featured",
+      "url": "assets/banners/s5reward_silver.png"
+    },
+    {
+      "id": "s5reward_silver_alt",
+      "name": "S5Reward Silver Alt",
+      "category": "Featured",
+      "url": "assets/banners/s5reward_silver_alt.png"
+    },
+    {
+      "id": "s7rewardbronze",
+      "name": "S7Rewardbronze",
+      "category": "Featured",
+      "url": "assets/banners/s7rewardbronze.png"
+    },
+    {
+      "id": "s7rewardchampion",
+      "name": "S7Rewardchampion",
+      "category": "Featured",
+      "url": "assets/banners/s7rewardchampion.png"
+    },
+    {
+      "id": "s7rewarddiamond",
+      "name": "S7Rewarddiamond",
+      "category": "Featured",
+      "url": "assets/banners/s7rewarddiamond.png"
+    },
+    {
+      "id": "s7rewardgold",
+      "name": "S7Rewardgold",
+      "category": "Featured",
+      "url": "assets/banners/s7rewardgold.png"
+    },
+    {
+      "id": "s7rewardgrandchampion",
+      "name": "S7Rewardgrandchampion",
+      "category": "Featured",
+      "url": "assets/banners/s7rewardgrandchampion.png"
+    },
+    {
+      "id": "s7rewardplatinum",
+      "name": "S7Rewardplatinum",
+      "category": "Featured",
+      "url": "assets/banners/s7rewardplatinum.png"
+    },
+    {
+      "id": "s7rewardsilver",
+      "name": "S7Rewardsilver",
+      "category": "Featured",
+      "url": "assets/banners/s7rewardsilver.png"
+    },
+    {
+      "id": "s8rewardgold",
+      "name": "S8Rewardgold",
+      "category": "Featured",
+      "url": "assets/banners/s8rewardgold.png"
+    },
+    {
+      "id": "skullscream",
+      "name": "Skullscream",
+      "category": "Featured",
+      "url": "assets/banners/skullscream.png"
+    },
+    {
+      "id": "videotape",
+      "name": "Videotape",
+      "category": "Featured",
+      "url": "assets/banners/videotape.png"
+    },
+    {
+      "id": "westcoastsunset",
+      "name": "Westcoastsunset",
+      "category": "Featured",
+      "url": "assets/banners/westcoastsunset.png"
+    }
+  ],
+  "borders": [
+    {
+      "id": "10year",
+      "name": "10Year",
+      "category": "Decorative",
+      "url": "assets/borders/10year.png"
+    },
+    {
+      "id": "10yearbirthday_02",
+      "name": "10Yearbirthday 02",
+      "category": "Decorative",
+      "url": "assets/borders/10yearbirthday_02.png"
+    },
+    {
+      "id": "80sTV",
+      "name": "80Stv",
+      "category": "Decorative",
+      "url": "assets/borders/80sTV.png"
+    },
+    {
+      "id": "arcade",
+      "name": "Arcade",
+      "category": "Decorative",
+      "url": "assets/borders/arcade.png"
+    },
+    {
+      "id": "aztec",
+      "name": "Aztec",
+      "category": "Decorative",
+      "url": "assets/borders/aztec.png"
+    },
+    {
+      "id": "barrel",
+      "name": "Barrel",
+      "category": "Decorative",
+      "url": "assets/borders/barrel.png"
+    },
+    {
+      "id": "braidedrope",
+      "name": "Braidedrope",
+      "category": "Decorative",
+      "url": "assets/borders/braidedrope.png"
+    },
+    {
+      "id": "chinamapmonster",
+      "name": "Chinamapmonster",
+      "category": "Decorative",
+      "url": "assets/borders/chinamapmonster.png"
+    },
+    {
+      "id": "chinesevalentinesday",
+      "name": "Chinesevalentinesday",
+      "category": "Decorative",
+      "url": "assets/borders/chinesevalentinesday.png"
+    },
+    {
+      "id": "digitalpet",
+      "name": "Digitalpet",
+      "category": "Decorative",
+      "url": "assets/borders/digitalpet.png"
+    },
+    {
+      "id": "eggwave",
+      "name": "Eggwave",
+      "category": "Decorative",
+      "url": "assets/borders/eggwave.png"
+    },
+    {
+      "id": "flames",
+      "name": "Flames",
+      "category": "Decorative",
+      "url": "assets/borders/flames.png"
+    },
+    {
+      "id": "fluffy",
+      "name": "Fluffy",
+      "category": "Decorative",
+      "url": "assets/borders/fluffy.png"
+    },
+    {
+      "id": "glowingeyes",
+      "name": "Glowingeyes",
+      "category": "Decorative",
+      "url": "assets/borders/glowingeyes.png"
+    },
+    {
+      "id": "gravityray",
+      "name": "Gravityray",
+      "category": "Decorative",
+      "url": "assets/borders/gravityray.png"
+    },
+    {
+      "id": "hedge",
+      "name": "Hedge",
+      "category": "Decorative",
+      "url": "assets/borders/hedge.png"
+    },
+    {
+      "id": "hook",
+      "name": "Hook",
+      "category": "Decorative",
+      "url": "assets/borders/hook.png"
+    },
+    {
+      "id": "impossible",
+      "name": "Impossible",
+      "category": "Decorative",
+      "url": "assets/borders/impossible.png"
+    },
+    {
+      "id": "ink_blue",
+      "name": "Ink Blue",
+      "category": "Decorative",
+      "url": "assets/borders/ink_blue.png"
+    },
+    {
+      "id": "ink_green",
+      "name": "Ink Green",
+      "category": "Decorative",
+      "url": "assets/borders/ink_green.png"
+    },
+    {
+      "id": "ink_orange",
+      "name": "Ink Orange",
+      "category": "Decorative",
+      "url": "assets/borders/ink_orange.png"
+    },
+    {
+      "id": "ink_red",
+      "name": "Ink Red",
+      "category": "Decorative",
+      "url": "assets/borders/ink_red.png"
+    },
+    {
+      "id": "lily",
+      "name": "Lily",
+      "category": "Decorative",
+      "url": "assets/borders/lily.png"
+    },
+    {
+      "id": "midautumnday",
+      "name": "Midautumnday",
+      "category": "Decorative",
+      "url": "assets/borders/midautumnday.png"
+    },
+    {
+      "id": "oasis",
+      "name": "Oasis",
+      "category": "Decorative",
+      "url": "assets/borders/oasis.png"
+    },
+    {
+      "id": "october",
+      "name": "October",
+      "category": "Decorative",
+      "url": "assets/borders/october.png"
+    },
+    {
+      "id": "pipedream",
+      "name": "Pipedream",
+      "category": "Decorative",
+      "url": "assets/borders/pipedream.png"
+    },
+    {
+      "id": "renegade",
+      "name": "Renegade",
+      "category": "Decorative",
+      "url": "assets/borders/renegade.png"
+    },
+    {
+      "id": "retrofloppy",
+      "name": "Retrofloppy",
+      "category": "Decorative",
+      "url": "assets/borders/retrofloppy.png"
+    },
+    {
+      "id": "retroui",
+      "name": "Retroui",
+      "category": "Decorative",
+      "url": "assets/borders/retroui.png"
+    },
+    {
+      "id": "rivals",
+      "name": "Rivals",
+      "category": "Decorative",
+      "url": "assets/borders/rivals.png"
+    },
+    {
+      "id": "s15champion",
+      "name": "S15Champion",
+      "category": "Decorative",
+      "url": "assets/borders/s15champion.png"
+    },
+    {
+      "id": "s15gold",
+      "name": "S15Gold",
+      "category": "Decorative",
+      "url": "assets/borders/s15gold.png"
+    },
+    {
+      "id": "s15grandchampion",
+      "name": "S15Grandchampion",
+      "category": "Decorative",
+      "url": "assets/borders/s15grandchampion.png"
+    },
+    {
+      "id": "s15platinum",
+      "name": "S15Platinum",
+      "category": "Decorative",
+      "url": "assets/borders/s15platinum.png"
+    },
+    {
+      "id": "s15silver",
+      "name": "S15Silver",
+      "category": "Decorative",
+      "url": "assets/borders/s15silver.png"
+    },
+    {
+      "id": "s19rlrocketpass03",
+      "name": "S19Rlrocketpass03",
+      "category": "Decorative",
+      "url": "assets/borders/s19rlrocketpass03.png"
+    },
+    {
+      "id": "shoelace",
+      "name": "Shoelace",
+      "category": "Decorative",
+      "url": "assets/borders/shoelace.png"
+    },
+    {
+      "id": "spookycemetery",
+      "name": "Spookycemetery",
+      "category": "Decorative",
+      "url": "assets/borders/spookycemetery.png"
+    },
+    {
+      "id": "spookyjars",
+      "name": "Spookyjars",
+      "category": "Decorative",
+      "url": "assets/borders/spookyjars.png"
+    },
+    {
+      "id": "spookysampson",
+      "name": "Spookysampson",
+      "category": "Decorative",
+      "url": "assets/borders/spookysampson.png"
+    },
+    {
+      "id": "utopia01",
+      "name": "Utopia01",
+      "category": "Decorative",
+      "url": "assets/borders/utopia01.png"
+    },
+    {
+      "id": "utopia02",
+      "name": "Utopia02",
+      "category": "Decorative",
+      "url": "assets/borders/utopia02.png"
+    },
+    {
+      "id": "utopia03",
+      "name": "Utopia03",
+      "category": "Decorative",
+      "url": "assets/borders/utopia03.png"
+    },
+    {
+      "id": "wanted",
+      "name": "Wanted",
+      "category": "Decorative",
+      "url": "assets/borders/wanted.png"
+    }
+  ],
+  "sample_pfps": [
+    {
+      "id": "psynet",
+      "name": "PsyNet Icon",
+      "url": "assets/sample_psynet.png"
+    },
+    {
+      "id": "bot",
+      "name": "Bot Avatar",
+      "url": "assets/sample_bot.png"
+    }
+  ]
+}

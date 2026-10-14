@@ -5624,7 +5624,426 @@ function initDecalsTab() {
     });
 }
 
+let profileCatalog = null;
+let profileCardState = {
+    player_name: 'Player',
+    title_text: 'EST. 2015',
+    title_color: '#FFD700',
+    title_glow: '#FFB300',
+    banner_id: 'circuitboard',
+    banner_url: 'assets/banners/circuitboard.png',
+    border_id: 'flames',
+    border_url: 'assets/borders/flames.png',
+    avatar_url: 'assets/sample_psynet.png',
+    xp_level: 100
+};
+
+function showProfileStatus(msg, type = 'info') {
+    const el = document.getElementById('pfp-status-msg');
+    if (!el) return;
+    el.style.display = 'block';
+    el.className = `profile-status-msg profile-status-${type}`;
+    el.textContent = msg;
+    clearTimeout(el._timer);
+    el._timer = setTimeout(() => {
+        el.style.display = 'none';
+    }, 6000);
+}
+
+function updateProfileCardPreview() {
+    const bannerEl = document.getElementById('rl-card-banner');
+    const borderEl = document.getElementById('rl-card-border');
+    const pfpEl = document.getElementById('rl-card-pfp');
+    const nameEl = document.getElementById('rl-card-name');
+    const titleEl = document.getElementById('rl-card-title');
+    const xpBadgeEl = document.getElementById('rl-card-xp-badge');
+    const xpFillEl = document.getElementById('rl-card-xp-fill');
+
+    if (bannerEl) {
+        bannerEl.style.backgroundImage = `url('${profileCardState.banner_url || 'assets/banners/circuitboard.png'}')`;
+    }
+    if (borderEl) {
+        borderEl.src = profileCardState.border_url || 'assets/borders/flames.png';
+    }
+    if (pfpEl) {
+        pfpEl.src = profileCardState.avatar_url || 'assets/sample_psynet.png';
+    }
+    if (nameEl) {
+        nameEl.textContent = profileCardState.player_name || 'Player';
+    }
+    if (titleEl) {
+        titleEl.textContent = profileCardState.title_text || 'EST. 2015';
+        titleEl.style.color = profileCardState.title_color || '#FFD700';
+        const glow = profileCardState.title_glow || '#FFB300';
+        titleEl.style.textShadow = `0 0 10px ${glow}, 0 0 20px ${glow}99`;
+    }
+    if (xpBadgeEl) {
+        xpBadgeEl.textContent = `LVL ${profileCardState.xp_level || 100}`;
+    }
+    if (xpFillEl) {
+        const lvl = parseInt(profileCardState.xp_level, 10) || 100;
+        const pct = (lvl % 100 === 0) ? 75 : (lvl % 100);
+        xpFillEl.style.width = `${pct}%`;
+    }
+}
+
+function renderProfileBannerGallery(category = 'all', searchQuery = '') {
+    const galleryEl = document.getElementById('profile-banner-gallery');
+    if (!galleryEl || !profileCatalog?.banners) return;
+
+    const query = searchQuery.trim().toLowerCase();
+    const filtered = profileCatalog.banners.filter(b => {
+        const matchCat = (category === 'all') || (b.category === category);
+        const matchQuery = !query || b.name.toLowerCase().includes(query) || b.id.toLowerCase().includes(query);
+        return matchCat && matchQuery;
+    });
+
+    const countLabel = document.getElementById('banner-count-label');
+    if (countLabel) {
+        countLabel.textContent = `${filtered.length} Banner${filtered.length === 1 ? '' : 's'}`;
+    }
+
+    galleryEl.innerHTML = filtered.map(b => {
+        const isActive = profileCardState.banner_id === b.id || profileCardState.banner_url === b.url;
+        return `
+            <div class="profile-banner-item ${isActive ? 'active' : ''}" 
+                 data-id="${escHtml(b.id)}" 
+                 data-url="${escHtml(b.url)}" 
+                 style="background-image: url('${escHtml(b.url)}');">
+                <div class="profile-banner-label">${escHtml(b.name)}</div>
+            </div>
+        `;
+    }).join('');
+
+    galleryEl.querySelectorAll('.profile-banner-item').forEach(item => {
+        item.onclick = () => {
+            galleryEl.querySelectorAll('.profile-banner-item').forEach(i => i.classList.remove('active'));
+            item.classList.add('active');
+            profileCardState.banner_id = item.dataset.id;
+            profileCardState.banner_url = item.dataset.url;
+            updateProfileCardPreview();
+        };
+    });
+}
+
+function populateProfileBorderDropdown() {
+    const selectEl = document.getElementById('profile-border-select');
+    if (!selectEl || !profileCatalog?.borders) return;
+
+    selectEl.innerHTML = profileCatalog.borders.map(b => {
+        const isSelected = profileCardState.border_id === b.id || profileCardState.border_url === b.url;
+        return `<option value="${escHtml(b.url)}" data-id="${escHtml(b.id)}" ${isSelected ? 'selected' : ''}>${escHtml(b.name)} (${escHtml(b.category)})</option>`;
+    }).join('');
+
+    selectEl.onchange = () => {
+        const selectedOpt = selectEl.options[selectEl.selectedIndex];
+        profileCardState.border_url = selectEl.value;
+        profileCardState.border_id = selectedOpt?.dataset.id || '';
+        updateProfileCardPreview();
+    };
+}
+
+let profileCardInitialized = false;
+async function initProfileCardTab() {
+    if (profileCardInitialized) return;
+    profileCardInitialized = true;
+
+    // Load saved profile card state
+    try {
+        const saved = await invoke('get_profile_card_config');
+        if (saved && saved.player_name) {
+            profileCardState = { ...profileCardState, ...saved };
+        } else {
+            const local = localStorage.getItem('velocityrl_profile_card');
+            if (local) profileCardState = { ...profileCardState, ...JSON.parse(local) };
+        }
+    } catch {
+        const local = localStorage.getItem('velocityrl_profile_card');
+        if (local) {
+            try { profileCardState = { ...profileCardState, ...JSON.parse(local) }; } catch { }
+        }
+    }
+
+    // Inherit display name from name spoofing if available and state is default
+    if (profileCardState.player_name === 'Player') {
+        const dispEl = document.getElementById('name-spoof-display');
+        if (dispEl && dispEl.value.trim()) {
+            profileCardState.player_name = dispEl.value.trim();
+        }
+    }
+
+    // Fetch catalog
+    try {
+        profileCatalog = await invoke('get_profile_catalog');
+    } catch {
+        try {
+            const res = await fetch('assets/profile_catalog.json');
+            profileCatalog = await res.json();
+        } catch { }
+    }
+
+    // Populate catalog UI
+    if (profileCatalog) {
+        populateProfileBorderDropdown();
+        renderProfileBannerGallery('all', '');
+    }
+
+    // Wire Banner category filters
+    document.querySelectorAll('.banner-cat-btn').forEach(btn => {
+        btn.onclick = () => {
+            document.querySelectorAll('.banner-cat-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const searchVal = document.getElementById('profile-banner-search')?.value || '';
+            renderProfileBannerGallery(btn.dataset.cat, searchVal);
+        };
+    });
+
+    // Wire Banner search
+    const bannerSearchInput = document.getElementById('profile-banner-search');
+    if (bannerSearchInput) {
+        bannerSearchInput.oninput = () => {
+            const activeCat = document.querySelector('.banner-cat-btn.active')?.dataset.cat || 'all';
+            renderProfileBannerGallery(activeCat, bannerSearchInput.value);
+        };
+    }
+
+    // Wire Custom Banner URL
+    const customBannerInput = document.getElementById('custom-banner-url');
+    const customBannerBtn = document.getElementById('custom-banner-apply-btn');
+    if (customBannerBtn && customBannerInput) {
+        customBannerBtn.onclick = () => {
+            const val = customBannerInput.value.trim();
+            if (val) {
+                profileCardState.banner_url = val;
+                profileCardState.banner_id = 'custom';
+                updateProfileCardPreview();
+            }
+        };
+    }
+
+    // Wire Upload Image button
+    const uploadBtn = document.getElementById('pfp-upload-btn');
+    const fileInput = document.getElementById('pfp-file-input');
+    if (uploadBtn && fileInput) {
+        uploadBtn.onclick = () => fileInput.click();
+        fileInput.onchange = (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (loadEvt) => {
+                const dataUrl = loadEvt.target?.result;
+                if (dataUrl) {
+                    profileCardState.avatar_url = dataUrl;
+                    updateProfileCardPreview();
+                    showProfileStatus('Loaded local image for preview!', 'success');
+                }
+            };
+            reader.readAsDataURL(file);
+        };
+    }
+
+    // Wire URL Fetch button
+    const fetchBtn = document.getElementById('pfp-url-fetch-btn');
+    const urlInput = document.getElementById('pfp-url-input');
+    if (fetchBtn && urlInput) {
+        const doFetch = async () => {
+            const url = urlInput.value.trim();
+            if (!url) return;
+            fetchBtn.disabled = true;
+            fetchBtn.textContent = 'Fetching...';
+            try {
+                const dataUrl = await invoke('fetch_image_from_url', { url });
+                if (dataUrl) {
+                    profileCardState.avatar_url = dataUrl;
+                    updateProfileCardPreview();
+                    showProfileStatus('Successfully fetched avatar from URL!', 'success');
+                }
+            } catch (err) {
+                showProfileStatus(`Fetch failed: ${err}`, 'error');
+            } finally {
+                fetchBtn.disabled = false;
+                fetchBtn.textContent = 'Fetch';
+            }
+        };
+        fetchBtn.onclick = doFetch;
+        urlInput.onkeydown = (e) => { if (e.key === 'Enter') doFetch(); };
+    }
+
+    // Wire Quick Presets chips
+    document.querySelectorAll('.profile-chip').forEach(chip => {
+        chip.onclick = () => {
+            const pfp = chip.dataset.pfp;
+            if (pfp) {
+                profileCardState.avatar_url = pfp;
+                updateProfileCardPreview();
+                showProfileStatus(`Applied ${chip.textContent.trim()}`, 'success');
+            }
+        };
+    });
+
+    // Wire Title Inputs
+    const titleInput = document.getElementById('profile-title-input');
+    if (titleInput) {
+        titleInput.value = profileCardState.title_text || 'EST. 2015';
+        titleInput.oninput = () => {
+            profileCardState.title_text = titleInput.value.trim() || ' ';
+            updateProfileCardPreview();
+        };
+    }
+
+    const titlePresetSelect = document.getElementById('profile-title-preset-select');
+    if (titlePresetSelect) {
+        titlePresetSelect.onchange = () => {
+            if (titlePresetSelect.value) {
+                if (titleInput) titleInput.value = titlePresetSelect.value;
+                profileCardState.title_text = titlePresetSelect.value;
+                updateProfileCardPreview();
+            }
+        };
+    }
+
+    const titleColorPicker = document.getElementById('profile-title-color');
+    const titleColorHex = document.getElementById('profile-title-color-hex');
+    if (titleColorPicker && titleColorHex) {
+        titleColorPicker.value = profileCardState.title_color || '#FFD700';
+        titleColorHex.value = profileCardState.title_color || '#FFD700';
+
+        titleColorPicker.oninput = () => {
+            titleColorHex.value = titleColorPicker.value.toUpperCase();
+            profileCardState.title_color = titleColorPicker.value;
+            updateProfileCardPreview();
+        };
+        titleColorHex.oninput = () => {
+            let val = titleColorHex.value.trim();
+            if (!val.startsWith('#')) val = '#' + val;
+            if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+                titleColorPicker.value = val;
+                profileCardState.title_color = val;
+                updateProfileCardPreview();
+            }
+        };
+    }
+
+    const titleGlowPicker = document.getElementById('profile-title-glow');
+    const titleGlowHex = document.getElementById('profile-title-glow-hex');
+    if (titleGlowPicker && titleGlowHex) {
+        titleGlowPicker.value = profileCardState.title_glow || '#FFB300';
+        titleGlowHex.value = profileCardState.title_glow || '#FFB300';
+
+        titleGlowPicker.oninput = () => {
+            titleGlowHex.value = titleGlowPicker.value.toUpperCase();
+            profileCardState.title_glow = titleGlowPicker.value;
+            updateProfileCardPreview();
+        };
+        titleGlowHex.oninput = () => {
+            let val = titleGlowHex.value.trim();
+            if (!val.startsWith('#')) val = '#' + val;
+            if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+                titleGlowPicker.value = val;
+                profileCardState.title_glow = val;
+                updateProfileCardPreview();
+            }
+        };
+    }
+
+    // Wire Color Swatches
+    document.querySelectorAll('.color-swatch').forEach(swatch => {
+        swatch.onclick = () => {
+            const col = swatch.dataset.color;
+            const glow = swatch.dataset.glow;
+            if (col && titleColorPicker && titleColorHex) {
+                titleColorPicker.value = col;
+                titleColorHex.value = col;
+                profileCardState.title_color = col;
+            }
+            if (glow && titleGlowPicker && titleGlowHex) {
+                titleGlowPicker.value = glow;
+                titleGlowHex.value = glow;
+                profileCardState.title_glow = glow;
+            }
+            updateProfileCardPreview();
+        };
+    });
+
+    // Wire Name & Level Inputs
+    const nameInput = document.getElementById('profile-name-input');
+    if (nameInput) {
+        nameInput.value = profileCardState.player_name || 'Player';
+        nameInput.oninput = () => {
+            profileCardState.player_name = nameInput.value.trim() || 'Player';
+            updateProfileCardPreview();
+        };
+    }
+
+    const levelInput = document.getElementById('profile-level-input');
+    if (levelInput) {
+        levelInput.value = profileCardState.xp_level || 100;
+        levelInput.oninput = () => {
+            profileCardState.xp_level = parseInt(levelInput.value, 10) || 100;
+            updateProfileCardPreview();
+        };
+    }
+
+    // Wire In-Game Apply button
+    const applyGameBtn = document.getElementById('pfp-apply-game-btn');
+    if (applyGameBtn) {
+        applyGameBtn.onclick = async () => {
+            if (!profileCardState.avatar_url) {
+                showProfileStatus('Please select or upload an avatar image first.', 'error');
+                return;
+            }
+            applyGameBtn.disabled = true;
+            applyGameBtn.textContent = 'Applying to Game...';
+            try {
+                const res = await invoke('apply_custom_avatar_upk', { avatarSource: profileCardState.avatar_url });
+                showProfileStatus(res || 'Custom avatar applied directly in-engine!', 'success');
+            } catch (err) {
+                showProfileStatus(`Failed to apply avatar: ${err}`, 'error');
+            } finally {
+                applyGameBtn.disabled = false;
+                applyGameBtn.textContent = 'Apply Avatar to Game';
+            }
+        };
+    }
+
+    // Wire In-Game Reset button
+    const restoreGameBtn = document.getElementById('pfp-restore-game-btn');
+    if (restoreGameBtn) {
+        restoreGameBtn.onclick = async () => {
+            restoreGameBtn.disabled = true;
+            restoreGameBtn.textContent = 'Restoring...';
+            try {
+                const res = await invoke('restore_custom_avatar_upk');
+                showProfileStatus(res || 'Restored vanilla avatar from backup.', 'success');
+            } catch (err) {
+                showProfileStatus(`Restore failed: ${err}`, 'error');
+            } finally {
+                restoreGameBtn.disabled = false;
+                restoreGameBtn.textContent = 'Reset Default';
+            }
+        };
+    }
+
+    // Wire Save Profile Card Setup
+    const saveCardBtn = document.getElementById('profile-save-card-btn');
+    if (saveCardBtn) {
+        saveCardBtn.onclick = async () => {
+            try {
+                localStorage.setItem('velocityrl_profile_card', JSON.stringify(profileCardState));
+                await invoke('save_profile_card_config', { config: profileCardState });
+                showProfileStatus('Profile card setup saved successfully!', 'success');
+            } catch (e) {
+                showProfileStatus(`Setup saved locally (${e})`, 'success');
+            }
+        };
+    }
+
+    // Initial render
+    updateProfileCardPreview();
+}
+
 function initCustomizationTab() {
+    initProfileCardTab();
     initNamesTab();
     initCreditsTab();
     initDecalsTab();
