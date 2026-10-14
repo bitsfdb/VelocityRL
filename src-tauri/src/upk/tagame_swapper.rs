@@ -1409,14 +1409,23 @@ pub fn apply_tagame_modifications(
                 if let Ok(mut decomp2) = crate::upk::compression::decompress_chunk(&file_bytes[c2_start..c2_end]) {
                     let mut c2_modified = false;
 
-                    // Neutralize loadout validator reset functions to prevent car body reversion after goals
+                    // Neutralize all loadout validator and reset functions to prevent cosmetic reversion on respawn/kickoff/goal
                     let noop_targets = [
                         ("SetLoadoutSlotToDefaultID", "PRI_TA"),
                         ("SetLoadoutSlotToDefaultID", "LoadoutValidation_TA"),
                         ("CorrectLoadoutData", "PRI_TA"),
                         ("OnLoadoutValidationError", "PRI_TA"),
+                        ("OnLoadoutCorrected", "PRI_TA"),
                         ("CorrectDLCOwnership", "LoadoutValidation_TA"),
                         ("ValidateLoadout", "PRI_TA"),
+                        ("ValidateReplicatedLoadout", "PRI_TA"),
+                        ("CorrectLoadoutFromValidationError", "LoadoutValidation_TA"),
+                        ("ValidateLoadoutDLC", "LoadoutValidation_TA"),
+                        ("SetBodyProductAndValidate", "Loadout_TA"),
+                        ("Validate", "Loadout_TA"),
+                        ("ValidateProductID", "Loadout_TA"),
+                        ("ValidateForcedProducts", "Loadout_TA"),
+                        ("Validate", "LoadoutSet_TA"),
                     ];
 
                     for (fn_name, outer_name) in noop_targets {
@@ -1934,42 +1943,48 @@ mod tests {
             c_pos += 36;
         }
 
-        let targets = [
-            "ValidateLoadout",
-            "SetLoadoutSlotToDefaultID",
-            "CorrectLoadoutData",
-            "ValidateLoadoutSlots",
-            "CorrectDLCOwnership",
-            "SetLoadout",
-            "AllowCarRespawn",
-            "ServerSetTeamLoadout",
-            "ReplicateLoadoutToServer",
-            "OnLoadoutValidationError",
-            "ValidateReplicatedLoadout",
-        ];
-
         if chunks.len() > 2 {
             let c2_start = chunks[2].comp_offset as usize;
             let c2_end = c2_start + chunks[2].comp_size as usize;
-            if let Ok(decomp2) = crate::upk::compression::decompress_chunk(&file_bytes[c2_start..c2_end]) {
-                for exp in &exports {
-                    if exp.serial_offset >= chunks[2].uncomp_offset && exp.serial_offset < (chunks[2].uncomp_offset + chunks[2].uncomp_size as i64) {
-                        if targets.iter().any(|t| exp.name.eq_ignore_ascii_case(t)) {
-                            let rel = (exp.serial_offset - chunks[2].uncomp_offset) as usize;
-                            if rel + 48 <= decomp2.len() {
-                                let mem_sz = u32::from_le_bytes(decomp2[rel + 40..rel + 44].try_into().unwrap());
-                                let disk_sz = u32::from_le_bytes(decomp2[rel + 44..rel + 48].try_into().unwrap());
-                                let script_head = &decomp2[rel + 48..rel + 48 + (disk_sz as usize).min(12)];
-                                let tail_start = rel + 48 + (disk_sz as usize).saturating_sub(8);
-                                let script_tail = &decomp2[tail_start..rel + 48 + disk_sz as usize];
-                                println!(
-                                    "VALIDATOR_EXP: Export #{}: {}::{} mem={} disk={} head={:02x?} tail={:02x?}",
-                                    exp.idx, exp.outer_name, exp.name, mem_sz, disk_sz, script_head, script_tail
-                                );
+            if let Ok(mut decomp2) = crate::upk::compression::decompress_chunk(&file_bytes[c2_start..c2_end]) {
+                let noop_targets = [
+                    ("SetLoadoutSlotToDefaultID", "PRI_TA"),
+                    ("SetLoadoutSlotToDefaultID", "LoadoutValidation_TA"),
+                    ("CorrectLoadoutData", "PRI_TA"),
+                    ("OnLoadoutValidationError", "PRI_TA"),
+                    ("OnLoadoutCorrected", "PRI_TA"),
+                    ("CorrectDLCOwnership", "LoadoutValidation_TA"),
+                    ("ValidateLoadout", "PRI_TA"),
+                    ("ValidateReplicatedLoadout", "PRI_TA"),
+                    ("CorrectLoadoutFromValidationError", "LoadoutValidation_TA"),
+                    ("ValidateLoadoutDLC", "LoadoutValidation_TA"),
+                    ("SetBodyProductAndValidate", "Loadout_TA"),
+                    ("Validate", "Loadout_TA"),
+                    ("ValidateProductID", "Loadout_TA"),
+                    ("ValidateForcedProducts", "Loadout_TA"),
+                    ("Validate", "LoadoutSet_TA"),
+                ];
+
+                let mut nooped_count = 0;
+                for (fn_name, outer_name) in noop_targets {
+                    if let Some(exp) = exports.iter().find(|e| e.name == fn_name && e.outer_name == outer_name) {
+                        if exp.serial_offset >= chunks[2].uncomp_offset && exp.serial_offset < (chunks[2].uncomp_offset + chunks[2].uncomp_size as i64) {
+                            let func_off = (exp.serial_offset - chunks[2].uncomp_offset) as usize;
+                            if func_off + 48 <= decomp2.len() {
+                                let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                                if orig_disk_sz >= 3 && func_off + 48 + orig_disk_sz <= decomp2.len() {
+                                    let (payload, mem_sz) = emit_noop_void_function_bytecode(orig_disk_sz);
+                                    decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                    decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                    nooped_count += 1;
+                                }
                             }
                         }
                     }
                 }
+                assert_eq!(nooped_count, noop_targets.len(), "All 15 loadout validators must be matched and nooped in Chunk 2");
+                let recomp2 = crate::upk::compression::compress_chunk(&decomp2).expect("Recompression of Chunk 2 must succeed");
+                assert!(recomp2.len() <= chunks[2].comp_size as usize, "Recompressed Chunk 2 must fit within allocated size");
             }
         }
     }

@@ -433,6 +433,9 @@ pub fn default_base_product_for_slot(slot: usize) -> i32 {
         8 => 0,    // Engine Audio
         9 => 3220, // Trail: Classic
         10 => 4038,// Goal Explosion: Standard
+        11 => 2526,// Player Banner: Standard
+        12 => 3085,// Avatar Border: Default
+        13 => 3036,// Player Title: Title
         _ => 0,
     }
 }
