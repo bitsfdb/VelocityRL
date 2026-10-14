@@ -1864,6 +1864,7 @@ mod tests {
         let export_rel = export_offset - name_offset;
         let depends_rel = depends_offset - name_offset;
 
+        #[allow(dead_code)]
         struct ExportItem {
             idx: usize,
             name: String,
@@ -1905,6 +1906,7 @@ mod tests {
             }
         }
 
+        #[allow(dead_code)]
         struct ChunkItem {
             idx: usize,
             uncomp_offset: i64,
