@@ -1121,32 +1121,120 @@ const STARTUP_TASK_NAME: &str = "VelocityRL";
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[cfg(windows)]
-fn windows_startup_exists() -> bool {
-    let mut cmd = std::process::Command::new("reg");
-    cmd.args(["query", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run", "/v", "VelocityRL"])
+fn set_registry_startup(enable: bool, exe_path: &Path) -> Result<(), String> {
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_ALL_ACCESS, KEY_SET_VALUE};
+    use winreg::RegKey;
+
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let run_key = hkcu.open_subkey_with_flags(
+        r"Software\Microsoft\Windows\CurrentVersion\Run",
+        KEY_SET_VALUE | KEY_ALL_ACCESS,
+    ).or_else(|_| {
+        hkcu.create_subkey(r"Software\Microsoft\Windows\CurrentVersion\Run")
+            .map(|(k, _)| k)
+    }).map_err(|e| format!("Failed to open registry Run key: {e}"))?;
+
+    if enable {
+        let value = format!("\"{}\"", exe_path.display());
+        run_key.set_value("VelocityRL", &value)
+            .map_err(|e| format!("Failed to write registry Run key: {e}"))?;
+    } else {
+        let _ = run_key.delete_value("VelocityRL");
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn registry_startup_exists() -> bool {
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_READ};
+    use winreg::RegKey;
+
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    if let Ok(run_key) = hkcu.open_subkey_with_flags(
+        r"Software\Microsoft\Windows\CurrentVersion\Run",
+        KEY_READ,
+    ) {
+        run_key.get_value::<String, _>("VelocityRL").is_ok()
+    } else {
+        false
+    }
+}
+
+#[cfg(windows)]
+fn scheduled_task_exists() -> bool {
+    use std::os::windows::process::CommandExt;
+    let mut cmd = std::process::Command::new("schtasks");
+    cmd.args(["/Query", "/TN", STARTUP_TASK_NAME])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
-    use std::os::windows::process::CommandExt;
     cmd.creation_flags(CREATE_NO_WINDOW);
-    if let Ok(s) = cmd.status() {
-        if s.success() {
-            return true;
-        }
+    cmd.status().map(|s| s.success()).unwrap_or(false)
+}
+
+#[cfg(windows)]
+fn create_scheduled_task(exe_path: &Path) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    let exe_str = format!("\"{}\"", exe_path.display());
+    let mut cmd = std::process::Command::new("schtasks");
+    cmd.args([
+        "/Create",
+        "/TN", STARTUP_TASK_NAME,
+        "/TR", &exe_str,
+        "/SC", "ONLOGON",
+        "/RL", "HIGHEST",
+        "/F",
+    ]);
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let out = cmd.output().map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(format!(
+            "Failed to create scheduled task: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
     }
-    scheduled_task_exists()
+    Ok(())
+}
+
+#[cfg(windows)]
+fn delete_scheduled_task() {
+    use std::os::windows::process::CommandExt;
+    if scheduled_task_exists() {
+        let mut cmd = std::process::Command::new("schtasks");
+        cmd.args(["/Delete", "/TN", STARTUP_TASK_NAME, "/F"]);
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        let _ = cmd.output();
+    }
+}
+
+#[cfg(windows)]
+fn windows_startup_exists() -> bool {
+    registry_startup_exists() || scheduled_task_exists()
 }
 
 #[tauri::command]
-async fn get_launch_on_startup() -> Result<bool, String> {
+async fn get_launch_on_startup(app: tauri::AppHandle) -> Result<bool, String> {
     #[cfg(windows)]
     {
-        Ok(windows_startup_exists())
+        let exists = windows_startup_exists();
+        if !exists {
+            if let Ok(cfg) = get_config(app).await {
+                if cfg.launch_on_startup {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(exists)
     }
     #[cfg(target_os = "linux")]
     {
         for home in crate::psynet::candidate_user_homes() {
             let desktop = home.join(".config/autostart/velocityrl.desktop");
             if desktop.exists() {
+                return Ok(true);
+            }
+        }
+        if let Ok(cfg) = get_config(app).await {
+            if cfg.launch_on_startup {
                 return Ok(true);
             }
         }
@@ -1159,53 +1247,27 @@ async fn get_launch_on_startup() -> Result<bool, String> {
 }
 
 #[tauri::command]
-async fn set_launch_on_startup(enable: bool) -> Result<(), String> {
+async fn set_launch_on_startup(app: tauri::AppHandle, enable: bool) -> Result<(), String> {
     #[cfg(windows)]
     {
         let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-        use std::os::windows::process::CommandExt;
         if enable {
-            let exe_str = format!("\"{}\"", exe.display());
-            let mut reg_cmd = std::process::Command::new("reg");
-            reg_cmd.args([
-                "add",
-                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
-                "/v",
-                "VelocityRL",
-                "/t",
-                "REG_SZ",
-                "/d",
-                &exe_str,
-                "/f",
-            ]);
-            reg_cmd.creation_flags(CREATE_NO_WINDOW);
-            let out = reg_cmd.output().map_err(|e| e.to_string())?;
-            if !out.status.success() {
-                return Err(format!(
-                    "Could not register startup: {}",
-                    String::from_utf8_lossy(&out.stderr).trim()
-                ));
+            let reg_res = set_registry_startup(true, &exe);
+            let task_res = if crate::winprobe::is_elevated() {
+                create_scheduled_task(&exe)
+            } else {
+                create_scheduled_task(&exe).or_else(|_| Ok(()))
+            };
+
+            if let Err(ref e) = reg_res {
+                if let Err(ref te) = task_res {
+                    return Err(format!("Could not register startup: {e} / {te}"));
+                }
             }
         } else {
-            let mut reg_cmd = std::process::Command::new("reg");
-            reg_cmd.args([
-                "delete",
-                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
-                "/v",
-                "VelocityRL",
-                "/f",
-            ]);
-            reg_cmd.creation_flags(CREATE_NO_WINDOW);
-            let _ = reg_cmd.output();
-
-            if scheduled_task_exists() {
-                let mut cmd = std::process::Command::new("schtasks");
-                cmd.args(["/Delete", "/TN", STARTUP_TASK_NAME, "/F"]);
-                cmd.creation_flags(CREATE_NO_WINDOW);
-                let _ = cmd.output();
-            }
+            let _ = set_registry_startup(false, &exe);
+            delete_scheduled_task();
         }
-        Ok(())
     }
     #[cfg(target_os = "linux")]
     {
@@ -1225,12 +1287,19 @@ async fn set_launch_on_startup(enable: bool) -> Result<(), String> {
         } else if desktop_file.exists() {
             let _ = std::fs::remove_file(&desktop_file);
         }
-        Ok(())
     }
     #[cfg(not(any(windows, target_os = "linux")))]
     {
-        Err("Startup configuration not supported on this platform".into())
+        return Err("Startup configuration not supported on this platform".into());
     }
+
+    // Persist launch_on_startup setting into config.json
+    if let Ok(mut cfg) = get_config(app.clone()).await {
+        cfg.launch_on_startup = enable;
+        let _ = save_config(app, cfg).await;
+    }
+
+    Ok(())
 }
 
 fn normalize_game_dir(game_dir: &str) -> String {
