@@ -1091,7 +1091,7 @@ pub fn apply_tagame_modifications(
             return Err(TagameSwapError::Msg("Encrypted header bounds invalid".into()));
         }
 
-        let mut plain_header = crypto::decrypt_ecb(&TAGAME_KEY, &file_bytes[name_offset..enc_end]);
+        let plain_header = crypto::decrypt_ecb(&TAGAME_KEY, &file_bytes[name_offset..enc_end]);
         let names = crate::upk::palette::parse_names_in_block(&plain_header, name_count)
             .map_err(|e| TagameSwapError::Msg(e.to_string()))?;
 
@@ -1473,23 +1473,6 @@ pub fn apply_tagame_modifications(
                 }
             }
         }
-
-        // Ensure TAGame.upk references the exact Engine package GUID from Engine.upk (prevents version mismatch error)
-        let engine_path = cooked_dir.join("Engine.upk");
-        if let Some(engine_guid) = crate::upk::swapper::read_package_guid(&engine_path) {
-            for exp in &exports {
-                if exp.name.eq_ignore_ascii_case("Engine") {
-                    let guid_pos = exp.pos + 56;
-                    if guid_pos + 16 <= plain_header.len() {
-                        plain_header[guid_pos..guid_pos + 16].copy_from_slice(&engine_guid);
-                    }
-                    break;
-                }
-            }
-        }
-
-        let re_enc = crypto::encrypt_ecb(&TAGAME_KEY, &plain_header);
-        file_bytes[name_offset..enc_end].copy_from_slice(&re_enc);
 
         fs::write(&tagame_path, &file_bytes)?;
     } else {
