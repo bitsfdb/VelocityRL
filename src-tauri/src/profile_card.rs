@@ -36,10 +36,10 @@ impl Default for CustomProfileConfig {
             title_color: "#FFD700".into(),
             title_glow: "#FFB300".into(),
             banner_id: "circuitboard".into(),
-            banner_url: "assets/banners/circuitboard.png".into(),
+            banner_url: "https://api.velocityrl.tech/thumbnails/circuitboard_full.png".into(),
             border_id: "flames".into(),
             border_url: "assets/borders/flames.png".into(),
-            avatar_url: "assets/sample_psynet.png".into(),
+            avatar_url: "https://api.velocityrl.tech/thumbnails/placeholderAnthem.png".into(),
             xp_level: 100,
         }
     }

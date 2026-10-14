@@ -4,277 +4,277 @@
       "id": "Playerbanner_retroscreen",
       "name": "Retroscreen",
       "category": "Featured",
-      "url": "assets/banners/Playerbanner_retroscreen.png"
+      "url": "https://api.velocityrl.tech/thumbnails/playerbanner_retroscreen_full.png"
     },
     {
       "id": "bbaz",
       "name": "Bbaz",
       "category": "Featured",
-      "url": "assets/banners/bbaz.png"
+      "url": "https://api.velocityrl.tech/thumbnails/bbaz_full.png"
     },
     {
       "id": "bbcol",
       "name": "Bbcol",
       "category": "Featured",
-      "url": "assets/banners/bbcol.png"
+      "url": "https://api.velocityrl.tech/thumbnails/bbcol_full.png"
     },
     {
       "id": "bbsd",
       "name": "Bbsd",
       "category": "Featured",
-      "url": "assets/banners/bbsd.png"
+      "url": "https://api.velocityrl.tech/thumbnails/bbsd_full.png"
     },
     {
       "id": "circuitboard",
       "name": "Circuitboard",
       "category": "Featured",
-      "url": "assets/banners/circuitboard.png"
+      "url": "https://api.velocityrl.tech/thumbnails/circuitboard_full.png"
     },
     {
       "id": "copper",
       "name": "Copper",
       "category": "Featured",
-      "url": "assets/banners/copper.png"
+      "url": "https://api.velocityrl.tech/thumbnails/copper_full.png"
     },
     {
       "id": "dumpsterfire",
       "name": "Dumpsterfire",
       "category": "Featured",
-      "url": "assets/banners/dumpsterfire.png"
+      "url": "https://api.velocityrl.tech/thumbnails/dumpsterfire_full.png"
     },
     {
       "id": "ghosts",
       "name": "Ghosts",
       "category": "Featured",
-      "url": "assets/banners/ghosts.png"
+      "url": "https://api.velocityrl.tech/thumbnails/ghosts_full.png"
     },
     {
       "id": "goldenlychee",
       "name": "Goldenlychee",
       "category": "Featured",
-      "url": "assets/banners/goldenlychee.png"
+      "url": "https://api.velocityrl.tech/thumbnails/goldenlychee_full.png"
     },
     {
       "id": "gullwing",
       "name": "Gullwing",
       "category": "Featured",
-      "url": "assets/banners/gullwing.png"
+      "url": "https://api.velocityrl.tech/thumbnails/gullwing_full.png"
     },
     {
       "id": "icepop",
       "name": "Icepop",
       "category": "Featured",
-      "url": "assets/banners/icepop.png"
+      "url": "https://api.velocityrl.tech/thumbnails/icepop_full.png"
     },
     {
       "id": "liquidgold",
       "name": "Liquidgold",
       "category": "Featured",
-      "url": "assets/banners/liquidgold.png"
+      "url": "https://api.velocityrl.tech/thumbnails/liquidgold_full.png"
     },
     {
       "id": "neonnight",
       "name": "Neonnight",
       "category": "Featured",
-      "url": "assets/banners/neonnight.png"
+      "url": "https://api.velocityrl.tech/thumbnails/neonnight_full.png"
     },
     {
       "id": "neonoctane",
       "name": "Neonoctane",
       "category": "Featured",
-      "url": "assets/banners/neonoctane.png"
+      "url": "https://api.velocityrl.tech/thumbnails/neonoctane_full.png"
     },
     {
       "id": "octopus",
       "name": "Octopus",
       "category": "Featured",
-      "url": "assets/banners/octopus.png"
+      "url": "https://api.velocityrl.tech/thumbnails/octopus_full.png"
     },
     {
       "id": "rlcs24_spacestation",
       "name": "Rlcs24 Spacestation",
       "category": "Featured",
-      "url": "assets/banners/rlcs24_spacestation.png"
+      "url": "https://api.velocityrl.tech/thumbnails/rlcs24_spacestation_full.png"
     },
     {
       "id": "rlshield",
       "name": "Rlshield",
       "category": "Featured",
-      "url": "assets/banners/rlshield.png"
+      "url": "https://api.velocityrl.tech/thumbnails/rlshield_full.png"
     },
     {
       "id": "rocketeer",
       "name": "Rocketeer",
       "category": "Featured",
-      "url": "assets/banners/rocketeer.png"
+      "url": "https://api.velocityrl.tech/thumbnails/rocketeer_full.png"
     },
     {
       "id": "rodo",
       "name": "Rodo",
       "category": "Featured",
-      "url": "assets/banners/rodo.png"
+      "url": "https://api.velocityrl.tech/thumbnails/rodo_full.png"
     },
     {
       "id": "s15gold",
       "name": "S15Gold",
       "category": "Featured",
-      "url": "assets/banners/s15gold.png"
+      "url": "https://api.velocityrl.tech/thumbnails/s15gold_full.png"
     },
     {
       "id": "s22gold",
       "name": "S22Gold",
       "category": "Featured",
-      "url": "assets/banners/s22gold.png"
+      "url": "https://api.velocityrl.tech/thumbnails/s22gold_full.png"
     },
     {
       "id": "s5reward_bronze",
       "name": "S5Reward Bronze",
       "category": "Featured",
-      "url": "assets/banners/s5reward_bronze.png"
+      "url": "https://api.velocityrl.tech/thumbnails/s5reward_bronze_full.png"
     },
     {
       "id": "s5reward_bronze_alt",
       "name": "S5Reward Bronze Alt",
       "category": "Featured",
-      "url": "assets/banners/s5reward_bronze_alt.png"
+      "url": "https://api.velocityrl.tech/thumbnails/s5reward_bronze_alt_full.png"
     },
     {
       "id": "s5reward_champion",
       "name": "S5Reward Champion",
       "category": "Featured",
-      "url": "assets/banners/s5reward_champion.png"
+      "url": "https://api.velocityrl.tech/thumbnails/s5reward_champion_full.png"
     },
     {
       "id": "s5reward_champion_alt",
       "name": "S5Reward Champion Alt",
       "category": "Featured",
-      "url": "assets/banners/s5reward_champion_alt.png"
+      "url": "https://api.velocityrl.tech/thumbnails/s5reward_champion_alt_full.png"
     },
     {
       "id": "s5reward_diamond",
       "name": "S5Reward Diamond",
       "category": "Featured",
-      "url": "assets/banners/s5reward_diamond.png"
+      "url": "https://api.velocityrl.tech/thumbnails/s5reward_diamond_full.png"
     },
     {
       "id": "s5reward_diamond_alt",
       "name": "S5Reward Diamond Alt",
       "category": "Featured",
-      "url": "assets/banners/s5reward_diamond_alt.png"
+      "url": "https://api.velocityrl.tech/thumbnails/s5reward_diamond_alt_full.png"
     },
     {
       "id": "s5reward_gold",
       "name": "S5Reward Gold",
       "category": "Featured",
-      "url": "assets/banners/s5reward_gold.png"
+      "url": "https://api.velocityrl.tech/thumbnails/s5reward_gold_full.png"
     },
     {
       "id": "s5reward_gold_alt",
       "name": "S5Reward Gold Alt",
       "category": "Featured",
-      "url": "assets/banners/s5reward_gold_alt.png"
+      "url": "https://api.velocityrl.tech/thumbnails/s5reward_gold_alt_full.png"
     },
     {
       "id": "s5reward_grandchamp",
       "name": "S5Reward Grandchamp",
       "category": "Featured",
-      "url": "assets/banners/s5reward_grandchamp.png"
+      "url": "https://api.velocityrl.tech/thumbnails/s5reward_grandchamp_full.png"
     },
     {
       "id": "s5reward_grandchamp_alt",
       "name": "S5Reward Grandchamp Alt",
       "category": "Featured",
-      "url": "assets/banners/s5reward_grandchamp_alt.png"
+      "url": "https://api.velocityrl.tech/thumbnails/s5reward_grandchamp_alt_full.png"
     },
     {
       "id": "s5reward_platinum",
       "name": "S5Reward Platinum",
       "category": "Featured",
-      "url": "assets/banners/s5reward_platinum.png"
+      "url": "https://api.velocityrl.tech/thumbnails/s5reward_platinum_full.png"
     },
     {
       "id": "s5reward_platinum_alt",
       "name": "S5Reward Platinum Alt",
       "category": "Featured",
-      "url": "assets/banners/s5reward_platinum_alt.png"
+      "url": "https://api.velocityrl.tech/thumbnails/s5reward_platinum_alt_full.png"
     },
     {
       "id": "s5reward_silver",
       "name": "S5Reward Silver",
       "category": "Featured",
-      "url": "assets/banners/s5reward_silver.png"
+      "url": "https://api.velocityrl.tech/thumbnails/s5reward_silver_full.png"
     },
     {
       "id": "s5reward_silver_alt",
       "name": "S5Reward Silver Alt",
       "category": "Featured",
-      "url": "assets/banners/s5reward_silver_alt.png"
+      "url": "https://api.velocityrl.tech/thumbnails/s5reward_silver_alt_full.png"
     },
     {
       "id": "s7rewardbronze",
       "name": "S7Rewardbronze",
       "category": "Featured",
-      "url": "assets/banners/s7rewardbronze.png"
+      "url": "https://api.velocityrl.tech/thumbnails/s7rewardbronze_full.png"
     },
     {
       "id": "s7rewardchampion",
       "name": "S7Rewardchampion",
       "category": "Featured",
-      "url": "assets/banners/s7rewardchampion.png"
+      "url": "https://api.velocityrl.tech/thumbnails/s7rewardchampion_full.png"
     },
     {
       "id": "s7rewarddiamond",
       "name": "S7Rewarddiamond",
       "category": "Featured",
-      "url": "assets/banners/s7rewarddiamond.png"
+      "url": "https://api.velocityrl.tech/thumbnails/s7rewarddiamond_full.png"
     },
     {
       "id": "s7rewardgold",
       "name": "S7Rewardgold",
       "category": "Featured",
-      "url": "assets/banners/s7rewardgold.png"
+      "url": "https://api.velocityrl.tech/thumbnails/s7rewardgold_full.png"
     },
     {
       "id": "s7rewardgrandchampion",
       "name": "S7Rewardgrandchampion",
       "category": "Featured",
-      "url": "assets/banners/s7rewardgrandchampion.png"
+      "url": "https://api.velocityrl.tech/thumbnails/s7rewardgrandchampion_full.png"
     },
     {
       "id": "s7rewardplatinum",
       "name": "S7Rewardplatinum",
       "category": "Featured",
-      "url": "assets/banners/s7rewardplatinum.png"
+      "url": "https://api.velocityrl.tech/thumbnails/s7rewardplatinum_full.png"
     },
     {
       "id": "s7rewardsilver",
       "name": "S7Rewardsilver",
       "category": "Featured",
-      "url": "assets/banners/s7rewardsilver.png"
+      "url": "https://api.velocityrl.tech/thumbnails/s7rewardsilver_full.png"
     },
     {
       "id": "s8rewardgold",
       "name": "S8Rewardgold",
       "category": "Featured",
-      "url": "assets/banners/s8rewardgold.png"
+      "url": "https://api.velocityrl.tech/thumbnails/s8rewardgold_full.png"
     },
     {
       "id": "skullscream",
       "name": "Skullscream",
       "category": "Featured",
-      "url": "assets/banners/skullscream.png"
+      "url": "https://api.velocityrl.tech/thumbnails/skullscream_full.png"
     },
     {
       "id": "videotape",
       "name": "Videotape",
       "category": "Featured",
-      "url": "assets/banners/videotape.png"
+      "url": "https://api.velocityrl.tech/thumbnails/videotape_full.png"
     },
     {
       "id": "westcoastsunset",
       "name": "Westcoastsunset",
       "category": "Featured",
-      "url": "assets/banners/westcoastsunset.png"
+      "url": "https://api.velocityrl.tech/thumbnails/westcoastsunset_full.png"
     }
   ],
   "borders": [
