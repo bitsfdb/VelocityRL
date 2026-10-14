@@ -5631,10 +5631,10 @@ let profileCardState = {
     title_color: '#FFD700',
     title_glow: '#FFB300',
     banner_id: 'circuitboard',
-    banner_url: 'assets/banners/circuitboard.png',
+    banner_url: 'https://api.velocityrl.tech/thumbnails/circuitboard_full.png',
     border_id: 'flames',
     border_url: 'assets/borders/flames.png',
-    avatar_url: 'assets/sample_psynet.png',
+    avatar_url: 'https://api.velocityrl.tech/thumbnails/placeholderAnthem.png',
     xp_level: 100
 };
 
@@ -5660,13 +5660,13 @@ function updateProfileCardPreview() {
     const xpFillEl = document.getElementById('rl-card-xp-fill');
 
     if (bannerEl) {
-        bannerEl.style.backgroundImage = `url('${profileCardState.banner_url || 'assets/banners/circuitboard.png'}')`;
+        bannerEl.style.backgroundImage = `url('${profileCardState.banner_url || 'https://api.velocityrl.tech/thumbnails/circuitboard_full.png'}')`;
     }
     if (borderEl) {
         borderEl.src = profileCardState.border_url || 'assets/borders/flames.png';
     }
     if (pfpEl) {
-        pfpEl.src = profileCardState.avatar_url || 'assets/sample_psynet.png';
+        pfpEl.src = profileCardState.avatar_url || 'https://api.velocityrl.tech/thumbnails/placeholderAnthem.png';
     }
     if (nameEl) {
         nameEl.textContent = profileCardState.player_name || 'Player';
