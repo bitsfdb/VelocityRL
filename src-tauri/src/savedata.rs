@@ -695,11 +695,11 @@ pub fn spawn_item_native_ext(
         }
     }
 
-    // If slot is provided, patch equipped loadouts to prevent match server reset after goal
+    // If slot is provided, patch equipped loadouts to preserve item across respawns/goals
     if let Some(slot) = slot_index {
         let base_pid = match base_product_id {
-            Some(pid) if pid > 0 && pid != product_id => pid,
-            _ => default_base_product_for_slot(slot),
+            Some(pid) if pid > 0 => pid,
+            _ => product_id,
         };
         let _ = patch_equipped_loadouts(
             &mut envelope.sd,
@@ -895,7 +895,7 @@ mod tests {
     }
 
     #[test]
-    fn test_spawn_with_identical_base_and_wanted_id_falls_back_to_default_base() {
+    fn test_spawn_with_identical_base_and_wanted_id_preserves_body_product() {
         let real_save = Path::new("/root/test_real.save");
         if !real_save.exists() {
             return;
@@ -903,11 +903,11 @@ mod tests {
         let tmp = PathBuf::from("/root/test_identical_base_unit.save");
         let _ = fs::copy(real_save, &tmp);
 
-        // Spawn Fennec ZR-F (11603) passing base_product_id = Some(11603) (as happens when no separate base is selected)
+        // Spawn Fennec ZR-F (11603) passing base_product_id = Some(11603) (as happens when spawning target car directly)
         let record = spawn_item_native_ext(&tmp, 11603, 0, Some(0), Some(11603)).expect("spawn succeeded");
         assert_eq!(record.product_id, 11603);
 
-        // Verify that Products[0] in equipped loadout is 23 (Octane) instead of 11603
+        // Verify that Products[0] in equipped loadout preserves 11603
         let env = read_envelope(&tmp).expect("read envelope");
         let pls_entry = env.table.iter().find(|t| t.type_name == "TAGame.ProfileLoadoutSave_TA").expect("find pls");
         let mut cur = pls_entry.file_position as usize;
@@ -999,7 +999,7 @@ mod tests {
                                 let count = i32::from_le_bytes(env.sd[val_cur..val_cur + 4].try_into().unwrap()) as usize;
                                 if count > 0 {
                                     let pid = i32::from_le_bytes(env.sd[val_cur + 4..val_cur + 8].try_into().unwrap());
-                                    assert_eq!(pid, 23, "Loadout #{} body product must be 23", l_idx);
+                                    assert_eq!(pid, 11603, "Loadout #{} body product must be 11603", l_idx);
                                     body_product_id = Some(pid);
                                 }
                             }
@@ -1010,7 +1010,7 @@ mod tests {
             }
         }
 
-        assert_eq!(body_product_id, Some(23), "Body product in loadout must be default Octane (23) to avoid goal revert!");
+        assert_eq!(body_product_id, Some(11603), "Body product in loadout must preserve spawned product ID!");
 
         // Run validate_savedata.py
         let output = std::process::Command::new("python3")
@@ -1021,7 +1021,7 @@ mod tests {
             .expect("run validate_savedata.py");
         assert!(
             output.status.success(),
-            "Validation failed after identical base fallback spawn:\n{}",
+            "Validation failed after identical base spawn:\n{}",
             String::from_utf8_lossy(&output.stdout)
         );
 

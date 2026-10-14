@@ -1426,6 +1426,7 @@ pub fn apply_tagame_modifications(
                         ("ValidateProductID", "Loadout_TA"),
                         ("ValidateForcedProducts", "Loadout_TA"),
                         ("Validate", "LoadoutSet_TA"),
+                        ("ModifyLoadout", "ProductAttribute_TA"),
                     ];
 
                     for (fn_name, outer_name) in noop_targets {
@@ -1963,6 +1964,7 @@ mod tests {
                     ("ValidateProductID", "Loadout_TA"),
                     ("ValidateForcedProducts", "Loadout_TA"),
                     ("Validate", "LoadoutSet_TA"),
+                    ("ModifyLoadout", "ProductAttribute_TA"),
                 ];
 
                 let mut nooped_count = 0;
@@ -1982,7 +1984,7 @@ mod tests {
                         }
                     }
                 }
-                assert_eq!(nooped_count, noop_targets.len(), "All 15 loadout validators must be matched and nooped in Chunk 2");
+                assert_eq!(nooped_count, noop_targets.len(), "All 16 loadout validators & modifiers must be matched and nooped in Chunk 2");
                 let recomp2 = crate::upk::compression::compress_chunk(&decomp2).expect("Recompression of Chunk 2 must succeed");
                 assert!(recomp2.len() <= chunks[2].comp_size as usize, "Recompressed Chunk 2 must fit within allocated size");
             }
