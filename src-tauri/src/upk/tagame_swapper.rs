@@ -1971,4 +1971,36 @@ mod tests {
             }
         }
     }
+
+    #[tokio::test]
+    async fn test_download_official_tagame_upk() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let temp_dir = std::env::temp_dir().join(format!("vrl_test_dl_{}", std::process::id()));
+        let _ = fs::create_dir_all(&temp_dir);
+        let target = temp_dir.join("TAGame.upk");
+
+        let progress_count = Arc::new(AtomicUsize::new(0));
+        let last_dl = Arc::new(AtomicUsize::new(0));
+
+        let pc = progress_count.clone();
+        let ld = last_dl.clone();
+
+        let res = download_official_tagame_upk(&target, move |downloaded, _total| {
+            pc.fetch_add(1, Ordering::SeqCst);
+            ld.store(downloaded, Ordering::SeqCst);
+        }).await;
+
+        assert!(res.is_ok(), "Download failed: {:?}", res.err());
+        assert!(progress_count.load(Ordering::SeqCst) > 0, "Progress callback should have been called");
+        assert!(last_dl.load(Ordering::SeqCst) >= 10_000_000, "Downloaded byte count must be >= 10MB");
+        assert!(target.is_file(), "Downloaded file must exist on disk");
+
+        let bytes = fs::read(&target).expect("Must read downloaded file");
+        assert_eq!(bytes.len(), 78_252_961, "File size mismatch with official build");
+        assert_eq!(&bytes[..4], &[0xC1, 0x83, 0x2A, 0x9E], "Header must be UPK package magic");
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
 }
