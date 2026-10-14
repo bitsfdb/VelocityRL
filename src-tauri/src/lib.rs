@@ -1917,21 +1917,14 @@ async fn reset_tagame_for_verify(app: tauri::AppHandle) -> Result<String, String
     if !bak.exists() {
         return Err("No TAGame.upk backup found — nothing to reset.".into());
     }
-    let bak_s = bak.to_string_lossy().into_owned();
-    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        upk::restore_single(&bak_s)
-    })) {
-        Ok(Ok(())) => {
+    std::fs::copy(&bak, &tagame)
+        .map_err(|e| explain_upk_lock(e.to_string(), "TAGame.upk"))?;
 
-            let mut swaps = load_swaps(&app);
-            swaps.clear();
-            save_swaps(&app, &swaps);
-            applog::event("reset_tagame_for_verify: TAGame.upk restored from backup");
-            Ok("TAGame.upk restored. Now verify game files in Epic/Steam.".into())
-        }
-        Ok(Err(e)) => Err(explain_upk_lock(e.to_string(), "TAGame.upk")),
-        Err(_) => Err("Reset failed unexpectedly. Close Rocket League and try again.".into()),
-    }
+    let mut swaps = load_swaps(&app);
+    swaps.clear();
+    save_swaps(&app, &swaps);
+    applog::event("reset_tagame_for_verify: TAGame.upk restored from backup (backup kept)");
+    Ok("TAGame.upk restored from backup. Kept TAGame.upk.bak intact.".into())
 }
 
 #[tauri::command]
