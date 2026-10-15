@@ -1690,15 +1690,6 @@ async fn apply_swap(
         paint_id = 0;
     }
 
-    // Ensure game directory TAGame.upk is restored to vanilla stock
-    if let Ok(config) = get_config(app.clone()).await {
-        if !config.game_dir.is_empty() {
-            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                let _ = sync_all_swaps_to_tagame(&app, &cooked, &[]).await;
-            }
-        }
-    }
-
     // Locate player save file and inject item
     let save_path = savedata::locate_latest_save()?;
     let slot_idx = savedata::slot_name_to_index(&wanted.slot);
@@ -1779,14 +1770,6 @@ async fn spawn_items_batch(
     let all_items = get_items(app.clone(), None).await
         .map_err(|e| format!("Failed to load items database: {}", e))?;
     let save_path = savedata::locate_latest_save()?;
-
-    if let Ok(config) = get_config(app.clone()).await {
-        if !config.game_dir.is_empty() {
-            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                let _ = sync_all_swaps_to_tagame(&app, &cooked, &[]).await;
-            }
-        }
-    }
 
     let mut swaps = load_swaps(&app);
     let mut spawned_entries = Vec::new();
