@@ -1210,6 +1210,8 @@ pub fn apply_tagame_modifications(
             }
         }
 
+        let mut upk_modified = false;
+
         // 1. Patch Chunk 0: Car_TA::SetLoadout strictly within vanilla allocation (186 bytes)
         if !chunks.is_empty() {
             let c0_uncomp_offset = chunks[0].uncomp_offset;
@@ -1219,6 +1221,7 @@ pub fn apply_tagame_modifications(
             let c0_end = c0_start + c0_comp_size as usize;
             if c0_end <= file_bytes.len() {
                 if let Ok(mut decomp0) = crate::upk::compression::decompress_chunk(&file_bytes[c0_start..c0_end]) {
+                    let mut c0_modified = false;
                     // Patch Car_TA::SetLoadout in Chunk 0 for vehicle spawn (strictly within vanilla 186 bytes)
                     if let Some(exp) = exports.iter().find(|e| e.name == "SetLoadout" && e.outer_name == "Car_TA") {
                         let func_off = (exp.serial_offset - c0_uncomp_offset) as usize;
@@ -1266,8 +1269,11 @@ pub fn apply_tagame_modifications(
                                     Some(data_var_idx),
                                     vanilla_tail,
                                 ) {
-                                    decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                    decomp0[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                    if &decomp0[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
+                                        decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                        decomp0[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                        c0_modified = true;
+                                    }
                                 }
                             }
                         }
@@ -1310,26 +1316,30 @@ pub fn apply_tagame_modifications(
                                     Some(in_loadout_idx),
                                     Some(force_set_idx),
                                 ) {
-                                    decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                    decomp0[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                    if &decomp0[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
+                                        decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                        decomp0[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                        c0_modified = true;
+                                    }
                                 }
                             }
                         }
                     }
 
-                    // Keep CarMeshComponentBase_TA::ApplyPaintSettings 100% vanilla stock intact to ensure clean shader & material initialization without crash
-
-                    if let Ok(mut recomp0) = crate::upk::compression::compress_chunk(&decomp0) {
-                        let orig_c0_sz = c0_comp_size as usize;
-                        if recomp0.len() <= orig_c0_sz {
-                            recomp0.resize(orig_c0_sz, 0);
-                            file_bytes[c0_start..c0_start + orig_c0_sz].copy_from_slice(&recomp0);
-                        } else {
-                            return Err(TagameSwapError::Msg(format!(
-                                "Recompressed Chunk 0 ({} bytes) exceeds allocation ({} bytes)",
-                                recomp0.len(),
-                                orig_c0_sz
-                            )));
+                    if c0_modified {
+                        if let Ok(mut recomp0) = crate::upk::compression::compress_chunk(&decomp0) {
+                            let orig_c0_sz = c0_comp_size as usize;
+                            if recomp0.len() <= orig_c0_sz {
+                                recomp0.resize(orig_c0_sz, 0);
+                                file_bytes[c0_start..c0_start + orig_c0_sz].copy_from_slice(&recomp0);
+                                upk_modified = true;
+                            } else {
+                                return Err(TagameSwapError::Msg(format!(
+                                    "Recompressed Chunk 0 ({} bytes) exceeds allocation ({} bytes)",
+                                    recomp0.len(),
+                                    orig_c0_sz
+                                )));
+                            }
                         }
                     }
                 }
@@ -1355,6 +1365,7 @@ pub fn apply_tagame_modifications(
                 let c1_end = c1_start + c1_comp_size as usize;
                 if c1_end <= file_bytes.len() {
                     if let Ok(mut decomp1) = crate::upk::compression::decompress_chunk(&file_bytes[c1_start..c1_end]) {
+                        let mut c1_modified = false;
                         if let Some(exp_sp) = exports.iter().find(|e| e.name == "SetProduct" && e.outer_name == "ExplosionPreviewer_TA") {
                             let func_off = (exp_sp.serial_offset - c1_uncomp_offset) as usize;
                             if func_off + 48 <= decomp1.len() {
@@ -1373,24 +1384,30 @@ pub fn apply_tagame_modifications(
                                         target_ge,
                                         orig_disk_sz,
                                     ) {
-                                        decomp1[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                        decomp1[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                        if &decomp1[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
+                                            decomp1[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                            decomp1[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                            c1_modified = true;
+                                        }
                                     }
                                 }
                             }
                         }
 
-                        if let Ok(mut recomp1) = crate::upk::compression::compress_chunk(&decomp1) {
-                            let orig_c1_sz = c1_comp_size as usize;
-                            if recomp1.len() <= orig_c1_sz {
-                                recomp1.resize(orig_c1_sz, 0);
-                                file_bytes[c1_start..c1_start + orig_c1_sz].copy_from_slice(&recomp1);
-                            } else {
-                                return Err(TagameSwapError::Msg(format!(
-                                    "Recompressed Chunk 1 ({} bytes) exceeds allocation ({} bytes)",
-                                    recomp1.len(),
-                                    orig_c1_sz
-                                )));
+                        if c1_modified {
+                            if let Ok(mut recomp1) = crate::upk::compression::compress_chunk(&decomp1) {
+                                let orig_c1_sz = c1_comp_size as usize;
+                                if recomp1.len() <= orig_c1_sz {
+                                    recomp1.resize(orig_c1_sz, 0);
+                                    file_bytes[c1_start..c1_start + orig_c1_sz].copy_from_slice(&recomp1);
+                                    upk_modified = true;
+                                } else {
+                                    return Err(TagameSwapError::Msg(format!(
+                                        "Recompressed Chunk 1 ({} bytes) exceeds allocation ({} bytes)",
+                                        recomp1.len(),
+                                        orig_c1_sz
+                                    )));
+                                }
                             }
                         }
                     }
@@ -1409,7 +1426,6 @@ pub fn apply_tagame_modifications(
                 if let Ok(mut decomp2) = crate::upk::compression::decompress_chunk(&file_bytes[c2_start..c2_end]) {
                     let mut c2_modified = false;
 
-                    // Neutralize all loadout validator and reset functions to prevent cosmetic reversion on respawn/kickoff/goal
                     let noop_targets = [
                         ("SetLoadoutSlotToDefaultID", "PRI_TA"),
                         ("SetLoadoutSlotToDefaultID", "LoadoutValidation_TA"),
@@ -1426,7 +1442,6 @@ pub fn apply_tagame_modifications(
                         ("ValidateProductID", "Loadout_TA"),
                         ("ValidateForcedProducts", "Loadout_TA"),
                         ("Validate", "LoadoutSet_TA"),
-                        ("ModifyLoadout", "ProductAttribute_TA"),
                     ];
 
                     for (fn_name, outer_name) in noop_targets {
@@ -1437,9 +1452,11 @@ pub fn apply_tagame_modifications(
                                     let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
                                     if orig_disk_sz >= 3 && func_off + 48 + orig_disk_sz <= decomp2.len() {
                                         let (payload, mem_sz) = emit_noop_void_function_bytecode(orig_disk_sz);
-                                        decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                        decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
-                                        c2_modified = true;
+                                        if &decomp2[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
+                                            decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                            decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                            c2_modified = true;
+                                        }
                                     }
                                 }
                             }
@@ -1456,8 +1473,10 @@ pub fn apply_tagame_modifications(
                                         let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
                                         if orig_disk_sz >= 22 && func_off + 48 + orig_disk_sz <= decomp2.len() {
                                             let payload = emit_pri_get_ping_bytecode(ps.min_ms, ps.max_ms, orig_disk_sz);
-                                            decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
-                                            c2_modified = true;
+                                            if &decomp2[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
+                                                decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                                c2_modified = true;
+                                            }
                                         }
                                     }
                                 }
@@ -1471,6 +1490,7 @@ pub fn apply_tagame_modifications(
                             if recomp2.len() <= orig_c2_sz {
                                 recomp2.resize(orig_c2_sz, 0);
                                 file_bytes[c2_start..c2_start + orig_c2_sz].copy_from_slice(&recomp2);
+                                upk_modified = true;
                             } else {
                                 crate::applog::event(&format!(
                                     "tagame_swapper: Recompressed Chunk 2 ({} bytes) exceeds allocation ({} bytes)",
@@ -1484,7 +1504,9 @@ pub fn apply_tagame_modifications(
             }
         }
 
-        fs::write(&tagame_path, &file_bytes)?;
+        if upk_modified {
+            fs::write(&tagame_path, &file_bytes)?;
+        }
     } else {
         if !should_apply_palette && !ping_active && backup_path.is_file() {
             let _ = fs::copy(&backup_path, &tagame_path);
@@ -1964,7 +1986,6 @@ mod tests {
                     ("ValidateProductID", "Loadout_TA"),
                     ("ValidateForcedProducts", "Loadout_TA"),
                     ("Validate", "LoadoutSet_TA"),
-                    ("ModifyLoadout", "ProductAttribute_TA"),
                 ];
 
                 let mut nooped_count = 0;
@@ -1984,11 +2005,67 @@ mod tests {
                         }
                     }
                 }
-                assert_eq!(nooped_count, noop_targets.len(), "All 16 loadout validators & modifiers must be matched and nooped in Chunk 2");
+                assert_eq!(nooped_count, noop_targets.len(), "All 15 loadout validators must be matched and nooped in Chunk 2");
                 let recomp2 = crate::upk::compression::compress_chunk(&decomp2).expect("Recompression of Chunk 2 must succeed");
                 assert!(recomp2.len() <= chunks[2].comp_size as usize, "Recompressed Chunk 2 must fit within allocated size");
             }
         }
+    }
+
+    #[test]
+    fn test_apply_modifications_passes_validate_tagame_tool() {
+        let tagame_path = Path::new("/root/TAGame_clean.upk");
+        if !tagame_path.exists() {
+            return;
+        }
+
+        let temp_dir = std::env::temp_dir().join(format!("vrl_test_val_{}", std::process::id()));
+        let cooked_dir = temp_dir.join("CookedPCConsole");
+        let _ = fs::create_dir_all(&cooked_dir);
+        let target = cooked_dir.join("TAGame.upk");
+        fs::copy(tagame_path, &target).expect("copy tagame upk");
+
+        let items = vec![
+            TagameSwapItem {
+                slot: "Body".to_string(),
+                slot_index: Some(0),
+                owned_id: Some(23),
+                product_id: 11603,
+                paint_id: Some(1),
+                custom_paint_hex: None,
+                package_name: Some("Body_Fennec_SF".to_string()),
+            },
+        ];
+
+        let keys_txt = include_str!("../../resources/keys.txt");
+        let keys_map_json = include_str!("../../resources/keys_map.json");
+
+        let res = apply_tagame_modifications(
+            &cooked_dir,
+            &items,
+            keys_txt,
+            keys_map_json,
+            Some(false),
+        );
+        assert!(res.is_ok(), "apply_tagame_modifications failed: {:?}", res.err());
+
+        let output = std::process::Command::new("python3")
+            .arg("/root/VelocityRL/src-tauri/tools/validate_tagame.py")
+            .arg(&target)
+            .output()
+            .expect("execute validate_tagame.py");
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            output.status.success(),
+            "validate_tagame.py failed with exit code {:?}\nSTDOUT:\n{}\nSTDERR:\n{}",
+            output.status.code(),
+            stdout,
+            stderr
+        );
+
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 
     #[tokio::test]
