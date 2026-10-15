@@ -800,6 +800,29 @@ pub fn emit_noop_void_function_bytecode(orig_disk_sz: usize) -> (Vec<u8>, u32) {
     (payload, orig_disk_sz as u32)
 }
 
+pub fn emit_noop_bool_function_bytecode(return_val: bool, orig_disk_sz: usize) -> (Vec<u8>, u32) {
+    let mut payload = Vec::with_capacity(orig_disk_sz);
+    payload.push(opcodes::EX_RETURN); // 0x04
+    payload.push(if return_val { opcodes::EX_TRUE_CONST } else { opcodes::EX_FALSE_CONST }); // 0x27 or 0x28
+    payload.push(opcodes::EX_END_OF_SCRIPT); // 0x4C
+    let active_mem = 3u32;
+    let nop_count = orig_disk_sz.saturating_sub(payload.len());
+    payload.resize(orig_disk_sz, opcodes::EX_NOTHING);
+    (payload, active_mem + nop_count as u32)
+}
+
+pub fn emit_modify_loadout_passthrough_bytecode(loadout_product_ids_id: i32, orig_disk_sz: usize) -> (Vec<u8>, u32) {
+    let mut payload = Vec::with_capacity(orig_disk_sz);
+    payload.push(opcodes::EX_RETURN); // 0x04
+    payload.push(opcodes::EX_LOCAL_VARIABLE); // 0x46
+    payload.extend_from_slice(&loadout_product_ids_id.to_le_bytes());
+    payload.push(opcodes::EX_END_OF_SCRIPT); // 0x4C
+    let active_mem = 10u32; // EX_RETURN (1) + EX_LOCAL_VARIABLE (8) + EX_END_OF_SCRIPT (1)
+    let nop_count = orig_disk_sz.saturating_sub(payload.len());
+    payload.resize(orig_disk_sz, opcodes::EX_NOTHING);
+    (payload, active_mem + nop_count as u32)
+}
+
 pub fn hex_to_linear_rgba(hex: &str) -> [u8; 16] {
     let clean = hex.trim().trim_start_matches('#');
     let (r_srgb, g_srgb, b_srgb) = if clean.len() >= 6 {
@@ -1457,6 +1480,64 @@ pub fn apply_tagame_modifications(
                                             decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
                                             c2_modified = true;
                                         }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Patch ProductAttribute_TA::ModifyLoadout to output LoadoutProductIDs unmodified
+                    if let Some(exp_ml) = exports.iter().find(|e| e.name == "ModifyLoadout" && e.outer_name == "ProductAttribute_TA") {
+                        if exp_ml.serial_offset >= c2_uncomp_offset && exp_ml.serial_offset < (c2_uncomp_offset + chunks[2].uncomp_size as i64) {
+                            let func_off = (exp_ml.serial_offset - c2_uncomp_offset) as usize;
+                            if func_off + 48 <= decomp2.len() {
+                                let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                                if orig_disk_sz >= 7 && func_off + 48 + orig_disk_sz <= decomp2.len() {
+                                    let loadout_product_ids_id = exports.iter()
+                                        .find(|e| e.name == "LoadoutProductIDs" && e.outer_idx == exp_ml.idx as i32)
+                                        .map(|e| e.idx as i32)
+                                        .unwrap_or(59200);
+                                    let (payload, mem_sz) = emit_modify_loadout_passthrough_bytecode(loadout_product_ids_id, orig_disk_sz);
+                                    if &decomp2[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
+                                        decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                        decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                        c2_modified = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Patch LoadoutValidation_TA::ValidatePaintedAttribute to return true (prevent painted attribute stripping)
+                    if let Some(exp_vpa) = exports.iter().find(|e| e.name == "ValidatePaintedAttribute" && e.outer_name == "LoadoutValidation_TA") {
+                        if exp_vpa.serial_offset >= c2_uncomp_offset && exp_vpa.serial_offset < (c2_uncomp_offset + chunks[2].uncomp_size as i64) {
+                            let func_off = (exp_vpa.serial_offset - c2_uncomp_offset) as usize;
+                            if func_off + 48 <= decomp2.len() {
+                                let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                                if orig_disk_sz >= 3 && func_off + 48 + orig_disk_sz <= decomp2.len() {
+                                    let (payload, mem_sz) = emit_noop_bool_function_bytecode(true, orig_disk_sz);
+                                    if &decomp2[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
+                                        decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                        decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                        c2_modified = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Patch LoadoutValidation_TA::ValidateLoadoutTeamPaints to return false (bTeamPaintChanged = false)
+                    if let Some(exp_vtp) = exports.iter().find(|e| e.name == "ValidateLoadoutTeamPaints" && e.outer_name == "LoadoutValidation_TA") {
+                        if exp_vtp.serial_offset >= c2_uncomp_offset && exp_vtp.serial_offset < (c2_uncomp_offset + chunks[2].uncomp_size as i64) {
+                            let func_off = (exp_vtp.serial_offset - c2_uncomp_offset) as usize;
+                            if func_off + 48 <= decomp2.len() {
+                                let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                                if orig_disk_sz >= 3 && func_off + 48 + orig_disk_sz <= decomp2.len() {
+                                    let (payload, mem_sz) = emit_noop_bool_function_bytecode(false, orig_disk_sz);
+                                    if &decomp2[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
+                                        decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                        decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                        c2_modified = true;
                                     }
                                 }
                             }
