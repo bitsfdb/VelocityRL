@@ -1735,8 +1735,23 @@ async fn handle_forward_intercepted_request(
         let is_ecom_ownership = path_lower.contains("ecom")
             || path_lower.contains("entitlement")
             || path_lower.contains("ownership")
-            || path_lower.contains("dlc");
+            || path_lower.contains("dlc")
+            || path_lower.contains("crossentitlement")
+            || path_lower.contains("checkownership")
+            || path_lower.contains("verifyownership")
+            || path_lower.contains("getplayerproducts")
+            || path_lower.contains("getloadoutproducts")
+            || path_lower.contains("getuserproducts")
+            || (find_bytes(&final_body, b"\"ProductData\"").is_some()
+                && find_bytes(&final_body, b"\"ProductID\"").is_some());
         if is_ecom_ownership {
+            let spawned_items = load_active_spawned_items(None);
+            if !spawned_items.is_empty() {
+                let (new_body_prod, did_patch_prod) = patch_player_products_json(&final_body, &spawned_items);
+                if did_patch_prod {
+                    final_body = new_body_prod;
+                }
+            }
             let (new_body_own, did_patch_own) = patch_check_ownership_json(&final_body, &[]);
             if did_patch_own {
                 final_body = new_body_own;
@@ -2101,6 +2116,10 @@ async fn handle_broker_request(
                 || path_lower.contains("checkownership")
                 || path_lower.contains("verifyownership")
                 || path_lower.contains("getuserproducts")
+                || path_lower.contains("crossentitlement")
+                || path_lower.contains("entitlement")
+                || path_lower.contains("ecom")
+                || path_lower.contains("dlc")
                 || path_lower.contains("ownership")
                 || (find_bytes(&out_body, b"\"ProductData\"").is_some()
                     && find_bytes(&out_body, b"\"ProductID\"").is_some());
@@ -2111,13 +2130,12 @@ async fn handle_broker_request(
                     if did_patch {
                         out_body = new_body;
                         patched = true;
-                    } else {
-                        let (new_body_own, did_patch_own) = patch_check_ownership_json(&out_body, &spawned_items);
-                        if did_patch_own {
-                            out_body = new_body_own;
-                            patched = true;
-                        }
                     }
+                }
+                let (new_body_own, did_patch_own) = patch_check_ownership_json(&out_body, &spawned_items);
+                if did_patch_own {
+                    out_body = new_body_own;
+                    patched = true;
                 }
             }
 
@@ -2599,6 +2617,10 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         || svc_lower.contains("checkownership")
         || svc_lower.contains("verifyownership")
         || svc_lower.contains("getuserproducts")
+        || svc_lower.contains("crossentitlement")
+        || svc_lower.contains("entitlement")
+        || svc_lower.contains("ecom")
+        || svc_lower.contains("dlc")
         || svc_lower.contains("ownership")
         || (find_bytes(body_part, b"\"ProductData\"").is_some()
             && find_bytes(body_part, b"\"ProductID\"").is_some());
@@ -2610,13 +2632,12 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
             if changed {
                 current_body = new_body;
                 any_changed = true;
-            } else {
-                let (new_body_own, changed_own) = patch_check_ownership_json(&current_body, &spawned_items);
-                if changed_own {
-                    current_body = new_body_own;
-                    any_changed = true;
-                }
             }
+        }
+        let (new_body_own, changed_own) = patch_check_ownership_json(&current_body, &spawned_items);
+        if changed_own {
+            current_body = new_body_own;
+            any_changed = true;
         }
     }
 
@@ -5039,18 +5060,32 @@ fn patch_loadout_node(
                                 && (r.slot_idx == 0 || r.slot.eq_ignore_ascii_case("Body"))
                                 && (slot_idx == Some(0) || is_known_body_id(pid.unwrap_or(0)));
                             let is_matching_owned = r.owned_id > 0 && pid == Some(r.owned_id);
+                            let is_matching_slot = r.owned_id > 0 && r.slot_idx > 0 && slot_idx == Some(r.slot_idx);
+                            let is_matching_wanted = pid == Some(r.wanted_id);
 
-                            if is_body_slot || is_matching_owned {
+                            if is_body_slot || is_matching_owned || is_matching_slot || is_matching_wanted {
                                 if pid != Some(r.wanted_id) {
                                     obj["ProductID"] = serde_json::json!(r.wanted_id);
                                     *changed = true;
                                 }
                                 if r.paint_id > 0 {
-                                    obj["PaintID"] = serde_json::json!(r.paint_id);
-                                    obj["Attributes"] = serde_json::json!([
-                                        { "Key": "Painted", "Value": r.paint_id }
-                                    ]);
-                                    *changed = true;
+                                    if obj.get("PaintID").and_then(|v| v.as_i64()).map(|n| n as i32) != Some(r.paint_id) {
+                                        obj["PaintID"] = serde_json::json!(r.paint_id);
+                                        *changed = true;
+                                    }
+                                    let needs_attr = match obj.get("Attributes").and_then(|v| v.as_array()) {
+                                        Some(attrs) => !attrs.iter().any(|a| {
+                                            a.get("Key").and_then(|k| k.as_str()) == Some("Painted")
+                                                && a.get("Value").and_then(|v| v.as_i64()) == Some(r.paint_id as i64)
+                                        }),
+                                        None => true,
+                                    };
+                                    if needs_attr {
+                                        obj["Attributes"] = serde_json::json!([
+                                            { "Key": "Painted", "Value": r.paint_id }
+                                        ]);
+                                        *changed = true;
+                                    }
                                 }
                                 replaced = true;
                                 break;
@@ -5151,6 +5186,23 @@ fn patch_reservation_value_sync(
                             if let Some(loadout_val) = player.get_mut("Loadout") {
                                 patch_loadout_node(loadout_val, rules, changed);
                             }
+                            if let Some(loadouts_val) = player.get_mut("Loadouts") {
+                                if let Some(arr) = loadouts_val.as_array_mut() {
+                                    for l in arr.iter_mut() {
+                                        patch_loadout_node(l, rules, changed);
+                                    }
+                                } else {
+                                    patch_loadout_node(loadouts_val, rules, changed);
+                                }
+                            }
+                            if let Some(online_val) = player.get_mut("OnlineLoadout") {
+                                patch_loadout_node(online_val, rules, changed);
+                            }
+                            if let Some(online_arr) = player.get_mut("OnlineLoadouts").and_then(|v| v.as_array_mut()) {
+                                for l in online_arr.iter_mut() {
+                                    patch_loadout_node(l, rules, changed);
+                                }
+                            }
                         }
                     }
                 }
@@ -5160,12 +5212,32 @@ fn patch_reservation_value_sync(
                 patch_loadout_node(loadout_val, rules, changed);
             }
 
+            if let Some(loadouts_val) = map.get_mut("Loadouts") {
+                if let Some(arr) = loadouts_val.as_array_mut() {
+                    for l in arr.iter_mut() {
+                        patch_loadout_node(l, rules, changed);
+                    }
+                } else {
+                    patch_loadout_node(loadouts_val, rules, changed);
+                }
+            }
+
+            if let Some(online_val) = map.get_mut("OnlineLoadout") {
+                patch_loadout_node(online_val, rules, changed);
+            }
+
+            if let Some(online_arr) = map.get_mut("OnlineLoadouts").and_then(|v| v.as_array_mut()) {
+                for l in online_arr.iter_mut() {
+                    patch_loadout_node(l, rules, changed);
+                }
+            }
+
             if let Some(prod_ids_val) = map.get_mut("ProductIDs") {
                 patch_product_ids_node(prod_ids_val, rules, changed);
             }
 
             for (k, v) in map.iter_mut() {
-                if k == "ServerAddress" || k == "Players" || k == "Loadout" || k == "ProductIDs" {
+                if k == "ServerAddress" || k == "Players" || k == "Loadout" || k == "Loadouts" || k == "OnlineLoadout" || k == "OnlineLoadouts" || k == "ProductIDs" {
                     continue;
                 }
                 if let Some(s) = v.as_str() {
@@ -5346,6 +5418,12 @@ pub fn patch_player_products_json(
         Some(arr)
     } else if let Some(arr) = root.get_mut("Products").and_then(|v| v.as_array_mut()) {
         Some(arr)
+    } else if let Some(arr) = root.get_mut("LoadoutProducts").and_then(|v| v.as_array_mut()) {
+        Some(arr)
+    } else if let Some(arr) = root.get_mut("PlayerProducts").and_then(|v| v.as_array_mut()) {
+        Some(arr)
+    } else if let Some(arr) = root.as_array_mut() {
+        Some(arr)
     } else {
         None
     };
@@ -5360,15 +5438,49 @@ pub fn patch_player_products_json(
             continue;
         }
 
-        let already_present = arr.iter().any(|item| {
+        let mut matched = false;
+        for item in arr.iter_mut() {
             let pid = item.get("ProductID")
                 .or_else(|| item.get("ProductId"))
                 .or_else(|| item.get("id"))
                 .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())));
-            pid == Some(wanted_id as i64)
-        });
+            if pid == Some(wanted_id as i64) {
+                matched = true;
+                if paint_id > 0 {
+                    let mut has_paint = false;
+                    if let Some(attrs) = item.get_mut("Attributes").and_then(|v| v.as_array_mut()) {
+                        for attr in attrs.iter_mut() {
+                            if attr.get("Key").and_then(|k| k.as_str()) == Some("Painted") {
+                                if attr.get("Value").and_then(|v| v.as_i64()) != Some(paint_id as i64) {
+                                    attr["Value"] = serde_json::json!(paint_id);
+                                    changed = true;
+                                }
+                                has_paint = true;
+                                break;
+                            }
+                        }
+                        if !has_paint {
+                            attrs.push(serde_json::json!({
+                                "Key": "Painted",
+                                "Value": paint_id
+                            }));
+                            changed = true;
+                        }
+                    } else {
+                        item["Attributes"] = serde_json::json!([
+                            {
+                                "Key": "Painted",
+                                "Value": paint_id
+                            }
+                        ]);
+                        changed = true;
+                    }
+                }
+                break;
+            }
+        }
 
-        if !already_present {
+        if !matched {
             let u1: u64 = rand::random();
             let u2: u64 = rand::random();
             let inst_hex = format!("{u1:016x}{u2:016x}");
@@ -5404,6 +5516,40 @@ pub fn patch_player_products_json(
     }
 }
 
+fn patch_ownership_value_recursive(val: &mut serde_json::Value, changed: &mut bool) {
+    match val {
+        serde_json::Value::Object(obj) => {
+            for key in ["bOwned", "isOwned", "Owned", "bHasProduct", "HasEntitlement", "bSuccess", "Success", "bActive", "IsActive"] {
+                if let Some(v) = obj.get_mut(key) {
+                    if v.as_bool() == Some(false) {
+                        *v = serde_json::Value::Bool(true);
+                        *changed = true;
+                    }
+                }
+            }
+            for key in ["status", "Status", "ownershipStatus", "OwnershipStatus"] {
+                if let Some(v) = obj.get_mut(key) {
+                    if let Some(s) = v.as_str() {
+                        if s.eq_ignore_ascii_case("NOT_OWNED") || s.eq_ignore_ascii_case("EXPIRED") {
+                            *v = serde_json::Value::String("ACTIVE".to_string());
+                            *changed = true;
+                        }
+                    }
+                }
+            }
+            for (_k, v) in obj.iter_mut() {
+                patch_ownership_value_recursive(v, changed);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for item in arr.iter_mut() {
+                patch_ownership_value_recursive(item, changed);
+            }
+        }
+        _ => {}
+    }
+}
+
 pub fn patch_check_ownership_json(
     body: &[u8],
     _items: &[(i32, i32)],
@@ -5414,46 +5560,7 @@ pub fn patch_check_ownership_json(
     };
 
     let mut changed = false;
-
-    // Check direct object with boolean ownership flags and status fields
-    if let Some(obj) = root.as_object_mut() {
-        for key in ["bOwned", "isOwned", "Owned", "bHasProduct", "HasEntitlement", "bSuccess", "Success"] {
-            if let Some(val) = obj.get_mut(key) {
-                if val.as_bool() == Some(false) {
-                    *val = serde_json::Value::Bool(true);
-                    changed = true;
-                }
-            }
-        }
-        for key in ["status", "Status", "ownershipStatus", "OwnershipStatus"] {
-            if let Some(val) = obj.get_mut(key) {
-                if let Some(s) = val.as_str() {
-                    if s.eq_ignore_ascii_case("NOT_OWNED") || s.eq_ignore_ascii_case("EXPIRED") {
-                        *val = serde_json::Value::String("OWNED".to_string());
-                        changed = true;
-                    }
-                }
-            }
-        }
-        for arr_key in ["entitlements", "Entitlements", "items", "ownership", "Ownership"] {
-            if let Some(arr) = obj.get_mut(arr_key).and_then(|v| v.as_array_mut()) {
-                for item in arr.iter_mut() {
-                    if let Some(item_obj) = item.as_object_mut() {
-                        for k in ["status", "Status"] {
-                            if let Some(v) = item_obj.get_mut(k) {
-                                if let Some(s) = v.as_str() {
-                                    if s.eq_ignore_ascii_case("NOT_OWNED") {
-                                        *v = serde_json::Value::String("ACTIVE".to_string());
-                                        changed = true;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+    patch_ownership_value_recursive(&mut root, &mut changed);
 
     if changed {
         match serde_json::to_vec(&root) {
