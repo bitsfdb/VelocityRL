@@ -727,6 +727,8 @@ async function init() {
             if (paneId === 'maplib-pane') refreshWorkshopLibrary();
             if (paneId === 'mappresets-pane') refreshWorkshopPresets();
             if (paneId === 'browser-pane') loadWorkshopCatalog(1, workshopCatalogQuery);
+            if (paneId === 'custom-avatar-pane') initProfileCardTab();
+            if (paneId === 'custom-names-pane') initNamesTab();
         };
     });
 
@@ -5647,16 +5649,9 @@ function initDecalsTab() {
 
 let profileCatalog = null;
 let profileCardState = {
-    player_name: 'Player',
-    title_text: 'EST. 2015',
-    title_color: '#FFD700',
-    title_glow: '#FFB300',
-    banner_id: 'circuitboard',
-    banner_url: 'https://api.velocityrl.tech/thumbnails/circuitboard_full.png',
     border_id: 'flames',
     border_url: 'assets/borders/flames.png',
-    avatar_url: 'https://api.velocityrl.tech/thumbnails/placeholderAnthem.png',
-    xp_level: 100
+    avatar_url: 'https://rlstats.net/images/epic.png'
 };
 
 function showProfileStatus(msg, type = 'info') {
@@ -5672,79 +5667,15 @@ function showProfileStatus(msg, type = 'info') {
 }
 
 function updateProfileCardPreview() {
-    const bannerEl = document.getElementById('rl-card-banner');
     const borderEl = document.getElementById('rl-card-border');
     const pfpEl = document.getElementById('rl-card-pfp');
-    const nameEl = document.getElementById('rl-card-name');
-    const titleEl = document.getElementById('rl-card-title');
-    const xpBadgeEl = document.getElementById('rl-card-xp-badge');
-    const xpFillEl = document.getElementById('rl-card-xp-fill');
 
-    if (bannerEl) {
-        bannerEl.style.backgroundImage = `url('${profileCardState.banner_url || 'https://api.velocityrl.tech/thumbnails/circuitboard_full.png'}')`;
-    }
     if (borderEl) {
         borderEl.src = profileCardState.border_url || 'assets/borders/flames.png';
     }
     if (pfpEl) {
-        pfpEl.src = profileCardState.avatar_url || 'https://api.velocityrl.tech/thumbnails/placeholderAnthem.png';
+        pfpEl.src = profileCardState.avatar_url || 'https://rlstats.net/images/epic.png';
     }
-    if (nameEl) {
-        nameEl.textContent = profileCardState.player_name || 'Player';
-    }
-    if (titleEl) {
-        titleEl.textContent = profileCardState.title_text || 'EST. 2015';
-        titleEl.style.color = profileCardState.title_color || '#FFD700';
-        const glow = profileCardState.title_glow || '#FFB300';
-        titleEl.style.textShadow = `0 0 10px ${glow}, 0 0 20px ${glow}99`;
-    }
-    if (xpBadgeEl) {
-        xpBadgeEl.textContent = `LVL ${profileCardState.xp_level || 100}`;
-    }
-    if (xpFillEl) {
-        const lvl = parseInt(profileCardState.xp_level, 10) || 100;
-        const pct = (lvl % 100 === 0) ? 75 : (lvl % 100);
-        xpFillEl.style.width = `${pct}%`;
-    }
-}
-
-function renderProfileBannerGallery(category = 'all', searchQuery = '') {
-    const galleryEl = document.getElementById('profile-banner-gallery');
-    if (!galleryEl || !profileCatalog?.banners) return;
-
-    const query = searchQuery.trim().toLowerCase();
-    const filtered = profileCatalog.banners.filter(b => {
-        const matchCat = (category === 'all') || (b.category === category);
-        const matchQuery = !query || b.name.toLowerCase().includes(query) || b.id.toLowerCase().includes(query);
-        return matchCat && matchQuery;
-    });
-
-    const countLabel = document.getElementById('banner-count-label');
-    if (countLabel) {
-        countLabel.textContent = `${filtered.length} Banner${filtered.length === 1 ? '' : 's'}`;
-    }
-
-    galleryEl.innerHTML = filtered.map(b => {
-        const isActive = profileCardState.banner_id === b.id || profileCardState.banner_url === b.url;
-        return `
-            <div class="profile-banner-item ${isActive ? 'active' : ''}" 
-                 data-id="${escHtml(b.id)}" 
-                 data-url="${escHtml(b.url)}" 
-                 style="background-image: url('${escHtml(b.url)}');">
-                <div class="profile-banner-label">${escHtml(b.name)}</div>
-            </div>
-        `;
-    }).join('');
-
-    galleryEl.querySelectorAll('.profile-banner-item').forEach(item => {
-        item.onclick = () => {
-            galleryEl.querySelectorAll('.profile-banner-item').forEach(i => i.classList.remove('active'));
-            item.classList.add('active');
-            profileCardState.banner_id = item.dataset.id;
-            profileCardState.banner_url = item.dataset.url;
-            updateProfileCardPreview();
-        };
-    });
 }
 
 function populateProfileBorderDropdown() {
@@ -5760,8 +5691,16 @@ function populateProfileBorderDropdown() {
         const selectedOpt = selectEl.options[selectEl.selectedIndex];
         profileCardState.border_url = selectEl.value;
         profileCardState.border_id = selectedOpt?.dataset.id || '';
+        saveAvatarConfig();
         updateProfileCardPreview();
     };
+}
+
+function saveAvatarConfig() {
+    try {
+        localStorage.setItem('velocityrl_profile_card', JSON.stringify(profileCardState));
+        invoke('save_profile_card_config', { config: profileCardState }).catch(() => {});
+    } catch {}
 }
 
 let profileCardInitialized = false;
@@ -5769,10 +5708,10 @@ async function initProfileCardTab() {
     if (profileCardInitialized) return;
     profileCardInitialized = true;
 
-    // Load saved profile card state
+    // Load saved avatar state
     try {
         const saved = await invoke('get_profile_card_config');
-        if (saved && saved.player_name) {
+        if (saved && (saved.avatar_url || saved.border_url)) {
             profileCardState = { ...profileCardState, ...saved };
         } else {
             const local = localStorage.getItem('velocityrl_profile_card');
@@ -5785,15 +5724,7 @@ async function initProfileCardTab() {
         }
     }
 
-    // Inherit display name from name spoofing if available and state is default
-    if (profileCardState.player_name === 'Player') {
-        const dispEl = document.getElementById('name-spoof-display');
-        if (dispEl && dispEl.value.trim()) {
-            profileCardState.player_name = dispEl.value.trim();
-        }
-    }
-
-    // Fetch catalog
+    // Fetch catalog for borders
     try {
         profileCatalog = await invoke('get_profile_catalog');
     } catch {
@@ -5806,40 +5737,6 @@ async function initProfileCardTab() {
     // Populate catalog UI
     if (profileCatalog) {
         populateProfileBorderDropdown();
-        renderProfileBannerGallery('all', '');
-    }
-
-    // Wire Banner category filters
-    document.querySelectorAll('.banner-cat-btn').forEach(btn => {
-        btn.onclick = () => {
-            document.querySelectorAll('.banner-cat-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            const searchVal = document.getElementById('profile-banner-search')?.value || '';
-            renderProfileBannerGallery(btn.dataset.cat, searchVal);
-        };
-    });
-
-    // Wire Banner search
-    const bannerSearchInput = document.getElementById('profile-banner-search');
-    if (bannerSearchInput) {
-        bannerSearchInput.oninput = () => {
-            const activeCat = document.querySelector('.banner-cat-btn.active')?.dataset.cat || 'all';
-            renderProfileBannerGallery(activeCat, bannerSearchInput.value);
-        };
-    }
-
-    // Wire Custom Banner URL
-    const customBannerInput = document.getElementById('custom-banner-url');
-    const customBannerBtn = document.getElementById('custom-banner-apply-btn');
-    if (customBannerBtn && customBannerInput) {
-        customBannerBtn.onclick = () => {
-            const val = customBannerInput.value.trim();
-            if (val) {
-                profileCardState.banner_url = val;
-                profileCardState.banner_id = 'custom';
-                updateProfileCardPreview();
-            }
-        };
     }
 
     // Wire Upload Image button
@@ -5850,11 +5747,14 @@ async function initProfileCardTab() {
         fileInput.onchange = (e) => {
             const file = e.target.files?.[0];
             if (!file) return;
+            const fnEl = document.getElementById('pfp-filename');
+            if (fnEl) fnEl.textContent = file.name;
             const reader = new FileReader();
             reader.onload = (loadEvt) => {
                 const dataUrl = loadEvt.target?.result;
                 if (dataUrl) {
                     profileCardState.avatar_url = dataUrl;
+                    saveAvatarConfig();
                     updateProfileCardPreview();
                     showProfileStatus('Loaded local image for preview!', 'success');
                 }
@@ -5876,6 +5776,7 @@ async function initProfileCardTab() {
                 const dataUrl = await invoke('fetch_image_from_url', { url });
                 if (dataUrl) {
                     profileCardState.avatar_url = dataUrl;
+                    saveAvatarConfig();
                     updateProfileCardPreview();
                     showProfileStatus('Successfully fetched avatar from URL!', 'success');
                 }
@@ -5896,169 +5797,12 @@ async function initProfileCardTab() {
             const pfp = chip.dataset.pfp;
             if (pfp) {
                 profileCardState.avatar_url = pfp;
+                saveAvatarConfig();
                 updateProfileCardPreview();
                 showProfileStatus(`Applied ${chip.textContent.trim()}`, 'success');
             }
         };
     });
-
-    // Wire Title Inputs
-    const titleInput = document.getElementById('profile-title-input');
-    if (titleInput) {
-        titleInput.value = profileCardState.title_text || 'EST. 2015';
-        titleInput.oninput = () => {
-            profileCardState.title_text = titleInput.value.trim() || ' ';
-            updateProfileCardPreview();
-        };
-    }
-
-    const titlePresetSelect = document.getElementById('profile-title-preset-select');
-    const populateProfileTitlePresets = () => {
-        if (!titlePresetSelect) return;
-        const defaults = [
-            { text: 'EST. 2015', color: '#FFD700', glow: '#FFB300' },
-            { text: 'SUPERSONIC LEGEND', color: '#FFFFFF', glow: '#FF69B4' },
-            { text: 'RLCS WORLD CHAMPION', color: '#00D2FF', glow: '#0099FF' },
-            { text: 'GRAND CHAMPION', color: '#E74C3C', glow: '#C0392B' },
-            { text: 'BALL CHASER', color: '#FFD700', glow: '#FFB300' },
-            { text: 'THE COLLECTOR', color: '#A855F7', glow: '#9333EA' },
-            { text: 'ROCKETEER', color: '#FFD700', glow: '#FFB300' },
-            { text: 'TACTICIAN', color: '#2ECC71', glow: '#27AE60' }
-        ];
-
-        let html = '<option value="">Preset Titles...</option>';
-        html += '<optgroup label="Popular Titles">';
-        defaults.forEach(d => {
-            html += `<option value="${escHtml(d.text)}">${escHtml(d.text)}</option>`;
-        });
-        html += '</optgroup>';
-
-        if (titlesDb && Array.isArray(titlesDb.titles) && titlesDb.titles.length > 0) {
-            html += '<optgroup label="All Game Titles">';
-            titlesDb.titles.slice(0, 300).forEach(t => {
-                const txt = t.text || t.Text || t.id;
-                if (txt && !defaults.some(d => d.text.toLowerCase() === txt.toLowerCase())) {
-                    html += `<option value="${escHtml(txt)}">${escHtml(formatTitleText(txt))}</option>`;
-                }
-            });
-            html += '</optgroup>';
-        }
-        titlePresetSelect.innerHTML = html;
-    };
-    populateProfileTitlePresets();
-
-    if (titlePresetSelect) {
-        titlePresetSelect.onchange = () => {
-            if (titlePresetSelect.value) {
-                const val = titlePresetSelect.value;
-                if (titleInput) titleInput.value = val;
-                profileCardState.title_text = val;
-
-                // Lookup authentic color & glow from title database
-                const found = (titlesDb?.titles || []).find(t => (t.text || t.Text || t.id || '').toLowerCase() === val.toLowerCase());
-                if (found) {
-                    const { color, glow } = titleColors(found);
-                    if (color && color !== '#c8c8c8') {
-                        profileCardState.title_color = color;
-                        const picker = document.getElementById('profile-title-color');
-                        const hex = document.getElementById('profile-title-color-hex');
-                        if (picker) picker.value = color;
-                        if (hex) hex.value = color.toUpperCase();
-                    }
-                    if (glow) {
-                        profileCardState.title_glow = glow;
-                        const gPicker = document.getElementById('profile-title-glow');
-                        const gHex = document.getElementById('profile-title-glow-hex');
-                        if (gPicker) gPicker.value = glow;
-                        if (gHex) gHex.value = glow.toUpperCase();
-                    }
-                }
-                updateProfileCardPreview();
-            }
-        };
-    }
-
-    const titleColorPicker = document.getElementById('profile-title-color');
-    const titleColorHex = document.getElementById('profile-title-color-hex');
-    if (titleColorPicker && titleColorHex) {
-        titleColorPicker.value = profileCardState.title_color || '#FFD700';
-        titleColorHex.value = profileCardState.title_color || '#FFD700';
-
-        titleColorPicker.oninput = () => {
-            titleColorHex.value = titleColorPicker.value.toUpperCase();
-            profileCardState.title_color = titleColorPicker.value;
-            updateProfileCardPreview();
-        };
-        titleColorHex.oninput = () => {
-            let val = titleColorHex.value.trim();
-            if (!val.startsWith('#')) val = '#' + val;
-            if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
-                titleColorPicker.value = val;
-                profileCardState.title_color = val;
-                updateProfileCardPreview();
-            }
-        };
-    }
-
-    const titleGlowPicker = document.getElementById('profile-title-glow');
-    const titleGlowHex = document.getElementById('profile-title-glow-hex');
-    if (titleGlowPicker && titleGlowHex) {
-        titleGlowPicker.value = profileCardState.title_glow || '#FFB300';
-        titleGlowHex.value = profileCardState.title_glow || '#FFB300';
-
-        titleGlowPicker.oninput = () => {
-            titleGlowHex.value = titleGlowPicker.value.toUpperCase();
-            profileCardState.title_glow = titleGlowPicker.value;
-            updateProfileCardPreview();
-        };
-        titleGlowHex.oninput = () => {
-            let val = titleGlowHex.value.trim();
-            if (!val.startsWith('#')) val = '#' + val;
-            if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
-                titleGlowPicker.value = val;
-                profileCardState.title_glow = val;
-                updateProfileCardPreview();
-            }
-        };
-    }
-
-    // Wire Color Swatches
-    document.querySelectorAll('.color-swatch').forEach(swatch => {
-        swatch.onclick = () => {
-            const col = swatch.dataset.color;
-            const glow = swatch.dataset.glow;
-            if (col && titleColorPicker && titleColorHex) {
-                titleColorPicker.value = col;
-                titleColorHex.value = col;
-                profileCardState.title_color = col;
-            }
-            if (glow && titleGlowPicker && titleGlowHex) {
-                titleGlowPicker.value = glow;
-                titleGlowHex.value = glow;
-                profileCardState.title_glow = glow;
-            }
-            updateProfileCardPreview();
-        };
-    });
-
-    // Wire Name & Level Inputs
-    const nameInput = document.getElementById('profile-name-input');
-    if (nameInput) {
-        nameInput.value = profileCardState.player_name || 'Player';
-        nameInput.oninput = () => {
-            profileCardState.player_name = nameInput.value.trim() || 'Player';
-            updateProfileCardPreview();
-        };
-    }
-
-    const levelInput = document.getElementById('profile-level-input');
-    if (levelInput) {
-        levelInput.value = profileCardState.xp_level || 100;
-        levelInput.oninput = () => {
-            profileCardState.xp_level = parseInt(levelInput.value, 10) || 100;
-            updateProfileCardPreview();
-        };
-    }
 
     // Wire In-Game Apply button
     const applyGameBtn = document.getElementById('pfp-apply-game-btn');
@@ -6073,6 +5817,7 @@ async function initProfileCardTab() {
             try {
                 const res = await invoke('apply_custom_avatar_upk', { avatarSource: profileCardState.avatar_url });
                 showProfileStatus(res || 'Custom avatar applied directly in-engine!', 'success');
+                saveAvatarConfig();
             } catch (err) {
                 showProfileStatus(`Failed to apply avatar: ${err}`, 'error');
             } finally {
@@ -6100,73 +5845,13 @@ async function initProfileCardTab() {
         };
     }
 
-    // Wire Equip Title In-Game button
-    const equipTitleBtn = document.getElementById('profile-equip-title-btn');
-    const equipProfileTitleToGame = async (silent = false) => {
-        const text = profileCardState.title_text || 'EST. 2015';
-        const color = profileCardState.title_color ? profileCardState.title_color.replace('#', '') : 'FFD700';
-        const glow = profileCardState.title_glow ? profileCardState.title_glow.replace('#', '') : 'FFB300';
-
-        const match = (titlesDb?.titles || []).find(t => (t.text || t.Text || '').toLowerCase() === text.toLowerCase());
-        const displayId = match ? (match.id || match.Id) : 'custom';
-        const cat = match ? (match.category || match.Category || '') : '';
-
-        const swap = {
-            equip_title_id: 'Team_Iraq_World_Cup_2026',
-            display_title_id: displayId,
-            custom_text: text,
-            category: cat,
-            title_color: {
-                color: color,
-                glow_color: glow
-            }
-        };
-
-        ensureTitleSwapsLoaded();
-        titleSwaps = [swap];
-        await writeTitleSpoofConfig();
-        if (!silent) {
-            showProfileStatus(`Title "${text}" equipped in-game via PsyNet!`, 'success');
-        }
-    };
-
-    if (equipTitleBtn) {
-        equipTitleBtn.onclick = async () => {
-            equipTitleBtn.disabled = true;
-            equipTitleBtn.textContent = 'Equipping...';
-            try {
-                await equipProfileTitleToGame(false);
-            } catch (err) {
-                showProfileStatus(`Failed to equip title: ${err}`, 'error');
-            } finally {
-                equipTitleBtn.disabled = false;
-                equipTitleBtn.textContent = 'Equip Title to Game';
-            }
-        };
-    }
-
-    // Wire Save Profile Card Setup
-    const saveCardBtn = document.getElementById('profile-save-card-btn');
-    if (saveCardBtn) {
-        saveCardBtn.onclick = async () => {
-            try {
-                localStorage.setItem('velocityrl_profile_card', JSON.stringify(profileCardState));
-                await invoke('save_profile_card_config', { config: profileCardState });
-                await equipProfileTitleToGame(true).catch(() => { });
-                showProfileStatus('Profile card setup & in-game title saved successfully!', 'success');
-            } catch (e) {
-                showProfileStatus(`Setup saved locally (${e})`, 'success');
-            }
-        };
-    }
-
     // Initial render
     updateProfileCardPreview();
 }
 
 function initCustomizationTab() {
-    initProfileCardTab();
     initNamesTab();
+    initProfileCardTab();
     initCreditsTab();
     initDecalsTab();
     initLeaderboardTab();
@@ -7066,6 +6751,9 @@ async function loadTitlesDatabase(force = false) {
         titlesDb.categories = { ...titlesDb.categories, ...bundledCats };
         window.titlesDatabase = titlesDb.titles;
         localStorage.setItem('titles_fetched_at', String(Date.now()));
+        if (typeof populateProfileTitlePresets === 'function') {
+            try { populateProfileTitlePresets(); } catch { }
+        }
     };
 
     if (!force && (!titlesDb || !titlesDb.titles || titlesDb.titles.length === 0)) {

@@ -120,6 +120,10 @@ def sim_serialize_expr(data, pos):
         pos += 4
         mem += 8
         return pos, mem
+    elif token == 0x3A: # EX_RETURN_VALUE / EX_ReturnNothing
+        pos += 4
+        mem += 8
+        return pos, mem
     elif token == 0x25: # EX_INT_ZERO
         return pos, mem
     elif token == 0x2C: # EX_INT_CONST_BYTE
@@ -430,6 +434,20 @@ def validate_tagame(upk_path):
                     validate_function_bytecode("LoadoutValidation_TA::CorrectOnlineData", cod_script)
                 except Exception as e:
                     print(f"[!] CRITICAL DESERIALIZATION FAILURE in CorrectOnlineData: {e}")
+                    return False
+
+        ml = next((e for e in exports if e["name"] == "ModifyLoadout" and e.get("outer_name") == "ProductAttribute_TA"), None)
+        if ml:
+            ml_off = ml["serial_offset"] - c2["uncomp_offset"]
+            ml_disk = struct.unpack("<I", decomp2[ml_off+44:ml_off+48])[0]
+            ml_script = decomp2[ml_off+48 : ml_off+48+ml_disk]
+            if ml_disk == 218 and ml_script[:6] == bytes([0x0B, 0x0F, 0x2B, 0x3C, 0xE7, 0x00]):
+                print(f"[*] ProductAttribute_TA::ModifyLoadout: {ml_disk} bytes (Chunk 2 vanilla stock intact)")
+            else:
+                try:
+                    validate_function_bytecode("ProductAttribute_TA::ModifyLoadout", ml_script)
+                except Exception as e:
+                    print(f"[!] CRITICAL DESERIALIZATION FAILURE in ProductAttribute_TA::ModifyLoadout: {e}")
                     return False
 
     print(f"[+] UPK Validation PASSED: Ready for Rocket League engine without crashes!")
