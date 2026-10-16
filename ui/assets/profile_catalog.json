@@ -554,11 +554,6 @@
       "id": "psynet",
       "name": "PsyNet Icon",
       "url": "assets/sample_psynet.png"
-    },
-    {
-      "id": "bot",
-      "name": "Bot Avatar",
-      "url": "assets/sample_bot.png"
     }
   ]
 }

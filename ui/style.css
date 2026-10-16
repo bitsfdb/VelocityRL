@@ -39,6 +39,23 @@
     --backup-list-max: clamp(140px, 38vh, 400px);
 
     --emoji-font: "Segoe UI Emoji", "Noto Color Emoji", emoji;
+    --rl-font: "Bourgeois", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+@font-face {
+    font-family: 'Bourgeois';
+    src: url('fonts/bourgeois-medium.ttf') format('truetype');
+    font-weight: 500 700;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Bourgeois';
+    src: url('fonts/bourgeois-thin.ttf') format('truetype');
+    font-weight: 300 400;
+    font-style: normal;
+    font-display: swap;
 }
 
 * {
@@ -3619,12 +3636,12 @@ select::-ms-expand {
 }
 
 .title-preview-chip {
-    font-family: var(--emoji-font), system-ui, -apple-system, Segoe UI, sans-serif;
+    font-family: var(--rl-font), var(--emoji-font), system-ui, -apple-system, Segoe UI, sans-serif;
     font-size: 26px;
-    font-weight: 600;
+    font-weight: 700;
     font-style: normal;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.05em;
     line-height: 1.15;
     color: #c8c8c8;
     text-align: center;
@@ -3737,13 +3754,12 @@ select::-ms-expand {
 }
 
 .title-row-text {
-    font-weight: 500;
+    font-weight: 600;
     font-size: 16px;
     line-height: 1.3;
     min-width: 0;
     overflow-wrap: anywhere;
-    font-family: var(--emoji-font), system-ui, -apple-system, Segoe UI, sans-serif;
-
+    font-family: var(--rl-font), var(--emoji-font), system-ui, -apple-system, Segoe UI, sans-serif;
 }
 
 .title-flag {
@@ -4551,92 +4567,72 @@ select option {
 }
 
 /* ==========================================================================
-   Profile Card & Avatar Preview System
+/* ==========================================================================
+   Custom Avatar Customizer
    ========================================================================== */
-.profile-card-preview-container {
+.avatar-customizer-wrap {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: var(--space-4);
+    align-items: start;
+    margin-top: 14px;
+}
+
+@media (max-width: 860px) {
+    .avatar-customizer-wrap {
+        grid-template-columns: 1fr;
+    }
+}
+
+.avatar-preview-card {
     display: flex;
-    justify-content: center;
+    flex-direction: column;
     align-items: center;
-    padding: var(--space-4) 0;
-    margin-bottom: var(--space-4);
-    background: radial-gradient(ellipse at center, rgba(74, 158, 255, 0.08) 0%, rgba(10, 11, 14, 0.5) 75%);
+    justify-content: center;
+    padding: var(--space-5) var(--space-4);
+    background: radial-gradient(circle at center, rgba(74, 158, 255, 0.12) 0%, rgba(13, 14, 18, 0.8) 75%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
 }
 
-.rl-profile-card-wrap {
-    width: 100%;
-    max-width: 540px;
-    filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.6));
+.avatar-stage {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px 0;
 }
 
-.rl-profile-card {
+.avatar-display-wrap {
     position: relative;
-    border-radius: 10px;
+    width: 180px;
+    height: 180px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.7));
+}
+
+.avatar-img-container {
+    width: 144px;
+    height: 144px;
+    border-radius: 14px;
     overflow: hidden;
-    border: 1.5px solid rgba(255, 255, 255, 0.18);
     background: #0d0e12;
-}
-
-.rl-card-banner {
-    position: relative;
-    width: 100%;
-    height: 130px;
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-    display: flex;
-    align-items: center;
-}
-
-.rl-card-overlay-sheen {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0%, rgba(0, 0, 0, 0.1) 40%, rgba(0, 0, 0, 0.5) 100%);
-    pointer-events: none;
-    z-index: 1;
-}
-
-.rl-card-body {
-    position: relative;
-    z-index: 2;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 12px 20px;
-    width: 100%;
-}
-
-.rl-card-avatar-wrap {
-    position: relative;
-    width: 90px;
-    height: 90px;
-    flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: center;
+    box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.8);
 }
 
-.rl-card-pfp-container {
-    width: 72px;
-    height: 72px;
-    border-radius: 8px;
-    overflow: hidden;
-    background: #111;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.7);
-}
-
-.rl-card-pfp {
+.avatar-preview-img {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
 }
 
-.rl-card-border {
+.avatar-preview-border {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -4646,109 +4642,23 @@ select option {
     z-index: 3;
 }
 
-.rl-card-meta {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 0;
-    flex: 1;
-}
-
-.rl-card-name-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.rl-card-player-name {
-    font-size: 22px;
-    font-weight: 900;
-    letter-spacing: 0.04em;
-    color: #ffffff;
-    text-transform: uppercase;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8), 0 0 12px rgba(0, 0, 0, 0.5);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.rl-card-title-row {
-    display: flex;
-    align-items: center;
-}
-
-.rl-card-player-title {
-    font-size: 13.5px;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    transition: all 0.2s ease;
-}
-
-.rl-card-xp-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 4px;
-}
-
-.rl-card-xp-badge {
-    font-size: 10.5px;
-    font-weight: 800;
-    padding: 2px 7px;
-    background: rgba(0, 0, 0, 0.55);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 4px;
-    color: #4a9eff;
-    letter-spacing: 0.05em;
-}
-
-.rl-card-xp-track {
-    flex: 1;
-    height: 6px;
-    background: rgba(0, 0, 0, 0.6);
-    border-radius: 3px;
-    overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.rl-card-xp-fill {
-    height: 100%;
-    background: linear-gradient(90deg, #2196f3, #4a9eff);
-    border-radius: 3px;
-}
-
-/* Editor Grid */
-.profile-editor-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--space-4);
-}
-
-@media (max-width: 900px) {
-    .profile-editor-grid {
-        grid-template-columns: 1fr;
-    }
-}
-
-.profile-editor-card {
+.avatar-controls-card {
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
     padding: var(--space-4);
 }
 
-.profile-card-heading {
+.profile-btn-row {
     display: flex;
-    align-items: center;
     gap: 8px;
-    font-size: 15px;
-    font-weight: 700;
-    color: var(--text);
-    margin-bottom: 2px;
+    align-items: center;
+}
+
+.profile-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .profile-url-input-wrap {
@@ -4799,124 +4709,6 @@ select option {
     border-radius: 6px;
     padding: 8px 12px;
     font-size: 13px;
-}
-
-.profile-banner-search-row {
-    margin-bottom: 6px;
-}
-
-.profile-banner-cats {
-    display: flex;
-    gap: 6px;
-    margin-bottom: 8px;
-    flex-wrap: wrap;
-}
-
-.banner-cat-btn {
-    padding: 3px 9px;
-    font-size: 11px;
-    font-weight: 600;
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid var(--border);
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all 0.15s ease;
-}
-
-.banner-cat-btn.active,
-.banner-cat-btn:hover {
-    background: rgba(74, 158, 255, 0.18);
-    border-color: var(--accent-blue);
-    color: #fff;
-}
-
-.profile-banner-gallery {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-    gap: 8px;
-    max-height: 180px;
-    overflow-y: auto;
-    padding: 4px;
-    background: rgba(0, 0, 0, 0.25);
-    border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.profile-banner-item {
-    position: relative;
-    height: 48px;
-    border-radius: 6px;
-    overflow: hidden;
-    cursor: pointer;
-    border: 1.5px solid transparent;
-    background-size: cover;
-    background-position: center;
-    transition: all 0.15s ease;
-}
-
-.profile-banner-item:hover {
-    transform: translateY(-1px);
-    border-color: rgba(255, 255, 255, 0.4);
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
-}
-
-.profile-banner-item.active {
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 10px rgba(74, 158, 255, 0.4);
-}
-
-.profile-banner-label {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    padding: 2px 4px;
-    background: rgba(0, 0, 0, 0.7);
-    font-size: 9.5px;
-    font-weight: 700;
-    color: #fff;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    text-align: center;
-}
-
-.profile-title-input-row {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-}
-
-.profile-title-input-row input {
-    flex: 1;
-}
-
-.profile-color-swatches {
-    display: flex;
-    gap: 8px;
-    margin-top: 8px;
-    align-items: center;
-}
-
-.color-swatch {
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    cursor: pointer;
-    border: 2px solid rgba(255, 255, 255, 0.2);
-    transition: transform 0.15s ease, border-color 0.15s ease;
-}
-
-.color-swatch:hover {
-    transform: scale(1.15);
-    border-color: #fff;
-}
-
-.profile-meta-inputs-row {
-    display: flex;
-    gap: 8px;
-    align-items: center;
 }
 
 .profile-status-msg {

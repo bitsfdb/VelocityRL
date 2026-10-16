@@ -361,215 +361,17 @@
 
             <div id="customization-tab" class="tab-content">
                 <div class="subtab-strip" role="tablist">
-                    <button type="button" class="subtab-btn active" data-subtab="custom-profile-pane" data-i18n="custom.subtab_profile">Profile &amp; Avatar</button>
-                    <button type="button" class="subtab-btn" data-subtab="custom-names-pane" data-i18n="custom.subtab_names">Names</button>
+                    <button type="button" class="subtab-btn active" data-subtab="custom-names-pane" data-i18n="custom.subtab_names">Names</button>
+                    <button type="button" class="subtab-btn" data-subtab="custom-avatar-pane" data-i18n="custom.subtab_custom_avatar">Custom Avatar</button>
                     <button type="button" class="subtab-btn" data-subtab="custom-credits-pane" data-i18n="custom.subtab_credits">Credits</button>
                 </div>
 
-                <div id="custom-profile-pane" class="subtab-pane active">
-                    <h2 class="section-title">Profile &amp; Avatar</h2>
-                    <p class="section-desc">Customize your banner, title, and avatar with a live Rocket League profile card preview.</p>
-
-                    <!-- Interactive Live Profile Card Preview -->
-                    <div class="profile-card-preview-container">
-                        <div class="rl-profile-card-wrap">
-                            <div class="rl-profile-card" id="rl-profile-card">
-                                <div class="rl-card-banner" id="rl-card-banner" style="background-image: url('https://api.velocityrl.tech/thumbnails/circuitboard_full.png');">
-                                    <div class="rl-card-overlay-sheen"></div>
-                                    <div class="rl-card-body">
-                                        <div class="rl-card-avatar-wrap">
-                                            <div class="rl-card-pfp-container">
-                                                <img id="rl-card-pfp" class="rl-card-pfp" src="https://api.velocityrl.tech/thumbnails/placeholderAnthem.png" alt="Avatar">
-                                            </div>
-                                            <img id="rl-card-border" class="rl-card-border" src="assets/borders/flames.png" alt="Border">
-                                        </div>
-                                        <div class="rl-card-meta">
-                                            <div class="rl-card-name-row">
-                                                <span id="rl-card-name" class="rl-card-player-name">Player</span>
-                                            </div>
-                                            <div class="rl-card-title-row">
-                                                <span id="rl-card-title" class="rl-card-player-title" style="color: #FFD700; text-shadow: 0 0 10px #FFB300, 0 0 20px #FF8F00;">EST. 2015</span>
-                                            </div>
-                                            <div class="rl-card-xp-row">
-                                                <span id="rl-card-xp-badge" class="rl-card-xp-badge">LVL 100</span>
-                                                <div class="rl-card-xp-track">
-                                                    <div id="rl-card-xp-fill" class="rl-card-xp-fill" style="width: 75%;"></div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Customization Controls Grid -->
-                    <div class="profile-editor-grid">
-                        <!-- Left Panel: Avatar & PFP -->
-                        <div class="card spoof-card profile-editor-card">
-                            <h3 class="profile-card-heading">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                                Avatar / Profile Picture (PFP)
-                            </h3>
-
-                            <!-- Upload or URL Tabs -->
-                            <div class="settings-group">
-                                <label>Image Source</label>
-                                <div class="profile-btn-row">
-                                    <button type="button" id="pfp-upload-btn" class="action-btn action-btn-secondary profile-action-btn">
-                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                                        Upload Image
-                                    </button>
-                                    <input type="file" id="pfp-file-input" accept="image/*" style="display:none;">
-                                </div>
-                            </div>
-
-                            <!-- URL Input Field -->
-                            <div class="settings-group">
-                                <label for="pfp-url-input">Or Download from URL / Steam / Discord</label>
-                                <div class="profile-url-input-wrap">
-                                    <input type="text" id="pfp-url-input" placeholder="Paste image or Steam profile URL..." autocomplete="off" spellcheck="false">
-                                    <button type="button" id="pfp-url-fetch-btn" class="action-btn" style="min-width: 80px;">Fetch</button>
-                                </div>
-                                <span class="profile-hint-text">Supports direct image links (PNG, JPG, WebP), Discord avatars, and Steam community profiles.</span>
-                            </div>
-
-                            <!-- Presets -->
-                            <div class="settings-group">
-                                <label>Quick Presets</label>
-                                <div class="profile-chips-wrap">
-                                    <button type="button" class="profile-chip" data-pfp="assets/sample_psynet.png">PsyNet Icon</button>
-                                    <button type="button" class="profile-chip" data-pfp="assets/sample_bot.png">Bot Avatar</button>
-                                    <button type="button" class="profile-chip" data-pfp="ranks/tier-19.png">Supersonic Legend</button>
-                                    <button type="button" class="profile-chip" data-pfp="ranks/tier-18.png">Grand Champion</button>
-                                </div>
-                            </div>
-
-                            <!-- Avatar Border Dropdown -->
-                            <div class="settings-group">
-                                <label for="profile-border-select">Avatar Border Frame</label>
-                                <select id="profile-border-select" class="profile-select">
-                                    <!-- Populated dynamically from catalog -->
-                                </select>
-                            </div>
-
-                            <!-- In-Engine UPK Apply Buttons -->
-                            <div class="swapper-controls" style="margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap;">
-                                <button id="pfp-apply-game-btn" class="action-btn" type="button" style="background: var(--accent-blue); color: #fff;">
-                                    Apply Avatar to Game
-                                </button>
-                                <button id="pfp-restore-game-btn" class="action-btn action-btn-secondary" type="button">
-                                    Reset Default
-                                </button>
-                            </div>
-                            <div id="pfp-status-msg" class="profile-status-msg" style="display:none;"></div>
-                        </div>
-
-                        <!-- Right Panel: Player Banner, Title & Identity -->
-                        <div class="card spoof-card profile-editor-card">
-                            <h3 class="profile-card-heading">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/></svg>
-                                Player Banner &amp; Title
-                            </h3>
-
-                            <!-- Banner Selector -->
-                            <div class="settings-group">
-                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 6px;">
-                                    <label for="profile-banner-search" style="margin:0;">Player Banner</label>
-                                    <span id="banner-count-label" style="font-size:11px; color:var(--text-secondary);">46 Banners</span>
-                                </div>
-                                <div class="profile-banner-search-row">
-                                    <input type="text" id="profile-banner-search" placeholder="Filter banners (e.g. Rocketeer, Sunset, S7)..." autocomplete="off" spellcheck="false">
-                                </div>
-                                <div class="profile-banner-cats" id="profile-banner-cats">
-                                    <button type="button" class="banner-cat-btn active" data-cat="all">All</button>
-                                    <button type="button" class="banner-cat-btn" data-cat="Featured">Featured</button>
-                                    <button type="button" class="banner-cat-btn" data-cat="Season Rewards">Season Rewards</button>
-                                    <button type="button" class="banner-cat-btn" data-cat="Esports">Esports</button>
-                                </div>
-                                <div class="profile-banner-gallery" id="profile-banner-gallery">
-                                    <!-- Populated dynamically with banner cards -->
-                                </div>
-                                <div class="profile-url-input-wrap" style="margin-top: 8px;">
-                                    <input type="text" id="custom-banner-url" placeholder="Or enter custom banner image URL..." autocomplete="off">
-                                    <button type="button" id="custom-banner-apply-btn" class="action-btn action-btn-secondary" style="min-width:70px;">Set</button>
-                                </div>
-                            </div>
-
-                            <!-- Title Input & Styling -->
-                            <div class="settings-group">
-                                <label for="profile-title-input">Player Title</label>
-                                <div class="profile-title-input-row">
-                                    <input type="text" id="profile-title-input" placeholder="Type title text (e.g. BALL CHASER, EST. 2015)..." autocomplete="off" spellcheck="false" value="EST. 2015">
-                                    <select id="profile-title-preset-select" class="profile-select" style="max-width: 170px;">
-                                        <option value="">Preset Titles...</option>
-                                        <option value="EST. 2015">EST. 2015</option>
-                                        <option value="SUPERSONIC LEGEND">SUPERSONIC LEGEND</option>
-                                        <option value="RLCS WORLD CHAMPION">RLCS WORLD CHAMPION</option>
-                                        <option value="GRAND CHAMPION">GRAND CHAMPION</option>
-                                        <option value="BALL CHASER">BALL CHASER</option>
-                                        <option value="THE COLLECTOR">THE COLLECTOR</option>
-                                        <option value="ROCKETEER">ROCKETEER</option>
-                                        <option value="TACTICIAN">TACTICIAN</option>
-                                    </select>
-                                </div>
-                                <div class="title-color-row" style="margin-top: 8px;">
-                                    <div class="settings-group">
-                                        <label for="profile-title-color">Title Color</label>
-                                        <div class="title-color-inputs">
-                                            <input type="color" id="profile-title-color" value="#ffd700">
-                                            <input type="text" id="profile-title-color-hex" value="#FFD700" maxlength="7" autocomplete="off">
-                                        </div>
-                                    </div>
-                                    <div class="settings-group">
-                                        <label for="profile-title-glow">Glow Color</label>
-                                        <div class="title-color-inputs">
-                                            <input type="color" id="profile-title-glow" value="#ffb300">
-                                            <input type="text" id="profile-title-glow-hex" value="#FFB300" maxlength="7" autocomplete="off">
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="profile-color-swatches">
-                                    <span class="color-swatch" style="background:#ffd700;" title="Gold" data-color="#FFD700" data-glow="#FFB300"></span>
-                                    <span class="color-swatch" style="background:#e74c3c;" title="Grand Champ Crimson" data-color="#E74C3C" data-glow="#C0392B"></span>
-                                    <span class="color-swatch" style="background:#ff69b4;" title="SSL Pink" data-color="#FF69B4" data-glow="#FF1493"></span>
-                                    <span class="color-swatch" style="background:#00d2ff;" title="RLCS Cyan" data-color="#00D2FF" data-glow="#0099FF"></span>
-                                    <span class="color-swatch" style="background:#ffffff;" title="Titanium White" data-color="#FFFFFF" data-glow="#B0C4DE"></span>
-                                    <span class="color-swatch" style="background:#2ecc71;" title="Emerald" data-color="#2ECC71" data-glow="#27AE60"></span>
-                                </div>
-                            </div>
-
-                            <!-- Name & Level -->
-                            <div class="profile-meta-inputs-row">
-                                <div class="settings-group" style="flex: 2;">
-                                    <label for="profile-name-input">Display Name</label>
-                                    <input type="text" id="profile-name-input" placeholder="Display name..." autocomplete="off" spellcheck="false" value="Player">
-                                </div>
-                                <div class="settings-group" style="flex: 1;">
-                                    <label for="profile-level-input">Level</label>
-                                    <input type="number" id="profile-level-input" min="1" max="9999" value="100">
-                                </div>
-                            </div>
-
-                            <!-- Save Profile Card & Equip Buttons -->
-                            <div class="swapper-controls" style="margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap;">
-                                <button id="profile-save-card-btn" class="action-btn" type="button">
-                                    Save Setup
-                                </button>
-                                <button id="profile-equip-title-btn" class="action-btn action-btn-secondary" type="button" style="background: rgba(168,85,247,0.18); border-color: rgba(168,85,247,0.4); color: #c084fc;">
-                                    Equip Title to Game
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="custom-names-pane" class="subtab-pane">
+                <div id="custom-names-pane" class="subtab-pane active">
                     <h2 class="section-title" data-i18n="custom.names_title">Names</h2>
                     <p class="section-desc" data-i18n="custom.names_desc">Changes your display name.</p>
 
                     <div id="name-spoof-steam-banner" class="info-notice-banner" style="display:none;">
-                        <svg width="18" height="18" viewBox="0 -0.5 21 21" fill="currentColor"><path fill-rule="evenodd" d="M2.1,18 L18.9,18 L18.9,2 L2.1,2 L2.1,18 Z M0,20 L21,20 L21,0 L0,0 L0,20 Z M9.45,7 L11.55,7 L11.55,5 L9.45,5 L9.45,7 Z M9.45,15 L11.55,15 L11.55,9 L9.45,9 L9.45,15 Z"/></svg>
+                        <svg width="18" height="18" viewBox="0 -0.5 21 21" fill="currentColor"><path fill-rule="evenodd" d="M2.1,18 L18.9,18 L18.9,2 L2.1,2 L2.1,18 Z M0,20 L21,20 L21,0 L0,0 Z M9.45,7 L11.55,7 L11.55,5 L9.45,5 L9.45,7 Z M9.45,15 L11.55,15 L11.55,9 L9.45,9 L9.45,15 Z"/></svg>
                         <div>
                             <strong data-i18n="custom.steam_banner_title">Steam Version Detected:</strong>
                             <span data-i18n="custom.steam_banner_desc">Steam already supports unlimited profile name changes directly in the Steam client, so Name Spoofing is disabled for Steam installations.</span>
@@ -608,6 +410,34 @@
                         <div class="swapper-controls">
                             <button id="name-spoof-save-btn" class="action-btn" type="button" data-i18n="custom.save_name">Save name</button>
                         </div>
+                    </div>
+                </div>
+
+                <div id="custom-avatar-pane" class="subtab-pane">
+                    <h2 class="section-title">Custom Avatar</h2>
+                    <p class="section-desc">Apply a custom profile avatar directly into Rocket League.</p>
+
+                    <div class="card spoof-card" style="max-width: 520px;">
+                        <div class="settings-group" style="display: flex; align-items: center; gap: 16px;">
+                            <img id="rl-card-pfp" class="avatar-preview-img" src="https://rlstats.net/images/epic.png" alt="Avatar Preview" style="width: 64px; height: 64px; min-width: 64px; min-height: 64px; border-radius: 8px; object-fit: cover; border: 1px solid var(--border-color); background: #1a1a24;">
+                            <div>
+                                <button type="button" id="pfp-upload-btn" class="action-btn action-btn-secondary" style="margin-bottom: 4px;">
+                                    Choose a file
+                                </button>
+                                <input type="file" id="pfp-file-input" accept="image/*" style="display:none;">
+                                <div id="pfp-filename" style="font-size: 12px; color: var(--text-muted);">No file chosen</div>
+                            </div>
+                        </div>
+
+                        <div class="swapper-controls" style="margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap;">
+                            <button id="pfp-apply-game-btn" class="action-btn" type="button" style="background: var(--accent-blue); color: #fff;">
+                                Apply Avatar to Game
+                            </button>
+                            <button id="pfp-restore-game-btn" class="action-btn action-btn-secondary" type="button">
+                                Reset Default
+                            </button>
+                        </div>
+                        <div id="pfp-status-msg" class="profile-status-msg" style="display:none;"></div>
                     </div>
                 </div>
 

@@ -811,13 +811,31 @@ pub fn emit_noop_bool_function_bytecode(return_val: bool, orig_disk_sz: usize) -
     (payload, active_mem + nop_count as u32)
 }
 
-pub fn emit_modify_loadout_passthrough_bytecode(loadout_product_ids_id: i32, orig_disk_sz: usize) -> (Vec<u8>, u32) {
+pub fn emit_modify_loadout_passthrough_bytecode(
+    loadout_product_ids_id: i32,
+    return_val_id: i32,
+    orig_disk_sz: usize,
+) -> (Vec<u8>, u32) {
     let mut payload = Vec::with_capacity(orig_disk_sz);
+    // 1. Primary return: return LoadoutProductIDs;
     payload.push(opcodes::EX_RETURN); // 0x04
     payload.push(opcodes::EX_LOCAL_VARIABLE); // 0x46
     payload.extend_from_slice(&loadout_product_ids_id.to_le_bytes());
+
+    // 2. Failsafe non-void return: return ReturnValue;
+    payload.push(opcodes::EX_RETURN); // 0x04
+    payload.push(opcodes::EX_RETURN_VALUE); // 0x3A
+    payload.extend_from_slice(&return_val_id.to_le_bytes());
+
+    // 3. End of script marker
     payload.push(opcodes::EX_END_OF_SCRIPT); // 0x4C
-    let active_mem = 10u32; // EX_RETURN (1) + EX_LOCAL_VARIABLE (8) + EX_END_OF_SCRIPT (1)
+
+    // In 64-bit UE3 memory:
+    // EX_RETURN (1) + EX_LOCAL_VARIABLE (1 op + 8 ptr) = 10 bytes
+    // EX_RETURN (1) + EX_RETURN_VALUE (1 op + 8 ptr) = 10 bytes
+    // EX_END_OF_SCRIPT (1) = 1 byte
+    // Total active memory = 21 bytes.
+    let active_mem = 21u32;
     let nop_count = orig_disk_sz.saturating_sub(payload.len());
     payload.resize(orig_disk_sz, opcodes::EX_NOTHING);
     (payload, active_mem + nop_count as u32)
@@ -1492,12 +1510,16 @@ pub fn apply_tagame_modifications(
                             let func_off = (exp_ml.serial_offset - c2_uncomp_offset) as usize;
                             if func_off + 48 <= decomp2.len() {
                                 let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                                if orig_disk_sz >= 7 && func_off + 48 + orig_disk_sz <= decomp2.len() {
+                                if orig_disk_sz >= 13 && func_off + 48 + orig_disk_sz <= decomp2.len() {
                                     let loadout_product_ids_id = exports.iter()
                                         .find(|e| e.name == "LoadoutProductIDs" && e.outer_idx == exp_ml.idx as i32)
                                         .map(|e| e.idx as i32)
                                         .unwrap_or(59200);
-                                    let (payload, mem_sz) = emit_modify_loadout_passthrough_bytecode(loadout_product_ids_id, orig_disk_sz);
+                                    let return_val_id = exports.iter()
+                                        .find(|e| e.name == "ReturnValue" && e.outer_idx == exp_ml.idx as i32)
+                                        .map(|e| e.idx as i32)
+                                        .unwrap_or(59197);
+                                    let (payload, mem_sz) = emit_modify_loadout_passthrough_bytecode(loadout_product_ids_id, return_val_id, orig_disk_sz);
                                     if &decomp2[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
                                         decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
                                         decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
@@ -1944,6 +1966,23 @@ mod tests {
         }
         assert_eq!(payload[190], opcodes::EX_END_OF_SCRIPT);
         assert_eq!(mem_sz, 191);
+    }
+
+    #[test]
+    fn test_emit_modify_loadout_passthrough_bytecode() {
+        let (payload, mem_sz) = emit_modify_loadout_passthrough_bytecode(59200, 59197, 218);
+        assert_eq!(payload.len(), 218);
+        assert_eq!(payload[0], opcodes::EX_RETURN); // 0x04
+        assert_eq!(payload[1], opcodes::EX_LOCAL_VARIABLE); // 0x46
+        assert_eq!(&payload[2..6], &59200i32.to_le_bytes());
+        assert_eq!(payload[6], opcodes::EX_RETURN); // 0x04
+        assert_eq!(payload[7], opcodes::EX_RETURN_VALUE); // 0x3A
+        assert_eq!(&payload[8..12], &59197i32.to_le_bytes());
+        assert_eq!(payload[12], opcodes::EX_END_OF_SCRIPT); // 0x4C
+        for i in 13..218 {
+            assert_eq!(payload[i], opcodes::EX_NOTHING);
+        }
+        assert_eq!(mem_sz, 226); // 21 active mem + 205 NOPs = 226
     }
 
     #[test]

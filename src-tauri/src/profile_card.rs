@@ -25,7 +25,8 @@ pub struct CustomProfileConfig {
     pub border_id: String,
     pub border_url: String,
     pub avatar_url: String,
-    pub xp_level: i32,
+    #[serde(default)]
+    pub xp_level: Option<i32>,
 }
 
 impl Default for CustomProfileConfig {
@@ -39,8 +40,8 @@ impl Default for CustomProfileConfig {
             banner_url: "https://api.velocityrl.tech/thumbnails/circuitboard_full.png".into(),
             border_id: "flames".into(),
             border_url: "assets/borders/flames.png".into(),
-            avatar_url: "https://api.velocityrl.tech/thumbnails/placeholderAnthem.png".into(),
-            xp_level: 100,
+            avatar_url: "https://rlstats.net/images/epic.png".into(),
+            xp_level: None,
         }
     }
 }
@@ -556,7 +557,7 @@ mod tests {
         assert_eq!(cfg.title_text, "EST. 2015");
         assert_eq!(cfg.banner_id, "circuitboard");
         assert_eq!(cfg.border_id, "flames");
-        assert_eq!(cfg.xp_level, 100);
+        assert_eq!(cfg.xp_level, None);
     }
 
     #[test]
@@ -569,5 +570,24 @@ mod tests {
 
         let bgra = process_avatar_to_bgra256(&png_bytes).expect("Process avatar to BGRA");
         assert_eq!(bgra.len(), 262_144);
+    }
+
+    #[test]
+    fn test_apply_custom_avatar_to_tagame_real() {
+        let tagame_path = Path::new("/root/TAGame_clean.upk");
+        if !tagame_path.exists() {
+            return;
+        }
+
+        let temp_dir = std::env::temp_dir().join(format!("vrl_test_avatar_{}", std::process::id()));
+        let _ = fs::create_dir_all(&temp_dir);
+        let test_upk = temp_dir.join("TAGame.upk");
+        fs::copy(tagame_path, &test_upk).expect("copy tagame upk");
+
+        let raw_bgra = vec![0x7fu8; 262_144];
+        let res = apply_custom_avatar_to_tagame(&test_upk, &raw_bgra);
+        assert!(res.is_ok(), "apply_custom_avatar_to_tagame failed: {:?}", res.err());
+
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 }
