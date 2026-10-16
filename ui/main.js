@@ -3863,11 +3863,11 @@ async function hydrateSpoofToolsFromDisk() {
 
     {
         const cs = toolSliceFromDiskOrLocal(disk, CREDIT_SPOOF_KEY, 'credit_spoof');
-        const credit_spoof = (cs && typeof cs === 'object' && ('enabled' in cs || cs.amount != null || cs.tournament_amount != null))
+        const credit_spoof = (cs && typeof cs === 'object' && ('enabled' in cs || cs.amount != null || cs.tournament_amount != null || cs.tournament_credits != null))
             ? {
                 enabled: !!cs.enabled,
-                amount: Number(cs.amount) || 100000,
-                tournament_amount: Number(cs.tournament_amount ?? cs.tournament_credits) || 100000
+                amount: (cs.amount != null && !isNaN(Number(cs.amount))) ? Math.max(0, Math.min(999999999, Math.floor(Number(cs.amount)))) : 100000,
+                tournament_amount: ((cs.tournament_amount ?? cs.tournament_credits) != null && !isNaN(Number(cs.tournament_amount ?? cs.tournament_credits))) ? Math.max(0, Math.min(999999999, Math.floor(Number(cs.tournament_amount ?? cs.tournament_credits)))) : 100000
             }
             : { enabled: false, amount: 100000, tournament_amount: 100000 };
         localStorage.setItem(CREDIT_SPOOF_KEY, JSON.stringify({ credit_spoof }));
@@ -3946,8 +3946,8 @@ function applyHydratedToolsToUi() {
         creditEn.checked = !!creditData.enabled;
         syncNameSpoofSwitchAria(creditEn);
     }
-    const cVal = Number(creditData.amount) || 100000;
-    const tVal = Number(creditData.tournament_amount) || 100000;
+    const cVal = (creditData.amount != null && !isNaN(Number(creditData.amount))) ? Math.max(0, Math.min(999999999, Math.floor(Number(creditData.amount)))) : 100000;
+    const tVal = ((creditData.tournament_amount ?? creditData.tournament_credits) != null && !isNaN(Number(creditData.tournament_amount ?? creditData.tournament_credits))) ? Math.max(0, Math.min(999999999, Math.floor(Number(creditData.tournament_amount ?? creditData.tournament_credits)))) : 100000;
     if (creditAmount) creditAmount.value = String(cVal);
     if (creditTourney) creditTourney.value = String(tVal);
     if (creditBadge) creditBadge.textContent = `${cVal.toLocaleString()} Credits`;
@@ -5293,8 +5293,8 @@ function initCreditsTab() {
     const cs = saved.credit_spoof || {};
     enabledEl.checked = !!cs.enabled;
     syncNameSpoofSwitchAria(enabledEl);
-    const cVal = Number(cs.amount) || 100000;
-    const tVal = Number(cs.tournament_amount) || 100000;
+    const cVal = (cs.amount != null && !isNaN(Number(cs.amount))) ? Math.max(0, Math.min(999999999, Math.floor(Number(cs.amount)))) : 100000;
+    const tVal = ((cs.tournament_amount ?? cs.tournament_credits) != null && !isNaN(Number(cs.tournament_amount ?? cs.tournament_credits))) ? Math.max(0, Math.min(999999999, Math.floor(Number(cs.tournament_amount ?? cs.tournament_credits)))) : 100000;
     if (amountEl) amountEl.value = String(cVal);
     if (tourneyEl) tourneyEl.value = String(tVal);
     if (badgeEl) badgeEl.textContent = `${cVal.toLocaleString()} Credits`;
@@ -5323,8 +5323,10 @@ function initCreditsTab() {
     saveBtn.onclick = async () => {
         if (isAppLoading() || spoofSaveInFlight) return;
         const enabled = !!enabledEl.checked;
-        const amount = Math.max(0, Math.min(999999999, Number(amountEl?.value) || 100000));
-        const tournament_amount = Math.max(0, Math.min(999999999, Number(tourneyEl?.value) || 100000));
+        const rawAmount = amountEl?.value?.trim();
+        const amount = (rawAmount !== '' && !isNaN(Number(rawAmount))) ? Math.max(0, Math.min(999999999, Math.floor(Number(rawAmount)))) : 100000;
+        const rawTourney = tourneyEl?.value?.trim();
+        const tournament_amount = (rawTourney !== '' && !isNaN(Number(rawTourney))) ? Math.max(0, Math.min(999999999, Math.floor(Number(rawTourney)))) : 0;
         const credit_spoof = { enabled, amount, tournament_amount };
         try {
             localStorage.setItem(CREDIT_SPOOF_KEY, JSON.stringify({ credit_spoof }));
@@ -5781,7 +5783,7 @@ async function initProfileCardTab() {
                     showProfileStatus('Successfully fetched avatar from URL!', 'success');
                 }
             } catch (err) {
-                showProfileStatus(`Fetch failed: ${err}`, 'error');
+                showToast(`Fetch failed: ${err}`, 'error');
             } finally {
                 fetchBtn.disabled = false;
                 fetchBtn.textContent = 'Fetch';
@@ -5809,20 +5811,23 @@ async function initProfileCardTab() {
     if (applyGameBtn) {
         applyGameBtn.onclick = async () => {
             if (!profileCardState.avatar_url) {
-                showProfileStatus('Please select or upload an avatar image first.', 'error');
+                showToast('Please select or upload an avatar image first.', 'error');
                 return;
             }
             applyGameBtn.disabled = true;
-            applyGameBtn.textContent = 'Applying to Game...';
+            applyGameBtn.textContent = 'Applying...';
             try {
-                const res = await invoke('apply_custom_avatar_upk', { avatarSource: profileCardState.avatar_url });
-                showProfileStatus(res || 'Custom avatar applied directly in-engine!', 'success');
+                await invoke('apply_custom_avatar_upk', { avatarSource: profileCardState.avatar_url });
                 saveAvatarConfig();
+                applyGameBtn.textContent = 'Applied!';
+                setTimeout(() => {
+                    applyGameBtn.textContent = 'Apply Avatar to Game';
+                }, 2000);
             } catch (err) {
-                showProfileStatus(`Failed to apply avatar: ${err}`, 'error');
+                showToast(`Failed to apply avatar: ${err}`, 'error');
+                applyGameBtn.textContent = 'Apply Avatar to Game';
             } finally {
                 applyGameBtn.disabled = false;
-                applyGameBtn.textContent = 'Apply Avatar to Game';
             }
         };
     }
@@ -5832,15 +5837,18 @@ async function initProfileCardTab() {
     if (restoreGameBtn) {
         restoreGameBtn.onclick = async () => {
             restoreGameBtn.disabled = true;
-            restoreGameBtn.textContent = 'Restoring...';
+            restoreGameBtn.textContent = 'Resetting...';
             try {
-                const res = await invoke('restore_custom_avatar_upk');
-                showProfileStatus(res || 'Restored vanilla avatar from backup.', 'success');
+                await invoke('restore_custom_avatar_upk');
+                restoreGameBtn.textContent = 'Reset!';
+                setTimeout(() => {
+                    restoreGameBtn.textContent = 'Reset Default';
+                }, 2000);
             } catch (err) {
-                showProfileStatus(`Restore failed: ${err}`, 'error');
+                showToast(`Restore failed: ${err}`, 'error');
+                restoreGameBtn.textContent = 'Reset Default';
             } finally {
                 restoreGameBtn.disabled = false;
-                restoreGameBtn.textContent = 'Reset Default';
             }
         };
     }
