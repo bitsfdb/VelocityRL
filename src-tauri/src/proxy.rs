@@ -1751,6 +1751,10 @@ async fn handle_forward_intercepted_request(
                 if did_patch_prod {
                     final_body = new_body_prod;
                 }
+                let (new_body_cross, did_patch_cross) = patch_cross_entitlement_json(&final_body, &spawned_items);
+                if did_patch_cross {
+                    final_body = new_body_cross;
+                }
             }
             let (new_body_own, did_patch_own) = patch_check_ownership_json(&final_body, &[]);
             if did_patch_own {
@@ -2129,6 +2133,11 @@ async fn handle_broker_request(
                     let (new_body, did_patch) = patch_player_products_json(&out_body, &spawned_items);
                     if did_patch {
                         out_body = new_body;
+                        patched = true;
+                    }
+                    let (new_body_cross, did_patch_cross) = patch_cross_entitlement_json(&out_body, &spawned_items);
+                    if did_patch_cross {
+                        out_body = new_body_cross;
                         patched = true;
                     }
                 }
@@ -2638,6 +2647,20 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         if changed_own {
             current_body = new_body_own;
             any_changed = true;
+        }
+    }
+
+    let is_cross_entitlement = svc_lower.contains("crossentitlement")
+        || find_bytes(body_part, b"CrossEntitledProductIDs").is_some();
+
+    if is_cross_entitlement {
+        let spawned_items = load_active_spawned_items(cfg_opt.as_ref());
+        if !spawned_items.is_empty() {
+            let (new_body, changed) = patch_cross_entitlement_json(&current_body, &spawned_items);
+            if changed {
+                current_body = new_body;
+                any_changed = true;
+            }
         }
     }
 
@@ -5076,13 +5099,14 @@ fn patch_loadout_node(
                                     let needs_attr = match obj.get("Attributes").and_then(|v| v.as_array()) {
                                         Some(attrs) => !attrs.iter().any(|a| {
                                             a.get("Key").and_then(|k| k.as_str()) == Some("Painted")
-                                                && a.get("Value").and_then(|v| v.as_i64()) == Some(r.paint_id as i64)
+                                                && (a.get("Value").and_then(|v| v.as_str()) == Some(&r.paint_id.to_string())
+                                                    || a.get("Value").and_then(|v| v.as_i64()) == Some(r.paint_id as i64))
                                         }),
                                         None => true,
                                     };
                                     if needs_attr {
                                         obj["Attributes"] = serde_json::json!([
-                                            { "Key": "Painted", "Value": r.paint_id }
+                                            { "Key": "Painted", "Value": r.paint_id.to_string() }
                                         ]);
                                         *changed = true;
                                     }
@@ -5099,7 +5123,7 @@ fn patch_loadout_node(
                             });
                             if r.paint_id > 0 {
                                 obj["Attributes"] = serde_json::json!([
-                                    { "Key": "Painted", "Value": r.paint_id }
+                                    { "Key": "Painted", "Value": r.paint_id.to_string() }
                                 ]);
                             }
                             arr.push(obj);
@@ -5119,7 +5143,7 @@ fn patch_loadout_node(
                     });
                     if r.paint_id > 0 {
                         obj["Attributes"] = serde_json::json!([
-                            { "Key": "Painted", "Value": r.paint_id }
+                            { "Key": "Painted", "Value": r.paint_id.to_string() }
                         ]);
                     }
                     arr.push(obj);
@@ -5451,8 +5475,10 @@ pub fn patch_player_products_json(
                     if let Some(attrs) = item.get_mut("Attributes").and_then(|v| v.as_array_mut()) {
                         for attr in attrs.iter_mut() {
                             if attr.get("Key").and_then(|k| k.as_str()) == Some("Painted") {
-                                if attr.get("Value").and_then(|v| v.as_i64()) != Some(paint_id as i64) {
-                                    attr["Value"] = serde_json::json!(paint_id);
+                                let cur_val_matches = attr.get("Value").and_then(|v| v.as_str()) == Some(&paint_id.to_string())
+                                    || attr.get("Value").and_then(|v| v.as_i64()) == Some(paint_id as i64);
+                                if !cur_val_matches {
+                                    attr["Value"] = serde_json::json!(paint_id.to_string());
                                     changed = true;
                                 }
                                 has_paint = true;
@@ -5462,7 +5488,7 @@ pub fn patch_player_products_json(
                         if !has_paint {
                             attrs.push(serde_json::json!({
                                 "Key": "Painted",
-                                "Value": paint_id
+                                "Value": paint_id.to_string()
                             }));
                             changed = true;
                         }
@@ -5470,7 +5496,7 @@ pub fn patch_player_products_json(
                         item["Attributes"] = serde_json::json!([
                             {
                                 "Key": "Painted",
-                                "Value": paint_id
+                                "Value": paint_id.to_string()
                             }
                         ]);
                         changed = true;
@@ -5496,7 +5522,7 @@ pub fn patch_player_products_json(
                 prod_obj["Attributes"] = serde_json::json!([
                     {
                         "Key": "Painted",
-                        "Value": paint_id
+                        "Value": paint_id.to_string()
                     }
                 ]);
             }
@@ -5561,6 +5587,49 @@ pub fn patch_check_ownership_json(
 
     let mut changed = false;
     patch_ownership_value_recursive(&mut root, &mut changed);
+
+    if changed {
+        match serde_json::to_vec(&root) {
+            Ok(bytes) => (bytes, true),
+            Err(_) => (body.to_vec(), false),
+        }
+    } else {
+        (body.to_vec(), false)
+    }
+}
+
+pub fn patch_cross_entitlement_json(
+    body: &[u8],
+    spawned_items: &[(i32, i32)],
+) -> (Vec<u8>, bool) {
+    if spawned_items.is_empty() {
+        return (body.to_vec(), false);
+    }
+    let mut root: serde_json::Value = match serde_json::from_slice(body) {
+        Ok(v) => v,
+        Err(_) => return (body.to_vec(), false),
+    };
+
+    let mut changed = false;
+    let target = if let Some(arr) = root
+        .get_mut("Result")
+        .and_then(|r| r.get_mut("CrossEntitledProductIDs"))
+        .and_then(|a| a.as_array_mut())
+    {
+        Some(arr)
+    } else {
+        root.get_mut("CrossEntitledProductIDs")
+            .and_then(|a| a.as_array_mut())
+    };
+
+    if let Some(target) = target {
+        for (wid, _) in spawned_items {
+            if *wid > 0 && !target.iter().any(|v| v.as_i64() == Some(*wid as i64)) {
+                target.push(serde_json::json!(wid));
+                changed = true;
+            }
+        }
+    }
 
     if changed {
         match serde_json::to_vec(&root) {
@@ -5970,7 +6039,19 @@ mod tests {
         assert_eq!(arr.len(), 2);
         let injected = arr.iter().find(|i| i["ProductID"] == 4284).unwrap();
         assert_eq!(injected["Attributes"][0]["Key"], "Painted");
-        assert_eq!(injected["Attributes"][0]["Value"], 12);
+        assert_eq!(injected["Attributes"][0]["Value"], "12");
+    }
+
+    #[test]
+    fn test_patch_cross_entitlement_json() {
+        let body = br#"{"Result":{"CrossEntitledProductIDs":[23,376]}}"#;
+        let items = vec![(4284, 12), (23, 0)];
+        let (patched, changed) = patch_cross_entitlement_json(body, &items);
+        assert!(changed);
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        let ids = val["Result"]["CrossEntitledProductIDs"].as_array().unwrap();
+        assert_eq!(ids.len(), 3);
+        assert!(ids.iter().any(|v| v == 4284));
     }
 
     #[test]
