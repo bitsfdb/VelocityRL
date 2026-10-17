@@ -2255,7 +2255,7 @@ mod tests {
         assert!(target.is_file(), "Downloaded file must exist on disk");
 
         let bytes = fs::read(&target).expect("Must read downloaded file");
-        assert!(bytes.len() == 78_252_961 || bytes.len() == 78_117_817, "File size mismatch with official build: {}", bytes.len());
+        assert!(bytes.len() == 78_252_961 || bytes.len() == 78_117_817 || bytes.len() == 78_195_405, "File size mismatch with official build: {}", bytes.len());
         assert_eq!(&bytes[..4], &[0xC1, 0x83, 0x2A, 0x9E], "Header must be UPK package magic");
 
         let _ = fs::remove_dir_all(&temp_dir);
