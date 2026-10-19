@@ -1522,6 +1522,80 @@ pub fn apply_tagame_modifications(
                         }
                     }
 
+                    // Patch LoadoutValidation_TA::ValidateLoadoutTeamPaints to return false (bTeamPaintChanged = false)
+                    if let Some(exp_vtp) = exports.iter().find(|e| e.name == "ValidateLoadoutTeamPaints" && e.outer_name == "LoadoutValidation_TA") {
+                        if exp_vtp.serial_offset >= c2_uncomp_offset && exp_vtp.serial_offset < (c2_uncomp_offset + chunks[2].uncomp_size as i64) {
+                            let func_off = (exp_vtp.serial_offset - c2_uncomp_offset) as usize;
+                            if func_off + 48 <= decomp2.len() {
+                                let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                                if orig_disk_sz >= 3 && func_off + 48 + orig_disk_sz <= decomp2.len() {
+                                    let (payload, mem_sz) = emit_noop_bool_function_bytecode(false, orig_disk_sz);
+                                    if &decomp2[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
+                                        decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                        decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                        c2_modified = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Patch LoadoutValidation_TA::ValidateLoadoutSlots to return false (bLoadoutChanged = false)
+                    if let Some(exp_vls) = exports.iter().find(|e| e.name == "ValidateLoadoutSlots" && e.outer_name == "LoadoutValidation_TA") {
+                        if exp_vls.serial_offset >= c2_uncomp_offset && exp_vls.serial_offset < (c2_uncomp_offset + chunks[2].uncomp_size as i64) {
+                            let func_off = (exp_vls.serial_offset - c2_uncomp_offset) as usize;
+                            if func_off + 48 <= decomp2.len() {
+                                let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                                if orig_disk_sz >= 3 && func_off + 48 + orig_disk_sz <= decomp2.len() {
+                                    let (payload, mem_sz) = emit_noop_bool_function_bytecode(false, orig_disk_sz);
+                                    if &decomp2[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
+                                        decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                        decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                        c2_modified = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Patch void validation targets in Chunk 2 to prevent post-goal loadout & paint reset
+                    let noop_targets = [
+                        ("SetLoadoutSlotToDefaultID", "PRI_TA"),
+                        ("SetLoadoutSlotToDefaultID", "LoadoutValidation_TA"),
+                        ("CorrectLoadoutData", "PRI_TA"),
+                        ("OnLoadoutValidationError", "PRI_TA"),
+                        ("OnLoadoutCorrected", "PRI_TA"),
+                        ("CorrectDLCOwnership", "LoadoutValidation_TA"),
+                        ("ValidateLoadout", "PRI_TA"),
+                        ("ValidateReplicatedLoadout", "PRI_TA"),
+                        ("CorrectLoadoutFromValidationError", "LoadoutValidation_TA"),
+                        ("ValidateLoadoutDLC", "LoadoutValidation_TA"),
+                        ("SetBodyProductAndValidate", "Loadout_TA"),
+                        ("Validate", "Loadout_TA"),
+                        ("ValidateProductID", "Loadout_TA"),
+                        ("ValidateForcedProducts", "Loadout_TA"),
+                        ("Validate", "LoadoutSet_TA"),
+                    ];
+
+                    for (fn_name, outer_name) in noop_targets {
+                        if let Some(exp) = exports.iter().find(|e| e.name == fn_name && e.outer_name == outer_name) {
+                            if exp.serial_offset >= c2_uncomp_offset && exp.serial_offset < (c2_uncomp_offset + chunks[2].uncomp_size as i64) {
+                                let func_off = (exp.serial_offset - c2_uncomp_offset) as usize;
+                                if func_off + 48 <= decomp2.len() {
+                                    let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                                    if orig_disk_sz >= 3 && func_off + 48 + orig_disk_sz <= decomp2.len() {
+                                        let (payload, mem_sz) = emit_noop_void_function_bytecode(orig_disk_sz);
+                                        if &decomp2[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
+                                            decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                            decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                            c2_modified = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Patch PRI_TA::GetPing if ping spoof is active
                     if ping_active {
                         if let Some(ps) = &ping_cfg {
@@ -2100,6 +2174,69 @@ mod tests {
                         }
                     }
                 }
+
+                if let Some(exp) = exports.iter().find(|e| e.name == "ValidateLoadoutTeamPaints" && e.outer_name == "LoadoutValidation_TA") {
+                    if exp.serial_offset >= chunks[2].uncomp_offset && exp.serial_offset < (chunks[2].uncomp_offset + chunks[2].uncomp_size as i64) {
+                        let func_off = (exp.serial_offset - chunks[2].uncomp_offset) as usize;
+                        if func_off + 48 <= decomp2.len() {
+                            let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                            if orig_disk_sz >= 3 && func_off + 48 + orig_disk_sz <= decomp2.len() {
+                                let (payload, mem_sz) = emit_noop_bool_function_bytecode(false, orig_disk_sz);
+                                decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                            }
+                        }
+                    }
+                }
+
+                if let Some(exp) = exports.iter().find(|e| e.name == "ValidateLoadoutSlots" && e.outer_name == "LoadoutValidation_TA") {
+                    if exp.serial_offset >= chunks[2].uncomp_offset && exp.serial_offset < (chunks[2].uncomp_offset + chunks[2].uncomp_size as i64) {
+                        let func_off = (exp.serial_offset - chunks[2].uncomp_offset) as usize;
+                        if func_off + 48 <= decomp2.len() {
+                            let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                            if orig_disk_sz >= 3 && func_off + 48 + orig_disk_sz <= decomp2.len() {
+                                let (payload, mem_sz) = emit_noop_bool_function_bytecode(false, orig_disk_sz);
+                                decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                            }
+                        }
+                    }
+                }
+
+                let noop_targets = [
+                    ("SetLoadoutSlotToDefaultID", "PRI_TA"),
+                    ("SetLoadoutSlotToDefaultID", "LoadoutValidation_TA"),
+                    ("CorrectLoadoutData", "PRI_TA"),
+                    ("OnLoadoutValidationError", "PRI_TA"),
+                    ("OnLoadoutCorrected", "PRI_TA"),
+                    ("CorrectDLCOwnership", "LoadoutValidation_TA"),
+                    ("ValidateLoadout", "PRI_TA"),
+                    ("ValidateReplicatedLoadout", "PRI_TA"),
+                    ("CorrectLoadoutFromValidationError", "LoadoutValidation_TA"),
+                    ("ValidateLoadoutDLC", "LoadoutValidation_TA"),
+                    ("SetBodyProductAndValidate", "Loadout_TA"),
+                    ("Validate", "Loadout_TA"),
+                    ("ValidateProductID", "Loadout_TA"),
+                    ("ValidateForcedProducts", "Loadout_TA"),
+                    ("Validate", "LoadoutSet_TA"),
+                ];
+
+                for (fn_name, outer_name) in noop_targets {
+                    if let Some(exp) = exports.iter().find(|e| e.name == fn_name && e.outer_name == outer_name) {
+                        if exp.serial_offset >= chunks[2].uncomp_offset && exp.serial_offset < (chunks[2].uncomp_offset + chunks[2].uncomp_size as i64) {
+                            let func_off = (exp.serial_offset - chunks[2].uncomp_offset) as usize;
+                            if func_off + 48 <= decomp2.len() {
+                                let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                                if orig_disk_sz >= 3 && func_off + 48 + orig_disk_sz <= decomp2.len() {
+                                    let (payload, mem_sz) = emit_noop_void_function_bytecode(orig_disk_sz);
+                                    decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                    decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                }
+                            }
+                        }
+                    }
+                }
+
                 let recomp2 = crate::upk::compression::compress_chunk(&decomp2).expect("Recompression of Chunk 2 must succeed");
                 assert!(recomp2.len() <= chunks[2].comp_size as usize, "Recompressed Chunk 2 must fit within allocated size");
             }
