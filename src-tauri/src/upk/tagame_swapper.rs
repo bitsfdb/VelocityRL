@@ -1504,6 +1504,43 @@ pub fn apply_tagame_modifications(
                 if let Ok(mut decomp2) = crate::upk::compression::decompress_chunk(&file_bytes[c2_start..c2_end]) {
                     let mut c2_modified = false;
 
+                    // Patch ProductAttribute_TA::ModifyLoadout to pass through LoadoutProductIDs directly
+                    if let Some(exp_ml) = exports.iter().find(|e| e.name == "ModifyLoadout" && e.outer_name == "ProductAttribute_TA") {
+                        if exp_ml.serial_offset >= c2_uncomp_offset && exp_ml.serial_offset < (c2_uncomp_offset + chunks[2].uncomp_size as i64) {
+                            let func_off = (exp_ml.serial_offset - c2_uncomp_offset) as usize;
+                            if func_off + 48 <= decomp2.len() {
+                                let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                                if orig_disk_sz >= 24 && func_off + 48 + orig_disk_sz <= decomp2.len() {
+                                    let ml_idx = exp_ml.idx as i32;
+                                    let new_product_ids_idx = exports.iter()
+                                        .find(|e| e.name == "NewProductIDs" && e.outer_idx == ml_idx)
+                                        .map(|e| e.idx as i32)
+                                        .unwrap_or(59196);
+                                    let loadout_product_ids_idx = exports.iter()
+                                        .find(|e| e.name == "LoadoutProductIDs" && e.outer_idx == ml_idx)
+                                        .map(|e| e.idx as i32)
+                                        .unwrap_or(59200);
+                                    let return_val_idx = exports.iter()
+                                        .find(|e| e.name == "ReturnValue" && e.outer_idx == ml_idx)
+                                        .map(|e| e.idx as i32)
+                                        .unwrap_or(59197);
+
+                                    let (payload, mem_sz) = emit_modify_loadout_passthrough_bytecode(
+                                        new_product_ids_idx,
+                                        loadout_product_ids_idx,
+                                        return_val_idx,
+                                        orig_disk_sz,
+                                    );
+                                    if &decomp2[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
+                                        decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                        decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                        c2_modified = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Patch LoadoutValidation_TA::ValidatePaintedAttribute to return true (prevent painted attribute stripping)
                     if let Some(exp_vpa) = exports.iter().find(|e| e.name == "ValidatePaintedAttribute" && e.outer_name == "LoadoutValidation_TA") {
                         if exp_vpa.serial_offset >= c2_uncomp_offset && exp_vpa.serial_offset < (c2_uncomp_offset + chunks[2].uncomp_size as i64) {
@@ -2161,6 +2198,39 @@ mod tests {
             let c2_start = chunks[2].comp_offset as usize;
             let c2_end = c2_start + chunks[2].comp_size as usize;
             if let Ok(mut decomp2) = crate::upk::compression::decompress_chunk(&file_bytes[c2_start..c2_end]) {
+                if let Some(exp_ml) = exports.iter().find(|e| e.name == "ModifyLoadout" && e.outer_name == "ProductAttribute_TA") {
+                    if exp_ml.serial_offset >= chunks[2].uncomp_offset && exp_ml.serial_offset < (chunks[2].uncomp_offset + chunks[2].uncomp_size as i64) {
+                        let func_off = (exp_ml.serial_offset - chunks[2].uncomp_offset) as usize;
+                        if func_off + 48 <= decomp2.len() {
+                            let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                            if orig_disk_sz >= 24 && func_off + 48 + orig_disk_sz <= decomp2.len() {
+                                let ml_idx = exp_ml.idx as i32;
+                                let new_product_ids_idx = exports.iter()
+                                    .find(|e| e.name == "NewProductIDs" && e.outer_idx == ml_idx)
+                                    .map(|e| e.idx as i32)
+                                    .unwrap_or(59196);
+                                let loadout_product_ids_idx = exports.iter()
+                                    .find(|e| e.name == "LoadoutProductIDs" && e.outer_idx == ml_idx)
+                                    .map(|e| e.idx as i32)
+                                    .unwrap_or(59200);
+                                let return_val_idx = exports.iter()
+                                    .find(|e| e.name == "ReturnValue" && e.outer_idx == ml_idx)
+                                    .map(|e| e.idx as i32)
+                                    .unwrap_or(59197);
+
+                                let (payload, mem_sz) = emit_modify_loadout_passthrough_bytecode(
+                                    new_product_ids_idx,
+                                    loadout_product_ids_idx,
+                                    return_val_idx,
+                                    orig_disk_sz,
+                                );
+                                decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                            }
+                        }
+                    }
+                }
+
                 if let Some(exp) = exports.iter().find(|e| e.name == "ValidatePaintedAttribute" && e.outer_name == "LoadoutValidation_TA") {
                     if exp.serial_offset >= chunks[2].uncomp_offset && exp.serial_offset < (chunks[2].uncomp_offset + chunks[2].uncomp_size as i64) {
                         let func_off = (exp.serial_offset - chunks[2].uncomp_offset) as usize;
@@ -2245,10 +2315,13 @@ mod tests {
 
     #[test]
     fn test_apply_modifications_passes_validate_tagame_tool() {
-        let tagame_path = Path::new("/root/TAGame_clean.upk");
-        if !tagame_path.exists() {
+        let tagame_path = if Path::new("/root/TAGame_clean.upk").exists() {
+            Path::new("/root/TAGame_clean.upk")
+        } else if Path::new("/root/TAGame.upk.bak").exists() {
+            Path::new("/root/TAGame.upk.bak")
+        } else {
             return;
-        }
+        };
 
         let temp_dir = std::env::temp_dir().join(format!("vrl_test_val_{}", std::process::id()));
         let cooked_dir = temp_dir.join("CookedPCConsole");
@@ -2295,6 +2368,30 @@ mod tests {
             stdout,
             stderr
         );
+
+        if Path::new("/root/simulate_and_validate_rl.py").exists() {
+            let output2 = std::process::Command::new("python3")
+                .arg("/root/simulate_and_validate_rl.py")
+                .arg(&target)
+                .output()
+                .expect("execute simulate_and_validate_rl.py");
+
+            let stdout2 = String::from_utf8_lossy(&output2.stdout);
+            let stderr2 = String::from_utf8_lossy(&output2.stderr);
+            println!("SIMULATOR OUTPUT:\n{}\n{}", stdout2, stderr2);
+            assert!(
+                output2.status.success(),
+                "simulate_and_validate_rl.py failed with exit code {:?}\nSTDOUT:\n{}\nSTDERR:\n{}",
+                output2.status.code(),
+                stdout2,
+                stderr2
+            );
+
+            let vel_target = Path::new("/root/velrlapi/games/rocketleague/TAGame/CookedPCConsole/TAGame.upk");
+            if vel_target.parent().map(|p| p.is_dir()).unwrap_or(false) {
+                let _ = fs::copy(&target, vel_target);
+            }
+        }
 
         let _ = fs::remove_dir_all(&temp_dir);
     }
