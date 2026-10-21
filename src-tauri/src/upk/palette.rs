@@ -2359,11 +2359,15 @@ pub fn apply_rich_palette_to_file(
         }
     }
 
+    let live_is_vanilla = is_vanilla_stock_file(&tagame, keys_txt, keys_map_json);
     let matches_stock = backup_usable
         && is_current_stack_matching_stock(&tagame, &backup, keys_txt, keys_map_json)
             .unwrap_or(false);
     if !matches_stock {
-        if backup_usable {
+        if live_is_vanilla {
+            crate::applog::event("palette: live TAGame.upk is vanilla stock from a game update, updating TAGame.upk.bak");
+            let _ = std::fs::copy(&tagame, &backup);
+        } else if backup_usable {
             restore_from(&backup, &tagame, keys_txt, keys_map_json)?;
         } else if live_broken
             || live_accent_copy
@@ -2495,7 +2499,14 @@ pub fn restore_palette_backup(game_dir: &Path) -> Result<PaletteStatus, PaletteE
     let keymap = include_str!("../../resources/keys_map.json");
 
     if backup.exists() {
-        restore_from(&backup, &tagame, keys, keymap)?;
+        if is_vanilla_stock_file(&tagame, keys, keymap)
+            && !is_current_stack_matching_stock(&tagame, &backup, keys, keymap).unwrap_or(false)
+        {
+            crate::applog::event("restore_palette_backup: live TAGame.upk is already vanilla stock from game update, updating backup");
+            let _ = std::fs::copy(&tagame, &backup);
+        } else {
+            restore_from(&backup, &tagame, keys, keymap)?;
+        }
     } else {
         let st = read_palette_status(&cooked, None);
         if !st.applied {

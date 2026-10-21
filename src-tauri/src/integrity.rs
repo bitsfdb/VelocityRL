@@ -59,20 +59,40 @@ pub fn integrity_path(config_dir: &Path) -> PathBuf {
     config_dir.join("integrity.json")
 }
 
-/// Compute a fast fingerprint (size:mtime_secs) of Engine.upk in the cooked dir.
-/// Engine.upk changes on every RL game update — cheap to compute (no file read needed).
+/// Compute a fast fingerprint of Engine.upk and RocketLeague.exe.
+/// If either file is updated (size or mtime changed), an RL update is detected.
 pub fn rl_update_fingerprint_for(cooked_dir: &Path) -> String {
     let engine_upk = cooked_dir.join("Engine.upk");
-    let Ok(meta) = std::fs::metadata(&engine_upk) else {
-        return String::new();
-    };
-    let mtime = meta
-        .modified()
-        .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    format!("{}:{}", meta.len(), mtime)
+    let rl_exe = cooked_dir
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.join("Binaries").join("Win64").join("RocketLeague.exe"));
+
+    let engine_part = std::fs::metadata(&engine_upk).ok().map(|meta| {
+        let mtime = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        format!("{}:{}", meta.len(), mtime)
+    }).unwrap_or_default();
+
+    let exe_part = rl_exe.and_then(|p| std::fs::metadata(p).ok()).map(|meta| {
+        let mtime = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        format!("{}:{}", meta.len(), mtime)
+    }).unwrap_or_default();
+
+    if !exe_part.is_empty() {
+        format!("{engine_part}|{exe_part}")
+    } else {
+        engine_part
+    }
 }
 
 #[allow(dead_code)]
