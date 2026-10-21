@@ -3379,17 +3379,17 @@ pub fn run() {
                             let current_rl_fp = integrity::rl_update_fingerprint_for(&cooked);
                             if !current_rl_fp.is_empty() && current_rl_fp != integrity.rl_update_fingerprint {
                                 applog::event(&format!(
-                                    "startup: RL update detected (Engine.upk changed {} -> {}), auto-restoring palette",
+                                    "startup: RL update detected (fingerprint changed {} -> {}), syncing palette",
                                     integrity.rl_update_fingerprint, current_rl_fp
                                 ));
                                 match upk::palette::restore_palette_backup(Path::new(&config.game_dir)) {
                                     Ok(_) => {
                                         integrity::mark_palette_off(&mut integrity);
                                         let _ = save_integrity(&app_handle, &integrity);
-                                        applog::event("startup: palette auto-restored after RL update");
+                                        applog::event("startup: palette synced after RL update");
                                     }
                                     Err(e) => {
-                                        applog::event(&format!("startup: palette auto-restore failed: {e}"));
+                                        applog::event(&format!("startup: palette sync failed: {e}"));
                                     }
                                 }
                             }
