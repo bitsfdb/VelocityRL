@@ -68,6 +68,3 @@ windows-sys = { version = "0.59", features = [
 
 [profile.release]
 strip = true
-opt-level = 3
-lto = "thin"
-codegen-units = 4
