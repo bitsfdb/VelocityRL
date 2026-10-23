@@ -441,9 +441,13 @@ pub fn apply_custom_avatar_to_tagame(tagame_path: &Path, raw_bgra: &[u8]) -> Res
         return Err("TAGame.upk has insufficient chunks".into());
     }
 
-    // 1. Patch Chunk 1: GFxData_LocalPlayer_TA::HandleGetAvatar
-    // Original bytecode (14 bytes): 0f 01 d1 85 00 00 2b 32 86 00 00 04 0b 4c
-    // Patched bytecode (14 bytes):  0f 01 d1 85 00 00 20 3a 6b 01 00 04 0b 4c (EX_OBJECT_CONST PlaceholderAnthem #92986)
+    // 1. Patch Chunk 1:
+    //    a) GFxData_LocalPlayer_TA::HandleGetAvatar (Main menu & local banner)
+    //       Original bytecode (14 bytes): 0f 01 d1 85 00 00 2b 32 86 00 00 04 0b 4c
+    //       Patched bytecode (14 bytes):  0f 01 d1 85 00 00 20 3a 6b 01 00 04 0b 4c (EX_OBJECT_CONST PlaceholderAnthem #92986)
+    //    b) GFxData_Persona_TA::HandleGetAvatar (Scoreboard, party bar, & persona cards)
+    //       Original bytecode (14 bytes): 0f 01 db 91 00 00 2b e2 91 00 00 04 0b 4c
+    //       Patched bytecode (14 bytes):  0f 01 db 91 00 00 20 3a 6b 01 00 04 0b 4c (EX_OBJECT_CONST PlaceholderAnthem #92986)
     let c1_start = chunks[1].comp_offset as usize;
     let c1_end = c1_start + chunks[1].comp_size as usize;
     if c1_end > file_bytes.len() {
@@ -453,6 +457,7 @@ pub fn apply_custom_avatar_to_tagame(tagame_path: &Path, raw_bgra: &[u8]) -> Res
     let mut decomp1 = crate::upk::compression::decompress_chunk(&file_bytes[c1_start..c1_end])
         .map_err(|e| format!("Decompress Chunk 1 failed: {e}"))?;
 
+    // a) Patch GFxData_LocalPlayer_TA::HandleGetAvatar
     let get_avatar_exp = exports.iter().find(|e| e.name == "HandleGetAvatar" && e.outer_name == "GFxData_LocalPlayer_TA")
         .ok_or_else(|| "HandleGetAvatar not found in GFxData_LocalPlayer_TA".to_string())?;
 
@@ -466,6 +471,22 @@ pub fn apply_custom_avatar_to_tagame(tagame_path: &Path, raw_bgra: &[u8]) -> Res
                 0x04, 0x0b, 0x4c                    // EX_RETURN EX_NOTHING EX_END_OF_SCRIPT
             ];
             decomp1[fn_rel_off + 48..fn_rel_off + 48 + 14].copy_from_slice(&patched_bc);
+        }
+    }
+
+    // b) Patch GFxData_Persona_TA::HandleGetAvatar
+    if let Some(persona_avatar_exp) = exports.iter().find(|e| e.name == "HandleGetAvatar" && e.outer_name == "GFxData_Persona_TA") {
+        let p_rel_off = (persona_avatar_exp.serial_offset - chunks[1].uncomp_offset) as usize;
+        if p_rel_off + 48 + 14 <= decomp1.len() {
+            let script_disk_sz = u32::from_le_bytes(decomp1[p_rel_off + 44..p_rel_off + 48].try_into().unwrap()) as usize;
+            if script_disk_sz == 14 {
+                let patched_persona_bc = [
+                    0x0f, 0x01, 0xdb, 0x91, 0x00, 0x00, // EX_LET PlayerAvatar (Export #37339)
+                    0x20, 0x3a, 0x6b, 0x01, 0x00,       // EX_OBJECT_CONST PlaceholderAnthem (#92986)
+                    0x04, 0x0b, 0x4c                    // EX_RETURN EX_NOTHING EX_END_OF_SCRIPT
+                ];
+                decomp1[p_rel_off + 48..p_rel_off + 48 + 14].copy_from_slice(&patched_persona_bc);
+            }
         }
     }
 
