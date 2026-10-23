@@ -65,3 +65,9 @@ windows-sys = { version = "0.59", features = [
     "Win32_NetworkManagement_IpHelper",
     "Win32_Networking_WinSock",
 ] }
+
+[profile.release]
+strip = true
+opt-level = 3
+lto = true
+codegen-units = 1

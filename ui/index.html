@@ -14,7 +14,7 @@
         </div>
 
         <nav class="nav-links">
-            <div class="nav-item active" data-tab="swapper-tab" data-i18n="nav.swapper">Spawner</div>
+            <div class="nav-item active" data-tab="swapper-tab" data-i18n="nav.swapper">Swapper</div>
             <div class="nav-item" data-tab="titles-tab" data-i18n="nav.titles">Titles</div>
             <div class="nav-item" data-tab="customization-tab" data-i18n="nav.customization">Customization</div>
             <div class="nav-item" data-tab="ranks-tab" data-i18n="nav.ranks">Fake Ranks</div>
@@ -32,7 +32,7 @@
 
     <div class="main-wrap">
         <main>
-            <div class="repair-banner" style="border-left-color: #2196f3; background: rgba(33, 150, 243, 0.05); padding: 8px 14px;">
+            <div class="repair-banner" style="border-left-color: #2196f3; margin-bottom: 12px; background: rgba(33, 150, 243, 0.05);">
                 <div class="repair-banner-text">
                     <strong data-i18n="banner.keep_open_title">Keep VelocityRL Open</strong>
                     <span data-i18n="banner.keep_open_desc">VelocityRL must remain running in the background for titles, spoofing, and names to appear in Rocket League.</span>
@@ -41,149 +41,72 @@
 
             <div id="swapper-tab" class="tab-content active">
                 <div class="subtab-strip" role="tablist">
-                    <button type="button" class="subtab-btn active" data-subtab="swaps-pane" data-i18n="subtabs.swaps">Spawner</button>
+                    <button type="button" class="subtab-btn active" data-subtab="swaps-pane" data-i18n="subtabs.swaps">Swaps</button>
                     <button type="button" class="subtab-btn" data-subtab="restore-pane" data-i18n="subtabs.restore">Restore</button>
                     <button type="button" class="subtab-btn" data-subtab="presets-pane" data-i18n="subtabs.presets">Presets</button>
                 </div>
 
-                <div id="swaps-pane" class="subtab-pane active catalog-pane">
-                    <div class="catalog-toolbar">
-                        <div class="catalog-select-wrap">
-                            <svg class="catalog-toolbar-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <rect x="3" y="3" width="7" height="7"></rect>
-                                <rect x="14" y="3" width="7" height="7"></rect>
-                                <rect x="14" y="14" width="7" height="7"></rect>
-                                <rect x="3" y="14" width="7" height="7"></rect>
-                            </svg>
-                            <select id="catalog-category-select" class="catalog-dropdown" aria-label="Filter by category">
-                                <option value="All" data-i18n="categories.all">All Items</option>
-                                <option value="Body" data-i18n="categories.bodies">Bodies</option>
-                                <option value="Decal" data-i18n="categories.decals">Decals</option>
-                                <option value="Wheels" data-i18n="categories.wheels">Wheels</option>
-                                <option value="Rocket Boost" data-i18n="categories.boosts">Boosts</option>
-                                <option value="Trail" data-i18n="categories.trails">Trails</option>
-                                <option value="Goal Explosion" data-i18n="categories.explosions">Goal Explosions</option>
-                                <option value="Player Banner" data-i18n="categories.banners">Player Banners</option>
-                                <option value="Avatar Border" data-i18n="categories.borders">Avatar Borders</option>
-                                <option value="Antenna" data-i18n="categories.antennas">Antennas</option>
-                                <option value="Topper" data-i18n="categories.toppers">Toppers</option>
-                                <option value="Engine Audio" data-i18n="categories.engine_audio">Engine Audio</option>
-                                <option value="Paint Finish" data-i18n="categories.paint_finishes">Paint Finishes</option>
-                                <option value="Player Title" data-i18n="categories.titles">Titles</option>
-                            </select>
-                        </div>
-
-                        <div class="catalog-search-wrap">
-                            <svg class="catalog-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <circle cx="11" cy="11" r="8"></circle>
-                                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                            </svg>
-                            <input type="text" id="catalog-search-input" class="catalog-search-input" placeholder="Search items and series..." data-i18n-placeholder="swapper.search_target" autocomplete="off" spellcheck="false">
-                            <button type="button" id="catalog-search-clear" class="catalog-search-clear" style="display:none;" title="Clear search">✕</button>
-                        </div>
-
-                        <button type="button" id="catalog-spawn-btn" class="action-btn catalog-spawn-btn" disabled>
-                            <span id="catalog-spawn-btn-text" data-i18n="swapper.spawn_selected">Spawn Selected</span>
-                        </button>
-
-                        <div class="catalog-select-wrap catalog-paint-wrap">
-                            <span id="catalog-paint-preview" class="catalog-paint-dot"></span>
-                            <select id="catalog-paint-select" class="catalog-dropdown" aria-label="Select paint color">
-                                <option value="0">Paint: None</option>
-                                <option value="all" data-i18n="swapper.all_paints">Paint: All Variants</option>
-                                <option value="1">Crimson</option>
-                                <option value="2">Lime</option>
-                                <option value="3">Black</option>
-                                <option value="4">Sky Blue</option>
-                                <option value="5">Cobalt</option>
-                                <option value="6">Burnt Sienna</option>
-                                <option value="7">Forest Green</option>
-                                <option value="8">Purple</option>
-                                <option value="9">Pink</option>
-                                <option value="10">Orange</option>
-                                <option value="11">Grey</option>
-                                <option value="12">Titanium White</option>
-                                <option value="13">Saffron</option>
-                                <option value="14">Gold</option>
-                                <option value="15">Rose Gold</option>
-                                <option value="16">White Gold</option>
-                                <option value="17">Onyx</option>
-                                <option value="18">Platinum</option>
-                                <option value="19">Sky Blue Glow</option>
-                                <option value="20">Cobalt Glow</option>
-                                <option value="21">Burnt Sienna Glow</option>
-                                <option value="22">Forest Green Glow</option>
-                                <option value="23">Lime Glow</option>
-                                <option value="24">Orange Glow</option>
-                                <option value="25">Pink Glow</option>
-                                <option value="26">Purple Glow</option>
-                                <option value="27">Crimson Glow</option>
-                                <option value="28">Titanium White Glow</option>
-                                <option value="29">Saffron Glow</option>
-                            </select>
-                        </div>
-
-                        <div class="catalog-select-wrap">
-                            <svg class="catalog-toolbar-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-                            </svg>
-                            <select id="catalog-rarity-select" class="catalog-dropdown" aria-label="Filter by rarity">
-                                <option value="All" data-i18n="swapper.any_rarity">Any rarity</option>
-                                <option value="Common">Common</option>
-                                <option value="Uncommon">Uncommon</option>
-                                <option value="Rare">Rare</option>
-                                <option value="Very Rare">Very Rare</option>
-                                <option value="Import">Import</option>
-                                <option value="Exotic">Exotic</option>
-                                <option value="Black Market">Black Market</option>
-                                <option value="Limited">Limited</option>
-                                <option value="Premium">Premium</option>
-                            </select>
-                        </div>
+                <div id="swaps-pane" class="subtab-pane active">
+                    <div class="category-strip">
+                        <button class="cat-btn active" data-slot="All" data-i18n="categories.all">All Items</button>
+                        <button class="cat-btn" data-slot="Body" data-i18n="categories.bodies">Bodies</button>
+                        <button class="cat-btn" data-slot="Decal" data-i18n="categories.decals">Decals</button>
+                        <button class="cat-btn" data-slot="Wheels" data-i18n="categories.wheels">Wheels</button>
+                        <button class="cat-btn" data-slot="Rocket Boost" data-i18n="categories.boosts">Boosts</button>
+                        <button class="cat-btn" data-slot="Trail" data-i18n="categories.trails">Trails</button>
+                        <button class="cat-btn" data-slot="Goal Explosion" data-i18n="categories.explosions">Goal Explosions</button>
+                        <button class="cat-btn" data-slot="Player Banner" data-i18n="categories.banners">Player Banners</button>
+                        <button class="cat-btn" data-slot="Avatar Border" data-i18n="categories.borders">Avatar Borders</button>
+                        <button class="cat-btn" data-slot="Antenna" data-i18n="categories.antennas">Antennas</button>
+                        <button class="cat-btn" data-slot="Topper" data-i18n="categories.toppers">Toppers</button>
+                        <button class="cat-btn" data-slot="Engine Audio" data-i18n="categories.engine_audio">Engine Audio</button>
+                        <button class="cat-btn" data-slot="Paint Finish" data-i18n="categories.paint_finishes">Paint Finishes</button>
                     </div>
 
-                    <div class="catalog-subbar">
-                        <span class="catalog-hint-text" data-i18n="swapper.ctrl_hint">Ctrl + click or click to select multiple items.</span>
-                        <div class="catalog-selection-actions">
-                            <span id="catalog-selection-count" class="catalog-selection-count">0 items selected</span>
-                            <button type="button" id="catalog-select-page-btn" class="catalog-text-btn" data-i18n="swapper.select_page">Select Page</button>
-                            <button type="button" id="catalog-clear-sel-btn" class="catalog-text-btn" style="display:none;" data-i18n="swapper.clear_selection">Clear Selection</button>
+                    <div class="swapper-grid">
+                        <div class="card">
+                            <h3 data-i18n="swapper.owned_item">Owned Item</h3>
+                            <div class="search-box">
+                                <input type="text" id="owned-search" data-i18n-placeholder="swapper.search_owned" placeholder="Search your items..." autocomplete="off">
+                                <div id="owned-results" class="search-flyout"></div>
+                            </div>
+                            <div id="owned-selected" class="item-selected-view">
+                                <div class="empty-state">
+                                    <p data-i18n="swapper.no_item_selected">No item selected</p>
+                                </div>
+                            </div>
                         </div>
-                    </div>
 
-                    <div class="catalog-grid-wrap" id="catalog-grid-wrap">
-                        <div id="catalog-grid" class="catalog-grid">
-                            <div class="catalog-loading">
-                                <div class="loading-spinner"></div>
-                                <span>Loading items catalog...</span>
+                        <div class="card">
+                            <h3 data-i18n="swapper.target_asset">Target Asset</h3>
+                            <div class="search-box">
+                                <input type="text" id="wanted-search" data-i18n-placeholder="swapper.search_target" placeholder="Search target assets..." autocomplete="off">
+                                <div id="wanted-results" class="search-flyout"></div>
+                            </div>
+                            <div id="wanted-selected" class="item-selected-view">
+                                <div class="empty-state">
+                                    <p data-i18n="swapper.no_item_selected">No item selected</p>
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    <div class="catalog-bottom-bar">
-                        <span id="catalog-count-info" class="catalog-count-info">1–48 of 0 items</span>
-                        <div id="catalog-pagination-controls" class="catalog-pagination"></div>
+                    <div class="swapper-controls">
+                        <button id="apply-swap" class="action-btn" disabled data-i18n="swapper.swap_btn">Swap Items</button>
                     </div>
+                    <p id="swap-rl-hint" class="field-hint" hidden data-i18n="swapper.rl_running_hint">Rocket League is running — close it before swapping or restoring.</p>
                 </div>
 
                 <div id="restore-pane" class="subtab-pane">
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap;">
-                        <div>
-                            <h2 class="section-title" data-i18n="restore.title">Active Spawns &amp; Restore</h2>
-                            <p class="section-desc" data-i18n="restore.desc">Manage active spawned items or save your current setup as a preset.</p>
-                        </div>
-                        <div id="restore-count-pill" style="display: none; font-size: 11.5px; font-weight: 600; padding: 4px 10px; background: rgba(74, 158, 255, 0.12); color: var(--accent-blue); border: 1px solid rgba(74, 158, 255, 0.25); border-radius: 20px;">
-                            <span id="restore-count-label">0 Active Items</span>
-                        </div>
-                    </div>
+                    <h2 class="section-title" data-i18n="restore.title">Restore / Revert</h2>
+                    <p class="section-desc" data-i18n="restore.desc">Revert individual files or restore everything from clean backups.</p>
                     <div class="restoration-grid">
                         <div id="backup-container" class="backup-list">
-                            <div class="backup-empty" data-i18n="restore.scanning">Scanning active spawned items...</div>
+                            <div class="backup-empty" data-i18n="restore.scanning">Scanning for backups...</div>
                         </div>
-                        <div style="display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap;">
-                            <button id="restore-btn" class="action-btn action-btn-secondary" disabled data-i18n="restore.restore_all">Remove All Items</button>
-                            <button id="restore-save-preset-btn" class="action-btn" style="background: var(--accent-blue); color: #fff;" disabled data-i18n="restore.save_preset">Save as Preset</button>
-                            <button id="reswap-btn" class="action-btn action-btn-secondary" style="display: none;" disabled data-i18n="restore.reswap_all">Reswap All Items</button>
+                        <div style="display: flex; gap: 12px; margin-top: 12px;">
+                            <button id="restore-btn" class="action-btn action-btn-secondary" disabled data-i18n="restore.restore_all">Restore All Items</button>
+                            <button id="reswap-btn" class="action-btn" style="background: var(--accent-blue); color: #fff;" disabled data-i18n="restore.reswap_all">Reswap All Items</button>
                         </div>
                     </div>
                 </div>
@@ -233,8 +156,8 @@
                             <header class="title-pick-head">
                                 <span class="title-pick-step">1</span>
                                 <div>
-                                    <h3 id="donor-heading" data-i18n="titles.donor_step">Donor (optional)</h3>
-                                    <p data-i18n="titles.donor_desc">Title you have equipped (optional — leave blank to spawn directly).</p>
+                                    <h3 id="donor-heading" data-i18n="titles.donor_step">Donor</h3>
+                                    <p data-i18n="titles.donor_desc">Title you have equipped.</p>
                                 </div>
                             </header>
                             <div id="donor-selected" class="title-selected-slot is-empty">
@@ -362,7 +285,6 @@
             <div id="customization-tab" class="tab-content">
                 <div class="subtab-strip" role="tablist">
                     <button type="button" class="subtab-btn active" data-subtab="custom-names-pane" data-i18n="custom.subtab_names">Names</button>
-                    <button type="button" class="subtab-btn" data-subtab="custom-avatar-pane" data-i18n="custom.subtab_custom_avatar">Custom Avatar</button>
                     <button type="button" class="subtab-btn" data-subtab="custom-credits-pane" data-i18n="custom.subtab_credits">Credits</button>
                 </div>
 
@@ -371,7 +293,7 @@
                     <p class="section-desc" data-i18n="custom.names_desc">Changes your display name.</p>
 
                     <div id="name-spoof-steam-banner" class="info-notice-banner" style="display:none;">
-                        <svg width="18" height="18" viewBox="0 -0.5 21 21" fill="currentColor"><path fill-rule="evenodd" d="M2.1,18 L18.9,18 L18.9,2 L2.1,2 L2.1,18 Z M0,20 L21,20 L21,0 L0,0 Z M9.45,7 L11.55,7 L11.55,5 L9.45,5 L9.45,7 Z M9.45,15 L11.55,15 L11.55,9 L9.45,9 L9.45,15 Z"/></svg>
+                        <svg width="18" height="18" viewBox="0 -0.5 21 21" fill="currentColor"><path fill-rule="evenodd" d="M2.1,18 L18.9,18 L18.9,2 L2.1,2 L2.1,18 Z M0,20 L21,20 L21,0 L0,0 L0,20 Z M9.45,7 L11.55,7 L11.55,5 L9.45,5 L9.45,7 Z M9.45,15 L11.55,15 L11.55,9 L9.45,9 L9.45,15 Z"/></svg>
                         <div>
                             <strong data-i18n="custom.steam_banner_title">Steam Version Detected:</strong>
                             <span data-i18n="custom.steam_banner_desc">Steam already supports unlimited profile name changes directly in the Steam client, so Name Spoofing is disabled for Steam installations.</span>
@@ -409,33 +331,6 @@
 
                         <div class="swapper-controls">
                             <button id="name-spoof-save-btn" class="action-btn" type="button" data-i18n="custom.save_name">Save name</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="custom-avatar-pane" class="subtab-pane">
-                    <h2 class="section-title">Custom Avatar</h2>
-                    <p class="section-desc">Apply a custom profile avatar directly into Rocket League.</p>
-
-                    <div class="card spoof-card" style="max-width: 520px;">
-                        <div class="settings-group" style="display: flex; align-items: center; gap: 16px;">
-                            <img id="rl-card-pfp" class="avatar-preview-img" src="https://rlstats.net/images/epic.png" alt="Avatar Preview" style="width: 64px; height: 64px; min-width: 64px; min-height: 64px; border-radius: 8px; object-fit: cover; border: 1px solid var(--border-color); background: #1a1a24;">
-                            <div>
-                                <button type="button" id="pfp-upload-btn" class="action-btn action-btn-secondary" style="margin-bottom: 4px;">
-                                    Choose a file
-                                </button>
-                                <input type="file" id="pfp-file-input" accept="image/*" style="display:none;">
-                                <div id="pfp-filename" style="font-size: 12px; color: var(--text-muted);">No file chosen</div>
-                            </div>
-                        </div>
-
-                        <div class="swapper-controls" style="margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap;">
-                            <button id="pfp-apply-game-btn" class="action-btn" type="button" style="background: var(--accent-blue); color: #fff;">
-                                Apply Avatar to Game
-                            </button>
-                            <button id="pfp-restore-game-btn" class="action-btn action-btn-secondary" type="button">
-                                Reset Default
-                            </button>
                         </div>
                     </div>
                 </div>
@@ -739,7 +634,6 @@
                         <button id="blog-spoof-save-btn" class="action-btn" type="button" data-i18n="misc.save_text">Save</button>
                     </div>
                 </div>
-
             </div>
 
             <div id="tracker-tab" class="tab-content">
@@ -838,7 +732,7 @@
                     <div id="progress-fill" class="progress-fill"></div>
                 </div>
             </div>
-            <div id="version-btn" role="button" tabindex="0">What's New · v2.0.1</div>
+            <div id="version-btn" role="button" tabindex="0">What's New · v2.1.0</div>
         </footer>
     </div>
 
@@ -906,26 +800,13 @@
                     </span>
                 </label>
             </div>
-            <div class="settings-group" style="margin-top:14px; background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:12px 14px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                    <div style="font-weight:600; font-size:12px;" data-i18n="settings.diagnostics_title">Troubleshooting & Game Files</div>
+            <div class="settings-group" style="margin-top:14px; display:flex; justify-content:space-between; align-items:center; background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:10px 14px;">
+                <div>
+                    <div style="font-weight:600; font-size:12px;" data-i18n="settings.diagnostics_title">Troubleshooting</div>
                 </div>
-                <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
-                    <button type="button" id="settings-download-tagame-btn" class="path-btn" style="border-color:var(--accent); color:var(--text); font-weight:600;"><span>Verify & Fetch TAGame.upk</span></button>
+                <div style="display:flex; gap:8px;">
                     <button type="button" id="settings-dev-panel-btn" class="path-btn"><span data-i18n="settings.debug_panel">Debug Panel</span></button>
                     <button type="button" id="settings-export-diag-btn" class="path-btn"><span data-i18n="settings.export_diagnostics">Export Diagnostics</span></button>
-                    <button type="button" id="settings-refresh-catalog-btn" class="path-btn"><span data-i18n="settings.refresh_catalog">Refresh Item Catalogue</span></button>
-                    <button type="button" id="settings-fetch-titles-btn" class="path-btn"><span data-i18n="settings.fetch_titles">Fetch Title Catalogue</span></button>
-                    <span id="settings-catalog-msg" style="font-size:12px;color:var(--muted);"></span>
-                </div>
-                <div id="settings-tagame-progress-wrap" style="display:none; background:var(--input-bg); border:1px solid var(--border); border-radius:6px; padding:8px 10px; margin-top:8px;">
-                    <div style="display:flex; justify-content:space-between; font-size:11px; margin-bottom:4px; color:var(--text-secondary);">
-                        <span id="settings-tagame-progress-status">Downloading official TAGame.upk...</span>
-                        <span id="settings-tagame-progress-pct">0%</span>
-                    </div>
-                    <div style="width:100%; height:6px; background:rgba(255,255,255,0.08); border-radius:3px; overflow:hidden;">
-                        <div id="settings-tagame-progress-bar" style="width:0%; height:100%; background:var(--accent); transition:width 0.15s ease;"></div>
-                    </div>
                 </div>
             </div>
             <p class="settings-footer-note">
@@ -980,42 +861,7 @@
                 <div id="close-changelog" class="close-modal-btn">×</div>
             </div>
             <div id="changelog-body" class="changelog-scroll">
-                <div class="changelog-release" style="margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid rgba(255,255,255,0.08);">
-                    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;">
-                        <div class="changelog-release-tag" style="font-size:15px;font-weight:700;color:var(--accent);">v2.0.1 (Hotfix)</div>
-                        <div class="changelog-release-date" style="font-size:12px;color:var(--muted);">October 2026</div>
-                    </div>
-                    <div class="changelog-release-body" style="font-size:13px;line-height:1.6;">
-                        <p style="margin:0 0 8px 0;color:var(--text-secondary);">Hotfix update for item swapping and game stability:</p>
-                        <ul style="margin:0 0 0 18px;padding:0;display:flex;flex-direction:column;gap:6px;">
-                            <li><strong>In-Match Swaps:</strong> Your custom cars, decals, wheels, and boosts now stay equipped properly during online matches and Freeplay without resetting!</li>
-                            <li><strong>Goal Explosions:</strong> Custom goal explosions now celebrate and animate in matches when you score.</li>
-                            <li><strong>Crash Fixes:</strong> Fixed game crashes when opening the Garage, starting Freeplay, or loading into a match.</li>
-                            <li><strong>Name & Credits Display:</strong> Easily change your displayed in-game name and preview item shop credits in menus.</li>
-                            <li><strong>Presets:</strong> Save up to 50 custom car presets and easily share them with friends using short codes.</li>
-                            <li><strong>Smoother Connections:</strong> Fixed background network setup so Rocket League connects smoothly.</li>
-                            <li><strong>New Languages:</strong> VelocityRL is now available in 9 languages!</li>
-                        </ul>
-                    </div>
-                </div>
-
-                <div class="changelog-release">
-                    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;">
-                        <div class="changelog-release-tag" style="font-size:15px;font-weight:700;color:var(--accent);">v2.0.0</div>
-                        <div class="changelog-release-date" style="font-size:12px;color:var(--muted);">August 2026</div>
-                    </div>
-                    <div class="changelog-release-body" style="font-size:13px;line-height:1.6;">
-                        <p style="margin:0 0 8px 0;color:var(--text-secondary);">Major release introducing all-new customization features:</p>
-                        <ul style="margin:0 0 0 18px;padding:0;display:flex;flex-direction:column;gap:6px;">
-                            <li><strong>Item Swapper:</strong> Swap any car, wheel, decal, boost, or topper locally.</li>
-                            <li><strong>Custom Color Palette:</strong> Unlock full RGB custom team car colors.</li>
-                            <li><strong>Titles & Fake Ranks:</strong> Equip any player title and customize competitive rank displays.</li>
-                            <li><strong>Camera Settings:</strong> Unlock field of view, distance, and angle limits.</li>
-                            <li><strong>Workshop Maps:</strong> Built-in community map browser and one-click offline play.</li>
-                            <li><strong>Live Tracker:</strong> Real-time match score and MMR overlay.</li>
-                        </ul>
-                    </div>
-                </div>
+                <div class="backup-empty">Loading...</div>
             </div>
             <div class="changelog-footer">
                 <button id="toggle-changelog-startup" class="path-btn" data-i18n="changelog.toggle_startup">Don't show on startup</button>
@@ -1058,40 +904,6 @@
             <p id="dev-action-msg" style="font-size:11px;color:var(--text-secondary);margin:6px 0 0;min-height:14px;user-select:text;-webkit-user-select:text;word-break:break-all;white-space:pre-wrap;cursor:text;"></p>
             <p style="font-size:11px;color:var(--text-secondary);margin:8px 0 4px;font-weight:600;">Log Output</p>
             <div class="dev-log-output" id="dev-log-output">Loading logs...</div>
-        </div>
-    </div>
-
-
-    <div id="migration-modal" class="modal-overlay" role="dialog" aria-modal="true">
-        <div class="modal" style="max-width: 460px;">
-            <div style="text-align: center; margin-bottom: 20px;">
-                <div style="background: rgba(234, 179, 8, 0.15); width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px auto;">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                        <line x1="12" y1="9" x2="12" y2="13"></line>
-                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                    </svg>
-                </div>
-                <h2 style="font-size: 20px; margin-bottom: 8px; font-weight: 700;">Action Required</h2>
-                <p style="color: var(--text-secondary); font-size: 13.5px; line-height: 1.6;">
-                    Your swaps need to be <strong style="color: var(--text-primary);">re-applied</strong> before they'll work correctly.
-                </p>
-            </div>
-            <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 10px; padding: 14px 16px; margin-bottom: 20px; font-size: 13px; color: var(--text-secondary); line-height: 1.8;">
-                <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px;">
-                    <span style="color:#eab308;font-weight:700;flex-shrink:0;">1.</span>
-                    <span>Go to the <strong style="color:var(--text-primary);">Restore</strong> tab and restore all your swaps.</span>
-                </div>
-                <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px;">
-                    <span style="color:#eab308;font-weight:700;flex-shrink:0;">2.</span>
-                    <span>Verify your game files through <strong style="color:var(--text-primary);">Steam</strong>.</span>
-                </div>
-                <div style="display:flex;align-items:flex-start;gap:10px;">
-                    <span style="color:#eab308;font-weight:700;flex-shrink:0;">3.</span>
-                    <span>Re-apply all your swaps manually in the <strong style="color:var(--text-primary);">Swapper</strong> tab.</span>
-                </div>
-            </div>
-            <button id="migration-modal-ok" class="action-btn" style="width:100%;background:var(--accent-blue);color:#fff;">Got it</button>
         </div>
     </div>
 

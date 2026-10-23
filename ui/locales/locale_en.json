@@ -1,6 +1,6 @@
 {
     "nav": {
-        "swapper": "Spawner",
+        "swapper": "Swapper",
         "titles": "Titles",
         "customization": "Customization",
         "ranks": "Fake Ranks",
@@ -13,13 +13,10 @@
     },
     "banner": {
         "keep_open_title": "Keep VelocityRL Open",
-        "keep_open_desc": "VelocityRL must remain running in the background for titles, spoofing, and names to appear in Rocket League.",
-        "swaps_notice_title": "Saved Swaps Notice",
-        "swaps_notice_desc": "If you are updating from v2.0 to v2.0.1, please restore all your items here and then reswap manually.",
-        "swaps_notice_btn": "Restore Tab"
+        "keep_open_desc": "VelocityRL must remain running in the background for titles, spoofing, and names to appear in Rocket League."
     },
     "subtabs": {
-        "swaps": "Spawner",
+        "swaps": "Swaps",
         "restore": "Restore",
         "presets": "Presets"
     },
@@ -36,43 +33,27 @@
         "trails": "Trails",
         "borders": "Avatar Borders",
         "paint_finishes": "Paint Finishes",
-        "engine_audio": "Engine Audio",
-        "titles": "Titles"
+        "engine_audio": "Engine Audio"
     },
     "swapper": {
-        "item_to_spawn": "Item to Spawn",
-        "customization": "Paint & Customization",
         "owned_item": "Owned Item",
-        "target_asset": "Item to Spawn",
+        "target_asset": "Target Asset",
         "search_owned": "Search your items...",
-        "search_target": "Search items or titles to spawn...",
+        "search_target": "Search target assets...",
         "no_item_selected": "No item selected",
         "paint": "Paint",
         "coming_soon": "None",
-        "paint_hint": "Select a paint color to apply to the item.",
-        "swap_btn": "Spawn Item",
-        "spawn_selected": "Spawn Selected",
-        "any_rarity": "Any rarity",
-        "ctrl_hint": "Ctrl + click or click to select multiple items.",
-        "select_page": "Select Page",
-        "clear_selection": "Clear Selection",
-        "no_items_found": "No items found matching your filters.",
-        "rl_running_hint": "Rocket League is running — close it before spawning or restoring.",
-        "all_paints": "Paint: All Variants"
+        "paint_hint": "Select a paint color to apply to the target item.",
+        "swap_btn": "Swap Items",
+        "rl_running_hint": "Rocket League is running — close it before swapping or restoring."
     },
     "restore": {
-        "title": "Active Spawns & Restore",
-        "desc": "Manage active spawned items or save your current setup as a preset.",
-        "scanning": "Scanning active spawned items...",
-        "restore_all": "Remove All Items",
-        "save_preset": "Save as Preset",
+        "title": "Restore / Revert",
+        "desc": "Revert individual files or restore everything from backups.",
+        "scanning": "Scanning for backups...",
+        "restore_all": "Restore All Items",
         "reswap_all": "Reswap All Items",
-        "no_backups": "No spawned items currently active in Rocket League.",
-        "empty_hint": "Spawn items from the Spawner tab or apply an existing preset from the Presets tab.",
-        "spawn_items_btn": "Go to Spawner",
-        "load_preset_btn": "Browse Presets",
-        "remove_item": "Remove",
-        "item_active": "Active"
+        "no_backups": "No backups found."
     },
     "presets": {
         "title": "Presets",
@@ -88,8 +69,8 @@
     },
     "titles": {
         "title": "Titles",
-        "donor_step": "Donor (optional)",
-        "donor_desc": "Title you have equipped (optional — leave blank to spawn directly).",
+        "donor_step": "Donor",
+        "donor_desc": "Title you have equipped.",
         "not_picked": "Not picked",
         "search_below": "Search below",
         "search_equipped": "Search your equipped title…",
@@ -127,8 +108,7 @@
         "subtab_names": "Names",
         "subtab_credits": "Credits",
         "subtab_leaderboard": "Leaderboard",
-        "subtab_custom_avatar": "Custom Avatar",
-        "subtab_avatar": "Custom Avatar",
+        "subtab_avatar": "Custom Profile Pictures (PFP)",
         "names_title": "Names",
         "names_desc": "Changes your display name.",
         "steam_banner_title": "Steam Version Detected:",
@@ -225,16 +205,7 @@
         "save_logo": "Save season logo",
         "bottom_text": "Bottom Main Menu Text",
         "text_label": "Text",
-        "save_text": "Save",
-        "ping_spoof": "Ping Spoof",
-        "ping_spoof_desc": "Simulate realistic scoreboard ping and network jitter via UDP proxy",
-        "ping_mode": "Mode",
-        "ping_mode_interval": "Interval",
-        "ping_mode_fixed": "Fixed",
-        "ping_fixed": "Ping (ms)",
-        "ping_min": "Min Ping (ms)",
-        "ping_max": "Max Ping (ms)",
-        "save_ping": "Save ping spoof"
+        "save_text": "Save"
     },
     "tracker": {
         "title": "Tracker Overlay",
@@ -288,8 +259,6 @@
         "diagnostics_title": "Troubleshooting",
         "debug_panel": "Debug Panel",
         "export_diagnostics": "Export Diagnostics",
-        "refresh_catalog": "Refresh Item Catalogue",
-        "fetch_titles": "Fetch Title Catalogue",
         "privacy_policy": "Privacy Policy",
         "save": "Save"
     },

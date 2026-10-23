@@ -1,6 +1,6 @@
 {
     "nav": {
-        "swapper": "Spawner",
+        "swapper": "Swapper",
         "titles": "Títulos",
         "customization": "Personalización",
         "names": "Nombres",
@@ -17,7 +17,7 @@
         "keep_open_desc": "VelocityRL tiene que seguir corriendo en segundo plano para que los títulos, los colores y los nombres se vean en Rocket League."
     },
     "subtabs": {
-        "swaps": "Spawner",
+        "swaps": "Swaps activos",
         "restore": "Restaurar",
         "presets": "Presets"
     },
@@ -34,43 +34,27 @@
         "trails": "Rastros",
         "borders": "Bordes de avatar",
         "paint_finishes": "Pinturas",
-        "engine_audio": "Sonido del motor",
-        "titles": "Títulos"
+        "engine_audio": "Sonido del motor"
     },
     "swapper": {
-        "item_to_spawn": "Objeto a spawnear",
-        "customization": "Pintura y personalización",
         "owned_item": "Tu objeto",
-        "target_asset": "Objeto a spawnear",
+        "target_asset": "Lo que quieres poner",
         "search_owned": "Busca entre tus objetos...",
-        "search_target": "Busca objetos o títulos para spawnear...",
+        "search_target": "Busca el objeto que quieres...",
         "no_item_selected": "Aún no has elegido nada",
         "paint": "Pintura",
-        "coming_soon": "Ninguna",
-        "paint_hint": "Elige un color de pintura para aplicar al objeto.",
-        "swap_btn": "Spawnear objeto",
-        "rl_running_hint": "Tienes Rocket League abierto. Ciérralo antes de spawnear o restaurar.",
-        "spawn_selected": "Spawnear seleccionados",
-        "any_rarity": "Cualquier rareza",
-        "ctrl_hint": "Ctrl + clic o clic para seleccionar múltiples objetos.",
-        "select_page": "Seleccionar página",
-        "clear_selection": "Borrar selección",
-        "no_items_found": "No se encontraron objetos que coincidan.",
-        "all_paints": "Pintura: Todas las variantes"
+        "coming_soon": "Próximamente",
+        "paint_hint": "De momento no disponible: si cambias la pintura, el objeto se vuelve invisible en la partida. Lo arreglaremos en una futura actualización.",
+        "swap_btn": "Hacer swap",
+        "rl_running_hint": "Tienes Rocket League abierto. Ciérralo antes de aplicar o restaurar nada."
     },
     "restore": {
-        "title": "Spawns Activos y Restaurar",
-        "desc": "Gestiona los objetos spawneados activos o guarda tu configuración como preset.",
-        "scanning": "Buscando objetos spawneados activos...",
-        "restore_all": "Eliminar todos los objetos",
-        "save_preset": "Guardar como Preset",
+        "title": "Restaurar / Deshacer",
+        "desc": "Deshaz cambios sueltos o restaura todo desde tus copias de seguridad.",
+        "scanning": "Buscando copias de seguridad...",
+        "restore_all": "Restaurar todos los objetos",
         "reswap_all": "Volver a aplicar todos los swaps",
-        "no_backups": "No hay objetos spawneados activos actualmente en Rocket League.",
-        "empty_hint": "Spawnea objetos desde la pestaña Spawner o aplica un preset existente.",
-        "spawn_items_btn": "Ir a Spawner",
-        "load_preset_btn": "Explorar Presets",
-        "remove_item": "Eliminar",
-        "item_active": "Activo"
+        "no_backups": "No hay copias de seguridad todavía."
     },
     "presets": {
         "title": "Presets",
@@ -86,8 +70,8 @@
     },
     "titles": {
         "title": "Títulos",
-        "donor_step": "Donante (opcional)",
-        "donor_desc": "El título que llevas equipado (opcional: déjalo vacío para spawnearlo directamente).",
+        "donor_step": "Título base",
+        "donor_desc": "El título que llevas puesto ahora mismo.",
         "not_picked": "Sin elegir",
         "search_below": "Busca aquí abajo",
         "search_equipped": "Busca tu título equipado…",

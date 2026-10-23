@@ -2068,27 +2068,9 @@ async fn handle_broker_request(
             }
         }
 
-        if let Some(http_base) = broker_http_base() {
-            let local_ws_v2 = format!("{http_base}/ws/gc2");
-            let local_ws_v1 = format!("{http_base}/ws/gc?PsyConnectionType=Player");
-            if let Some(next) = replace_json_string_field(&out_body, "PerConURLv2", &local_ws_v2) {
-                out_body = next;
-                patched = true;
-            }
-            if let Some(next) = replace_json_string_field(&out_body, "PerConURL", &local_ws_v1) {
-                out_body = next;
-                patched = true;
-            }
-            if patched {
-                crate::applog::event(&format!(
-                    "broker: AuthPlayer WS URL rewritten to local broker ({local_ws_v2})"
-                ));
-            }
-        } else {
-            crate::applog::event(
-                "broker: AuthPlayer WS rewrite skipped — broker port not set",
-            );
-        }
+        // Note: Rocket League's UPsyNetUrl_X::ValidateURL rejects any non-HTTPS/non-WSS URLs.
+        // Never rewrite PerConURL/PerConURLv2 to plain http:// broker, as that triggers
+        // "UPsyNetUrl_X::ValidateURL rejected disallowed https URL" and forces the client offline.
     } else {
         let cfg_opt = match crate::psynet::load_active_spoof_from_disk() {
             Some(c) => Some(c),
@@ -3699,24 +3681,18 @@ async fn handle_http_config(
                     out_body.len()
                 ));
             }
-        } else if let Some(next) = patch_psynet_url(&out_body) {
-            out_body = next;
-            patched = true;
+        } else {
             let (next_prod, prod_changed) = patch_products_config(&out_body);
             if prod_changed {
                 out_body = next_prod;
+                patched = true;
             }
-            crate::applog::event("proxy: patched PsyNetUrl to broker (unsupported build fallback)");
         }
     } else {
-        if let Some(next) = patch_psynet_url(&out_body) {
-            out_body = next;
+        let (next_prod, prod_changed) = patch_products_config(&out_body);
+        if prod_changed {
+            out_body = next_prod;
             patched = true;
-            let (next_prod, prod_changed) = patch_products_config(&out_body);
-            if prod_changed {
-                out_body = next_prod;
-            }
-            crate::applog::event("proxy: patched PsyNetUrl to broker (default config)");
         }
     }
 
@@ -3772,6 +3748,7 @@ fn resign_rpc_response(psy_time: &str, body: &[u8]) -> String {
 
 /// Rewrite `PsyNetUrl.URL` and `PsyNetUrl.URLv2` in the battlecars config body
 /// to route WebSocket connections and RPC requests through our local broker.
+#[allow(dead_code)]
 fn patch_psynet_url(body: &[u8]) -> Option<Vec<u8>> {
     let http_base = broker_http_base()?;
     let (obj_start, obj_end) = find_named_object(body, "PsyNetUrl")?;
@@ -4342,12 +4319,9 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
         }
     }
 
-    // Always rewrite PsyNetUrl to local broker (matches Go proxy architecture:
-    // AuthPlayer and game RPC flow through 127.0.0.1 broker, eliminating external TLS/pinning issues)
-    if let Some(next) = patch_psynet_url(&out) {
-        out = next;
-        any_change = true;
-    }
+    // Modern Rocket League UPsyNetUrl_X::ValidateURL explicitly rejects non-HTTPS URLs
+    // (disallowed https URL: http://...). Never rewrite PsyNetUrl to plain http broker,
+    // which caused the engine to disconnect and report OSCS_NotConnected / OSCS_ServiceUnavailable.
 
     let (next_prod, prod_changed) = patch_products_config(&out);
     if prod_changed {
