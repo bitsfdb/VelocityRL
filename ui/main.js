@@ -731,7 +731,6 @@ async function init() {
             if (btn.dataset.tab === 'swapper-tab') refreshSwapRlHint();
             if (btn.dataset.tab === 'titles-tab') initTitlesTab();
             if (btn.dataset.tab === 'customization-tab' || btn.dataset.tab === 'names-tab') initCustomizationTab();
-            if (btn.dataset.tab === 'avatar-tab') initAvatarTab();
             if (btn.dataset.tab === 'ranks-tab') initRanksTab();
             if (btn.dataset.tab === 'tracker-tab') initTrackerTab();
             if (btn.dataset.tab === 'camera-tab') initCameraTab();
@@ -754,6 +753,7 @@ async function init() {
             }
             btn.classList.add('active');
             document.getElementById(paneId)?.classList.add('active');
+            if (paneId === 'custom-avatar-pane') initAvatarTab();
             if (paneId === 'custom-decals-pane') initDecalsTab();
             if (paneId === 'restore-pane') refreshBackups();
             if (paneId === 'presets-pane') refreshPresets();
@@ -4867,6 +4867,7 @@ function initDecalsTab() {
 function initCustomizationTab() {
     initNamesTab();
     initCreditsTab();
+    initAvatarTab();
     initDecalsTab();
     initLeaderboardTab();
     if (customizationTabReady) return;
