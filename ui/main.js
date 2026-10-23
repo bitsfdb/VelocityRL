@@ -731,6 +731,7 @@ async function init() {
             if (btn.dataset.tab === 'swapper-tab') refreshSwapRlHint();
             if (btn.dataset.tab === 'titles-tab') initTitlesTab();
             if (btn.dataset.tab === 'customization-tab' || btn.dataset.tab === 'names-tab') initCustomizationTab();
+            if (btn.dataset.tab === 'avatar-tab') initAvatarTab();
             if (btn.dataset.tab === 'ranks-tab') initRanksTab();
             if (btn.dataset.tab === 'tracker-tab') initTrackerTab();
             if (btn.dataset.tab === 'camera-tab') initCameraTab();
@@ -4870,6 +4871,114 @@ function initCustomizationTab() {
     initLeaderboardTab();
     if (customizationTabReady) return;
     customizationTabReady = true;
+}
+
+let avatarTabWired = false;
+let currentAvatarSource = '';
+
+function initAvatarTab() {
+    const urlInput = document.getElementById('avatar-url-input');
+    const browseBtn = document.getElementById('avatar-file-browse-btn');
+    const fileInput = document.getElementById('avatar-file-hidden');
+    const applyBtn = document.getElementById('avatar-apply-btn');
+    const restoreBtn = document.getElementById('avatar-restore-btn');
+    const previewDisplay = document.getElementById('avatar-preview-display');
+    const statusText = document.getElementById('avatar-status-text');
+
+    if (!applyBtn || !urlInput) return;
+
+    // Load saved avatar preview from localStorage if available
+    const saved = localStorage.getItem('velocityrl_avatar_preview');
+    if (saved && !currentAvatarSource) {
+        currentAvatarSource = saved;
+        if (saved.startsWith('data:image/')) {
+            previewDisplay.innerHTML = `<img src="${saved}" style="width:100%;height:100%;object-fit:cover;">`;
+            statusText.textContent = 'Active profile picture (cached in game)';
+        } else {
+            urlInput.value = saved;
+            previewDisplay.innerHTML = `<img src="${saved}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML='👤'">`;
+            statusText.textContent = 'Active profile picture URL';
+        }
+    }
+
+    if (avatarTabWired) return;
+    avatarTabWired = true;
+
+    urlInput.addEventListener('input', () => {
+        const val = urlInput.value.trim();
+        if (val.startsWith('http://') || val.startsWith('https://')) {
+            currentAvatarSource = val;
+            previewDisplay.innerHTML = `<img src="${val}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML='👤'">`;
+            statusText.textContent = 'Ready to apply from URL';
+        } else if (!val && !currentAvatarSource.startsWith('data:')) {
+            previewDisplay.innerHTML = '👤';
+            statusText.textContent = 'No image selected yet';
+        }
+    });
+
+    browseBtn?.addEventListener('click', () => {
+        fileInput?.click();
+    });
+
+    fileInput?.addEventListener('change', (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const dataUrl = event.target.result;
+            currentAvatarSource = dataUrl;
+            urlInput.value = file.name;
+            previewDisplay.innerHTML = `<img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover;">`;
+            statusText.textContent = `Selected: ${file.name} (${Math.round(file.size / 1024)} KB)`;
+        };
+        reader.readAsDataURL(file);
+    });
+
+    applyBtn.addEventListener('click', async () => {
+        const source = currentAvatarSource || urlInput.value.trim();
+        if (!source) {
+            showToast('Please select an image file or enter an image URL first.', 'error');
+            return;
+        }
+
+        applyBtn.disabled = true;
+        statusText.textContent = 'Patching game files (Chunk 1 & Chunk 6)...';
+
+        try {
+            await invoke('apply_custom_avatar_upk', { avatarSource: source });
+            localStorage.setItem('velocityrl_avatar_preview', source);
+            statusText.textContent = 'Active in Rocket League (In-Engine Scaleform)';
+            showToast('Custom profile picture successfully applied!', 'success');
+            flashButtonLabel(applyBtn, 'Applied!');
+        } catch (err) {
+            statusText.textContent = 'Failed to apply profile picture';
+            showToast(formatError(err), 'error');
+        } finally {
+            applyBtn.disabled = false;
+        }
+    });
+
+    restoreBtn.addEventListener('click', async () => {
+        restoreBtn.disabled = true;
+        statusText.textContent = 'Restoring original game files...';
+
+        try {
+            await invoke('restore_custom_avatar_upk');
+            localStorage.removeItem('velocityrl_avatar_preview');
+            currentAvatarSource = '';
+            urlInput.value = '';
+            previewDisplay.innerHTML = '👤';
+            statusText.textContent = 'Restored vanilla game avatar';
+            showToast('Vanilla profile picture restored from backup.', 'success');
+            flashButtonLabel(restoreBtn, 'Restored');
+        } catch (err) {
+            statusText.textContent = 'Failed to restore';
+            showToast(formatError(err), 'error');
+        } finally {
+            restoreBtn.disabled = false;
+        }
+    });
 }
 
 function wireReswapButton() {
