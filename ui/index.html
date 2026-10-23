@@ -17,6 +17,7 @@
             <div class="nav-item active" data-tab="swapper-tab" data-i18n="nav.swapper">Swapper</div>
             <div class="nav-item" data-tab="titles-tab" data-i18n="nav.titles">Titles</div>
             <div class="nav-item" data-tab="customization-tab" data-i18n="nav.customization">Customization</div>
+            <div class="nav-item" data-tab="avatar-tab" data-i18n="nav.avatar">Profile Picture</div>
             <div class="nav-item" data-tab="ranks-tab" data-i18n="nav.ranks">Fake Ranks</div>
             <div class="nav-item" data-tab="camera-tab" data-i18n="nav.camera">Camera</div>
             <div class="nav-item" data-tab="maps-tab" data-i18n="nav.maps">Maps</div>
@@ -370,6 +371,38 @@
                         <div class="swapper-controls">
                             <button id="credit-spoof-save-btn" class="action-btn" type="button" data-i18n="custom.save_credits">Save credits</button>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="avatar-tab" class="tab-content">
+                <h2 class="section-title" data-i18n="custom.avatar_title">Profile Picture (PFP)</h2>
+                <p class="section-desc" data-i18n="custom.avatar_desc">Inject a custom avatar for your local player in scoreboards, main menus, and banners.</p>
+
+                <div class="card spoof-card" style="max-width: 680px;">
+                    <div class="settings-group">
+                        <label for="avatar-url-input" data-i18n="custom.avatar_image_file">Avatar Image (PNG, JPG, WebP)</label>
+                        <div style="display: flex; gap: 8px;">
+                            <input type="text" id="avatar-url-input" placeholder="https://example.com/avatar.png or select local file..." autocomplete="off" spellcheck="false" style="flex: 1;">
+                            <button type="button" id="avatar-file-browse-btn" class="action-btn action-btn-secondary" style="white-space: nowrap; padding: 6px 14px;">Browse File</button>
+                        </div>
+                        <input type="file" id="avatar-file-hidden" accept="image/png,image/jpeg,image/webp" style="display: none;">
+                        <span class="field-hint">Supports standard image files. Automatically cropped square and resized to 256×256 BGRA in-engine.</span>
+                    </div>
+
+                    <div style="margin: 16px 0; display: flex; align-items: center; gap: 20px; padding: 14px; background: rgba(0,0,0,0.25); border-radius: 8px; border: 1px solid var(--border);">
+                        <div id="avatar-preview-display" style="width: 72px; height: 72px; border-radius: 8px; border: 2px solid var(--accent); overflow: hidden; background: rgba(255,255,255,0.04); display: flex; align-items: center; justify-content: center; font-size: 32px; color: var(--muted); flex-shrink: 0;">
+                            👤
+                        </div>
+                        <div style="flex: 1;">
+                            <strong style="font-size: 14px; color: var(--text);">In-Engine Scaleform Preview</strong>
+                            <p id="avatar-status-text" style="font-size: 12px; color: var(--muted); margin-top: 4px;">No image selected yet</p>
+                        </div>
+                    </div>
+
+                    <div class="swapper-controls" style="display: flex; gap: 12px; margin-top: 14px;">
+                        <button id="avatar-apply-btn" class="action-btn" type="button" data-i18n="custom.apply_avatar">Apply Profile Picture</button>
+                        <button id="avatar-restore-btn" class="action-btn action-btn-secondary" type="button" data-i18n="custom.restore_avatar">Restore Default</button>
                     </div>
                 </div>
             </div>

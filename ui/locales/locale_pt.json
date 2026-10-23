@@ -9,7 +9,8 @@
         "tracker": "Overlay Tracker",
         "misc": "Diversos",
         "website": "Site",
-        "settings": "Configurações"
+        "settings": "Configurações",
+        "avatar": "Foto de perfil"
     },
     "banner": {
         "keep_open_title": "Mantenha o VelocityRL Aberto",

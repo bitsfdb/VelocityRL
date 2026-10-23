@@ -9,7 +9,8 @@
         "tracker": "Tracker Overlay",
         "misc": "Overig",
         "website": "Website",
-        "settings": "Instellingen"
+        "settings": "Instellingen",
+        "avatar": "Profielfoto"
     },
     "banner": {
         "keep_open_title": "Houd VelocityRL Open",
