@@ -2008,6 +2008,7 @@ where
     crate::applog::event(&format!("tagame: downloading official TAGame.upk from {url}"));
 
     let client = reqwest::Client::builder()
+        .no_proxy()
         .user_agent(crate::app_user_agent())
         .timeout(std::time::Duration::from_secs(300))
         .build()
