@@ -24,7 +24,7 @@ pub mod proxy;
 pub mod features;
 pub mod savedata;
 pub mod udp_proxy;
-pub mod profile_card;
+pub mod avatar;
 
 
 #[allow(dead_code)]
@@ -3778,12 +3778,12 @@ pub fn run() {
             tracker::tracker_ensure_stats_api,
             tracker::tracker_set_overlay_size,
             tracker::tracker_apply_scale_opacity,
-            profile_card::get_profile_card_config,
-            profile_card::save_profile_card_config,
-            profile_card::get_profile_catalog,
-            profile_card::fetch_image_from_url,
-            profile_card::apply_custom_avatar_upk,
-            profile_card::restore_custom_avatar_upk,
+            avatar::get_profile_card_config,
+            avatar::save_profile_card_config,
+            avatar::get_profile_catalog,
+            avatar::fetch_image_from_url,
+            avatar::apply_custom_avatar_upk,
+            avatar::restore_custom_avatar_upk,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
