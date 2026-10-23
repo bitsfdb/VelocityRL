@@ -1,6 +1,6 @@
 {
     "nav": {
-        "swapper": "Spawner",
+        "swapper": "Swapper",
         "titles": "Titels",
         "customization": "Customisatie",
         "ranks": "Neppe Rangen",
@@ -16,7 +16,7 @@
         "keep_open_desc": "VelocityRL moet open blijven in de achtergrond zodat de titels, manipulatie en namen te zien zijn in Rocket League."
     },
     "subtabs": {
-        "swaps": "Spawner",
+        "swaps": "Swaps",
         "restore": "Terugzetten",
         "presets": "Presets"
     },
@@ -33,43 +33,27 @@
         "trails": "Sporen",
         "borders": "Avatarranden",
         "paint_finishes": "Lakafwerkingen",
-        "engine_audio": "Motorgeluid",
-        "titles": "Titels"
+        "engine_audio": "Motorgeluid"
     },
     "swapper": {
-        "item_to_spawn": "Item om te spawnen",
-        "customization": "Lak & aanpassing",
-        "owned_item": "Bezit item",
-        "target_asset": "Item om te spawnen",
+        "owned_item": "Bezitten items",
+        "target_asset": "Doelasset",
         "search_owned": "Zoek jouw items...",
-        "search_target": "Zoek items of titels om te spawnen...",
+        "search_target": "Zoek doelassets...",
         "no_item_selected": "Geen item geselecteerd",
-        "paint": "Lak",
-        "coming_soon": "Geen",
-        "paint_hint": "Kies een lakkleur voor dit item.",
-        "swap_btn": "Item spawnen",
-        "rl_running_hint": "Rocket League is actief — sluit het voordat je gaat spawnen of terugzetten.",
-        "spawn_selected": "Geselecteerde spawnen",
-        "any_rarity": "Elke zeldzaamheid",
-        "ctrl_hint": "Ctrl + klik of klik om meerdere items te selecteren.",
-        "select_page": "Pagina selecteren",
-        "clear_selection": "Selectie wissen",
-        "no_items_found": "Geen items gevonden die overeenkomen.",
-        "all_paints": "Lak: Alle varianten"
+        "paint": "Paint",
+        "coming_soon": "Komt binnenkort",
+        "paint_hint": "Onbeschikbaar - paint swaps zorgen ervoor dat je items onzichtbaar worden in het spel. Komt in een latere update.",
+        "swap_btn": "Swap Items",
+        "rl_running_hint": "Rocket league is actief - sluit het voordat je gaat swappen of terugzetten."
     },
     "restore": {
-        "title": "Actieve Spawns & Herstellen",
-        "desc": "Beheer actieve gespawnde items of sla je huidige configuratie op als preset.",
-        "scanning": "Zoeken naar actieve gespawnde items...",
-        "restore_all": "Alle items verwijderen",
-        "save_preset": "Opslaan als Preset",
+        "title": "Herstellen / Terugzetten",
+        "desc": "Zet individuele bestanden terug of herstel alles van backups.",
+        "scanning": "Scannen voor backups...",
+        "restore_all": "Herstel Alle Items",
         "reswap_all": "Herswap Alle Items",
-        "no_backups": "Momenteel geen actieve gespawnde items in Rocket League.",
-        "empty_hint": "Spawn items via het Spawner-tabblad of pas een bestaande preset toe.",
-        "spawn_items_btn": "Naar Spawner",
-        "load_preset_btn": "Presets bekijken",
-        "remove_item": "Verwijderen",
-        "item_active": "Actief"
+        "no_backups": "Geen Backups Gevonden."
     },
     "presets": {
         "title": "Presets",
@@ -85,8 +69,8 @@
     },
     "titles": {
         "title": "Titels",
-        "donor_step": "Donor (optioneel)",
-        "donor_desc": "Titel die je hebt uitgerust (optioneel — laat leeg om direct te spawnen).",
+        "donor_step": "Bron",
+        "donor_desc": "Uitgeruste titel.",
         "not_picked": "Niet gekozen",
         "search_below": "Zoek hieronder.",
         "search_equipped": "Zoek jouw uitgeruste titel…",

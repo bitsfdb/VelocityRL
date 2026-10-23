@@ -18,7 +18,10 @@ import os
 import struct
 import zlib
 import base64
-from Crypto.Cipher import AES
+try:
+    from Crypto.Cipher import AES
+except ImportError:
+    from Cryptodome.Cipher import AES
 
 TAGAME_KEY = bytes([
     0xc7, 0xdf, 0x6b, 0x13, 0x25, 0x2a, 0xcc, 0x71,

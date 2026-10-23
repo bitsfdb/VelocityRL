@@ -1412,7 +1412,23 @@ async fn check_integrity(app: tauri::AppHandle) -> Result<integrity::RepairRepor
         }
     }
     let game = PathBuf::from(&config.game_dir);
+    if game.is_dir() {
+        if let Ok(cooked) = upk::palette::resolve_cooked_dir(&game) {
+            let _ = upk::ensure_projectx_patched(&cooked);
+        }
+    }
     Ok(integrity::check_repair(&game, &state))
+}
+
+#[tauri::command]
+async fn ensure_game_patches(app: tauri::AppHandle) -> Result<bool, String> {
+    let config = get_config(app.clone()).await?;
+    if config.game_dir.is_empty() {
+        return Ok(false);
+    }
+    let game = PathBuf::from(&config.game_dir);
+    let cooked = upk::palette::resolve_cooked_dir(&game).unwrap_or(game);
+    upk::ensure_projectx_patched(&cooked)
 }
 
 #[tauri::command]
@@ -3656,6 +3672,7 @@ pub fn run() {
             restore_backups,
             restore_single_backup,
             check_integrity,
+            ensure_game_patches,
             acknowledge_repair,
             get_palette_status,
             apply_rich_palette,

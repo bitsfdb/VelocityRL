@@ -1,10 +1,3 @@
-/**
- * velocityrl
- * Copyright (c) 2026 bits (https://github.com/bitsfdb/velocityrl)
- * 
- * Licensed under the GNU General Public License v3.0.
- * unauthorized rebranding or stripping of this copyright notice is strictly prohibited.
- */
 const invoke = (...args) => window.__TAURI__?.core?.invoke(...args);
 const openDialog = async (options) => {
     if (window.__TAURI__?.dialog?.open) {
@@ -17,22 +10,9 @@ const API_BASE = 'https://api.velocityrl.tech';
 const PRIVACY_POLICY_URL = 'https://velocityrl.tech/privacy.html';
 
 function normItemSlot(slot) {
-    if (!slot) return 'Item';
-    const s = slot.toLowerCase().replace(/[\s_\-]/g, '');
-    if (s.includes('goal') || s.includes('explosion')) return 'Goal Explosion';
-    if (s.includes('trail')) return 'Trail';
-    if (s.includes('audio') || s.includes('engine')) return 'Engine Audio';
-    if (s.includes('accent')) return 'Paint Finish (Accent)';
-    if (s.includes('finish') || s.includes('paint')) return 'Paint Finish';
-    if (s.includes('topper') || s.includes('hat')) return 'Topper';
-    if (s.includes('antenna')) return 'Antenna';
-    if (s.includes('boost')) return 'Rocket Boost';
-    if (s.includes('wheel')) return 'Wheels';
-    if (s.includes('decal') || s.includes('skin')) return 'Decal';
-    if (s.includes('banner')) return 'Player Banner';
-    if (s.includes('anthem') || s.includes('music')) return 'Player Anthem';
-    if (s.includes('border')) return 'Avatar Border';
-    if (s.includes('body')) return 'Body';
+    if (!slot) return '';
+    const s = slot.toLowerCase();
+    if (s.includes('decal')) return 'Decal';
     return slot;
 }
 
@@ -100,7 +80,7 @@ function getItemDecalBody(item) {
 }
 
 function escHtml(str) {
-    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 let ownedItem = null;
@@ -146,7 +126,7 @@ async function setAppLanguage(lang) {
     if (loaded) {
         localeData = loaded;
         if (loaded.logs && typeof loaded.logs === 'object') {
-            invoke('set_app_locale_logs', { logs: loaded.logs }).catch(() => { });
+            invoke('set_app_locale_logs', { logs: loaded.logs }).catch(() => {});
         }
     }
 
@@ -169,11 +149,6 @@ async function setAppLanguage(lang) {
     const langSelect = document.getElementById('app-language');
     if (langSelect && langSelect.value !== lang) {
         langSelect.value = lang;
-    }
-
-    if (typeof catalogInitialized !== 'undefined' && catalogInitialized) {
-        updateCatalogSelectionUi();
-        renderCatalogGridPage();
     }
 }
 
@@ -232,31 +207,31 @@ async function fetchItemsFromAPI() {
                 signal: controller.signal
             });
             if (!res.ok) throw new Error(`API ${res.status}`);
-            const data = await res.json();
-            for (const p of data.products) {
-                allItems.push({
-                    id: p.id,
-                    product: p.name,
-                    slot: p.category,
-                    quality: p.quality,
-                    asset_package: p.internal_name || p.asset_package,
-                    asset_path: p.asset_path || p.AssetPath || '',
-                    object_name: p.object_name || p.ObjectName || null,
-                    object_class: p.object_class || p.ObjectClass || null,
-                    is_multi_asset_package: p.is_multi_asset_package ?? p.IsMultiAssetPackage ?? null,
-                    package_item_count: p.package_item_count ?? p.PackageItemCount ?? null,
-                    compatible_body_id: p.compatible_body_id ?? p.CompatibleBodyId ?? null,
-                    compatible_body_name: p.compatible_body_name ?? p.CompatibleBodyName ?? null,
-                    image_url: p.thumbnail_url ? `${API_BASE}${p.thumbnail_url}` : '',
-                    paintable: p.paintable ?? p.Paintable,
-                    paints: p.paints ?? p.Paints,
-                    paint: p.paint ?? p.Paint,
-                    attributes: p.Attributes || p.attributes,
-                });
-            }
-            if (allItems.length >= data.meta.total_filtered || data.products.length < limit) break;
-            offset += limit;
+        const data = await res.json();
+        for (const p of data.products) {
+            allItems.push({
+                id: p.id,
+                product: p.name,
+                slot: p.category,
+                quality: p.quality,
+                asset_package: p.internal_name || p.asset_package,
+                asset_path: p.asset_path || p.AssetPath || '',
+                object_name: p.object_name || p.ObjectName || null,
+                object_class: p.object_class || p.ObjectClass || null,
+                is_multi_asset_package: p.is_multi_asset_package ?? p.IsMultiAssetPackage ?? null,
+                package_item_count: p.package_item_count ?? p.PackageItemCount ?? null,
+                compatible_body_id: p.compatible_body_id ?? p.CompatibleBodyId ?? null,
+                compatible_body_name: p.compatible_body_name ?? p.CompatibleBodyName ?? null,
+                image_url: p.thumbnail_url ? `${API_BASE}${p.thumbnail_url}` : '',
+                paintable: p.paintable ?? p.Paintable,
+                paints: p.paints ?? p.Paints,
+                paint: p.paint ?? p.Paint,
+                attributes: p.Attributes || p.attributes,
+            });
         }
+        if (allItems.length >= data.meta.total_filtered || data.products.length < limit) break;
+        offset += limit;
+    }
     } finally {
         clearTimeout(timeoutId);
     }
@@ -502,70 +477,112 @@ function getPaintTextColor(paint) {
 }
 
 function renderPaintBadgeHtml(paintIdOrName) {
-    if (!paintIdOrName || paintIdOrName === 0 || paintIdOrName === '0' || paintIdOrName === 'None' || paintIdOrName === 'none') {
-        return '';
-    }
     const raw = paintIdOrName;
-    let label = '';
+    let label = 'None';
     let color = '#09090b';
     if (typeof raw === 'number') {
-        if (raw === 0) return '';
-        label = paintLabel(raw);
+        label = raw === 0 ? 'None' : paintLabel(raw);
         color = getPaintTextColor(raw);
     } else if (raw) {
         const str = String(raw).trim();
-        if (str === '0' || str.toLowerCase() === 'default' || str.toLowerCase() === 'none') return '';
         if (str.startsWith('#')) {
             label = str.toUpperCase();
             color = str;
         } else if (!isNaN(Number(str))) {
             const num = Number(str);
-            if (num === 0) return '';
-            label = paintLabel(num);
+            label = num === 0 ? 'None' : paintLabel(num);
             color = getPaintTextColor(num);
+        } else if (str.toLowerCase() === 'default' || str.toLowerCase() === 'none') {
+            label = 'None';
+            color = '#09090b';
         } else {
             label = str;
             color = getPaintTextColor(str);
         }
     }
-    if (!label || label === 'None') return '';
     return `<span class="paint-white-pill" style="background:#ffffff; color:${color}; font-weight:700;">${escHtml(label)}</span>`;
 }
 
 function paintLabel(id) {
-    if (id === 'all') return 'All Paints';
     if (Number(id) === 0) return 'None';
     return PAINT_NAMES[id] || PAINT_NAMES[String(id)] || `Paint ${id}`;
 }
 
 let ownedPaintId = '0';
 let wantedPaintId = '0';
+let ownedCustomHex = null;
+let wantedCustomHex = null;
 
 function emptyStateHtml() {
     return '<div class="empty-state"><p>No item selected</p></div>';
 }
 
 function renderSelectedItem(container, item, onClear) {
-    if (!container) return;
-    if (!item) {
-        container.innerHTML = emptyStateHtml();
-        return;
-    }
     const isTarget = container.id === 'wanted-selected';
-    const pName = item?.Product || item?.product || 'Unknown';
-    const pQuality = item?.Quality || item?.quality || 'Common';
-    const pSlot = item?.Slot || item?.slot || '';
-    const pId = item?.ID ?? item?.id;
-    const pImg = item?.image_url || item?.src || '';
+    const pName = item.Product || item.product || 'Unknown';
+    const pQuality = item.Quality || item.quality || 'Common';
+    const pSlot = item.Slot || item.slot || '';
+    const pId = item.ID ?? item.id;
+    const pImg = item.image_url || item.src || '';
     const bgClass = getQualityBgClass(pQuality);
     const decalBody = getItemDecalBody(item);
     const decalBadge = decalBody ? `<span class="quality-badge" style="background:rgba(91,140,255,0.18);color:#93c5fd;border:1px solid rgba(91,140,255,0.35);">${escHtml(decalBody)} Decal</span>` : '';
 
-    if (!isTarget) {
-        ownedPaintId = '0';
-    } else {
-        wantedPaintId = '0';
+    const isPaintable = itemIsPaintable(item);
+    if (!isPaintable) {
+        if (isTarget) { wantedPaintId = '0'; wantedCustomHex = null; }
+        else { ownedPaintId = '0'; ownedCustomHex = null; }
     }
+    const currentPaintId = Number((isTarget ? wantedPaintId : ownedPaintId) || 0);
+    const currentCustomHex = isTarget ? wantedCustomHex : ownedCustomHex;
+    const isCustomActive = !!(currentCustomHex && !currentPaintId);
+
+    const itemPaintsList = Array.isArray(item.Paints) && item.Paints.length > 0 
+        ? item.Paints 
+        : (Array.isArray(item.paints) && item.paints.length > 0 ? item.paints : null);
+
+    let displayPaints = [{ id: 0, name: 'None' }];
+    if (itemPaintsList) {
+        for (const p of itemPaintsList) {
+            const pid = Number(p.id ?? p.ID);
+            const pname = p.label || p.Label || p.name || p.Name || paintLabel(pid);
+            if (pid > 0 && !displayPaints.some(dp => dp.id === pid)) {
+                displayPaints.push({ id: pid, name: pname });
+            }
+        }
+    } else if (isPaintable) {
+        for (const [pid, pname] of Object.entries(PAINT_NAMES)) {
+            const numId = Number(pid);
+            if (numId > 0) {
+                displayPaints.push({ id: numId, name: pname });
+            }
+        }
+    }
+
+    const paintChipsHtml = isPaintable ? `
+        <div class="card-paint-chips-wrap">
+            <div class="card-paint-chips-scroll">
+                ${displayPaints.map(p => `
+                    <button type="button" 
+                            class="paint-chip-pill ${p.id === currentPaintId && !isCustomActive ? 'is-active' : ''}" 
+                            data-paint="${p.id}"
+                            title="${escHtml(p.name)}"
+                            style="color:${getPaintTextColor(p.id)};">
+                        ${escHtml(p.name)}
+                    </button>
+                `).join('')}
+                <button type="button" 
+                        class="paint-chip-pill paint-chip-custom ${isCustomActive ? 'is-active' : ''}" 
+                        data-custom="true"
+                        title="Custom Color Picker"
+                        style="color:${currentCustomHex || '#8b5cf6'}; position:relative;">
+                    <span class="custom-color-dot" style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${currentCustomHex || '#8b5cf6'}; margin-right:4px;"></span>
+                    ${currentCustomHex ? escHtml(currentCustomHex.toUpperCase()) : 'Custom'}
+                    <input type="color" class="paint-color-picker-input" value="${currentCustomHex || '#ff007f'}" style="opacity:0; position:absolute; left:0; top:0; width:100%; height:100%; cursor:pointer;">
+                </button>
+            </div>
+        </div>
+    ` : '';
 
     const clearBtnHtml = `
         <button type="button" class="card-clear-btn" title="Clear selection" aria-label="Clear selection">
@@ -576,39 +593,20 @@ function renderSelectedItem(container, item, onClear) {
         </button>
     `;
 
-    if (item.isTitle) {
-        const titleStyle = item.titleColor
-            ? `color:#${item.titleColor};${item.titleGlow ? `text-shadow:0 0 12px #${item.titleGlow}, 0 0 4px #${item.titleGlow}` : ''}`
-            : 'color:var(--text);';
-        const catBadge = item.titleCategory
-            ? `<span class="quality-badge" style="background:rgba(168,85,247,0.18);color:#c084fc;border:1px solid rgba(168,85,247,0.35);">${escHtml(item.titleCategory)}</span>`
-            : '';
-        container.innerHTML = `
-            ${clearBtnHtml}
-            <div class="title-stage-showcase" style="margin: 14px 0 10px; width: 100%; display: flex; align-items: center; justify-content: center; min-height: 80px; background: rgba(0,0,0,0.35); border-radius: 6px; border: 1px solid var(--border);">
-                <div class="title-preview-chip" style="${titleStyle}; font-size: 19px; padding: 6px 16px; letter-spacing: 0.02em;">
-                    ${formatTitleHtml(pName)}
-                </div>
-            </div>
-            <h2>${formatTitleHtml(pName)}</h2>
-            <div style="display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;margin:4px 0;">
-                <span class="quality-badge ${bgClass}">Player Title</span>
-                ${catBadge}
-            </div>
-            <p class="item-slot-label">Player Title · Loadout Slot 13</p>
-        `;
-    } else {
-        container.innerHTML = `
-            ${clearBtnHtml}
-            ${pImg ? `<img src="${escHtml(pImg)}" class="selected-img" />` : ''}
-            <h2>${escHtml(pName)}</h2>
-            <div style="display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;margin:4px 0;">
-                <span class="quality-badge ${bgClass}">${escHtml(pQuality)}</span>
-                ${decalBadge}
-            </div>
-            <p class="item-slot-label">${escHtml(pSlot)}${decalBody ? ` (${escHtml(decalBody)})` : ''}</p>
-        `;
-    }
+    const activeBadgeContent = isCustomActive ? renderPaintBadgeHtml(currentCustomHex) : renderPaintBadgeHtml(currentPaintId);
+
+    container.innerHTML = `
+        ${clearBtnHtml}
+        ${pImg ? `<img src="${escHtml(pImg)}" class="selected-img" />` : ''}
+        <h2>${escHtml(pName)}</h2>
+        <div style="display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;margin:4px 0;">
+            <span class="quality-badge ${bgClass}">${escHtml(pQuality)}</span>
+            ${decalBadge}
+            ${isPaintable ? `<div class="selected-paint-badge-wrap">${activeBadgeContent}</div>` : ''}
+        </div>
+        <p class="item-slot-label">${escHtml(pSlot)}${decalBody ? ` (${escHtml(decalBody)})` : ''}</p>
+        ${paintChipsHtml}
+    `;
 
     const clearBtn = container.querySelector('.card-clear-btn');
     if (clearBtn && typeof onClear === 'function') {
@@ -616,11 +614,67 @@ function renderSelectedItem(container, item, onClear) {
             e.stopPropagation();
             if (isTarget) {
                 wantedPaintId = '0';
+                wantedCustomHex = null;
             } else {
                 ownedPaintId = '0';
+                ownedCustomHex = null;
             }
             onClear();
         });
+    }
+
+    if (isPaintable) {
+        container.querySelectorAll('.paint-chip-pill[data-paint]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const pid = btn.dataset.paint;
+                if (isTarget) {
+                    wantedPaintId = pid;
+                    wantedCustomHex = null;
+                } else {
+                    ownedPaintId = pid;
+                    ownedCustomHex = null;
+                }
+                container.querySelectorAll('.paint-chip-pill').forEach(b => {
+                    b.classList.toggle('is-active', b.dataset.paint === pid);
+                });
+                const badgeWrap = container.querySelector('.selected-paint-badge-wrap');
+                if (badgeWrap) {
+                    badgeWrap.innerHTML = renderPaintBadgeHtml(Number(pid));
+                }
+                validateSwapInputs();
+            });
+        });
+
+        const customBtn = container.querySelector('.paint-chip-custom');
+        const colorInput = container.querySelector('.paint-color-picker-input');
+        if (colorInput) {
+            colorInput.addEventListener('input', (e) => {
+                e.stopPropagation();
+                const hex = e.target.value;
+                if (isTarget) {
+                    wantedCustomHex = hex;
+                    wantedPaintId = '0';
+                } else {
+                    ownedCustomHex = hex;
+                    ownedPaintId = '0';
+                }
+                container.querySelectorAll('.paint-chip-pill').forEach(b => {
+                    b.classList.remove('is-active');
+                });
+                customBtn?.classList.add('is-active');
+                if (customBtn) {
+                    customBtn.style.color = hex;
+                    const dot = customBtn.querySelector('.custom-color-dot');
+                    if (dot) dot.style.background = hex;
+                }
+                const badgeWrap = container.querySelector('.selected-paint-badge-wrap');
+                if (badgeWrap) {
+                    badgeWrap.innerHTML = renderPaintBadgeHtml(hex);
+                }
+                validateSwapInputs();
+            });
+        }
     }
 
     container.classList.add('selected');
@@ -653,32 +707,15 @@ async function init() {
     progressFill = document.getElementById('progress-fill');
     backupContainer = document.getElementById('backup-container');
 
-    wirePaintSwatches('swap-paint-swatches', 'swap-paint', 'swap-paint-selected');
-    syncSwapPaintUi();
-    wireLaunchOnStartup();
-    wireReplayOptIn();
-    loadTitlesDatabase().catch(() => { });
-    initCatalogGrid();
-
-    if (ownedSearch && ownedResults) {
-        setupSearch(ownedSearch, ownedResults, (item) => {
-            ownedItem = item;
-            if (!item) {
-                clearOwned();
-                return;
-            }
-            renderSelectedItem(document.getElementById('owned-selected'), item, clearOwned);
-            ownedSearch.value = item.Product || item.product || 'Unknown';
-            validateSwapInputs();
-        });
-    }
+    setupSearch(ownedSearch, ownedResults, (item) => {
+        ownedItem = item;
+        renderSelectedItem(document.getElementById('owned-selected'), item, clearOwned);
+        ownedSearch.value = item.Product || item.product || 'Unknown';
+        validateSwapInputs();
+    });
 
     setupSearch(wantedSearch, wantedResults, (item) => {
         wantedItem = item;
-        if (!item) {
-            clearWanted();
-            return;
-        }
         renderSelectedItem(document.getElementById('wanted-selected'), item, clearWanted);
         wantedSearch.value = item.Product || item.product || 'Unknown';
         validateSwapInputs();
@@ -691,11 +728,7 @@ async function init() {
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
             btn.classList.add('active');
             document.getElementById(btn.dataset.tab).classList.add('active');
-            if (btn.dataset.tab === 'swapper-tab') {
-                refreshSwapRlHint();
-                checkMigrationPopup();
-                renderCatalogGridPage();
-            }
+            if (btn.dataset.tab === 'swapper-tab') refreshSwapRlHint();
             if (btn.dataset.tab === 'titles-tab') initTitlesTab();
             if (btn.dataset.tab === 'customization-tab' || btn.dataset.tab === 'names-tab') initCustomizationTab();
             if (btn.dataset.tab === 'ranks-tab') initRanksTab();
@@ -720,15 +753,12 @@ async function init() {
             }
             btn.classList.add('active');
             document.getElementById(paneId)?.classList.add('active');
-            if (paneId === 'swaps-pane') renderCatalogGridPage();
             if (paneId === 'custom-decals-pane') initDecalsTab();
             if (paneId === 'restore-pane') refreshBackups();
             if (paneId === 'presets-pane') refreshPresets();
             if (paneId === 'maplib-pane') refreshWorkshopLibrary();
             if (paneId === 'mappresets-pane') refreshWorkshopPresets();
             if (paneId === 'browser-pane') loadWorkshopCatalog(1, workshopCatalogQuery);
-            if (paneId === 'custom-avatar-pane') initProfileCardTab();
-            if (paneId === 'custom-names-pane') initNamesTab();
         };
     });
 
@@ -738,17 +768,12 @@ async function init() {
             document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             currentCategory = btn.dataset.slot;
-            ownedSearch?.dispatchEvent(new Event('input'));
-            wantedSearch?.dispatchEvent(new Event('input'));
+            ownedSearch.dispatchEvent(new Event('input'));
+            wantedSearch.dispatchEvent(new Event('input'));
         };
     });
 
-    if (applyBtn) applyBtn.onclick = handleApply;
-    const migrationModal = document.getElementById('migration-modal');
-    if (migrationModal) {
-        document.getElementById('migration-modal-ok').onclick = () => migrationModal.classList.remove('active');
-        migrationModal.onclick = (e) => { if (e.target === migrationModal) migrationModal.classList.remove('active'); };
-    }
+    applyBtn.onclick = handleApply;
     document.getElementById('restore-btn').onclick = handleRestore;
     document.getElementById('website-btn').onclick = () => {
         if (isAppLoading()) return;
@@ -764,16 +789,6 @@ async function init() {
         if (minTrayToggle) {
             minTrayToggle.checked = !!cfg.minimize_to_tray;
             syncNameSpoofSwitchAria(minTrayToggle);
-        }
-        const startupToggle = document.getElementById('launch-on-startup');
-        if (startupToggle) {
-            startupToggle.checked = await invoke('get_launch_on_startup').catch(() => !!cfg.launch_on_startup);
-            syncNameSpoofSwitchAria(startupToggle);
-        }
-        const replayToggle = document.getElementById('replay-opt-in');
-        if (replayToggle) {
-            replayToggle.checked = !!cfg.replay_opt_in;
-            syncNameSpoofSwitchAria(replayToggle);
         }
         document.getElementById('settings-modal').classList.add('active');
     };
@@ -805,7 +820,7 @@ async function init() {
     document.getElementById('toggle-changelog-startup').onclick = async () => {
         const cfg = await invoke('get_config').catch(() => ({}));
         const newVal = cfg.changelog_on_startup === false;
-        await invoke('save_config', { config: { ...cfg, changelog_on_startup: newVal } }).catch(() => { });
+        await invoke('save_config', { config: { ...cfg, changelog_on_startup: newVal } }).catch(() => {});
         document.getElementById('toggle-changelog-startup').textContent = newVal ? "Don't show on startup" : 'Show on startup';
         showToast(newVal ? 'Changelog will show on startup' : "Changelog hidden on startup", 'success');
     };
@@ -818,21 +833,21 @@ async function init() {
         const newLang = e.target.value;
         await setAppLanguage(newLang);
         const cfg = await invoke('get_config').catch(() => ({}));
-        await invoke('save_config', { config: { ...cfg, language: newLang } }).catch(() => { });
+        await invoke('save_config', { config: { ...cfg, language: newLang } }).catch(() => {});
         invoke('get_items', { lang: newLang }).then(fetched => {
             if (fetched) {
                 items = Array.isArray(fetched) ? fetched : (fetched.items || fetched.Items || []);
             }
-        }).catch(() => { });
+        }).catch(() => {});
         const toastMsg = newLang === 'es' ? 'Idioma cambiado a Español' :
             newLang === 'fr' ? 'Langue changée en Français' :
-                newLang === 'de' ? 'Sprache auf Deutsch geändert' :
-                    newLang === 'pt' ? 'Idioma alterado para Português' :
-                        newLang === 'it' ? 'Lingua cambiata in Italiano' :
-                            newLang === 'nl' ? 'Taal gewijzigd naar Nederlands' :
-                                newLang === 'tr' ? 'Dil Türkçe olarak ayarlandı' :
-                                    newLang === 'ru' ? 'Язык изменён на Русский' :
-                                        'Language set to English';
+            newLang === 'de' ? 'Sprache auf Deutsch geändert' :
+            newLang === 'pt' ? 'Idioma alterado para Português' :
+            newLang === 'it' ? 'Lingua cambiata in Italiano' :
+            newLang === 'nl' ? 'Taal gewijzigd naar Nederlands' :
+            newLang === 'tr' ? 'Dil Türkçe olarak ayarlandı' :
+            newLang === 'ru' ? 'Язык изменён на Русский' :
+            'Language set to English';
         showToast(toastMsg, 'success');
     });
     document.getElementById('settings-modal').onclick = (e) => {
@@ -887,7 +902,7 @@ async function init() {
                 try {
                     const raw = await invoke('get_psynet_config_json');
                     cfgEl.value = JSON.stringify(JSON.parse(raw), null, 2);
-                } catch { }
+                } catch {}
             }
         } catch (e) {
             showToast('Save failed: ' + e, 'error');
@@ -965,118 +980,11 @@ async function init() {
         document.getElementById('dev-modal')?.classList.add('active');
         await refreshDevPanel();
     });
-
-    // Manual Verify & Fetch TAGame.upk with live progress bar
-    document.getElementById('settings-download-tagame-btn')?.addEventListener('click', async () => {
-        const btn = document.getElementById('settings-download-tagame-btn');
-        const progressWrap = document.getElementById('settings-tagame-progress-wrap');
-        const progressBar = document.getElementById('settings-tagame-progress-bar');
-        const progressPct = document.getElementById('settings-tagame-progress-pct');
-        const progressStatus = document.getElementById('settings-tagame-progress-status');
-        const msg = document.getElementById('settings-catalog-msg');
-
-        if (!btn) return;
-        btn.disabled = true;
-        btn.textContent = 'Downloading…';
-        if (progressWrap) progressWrap.style.display = 'block';
-        if (progressBar) progressBar.style.width = '0%';
-        if (progressPct) progressPct.textContent = '0%';
-        if (progressStatus) progressStatus.textContent = 'Connecting to asset server…';
-        if (msg) msg.textContent = '';
-
-        let unlisten = null;
-        try {
-            if (window.__TAURI__?.event?.listen) {
-                unlisten = await window.__TAURI__.event.listen('tagame-download-progress', (event) => {
-                    const p = event.payload;
-                    if (progressBar) progressBar.style.width = `${p.percent}%`;
-                    if (progressPct) progressPct.textContent = `${p.percent}%`;
-                    const mbDown = (p.downloaded / (1024 * 1024)).toFixed(1);
-                    const mbTotal = (p.total / (1024 * 1024)).toFixed(1);
-                    if (progressStatus) progressStatus.textContent = `Downloading: ${mbDown} MB / ${mbTotal} MB`;
-                });
-            }
-
-            const res = await invoke('download_official_tagame');
-            if (progressBar) progressBar.style.width = '100%';
-            if (progressPct) progressPct.textContent = '100%';
-            if (progressStatus) progressStatus.textContent = 'Complete! Verified and backed up.';
-            showToast(res || 'Official TAGame.upk downloaded successfully!', 'success');
-            refreshPaletteStatus();
-        } catch (e) {
-            if (progressStatus) progressStatus.textContent = 'Failed: ' + e;
-            showToast('Download failed: ' + e, 'error');
-        } finally {
-            if (unlisten) {
-                try { unlisten(); } catch (_) { }
-            }
-            btn.disabled = false;
-            btn.textContent = 'Verify & Fetch TAGame.upk';
-            setTimeout(() => {
-                if (progressWrap && progressBar?.style.width === '100%') {
-                    progressWrap.style.display = 'none';
-                }
-            }, 3000);
-        }
-    });
-
     document.getElementById('settings-export-diag-btn')?.addEventListener('click', () => {
         triggerExportDiagnostics(document.getElementById('settings-action-msg'));
     });
     document.getElementById('dev-export-diag-btn')?.addEventListener('click', () => {
         triggerExportDiagnostics(document.getElementById('dev-action-msg'));
-    });
-    document.getElementById('settings-refresh-catalog-btn')?.addEventListener('click', async () => {
-        const btn = document.getElementById('settings-refresh-catalog-btn');
-        const msg = document.getElementById('settings-catalog-msg');
-        if (!btn) return;
-        btn.disabled = true;
-        btn.textContent = 'Refreshing…';
-        if (msg) msg.textContent = '';
-        try {
-            const result = await invoke('force_refresh_catalog');
-            if (msg) { msg.textContent = result; msg.style.color = 'var(--accent-blue)'; }
-            localStorage.removeItem('titles_fetched_at');
-            showToast('Item catalogue refreshed!', 'success');
-        } catch (e) {
-            if (msg) { msg.textContent = String(e); msg.style.color = '#f87171'; }
-            showToast(String(e), 'error');
-        } finally {
-            btn.disabled = false;
-            btn.textContent = 'Refresh Item Catalogue';
-        }
-    });
-    document.getElementById('settings-fetch-titles-btn')?.addEventListener('click', async () => {
-        const btn = document.getElementById('settings-fetch-titles-btn');
-        const msg = document.getElementById('settings-catalog-msg');
-        if (!btn) return;
-        btn.disabled = true;
-        btn.textContent = 'Fetching…';
-        if (msg) msg.textContent = '';
-        try {
-            const count = await loadTitlesDatabase(true);
-            if (typeof renderDonorList === 'function') {
-                renderDonorList(document.getElementById('donor-search')?.value || '');
-            }
-            if (typeof renderDisplayList === 'function') {
-                renderDisplayList(document.getElementById('display-search')?.value || '');
-            }
-            if (msg) {
-                msg.textContent = `Fetched ${count} titles.`;
-                msg.style.color = 'var(--accent-blue)';
-            }
-            showToast(`Title catalogue updated (${count} titles loaded)`, 'success');
-        } catch (e) {
-            const errStr = String(e?.message || e);
-            if (msg) {
-                msg.textContent = errStr;
-                msg.style.color = '#f87171';
-            }
-            showToast(errStr, 'error');
-        } finally {
-            btn.disabled = false;
-            btn.textContent = 'Fetch Title Catalogue';
-        }
     });
 
     await loadData();
@@ -1131,14 +1039,24 @@ async function loadData() {
             sessionStorage.setItem('velocityrl_repair_report', JSON.stringify(repair));
         }
 
+        if (config && config.game_dir) {
+            updateLoadingText('Patching game files...');
+            try {
+                const patched = await invoke('ensure_game_patches');
+                if (patched) {
+                    showToast('Game files patched (URL/WebSocket validation bypassed).', 'success');
+                }
+            } catch (err) {
+                console.error('Failed to ensure game patches:', err);
+            }
+        }
+
         if (itemsResult) {
             items = Array.isArray(itemsResult) ? itemsResult : (itemsResult.items || itemsResult.Items || []);
-            renderCatalogGridPage();
         } else {
-            invoke('get_items').catch(() => { }).then(fetched => {
+            invoke('get_items').catch(() => {}).then(fetched => {
                 if (fetched) {
                     items = Array.isArray(fetched) ? fetched : (fetched.items || fetched.Items || []);
-                    renderCatalogGridPage();
                 }
             });
         }
@@ -1156,7 +1074,7 @@ async function loadData() {
                 }
                 document.getElementById('game-dir').value = installs[0].path;
                 if (installs.length === 1) {
-                    await invoke('save_config', { config: { ...config, game_dir: installs[0].path } }).catch(() => { });
+                    await invoke('save_config', { config: { ...config, game_dir: installs[0].path } }).catch(() => {});
                     showToast(`Rocket League detected: ${installs[0].label}`, 'success');
                     refreshPaletteStatus();
                 } else {
@@ -1167,14 +1085,14 @@ async function loadData() {
         }
 
         updateStatus('bitsfdb', false);
-        invoke('cleanup_temp_files').catch(() => { });
+        invoke('cleanup_temp_files').catch(() => {});
 
         updateLoadingText('Starting proxy server...');
         // Do NOT call ensure_psynet_hosts before the native proxy is listening —
         // that orphans config.psynet.gg → 127.0.0.1 and breaks RL/EOS online.
         autoStartPsyNetProxy().catch(async (e) => {
             console.warn('proxy autostart:', e);
-            try { await invoke('stop_psynet_proxy', { revertHosts: true }); } catch (_) { }
+            try { await invoke('stop_psynet_proxy', { revertHosts: true }); } catch (_) {}
         });
 
         updateLoadingText('Starting up...');
@@ -1186,21 +1104,17 @@ async function loadData() {
         await new Promise(r => setTimeout(r, 150));
         releaseAppLoading();
         wirePresetsUI();
-        initSwapsNoticeBannerEvents();
-        checkMigrationPopup();
     } catch (err) {
         releaseAppLoading();
         updateStatus('Init Failure', true);
-        appDialog({ title: 'Initialization Failed', message: `VelocityRL failed to start:\n${err.message || err}` }).catch(() => { });
+        appDialog({ title: 'Initialization Failed', message: `VelocityRL failed to start:\n${err.message || err}` }).catch(() => {});
         console.error(err);
-        invoke('report_diagnostic', {
-            payload: {
-                event: 'init_fail',
-                context: 'init',
-                message: String(err?.message ?? err),
-                backtrace: err?.stack ?? null,
-            }
-        }).catch(() => { });
+        invoke('report_diagnostic', { payload: {
+            event:     'init_fail',
+            context:   'init',
+            message:   String(err?.message ?? err),
+            backtrace: err?.stack ?? null,
+        }}).catch(() => {});
     }
 }
 
@@ -1443,22 +1357,20 @@ function renderPresetItemsPage() {
     const itemsToShow = swaps.slice(start, start + perPage);
 
     list.innerHTML = itemsToShow.map(s => {
+        const slot = normItemSlot(s.slot || 'Item');
         let wantedItemObj = findItemByProductId(s.wanted_id);
         if (!wantedItemObj && s.wanted_name) {
-            wantedItemObj = Array.isArray(items) ? items.find(it => it && (it.Product || it.product || '').toLowerCase() === s.wanted_name.toLowerCase()) : null;
+            wantedItemObj = Array.isArray(items) ? items.find(it => (it.Product || it.product || '').toLowerCase() === s.wanted_name.toLowerCase()) : null;
         }
         let ownedItemObj = findItemByProductId(s.owned_id);
         if (!ownedItemObj && s.owned_name) {
-            ownedItemObj = Array.isArray(items) ? items.find(it => it && (it.Product || it.product || '').toLowerCase() === s.owned_name.toLowerCase()) : null;
+            ownedItemObj = Array.isArray(items) ? items.find(it => (it.Product || it.product || '').toLowerCase() === s.owned_name.toLowerCase()) : null;
         }
-        const resolvedSlot = (s.slot && s.slot !== 'Item') ? s.slot : (wantedItemObj?.Slot || wantedItemObj?.slot || ownedItemObj?.Slot || ownedItemObj?.slot || 'Item');
-        const slot = normItemSlot(resolvedSlot);
 
         const pImg = wantedItemObj?.image_url || wantedItemObj?.src || ownedItemObj?.image_url || ownedItemObj?.src || '';
         const targetPaint = s.custom_paint_hex ? renderPaintBadgeHtml(s.custom_paint_hex) : (s.paint_id > 0 ? renderPaintBadgeHtml(s.paint_id) : '');
 
-        const isDecalSlot = String(slot || '').toLowerCase().includes('decal');
-        const decalBody = isDecalSlot ? (s.asset_package ? getItemDecalBody({ AssetPackage: s.asset_package, Product: s.owned_name, Slot: 'Decal' }) : getItemDecalBody({ Product: s.owned_name, Slot: 'Decal' })) : '';
+        const decalBody = s.asset_package ? getItemDecalBody({ AssetPackage: s.asset_package, Product: s.owned_name, Slot: 'Decal' }) : (slot === 'Decal' ? getItemDecalBody({ Product: s.owned_name, Slot: 'Decal' }) : '');
         const decalPill = (decalBody && decalBody !== 'Universal') ? `<span style="font-size:10px;padding:2px 5px;background:rgba(91,140,255,0.18);color:#93c5fd;border-radius:3px;font-weight:600;margin-left:4px;">${escHtml(decalBody)}</span>` : '';
 
         return `
@@ -1474,9 +1386,9 @@ function renderPresetItemsPage() {
                         <span class="preset-item-slot" style="font-size:11px; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.04em;">${escHtml(slot)}${decalPill}</span>
                     </div>
                     <div class="preset-item-names" style="display:flex; align-items:center; gap:6px; font-size:13px; flex-wrap:wrap;">
-                        <span style="color:var(--text);font-weight:500;">${escHtml(s.owned_name || ownedItemObj?.Product || ownedItemObj?.product || 'Stock')}</span>
+                        <span style="color:var(--text);font-weight:500;">${escHtml(s.owned_name || 'Stock')}</span>
                         <span class="preset-item-arrow" style="color:var(--text-secondary); opacity:0.6;">→</span>
-                        <span style="color:var(--accent-blue, #60a5fa);font-weight:600;">${escHtml(s.wanted_name || wantedItemObj?.Product || wantedItemObj?.product || 'Item')}</span>
+                        <span style="color:var(--accent-blue, #60a5fa);font-weight:600;">${escHtml(s.wanted_name || 'Item')}</span>
                     </div>
                 </div>
                 ${targetPaint ? `<div style="flex-shrink:0;">${targetPaint}</div>` : ''}
@@ -1710,8 +1622,8 @@ async function applyPreset(p) {
 
 async function copyText(text) {
 
-    try { await navigator.clipboard.writeText(text); return true; } catch { }
-    try { await invoke('copy_to_clipboard', { text }); return true; } catch { }
+    try { await navigator.clipboard.writeText(text); return true; } catch {}
+    try { await invoke('copy_to_clipboard', { text }); return true; } catch {}
     try {
         const ta = document.createElement('textarea');
         ta.value = text;
@@ -1859,36 +1771,6 @@ function threeWayDialog({ title = 'VelocityRL', message = '', okLabel = 'OK', ex
     });
 }
 
-let _migrationPopupShown = false;
-
-async function checkMigrationPopup() {
-    checkSwapsNoticeBanner();
-    if (_migrationPopupShown) return;
-    const modal = document.getElementById('migration-modal');
-    if (!modal) return;
-    try {
-        const activeSwaps = await invoke('get_swaps').catch(() => []);
-        if (!activeSwaps || !activeSwaps.length) return;
-        const cutoff = new Date('2026-09-30T00:00:00Z');
-        const hasStale = activeSwaps.some(s => {
-            if (!s.timestamp) return true;
-            try { return new Date(s.timestamp) < cutoff; } catch { return true; }
-        });
-        if (hasStale) {
-            _migrationPopupShown = true;
-            modal.classList.add('active');
-        }
-    } catch { /* silent */ }
-}
-
-async function checkSwapsNoticeBanner() {
-    // Banner deprecated in spawner mode
-}
-
-function initSwapsNoticeBannerEvents() {
-    // Banner deprecated in spawner mode
-}
-
 async function refreshSwapHistory() {
     const list = document.getElementById('preset-history-list');
     if (!list) return;
@@ -1941,45 +1823,24 @@ function wirePresetsUI() {
             try {
                 let swapsToSend = null;
                 const existingSwaps = await invoke('get_swaps').catch(() => []);
-                const list = Array.isArray(existingSwaps) ? [...existingSwaps] : [];
-
-                if (wantedItem) {
+                if (ownedItem && wantedItem) {
+                    const ownedId = Number(ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id);
                     const wantedId = Number(wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id);
-                    const ownedId = ownedItem ? Number(ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id) : wantedId;
-                    const activeOwnedPaintId = Number(ownedPaintId || 0);
-                    const paintId = itemIsPaintable(wantedItem) ? Number(wantedPaintId || 0) : 0;
-                    const oName = (ownedItem ? (ownedItem.Product || ownedItem.product) : '') || wantedItem.Product || wantedItem.product || '';
+                    let paintId = itemIsPaintable(wantedItem) ? Number(wantedPaintId || 0) : 0;
+                    const customPaintHex = itemIsPaintable(wantedItem) ? (wantedCustomHex || null) : null;
+                    const oName = ownedItem.Product || ownedItem.product || '';
                     const wName = wantedItem.Product || wantedItem.product || '';
-                    const pkg = wantedItem.AssetPackage || wantedItem.asset_package || (ownedItem ? (ownedItem.AssetPackage || ownedItem.asset_package) : '') || '';
-                    const slot = (ownedItem ? (ownedItem.Slot || ownedItem.slot) : '') || wantedItem.Slot || wantedItem.slot || '';
-
-                    const existingIdx = list.findIndex(s => s.owned_id === ownedId);
-                    const stagedEntry = {
+                    const pkg = ownedItem.AssetPackage || ownedItem.asset_package || '';
+                    const list = Array.isArray(existingSwaps) ? existingSwaps.filter(s => s.owned_id !== ownedId) : [];
+                    list.push({
                         owned_id: ownedId,
                         wanted_id: wantedId,
                         owned_name: oName,
                         wanted_name: wName,
                         paint_id: paintId,
-                        custom_paint_hex: (typeof customPaintHex !== 'undefined' ? customPaintHex : null),
-                        owned_paint_id: activeOwnedPaintId > 0 ? activeOwnedPaintId : null,
-                        owned_custom_hex: (typeof ownedCustomPaintHex !== 'undefined' ? ownedCustomPaintHex : null),
+                        custom_paint_hex: customPaintHex || null,
                         asset_package: pkg,
-                        slot: slot || undefined,
-                    };
-                    if (existingIdx >= 0) {
-                        if (!stagedEntry.slot && list[existingIdx].slot) {
-                            stagedEntry.slot = list[existingIdx].slot;
-                        }
-                        if (!stagedEntry.asset_package && list[existingIdx].asset_package) {
-                            stagedEntry.asset_package = list[existingIdx].asset_package;
-                        }
-                        list[existingIdx] = { ...list[existingIdx], ...stagedEntry };
-                    } else {
-                        list.push(stagedEntry);
-                    }
-                }
-
-                if (list.length > 0) {
+                    });
                     swapsToSend = list;
                 }
                 const saved = await invoke('save_preset', { name: name.trim(), swaps: swapsToSend });
@@ -2059,44 +1920,14 @@ function wirePresetsUI() {
     });
 }
 
-function wireRestoreSavePresetButton() {
-    const savePresetBtn = document.getElementById('restore-save-preset-btn');
-    if (!savePresetBtn || savePresetBtn.dataset.wired === '1') return;
-    savePresetBtn.dataset.wired = '1';
-    savePresetBtn.onclick = async () => {
-        if (isAppLoading()) return;
-        const name = await appDialog({
-            title: 'Save Loadout as Preset',
-            message: 'Save your active spawned items as a preset:',
-            input: 'Spawned Loadout',
-            okLabel: 'Save Preset'
-        });
-        if (!name || !name.trim()) return;
-        try {
-            updateStatus('Saving preset...', false);
-            const saved = await invoke('save_preset', { name: name.trim() });
-            showToast(`Active loadout saved as <strong>${escHtml(saved?.name || name.trim())}</strong>!`, 'success');
-            await refreshPresets();
-            await refreshSwapHistory();
-        } catch (e) {
-            showToast(String(e), 'error');
-        } finally {
-            updateStatus('bitsfdb', false);
-        }
-    };
-}
-
 async function refreshBackups() {
     if (!backupContainer) return;
     wireReswapButton();
-    wireRestoreSavePresetButton();
     const countLabel = document.getElementById('restore-count-label');
-    const countPill = document.getElementById('restore-count-pill');
     const restoreAllBtn = document.getElementById('restore-btn');
     const reswapBtn = document.getElementById('reswap-btn');
-    const savePresetBtn = document.getElementById('restore-save-preset-btn');
 
-    backupContainer.innerHTML = '<div class="backup-empty"><div class="loading-spinner" style="width:20px;height:20px;margin:0 auto 8px;"></div>Scanning active spawned items…</div>';
+    backupContainer.innerHTML = '<div class="backup-empty"><div class="loading-spinner" style="width:20px;height:20px;margin:0 auto 8px;"></div>Scanning active modifications…</div>';
     try {
         const backups = await invoke('get_backups');
 
@@ -2105,94 +1936,76 @@ async function refreshBackups() {
             if (reswapBtn) reswapBtn.disabled = (!swaps || swaps.length === 0);
         } catch { }
 
-        const hasActive = Boolean(backups && backups.length > 0);
-        if (restoreAllBtn) restoreAllBtn.disabled = !hasActive;
-        if (savePresetBtn) savePresetBtn.disabled = !hasActive;
-        if (countPill && countLabel) {
-            if (hasActive) {
-                countPill.style.display = 'inline-block';
-                countLabel.textContent = `${backups.length} Active Item${backups.length === 1 ? '' : 's'}`;
-            } else {
-                countPill.style.display = 'none';
-            }
+        if (restoreAllBtn) restoreAllBtn.disabled = (!backups || backups.length === 0);
+        if (countLabel) {
+            countLabel.textContent = `${backups.length} Active Modification${backups.length === 1 ? '' : 's'}`;
         }
 
-        if (!hasActive) {
-            backupContainer.innerHTML = `
-                <div class="backup-empty">
-                    <p style="margin-bottom: 6px; font-weight: 500;" data-i18n="restore.no_backups">No spawned items currently active in Rocket League.</p>
-                    <p style="font-size: 12px; color: var(--muted); margin-bottom: 12px;" data-i18n="restore.empty_hint">Spawn items from the Spawner tab or apply an existing preset from the Presets tab.</p>
-                    <div style="display: flex; gap: 8px; justify-content: center;">
-                        <button type="button" class="action-btn" id="restore-go-spawner-btn" style="padding: 6px 14px; font-size: 12px;" data-i18n="restore.spawn_items_btn">Go to Spawner</button>
-                        <button type="button" class="action-btn action-btn-secondary" id="restore-go-presets-btn" style="padding: 6px 14px; font-size: 12px;" data-i18n="restore.load_preset_btn">Browse Presets</button>
-                    </div>
-                </div>`;
-            document.getElementById('restore-go-spawner-btn')?.addEventListener('click', () => {
-                document.querySelector('[data-subtab="swaps-pane"]')?.click();
-            });
-            document.getElementById('restore-go-presets-btn')?.addEventListener('click', () => {
-                document.querySelector('[data-subtab="presets-pane"]')?.click();
-            });
+        if (backups.length === 0) {
+            backupContainer.innerHTML = '<div class="backup-empty">No active modifications detected. Your files are clean.</div>';
             return;
         }
 
         backupContainer.innerHTML = '';
-        backups.forEach((file) => {
+        backups.forEach((file, i) => {
             const div = document.createElement('div');
-            div.className = 'spawned-item-row';
+            div.className = 'backup-item';
             let pImg = file.image_url || '';
             const fileName = file.path.split(/[/\\]/).pop();
             const cleanName = fileName.toLowerCase().replace('.bak', '').replace('.upk', '');
             let matched = items && items.length > 0 ? items.find(it => {
-                if (!it) return false;
                 const dbPkg = (it.asset_package || '').toLowerCase().replace('.upk', '');
                 if (!dbPkg || dbPkg === 'none') return false;
                 return dbPkg === cleanName || (dbPkg.length > 4 && (cleanName.includes(dbPkg) || dbPkg.includes(cleanName)));
             }) : null;
-            if (!matched && file.swap_to && items && items.length > 0) {
-                matched = items.find(it => it && (it.product || it.Product || '') === file.swap_to);
-            }
             if (!matched && file.swap_from && items && items.length > 0) {
-                matched = items.find(it => it && (it.product || it.Product || '') === file.swap_from);
+                matched = items.find(it => (it.product || it.Product || '') === file.swap_from);
             }
             if (matched && matched.image_url && !pImg) {
                 pImg = matched.image_url;
             }
 
-            const itemName = (file.swap_to && file.swap_to !== 'Item' && file.swap_to !== 'None')
-                ? file.swap_to
-                : (file.swap_from && file.swap_from !== 'Item') ? file.swap_from : (file.name || cleanName || 'Spawned Item');
-            const itemImg = file.swap_to_image || pImg;
-            const itemPaint = file.paint_name || file.paint_id || 0;
-            const itemSlot = file.slot || (matched ? (matched.slot || matched.Slot) : '') || '';
+            const targetName = file.swap_to || file.name || cleanName;
+            const fromName = file.swap_from || file.name || cleanName;
+            const paintName = file.paint_name || '';
+            const targetImg = file.swap_to_image || pImg;
 
             const renderThumb = (src, title) => src
                 ? `<img src="${escHtml(src)}" class="backup-thumb" alt="${escHtml(title || '')}" onerror="this.style.display='none'" />`
                 : `<div class="backup-thumb backup-thumb-placeholder"></div>`;
 
             div.innerHTML = `
-                <div class="spawned-item-flow">
-                    <div class="spawned-item-thumb-wrap">
-                        ${renderThumb(itemImg, itemName)}
-                    </div>
-                    <div class="spawned-item-meta">
-                        <div class="spawned-item-name" title="${escHtml(itemName)}">${escHtml(itemName)}</div>
-                        <div class="spawned-item-badges">
-                            ${itemSlot ? `<span class="spawn-slot-pill">${escHtml(itemSlot)}</span>` : ''}
-                            ${renderPaintBadgeHtml(itemPaint)}
-                            <span class="spawn-status-tag" data-i18n="restore.item_active">Active</span>
+                <div class="backup-card-flow">
+                    <div class="backup-col">
+                        <span class="backup-col-name" title="${escHtml(fromName)}">${escHtml(fromName)}</span>
+                        <div class="backup-col-thumb-wrap">
+                            ${renderThumb(pImg, fromName)}
                         </div>
+                        ${renderPaintBadgeHtml(file.swap_from_paint || 0)}
+                    </div>
+
+                    <div class="backup-arrow-divider">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                            <polyline points="12 5 19 12 12 19"></polyline>
+                        </svg>
+                    </div>
+
+                    <div class="backup-col">
+                        <span class="backup-col-name" title="${escHtml(targetName)}">${escHtml(targetName)}</span>
+                        <div class="backup-col-thumb-wrap">
+                            ${renderThumb(targetImg, targetName)}
+                        </div>
+                        ${renderPaintBadgeHtml(paintName || file.paint_id || 0)}
                     </div>
                 </div>
-                <div class="spawned-item-actions">
-                    <button type="button" class="restore-mini-btn" title="Remove this spawned item">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <polyline points="3 6 5 6 21 6"></polyline>
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                        </svg>
-                        <span data-i18n="restore.remove_item">Remove</span>
-                    </button>
-                </div>`;
+                <button type="button" class="restore-mini-btn" title="Restore this file">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="1 4 1 10 7 10"/>
+                        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                    </svg>
+                    <span>Restore</span>
+                </button>`;
 
             div.querySelector('.restore-mini-btn').onclick = (e) => {
                 e.stopPropagation();
@@ -2202,17 +2015,17 @@ async function refreshBackups() {
         });
     } catch (err) {
         console.error(err);
-        backupContainer.innerHTML = '<div class="backup-empty backup-empty-error">Failed to retrieve active item list.</div>';
-        try { await invoke('append_launch_log', { message: `ui: get_backups failed: ${String(err)}` }); } catch { }
+        backupContainer.innerHTML = '<div class="backup-empty backup-empty-error">Failed to retrieve backup list.</div>';
+        try { await invoke('append_launch_log', { message: `ui: get_backups failed: ${String(err)}` }); } catch {}
     }
 }
 
 async function restoreSingle(path) {
     if (isAppLoading()) return;
     try {
-        updateStatus('Removing...', false);
+        updateStatus('Restoring...', false);
         await invoke('restore_single_backup', { path });
-        updateStatus('Removed', false);
+        updateStatus('Restored', false);
         refreshBackups();
         setTimeout(() => updateStatus('bitsfdb', false), 2000);
     } catch (err) {
@@ -2237,111 +2050,49 @@ function showProgress(show, percent = 0) {
     }
 }
 
-function getTitleAsItem(t) {
-    const text = t.text || t.Text || t.id || 'Title';
-    return {
-        ID: 3036,
-        id: 3036,
-        Product: text,
-        product: text,
-        Slot: 'Player Title',
-        slot: 'Player Title',
-        Quality: t.category ? 'Special' : 'Limited',
-        quality: t.category ? 'Special' : 'Limited',
-        AssetPackage: 'title_generic',
-        asset_package: 'title_generic',
-        isTitle: true,
-        titleId: t.id || t.Id || '',
-        titleText: text,
-        titleCategory: t.category || t.Category || '',
-        titleColor: t.color || t.Color || '',
-        titleGlow: t.glow || t.GlowColor || t.glow_color || '',
-        Paintable: false,
-    };
-}
-
 function setupSearch(input, resultsDiv, selectionHandler) {
     if (!input || !resultsDiv) return;
     input.addEventListener('input', (e) => {
-        const term = e.target.value.toLowerCase().trim();
+        const term = e.target.value.toLowerCase();
 
         let lockCategory = currentCategory;
         if (input.id === 'wanted-search' && ownedItem) {
             lockCategory = (ownedItem.Slot || ownedItem.slot || 'All');
         }
-
-        const isTitleCategory = normSlot(lockCategory) === 'playertitle' || normSlot(lockCategory) === 'title';
 
         if (term.length < 2 && lockCategory === 'All') {
             resultsDiv.style.display = 'none';
             return;
         }
 
-        let matches = [];
+        const matches = items.filter(item => {
+            const pName = (item.Product || item.product || '').toLowerCase();
+            const pAsset = (item.AssetPackage || item.asset_package || '').toLowerCase();
+            const pSlot = item.Slot || item.slot || '';
 
-        if (isTitleCategory) {
-            const titleList = (titlesDb && Array.isArray(titlesDb.titles)) ? titlesDb.titles : [];
-            matches = titleList.filter(t => {
-                if (!t) return false;
-                const text = (t.text || t.Text || '').toLowerCase();
-                const id = (t.id || t.Id || '').toLowerCase();
-                const cat = (t.category || t.Category || '').toLowerCase();
-                return term.length < 2 || text.includes(term) || id.includes(term) || cat.includes(term);
-            }).slice(0, 50).map(getTitleAsItem);
-        } else {
-            const itemMatches = items.filter(item => {
-                if (!item) return false;
-                const pName = (item.Product || item.product || '').toLowerCase();
-                const pAsset = (item.AssetPackage || item.asset_package || '').toLowerCase();
-                const pSlot = item.Slot || item.slot || '';
+            const invalidTypes = ['series', 'crate', 'currency', 'premium', 'unknown'];
+            if (invalidTypes.includes(normSlot(pSlot))) return false;
 
-                const invalidTypes = ['series', 'crate', 'currency', 'premium', 'unknown'];
-                if (invalidTypes.includes(normSlot(pSlot))) return false;
-
-                const pLong = (item.LongLabel || item.long_label || '').toLowerCase();
-                const matchesTerm = term.length < 2 || pName.includes(term) || pAsset.includes(term) || pLong.includes(term) || (term.trim() === 'ai' && (pName.includes('bot') || pAsset.includes('bot')));
-                const matchesCat = lockCategory === 'All' || normSlot(pSlot) === normSlot(lockCategory);
-                return matchesTerm && matchesCat;
-            }).slice(0, 50);
-
-            matches = itemMatches;
-
-            if (lockCategory === 'All' && term.length >= 2 && titlesDb && Array.isArray(titlesDb.titles)) {
-                const titleMatches = titlesDb.titles.filter(t => {
-                    if (!t) return false;
-                    const text = (t.text || t.Text || '').toLowerCase();
-                    const id = (t.id || t.Id || '').toLowerCase();
-                    return text.includes(term) || id.includes(term);
-                }).slice(0, 10).map(getTitleAsItem);
-
-                matches = [...matches.slice(0, 40), ...titleMatches];
-            }
-        }
-
+            const pLong = (item.LongLabel || item.long_label || '').toLowerCase();
+            const matchesTerm = term.length < 2 || pName.includes(term) || pAsset.includes(term) || pLong.includes(term) || (term.trim() === 'ai' && (pName.includes('bot') || pAsset.includes('bot')));
+            const matchesCat = lockCategory === 'All' || normSlot(pSlot) === normSlot(lockCategory);
+            return matchesTerm && matchesCat;
+        }).slice(0, 50);
         renderResults(matches, resultsDiv, selectionHandler);
     });
-
     input.addEventListener('focus', () => {
         let lockCategory = currentCategory;
         if (input.id === 'wanted-search' && ownedItem) {
             lockCategory = (ownedItem.Slot || ownedItem.slot || 'All');
         }
 
-        const isTitleCategory = normSlot(lockCategory) === 'playertitle' || normSlot(lockCategory) === 'title';
-
-        if (isTitleCategory && input.value === '') {
-            const titleList = (titlesDb && Array.isArray(titlesDb.titles)) ? titlesDb.titles : [];
-            const matches = titleList.slice(0, 50).map(getTitleAsItem);
-            renderResults(matches, resultsDiv, selectionHandler);
-        } else if (lockCategory !== 'All' && input.value === '') {
+        if (lockCategory !== 'All' && input.value === '') {
             const matches = items.filter(item => {
-                if (!item) return false;
                 return normSlot(item.Slot || item.slot) === normSlot(lockCategory);
             }).slice(0, 50);
             renderResults(matches, resultsDiv, selectionHandler);
         }
     });
-
     document.addEventListener('click', (e) => {
         if (!input.contains(e.target) && !resultsDiv.contains(e.target)) {
             resultsDiv.style.display = 'none';
@@ -2356,7 +2107,6 @@ function renderResults(matches, resultsDiv, selectionHandler) {
         return;
     }
     matches.forEach(item => {
-        if (!item) return;
         const div = document.createElement('div');
         div.className = 'flyout-row';
         const pName = item.Product || item.product || 'Unknown';
@@ -2364,31 +2114,16 @@ function renderResults(matches, resultsDiv, selectionHandler) {
         const pId = item.ID ?? item.id;
         const pImg = item.image_url || item.src || '';
 
-        if (item.isTitle) {
-            const style = item.titleColor ? `color:#${item.titleColor};${item.titleGlow ? `text-shadow:0 0 8px #${item.titleGlow}` : ''}` : '';
-            div.innerHTML = `
-                <div class="flyout-img" style="display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.06);border-radius:4px;">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent, #3b82f6)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-                    </svg>
-                </div>
-                <div class="flyout-info">
-                    <span class="item-name" style="${style}">${formatTitleHtml(pName)}</span>
-                    <span style="font-size: 10px; color: var(--text-secondary)">Player Title${item.titleCategory ? ` · ${escHtml(item.titleCategory)}` : ''}</span>
-                </div>
-            `;
-        } else {
-            const decalBody = getItemDecalBody(item);
-            const decalPill = decalBody ? ` <span style="font-size:10px;padding:1px 5px;background:rgba(91,140,255,0.15);color:#93c5fd;border-radius:3px;font-weight:600;">${escHtml(decalBody)}</span>` : '';
+        const decalBody = getItemDecalBody(item);
+        const decalPill = decalBody ? ` <span style="font-size:10px;padding:1px 5px;background:rgba(91,140,255,0.15);color:#93c5fd;border-radius:3px;font-weight:600;">${escHtml(decalBody)}</span>` : '';
 
-            div.innerHTML = `
-                ${pImg ? `<img src="${escHtml(pImg)}" class="flyout-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="flyout-img" style="display:none;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>` : '<div class="flyout-img" style="display:flex;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>'}
-                <div class="flyout-info">
-                    <span class="item-name">${escHtml(pName)}${decalPill}</span>
-                    <span style="font-size: 10px; color: var(--text-secondary)">${escHtml(pSlot)}${decalBody ? ` (${escHtml(decalBody)})` : ''}</span>
-                </div>
-            `;
-        }
+        div.innerHTML = `
+            ${pImg ? `<img src="${escHtml(pImg)}" class="flyout-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="flyout-img" style="display:none;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>` : '<div class="flyout-img" style="display:flex;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>'}
+            <div class="flyout-info">
+                <span class="item-name">${escHtml(pName)}${decalPill}</span>
+                <span style="font-size: 10px; color: var(--text-secondary)">${escHtml(pSlot)}${decalBody ? ` (${escHtml(decalBody)})` : ''}</span>
+            </div>
+        `;
         div.onclick = () => {
             selectionHandler(item);
             resultsDiv.style.display = 'none';
@@ -2445,10 +2180,37 @@ function attrValue(entry) {
 
 function itemIsPaintable(item) {
     if (!item) return false;
-    if (item.isTitle) return false;
-    const slot = normSlot(item.Slot || item.slot || '');
+    const slot = normSlot(item.Slot || item.slot || item.Type || item.type);
     if (UNPAINTABLE_SLOTS.has(slot)) return false;
-    return true;
+
+    // Check explicit Paintable boolean/flag on item
+    if (item.Paintable !== undefined) {
+        const flag = coercePaintableFlag(item.Paintable);
+        if (flag !== null) return flag;
+    }
+    if (item.paintable !== undefined) {
+        const flag = coercePaintableFlag(item.paintable);
+        if (flag !== null) return flag;
+    }
+
+    // Check Paints array
+    if (Array.isArray(item.Paints)) {
+        return item.Paints.length > 0;
+    }
+    if (Array.isArray(item.paints)) {
+        return item.paints.length > 0;
+    }
+
+    // Check Attributes list if present
+    for (const entry of itemAttrEntries(item)) {
+        const k = attrKey(entry);
+        if (k === 'paintable' || k === 'ispaintable') {
+            const flag = coercePaintableFlag(attrValue(entry));
+            if (flag !== null) return flag;
+        }
+    }
+
+    return false;
 }
 
 function findItemByProductId(productId) {
@@ -2509,34 +2271,26 @@ function setPaintBlockEnabled(opts) {
 }
 
 function syncSwapPaintUi() {
-    const isPaintable = wantedItem ? itemIsPaintable(wantedItem) : false;
-    const paintCard = document.getElementById('spawner-paint-card');
-    const gridEl = document.getElementById('spawner-grid') || document.querySelector('.swapper-grid');
-
-    if (paintCard) {
-        paintCard.hidden = !isPaintable;
-        paintCard.style.display = isPaintable ? 'flex' : 'none';
-    }
-    if (gridEl) {
-        gridEl.classList.toggle('has-paint-card', isPaintable);
-    }
-
     if (!document.getElementById('swap-paint-block')) return;
+    const enabled = wantedItem ? itemIsPaintable(wantedItem) : false;
     setPaintBlockEnabled({
         blockId: 'swap-paint-block',
         swatchId: 'swap-paint-swatches',
         selectId: 'swap-paint',
         selectedLabelId: 'swap-paint-selected',
         hintId: 'swap-paint-hint',
-        enabled: isPaintable,
-        hideHintWhenEnabled: false,
+        enabled,
+        hideHintWhenEnabled: true,
     });
 }
 
 function validateSwapInputs() {
     syncSwapPaintUi();
     if (!applyBtn) return;
-    applyBtn.disabled = appLoading || swapBusy || !wantedItem;
+    const oSlot = ownedItem ? normSlot(ownedItem.Slot || ownedItem.slot) : '';
+    const wSlot = wantedItem ? normSlot(wantedItem.Slot || wantedItem.slot) : '';
+    const typesMatch = !ownedItem || !wantedItem || oSlot === wSlot;
+    applyBtn.disabled = appLoading || swapBusy || !(ownedItem && wantedItem && typesMatch);
 }
 
 const validate = validateSwapInputs;
@@ -2551,8 +2305,8 @@ async function refreshSwapRlHint() {
     }
 }
 
-function startRlRunningPoll() { }
-function showRlRunningToast() { }
+function startRlRunningPoll() {}
+function showRlRunningToast() {}
 
 async function openSettingsForPath() {
     const cfg = await invoke('get_config').catch(() => ({ game_dir: '' }));
@@ -2563,515 +2317,48 @@ async function openSettingsForPath() {
     setTimeout(() => btn.classList.remove('path-btn-highlight'), 2000);
     invoke('detect_game_dir').then(installs => {
         if (installs && installs.length > 1) showInstallChooser(installs);
-    }).catch(() => { });
-}
-
-const selectedCatalogItems = new Map();
-let catalogCategory = 'All';
-let catalogSearchQuery = '';
-let catalogRarity = 'All';
-let catalogPaintId = 0;
-let currentCatalogPage = 1;
-const CATALOG_PAGE_SIZE = 48;
-let catalogInitialized = false;
-
-const RARITY_COLORS = {
-    'Common': '#9ca3af',
-    'Uncommon': '#38bdf8',
-    'Rare': '#3b82f6',
-    'Very Rare': '#a855f7',
-    'Import': '#ef4444',
-    'Exotic': '#facc15',
-    'Black Market': '#e879f9',
-    'BlackMarket': '#e879f9',
-    'Limited': '#fb923c',
-    'Premium': '#34d399',
-    'Legacy': '#fcd34d',
-};
-
-function getRarityColor(quality) {
-    if (!quality) return '#9ca3af';
-    return RARITY_COLORS[quality] || '#9ca3af';
-}
-
-function updateCatalogPaintPreview() {
-    const preview = document.getElementById('catalog-paint-preview');
-    if (!preview) return;
-    if (catalogPaintId === 'all') {
-        preview.style.background = 'conic-gradient(from 0deg, #ff0055, #ffaa00, #00ff66, #00bbff, #bb00ff, #ff0055)';
-        preview.style.borderColor = 'rgba(255, 255, 255, 0.7)';
-    } else {
-        const bg = PAINT_SWATCH_COLORS[catalogPaintId] || '#555';
-        preview.style.background = bg;
-        preview.style.borderColor = 'rgba(255, 255, 255, 0.4)';
-    }
-}
-
-function updateCatalogSelectionUi() {
-    const count = selectedCatalogItems.size;
-    const countEl = document.getElementById('catalog-selection-count');
-    const spawnBtn = document.getElementById('catalog-spawn-btn');
-    const spawnText = document.getElementById('catalog-spawn-btn-text');
-    const clearBtn = document.getElementById('catalog-clear-sel-btn');
-
-    const spawnBaseLabel = t('swapper.spawn_selected', 'Spawn Selected');
-    if (countEl) countEl.textContent = `${count} item${count === 1 ? '' : 's'} selected`;
-    if (spawnText) spawnText.textContent = count > 0 ? `${spawnBaseLabel} (${count})` : spawnBaseLabel;
-    if (spawnBtn) spawnBtn.disabled = (count === 0);
-    if (clearBtn) clearBtn.style.display = count > 0 ? 'inline-block' : 'none';
-}
-
-function getFilteredCatalogItems() {
-    if (!items || !items.length) return [];
-    let list = items;
-
-    // Filter by Category / Slot
-    if (catalogCategory && catalogCategory !== 'All') {
-        if (catalogCategory === 'Player Title') {
-            const catalogTitles = (titlesDb && Array.isArray(titlesDb.titles)) ? titlesDb.titles : ((typeof titlesDatabase !== 'undefined' && Array.isArray(titlesDatabase)) ? titlesDatabase : []);
-            const mappedTitles = catalogTitles.map(t => getTitleAsItem(t));
-            list = [...items.filter(i => (i.slot || i.Slot) === 'Player Title'), ...mappedTitles];
-        } else {
-            list = list.filter(i => {
-                const s = (i.slot || i.Slot || '');
-                return s.toLowerCase() === catalogCategory.toLowerCase();
-            });
-        }
-    }
-
-    // Filter by Rarity
-    if (catalogRarity && catalogRarity !== 'All') {
-        list = list.filter(i => {
-            const q = (i.quality || i.Quality || 'Common');
-            if (catalogRarity === 'Black Market') {
-                return q === 'Black Market' || q === 'BlackMarket';
-            }
-            return q.toLowerCase() === catalogRarity.toLowerCase();
-        });
-    }
-
-    // Filter by Search Query
-    if (catalogSearchQuery) {
-        const q = catalogSearchQuery.toLowerCase().trim();
-        list = list.filter(i => {
-            const name = (i.product || i.Product || '').toLowerCase();
-            const slot = (i.slot || i.Slot || '').toLowerCase();
-            return name.includes(q) || slot.includes(q);
-        });
-    }
-
-    return list;
-}
-
-function renderCatalogGridPage() {
-    const grid = document.getElementById('catalog-grid');
-    const countInfo = document.getElementById('catalog-count-info');
-    const paginationControls = document.getElementById('catalog-pagination-controls');
-    if (!grid) return;
-
-    if (!items || !items.length) {
-        grid.innerHTML = `
-            <div class="catalog-loading">
-                <div class="loading-spinner"></div>
-                <span>Loading items database...</span>
-            </div>`;
-        return;
-    }
-
-    const filtered = getFilteredCatalogItems();
-    const total = filtered.length;
-    const totalPages = Math.max(1, Math.ceil(total / CATALOG_PAGE_SIZE));
-
-    if (currentCatalogPage > totalPages) currentCatalogPage = totalPages;
-    if (currentCatalogPage < 1) currentCatalogPage = 1;
-
-    const startIdx = (currentCatalogPage - 1) * CATALOG_PAGE_SIZE;
-    const endIdx = Math.min(startIdx + CATALOG_PAGE_SIZE, total);
-    const pageItems = filtered.slice(startIdx, endIdx);
-
-    if (countInfo) {
-        countInfo.textContent = total > 0
-            ? `${(startIdx + 1).toLocaleString()}–${endIdx.toLocaleString()} of ${total.toLocaleString()} items`
-            : '0 items found';
-    }
-
-    if (pageItems.length === 0) {
-        grid.innerHTML = `
-            <div class="catalog-empty">
-                <p>${escHtml(t('swapper.no_items_found', 'No items found matching your filters.'))}</p>
-            </div>`;
-        if (paginationControls) paginationControls.innerHTML = '';
-        return;
-    }
-
-    grid.innerHTML = '';
-    pageItems.forEach((item) => {
-        const id = Number(item.id !== undefined ? item.id : item.ID);
-        const name = item.product || item.Product || 'Item';
-        const quality = item.quality || item.Quality || 'Common';
-        const img = item.image_url || item.src || '';
-        const isSelected = selectedCatalogItems.has(id);
-        const entry = selectedCatalogItems.get(id);
-        const cardPaint = entry ? entry.paint_id : 0;
-        const rarityCol = getRarityColor(quality);
-
-        const card = document.createElement('div');
-        card.className = `catalog-card${isSelected ? ' is-selected' : ''}`;
-        card.dataset.id = String(id);
-        card.dataset.quality = quality;
-
-        let paintBadgeHtml = '';
-        if (isSelected && (cardPaint === 'all' || cardPaint > 0)) {
-            if (cardPaint === 'all') {
-                paintBadgeHtml = `<span class="catalog-card-paint-badge catalog-card-paint-all">All Paints</span>`;
-            } else {
-                paintBadgeHtml = `<span class="catalog-card-paint-badge" style="color:${getPaintTextColor(cardPaint)};">${escHtml(paintLabel(cardPaint))}</span>`;
-            }
-        }
-
-        card.innerHTML = `
-            <div class="catalog-card-check">✓</div>
-            <div class="catalog-card-thumb-wrap">
-                ${img
-                ? `<img src="${escHtml(img)}" class="catalog-card-thumb" alt="${escHtml(name)}" loading="lazy" onerror="this.style.opacity='0';" />`
-                : `<div style="font-size:24px;color:#444;">✦</div>`
-            }
-                ${paintBadgeHtml}
-            </div>
-            <div class="catalog-card-info">
-                <div class="catalog-card-name" title="${escHtml(name)}">${escHtml(name)}</div>
-                <div class="catalog-card-meta">
-                    <span class="catalog-rarity-dot" style="background:${rarityCol};"></span>
-                    <span class="catalog-rarity-label">${escHtml(quality)}</span>
-                </div>
-            </div>
-        `;
-
-        card.addEventListener('click', () => {
-            const isToggledOn = !selectedCatalogItems.has(id);
-            if (!isToggledOn) {
-                selectedCatalogItems.delete(id);
-                card.classList.remove('is-selected');
-                const badge = card.querySelector('.catalog-card-paint-badge');
-                if (badge) badge.remove();
-            } else {
-                const pId = itemIsPaintable(item) ? catalogPaintId : 0;
-                selectedCatalogItems.set(id, {
-                    id,
-                    product: name,
-                    slot: item.slot || item.Slot || 'Body',
-                    quality,
-                    image_url: img,
-                    paint_id: pId,
-                    item,
-                });
-                card.classList.add('is-selected');
-                if (pId === 'all' || pId > 0) {
-                    const thumbWrap = card.querySelector('.catalog-card-thumb-wrap');
-                    if (thumbWrap && !thumbWrap.querySelector('.catalog-card-paint-badge')) {
-                        const badgeEl = document.createElement('span');
-                        badgeEl.className = `catalog-card-paint-badge${pId === 'all' ? ' catalog-card-paint-all' : ''}`;
-                        if (pId !== 'all') {
-                            badgeEl.style.color = getPaintTextColor(pId);
-                        }
-                        badgeEl.textContent = paintLabel(pId);
-                        thumbWrap.appendChild(badgeEl);
-                    }
-                }
-            }
-            updateCatalogSelectionUi();
-        });
-
-        grid.appendChild(card);
-    });
-
-    renderCatalogPagination(paginationControls, currentCatalogPage, totalPages);
-}
-
-function renderCatalogPagination(container, current, total) {
-    if (!container) return;
-    if (total <= 1) {
-        container.innerHTML = '';
-        return;
-    }
-
-    let html = '';
-    html += `<button type="button" class="catalog-page-btn" ${current === 1 ? 'disabled' : ''} data-page="${current - 1}" title="Previous page">‹</button>`;
-
-    const maxVisible = 5;
-    let start = Math.max(1, current - 2);
-    let end = Math.min(total, start + maxVisible - 1);
-    if (end - start < maxVisible - 1) {
-        start = Math.max(1, end - maxVisible + 1);
-    }
-
-    if (start > 1) {
-        html += `<button type="button" class="catalog-page-btn" data-page="1">1</button>`;
-        if (start > 2) html += `<span class="catalog-page-ellipsis">…</span>`;
-    }
-
-    for (let p = start; p <= end; p++) {
-        html += `<button type="button" class="catalog-page-btn${p === current ? ' is-active' : ''}" data-page="${p}">${p}</button>`;
-    }
-
-    if (end < total) {
-        if (end < total - 1) html += `<span class="catalog-page-ellipsis">…</span>`;
-        html += `<button type="button" class="catalog-page-btn" data-page="${total}">${total}</button>`;
-    }
-
-    html += `<button type="button" class="catalog-page-btn" ${current === total ? 'disabled' : ''} data-page="${current + 1}" title="Next page">›</button>`;
-
-    container.innerHTML = html;
-    container.querySelectorAll('.catalog-page-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const targetPage = Number(btn.dataset.page);
-            if (!isNaN(targetPage) && targetPage >= 1 && targetPage <= total && targetPage !== current) {
-                currentCatalogPage = targetPage;
-                renderCatalogGridPage();
-                document.getElementById('catalog-grid-wrap')?.scrollTo({ top: 0, behavior: 'smooth' });
-            }
-        });
-    });
-}
-
-function initCatalogGrid() {
-    if (catalogInitialized) {
-        renderCatalogGridPage();
-        return;
-    }
-    catalogInitialized = true;
-
-    const catSelect = document.getElementById('catalog-category-select');
-    const searchInput = document.getElementById('catalog-search-input');
-    const searchClear = document.getElementById('catalog-search-clear');
-    const raritySelect = document.getElementById('catalog-rarity-select');
-    const paintSelect = document.getElementById('catalog-paint-select');
-    const spawnBtn = document.getElementById('catalog-spawn-btn');
-    const selectPageBtn = document.getElementById('catalog-select-page-btn');
-    const clearSelBtn = document.getElementById('catalog-clear-sel-btn');
-
-    if (catSelect) {
-        catSelect.addEventListener('change', (e) => {
-            catalogCategory = e.target.value;
-            currentCatalogPage = 1;
-            renderCatalogGridPage();
-        });
-    }
-
-    if (searchInput) {
-        let debounceTimer;
-        searchInput.addEventListener('input', (e) => {
-            catalogSearchQuery = e.target.value || '';
-            if (searchClear) searchClear.style.display = catalogSearchQuery ? 'inline-block' : 'none';
-            clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(() => {
-                currentCatalogPage = 1;
-                renderCatalogGridPage();
-            }, 180);
-        });
-    }
-
-    if (searchClear) {
-        searchClear.addEventListener('click', () => {
-            if (searchInput) {
-                searchInput.value = '';
-                searchInput.focus();
-            }
-            catalogSearchQuery = '';
-            searchClear.style.display = 'none';
-            currentCatalogPage = 1;
-            renderCatalogGridPage();
-        });
-    }
-
-    if (raritySelect) {
-        raritySelect.addEventListener('change', (e) => {
-            catalogRarity = e.target.value;
-            currentCatalogPage = 1;
-            renderCatalogGridPage();
-        });
-    }
-
-    if (paintSelect) {
-        paintSelect.addEventListener('change', (e) => {
-            catalogPaintId = e.target.value === 'all' ? 'all' : Number(e.target.value || 0);
-            updateCatalogPaintPreview();
-            for (const [id, entry] of selectedCatalogItems.entries()) {
-                if (itemIsPaintable(entry.item)) {
-                    entry.paint_id = catalogPaintId;
-                }
-            }
-            renderCatalogGridPage();
-        });
-        updateCatalogPaintPreview();
-    }
-
-    if (selectPageBtn) {
-        selectPageBtn.addEventListener('click', () => {
-            const filtered = getFilteredCatalogItems();
-            const startIdx = (currentCatalogPage - 1) * CATALOG_PAGE_SIZE;
-            const endIdx = Math.min(startIdx + CATALOG_PAGE_SIZE, filtered.length);
-            const pageItems = filtered.slice(startIdx, endIdx);
-            pageItems.forEach(item => {
-                const id = Number(item.id !== undefined ? item.id : item.ID);
-                selectedCatalogItems.set(id, {
-                    id,
-                    product: item.product || item.Product || 'Item',
-                    slot: item.slot || item.Slot || 'Body',
-                    quality: item.quality || item.Quality || 'Common',
-                    image_url: item.image_url || item.src || '',
-                    paint_id: itemIsPaintable(item) ? catalogPaintId : 0,
-                    item,
-                });
-            });
-            updateCatalogSelectionUi();
-            renderCatalogGridPage();
-        });
-    }
-
-    if (clearSelBtn) {
-        clearSelBtn.addEventListener('click', () => {
-            selectedCatalogItems.clear();
-            updateCatalogSelectionUi();
-            renderCatalogGridPage();
-        });
-    }
-
-    if (spawnBtn) {
-        spawnBtn.addEventListener('click', async () => {
-            if (selectedCatalogItems.size === 0 || isAppLoading()) return;
-            const itemsToSpawn = [];
-            for (const entry of selectedCatalogItems.values()) {
-                if (entry.paint_id === 'all' && itemIsPaintable(entry.item)) {
-                    // Spawn unpainted (0) and all 29 paint variants
-                    for (let p = 0; p <= 29; p++) {
-                        itemsToSpawn.push({
-                            wanted_id: String(entry.id),
-                            paint_id: p,
-                        });
-                    }
-                } else {
-                    const pVal = Number(entry.paint_id || 0);
-                    itemsToSpawn.push({
-                        wanted_id: String(entry.id),
-                        paint_id: pVal > 0 ? pVal : null,
-                    });
-                }
-            }
-
-            updateStatus(`Spawning ${itemsToSpawn.length} items...`, false);
-            showProgress(true, 30);
-            spawnBtn.disabled = true;
-            try {
-                const spawnedCount = await invoke('spawn_items_batch', { items: itemsToSpawn });
-                showProgress(true, 100);
-                showToast(`Successfully spawned <strong>${spawnedCount}</strong> items into your Rocket League inventory!`, 'success');
-                selectedCatalogItems.clear();
-                updateCatalogSelectionUi();
-                renderCatalogGridPage();
-                await refreshBackups();
-            } catch (err) {
-                showToast(String(err), 'error');
-                updateStatus('Error', true);
-            } finally {
-                setTimeout(() => {
-                    showProgress(false);
-                    updateStatus('bitsfdb', false);
-                    updateCatalogSelectionUi();
-                }, 1500);
-            }
-        });
-    }
-
-    updateCatalogSelectionUi();
-    renderCatalogGridPage();
+    }).catch(() => {});
 }
 
 async function handleApply() {
-    if (isAppLoading() || swapBusy || !applyBtn) return;
-    if (!wantedItem) {
-        showToast('Select an item to spawn first.', 'error');
-        return;
-    }
-    executeApply();
-}
-
-async function executeApply() {
     if (isAppLoading() || swapBusy || !applyBtn) return;
     swapBusy = true;
     applyBtn.disabled = true;
     let interval;
     try {
         await refreshSwapRlHint();
-        if (!wantedItem) {
-            showToast('Select an item to spawn first.', 'error');
+        if (!ownedItem || !wantedItem) {
+            showToast('Select an owned item and a target asset first.', 'error');
             return;
         }
-        updateStatus('Spawning...', false);
+        updateStatus('Please Wait...', false);
         showProgress(true, 15);
         let p = 15;
         interval = setInterval(() => { if (p < 85) p += 5; showProgress(true, p); }, 400);
-        let spawnResult;
-        const wantedName = wantedItem?.product || wantedItem?.Product || 'item';
-
-        if (wantedItem.isTitle) {
-            const titleId = wantedItem.titleId || 'custom';
-            const titleText = wantedItem.titleText || wantedName;
-            const titleCat = wantedItem.titleCategory || '';
-            const titleCol = wantedItem.titleColor ? { color: wantedItem.titleColor, glow_color: wantedItem.titleGlow || wantedItem.titleColor } : null;
-
-            ensureTitleSwapsLoaded();
-            titleSwaps = titleSwaps.filter(s => s.display_title_id !== titleId && s.equip_title_id !== titleId);
-            const entry = normalizeSwapEntry({
-                equip_title_id: titleId,
-                display_title_id: titleId,
-                custom_text: titleText,
-                category: titleCat,
-                title_color: titleCol,
-            });
-            titleSwaps.unshift(entry);
-            try {
-                persistTitleSpoofLocal();
-                await runToolSave(null, 'titles', titleSpoofPayload(), { enabled: true });
-                renderTitleSwapList();
-            } catch (proxyErr) {
-                console.warn('Proxy title registration:', proxyErr);
-            }
-
-            spawnResult = await invoke('apply_swap', {
-                ownedId: "0",
-                wantedId: "3036",
-                ownedPaintId: null,
-                ownedCustomHex: null,
-                paintId: 0,
-                customPaintHex: null,
-            });
-        } else {
-            const ownedId = ownedItem ? (ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id).toString() : "0";
-            const wantedId = (wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id).toString();
-            const paintId = (wantedItem && itemIsPaintable(wantedItem)) ? Number(wantedPaintId || 0) : 0;
-            spawnResult = await invoke('apply_swap', {
-                ownedId,
-                wantedId,
-                ownedPaintId: null,
-                ownedCustomHex: null,
-                paintId,
-                customPaintHex: null,
-            });
-        }
-
+        const ownedId = (ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id).toString();
+        const activeOwnedPaintId = Number(ownedPaintId || 0);
+        const activeOwnedCustomHex = ownedCustomHex || null;
+        let paintId = itemIsPaintable(wantedItem) ? Number(wantedPaintId || 0) : 0;
+        const customPaintHex = itemIsPaintable(wantedItem) ? (wantedCustomHex || null) : null;
+        const swapResult = await invoke('apply_swap', {
+            ownedId,
+            wantedId,
+            ownedPaintId: activeOwnedPaintId > 0 ? activeOwnedPaintId : null,
+            ownedCustomHex: activeOwnedCustomHex || null,
+            paintId,
+            customPaintHex: customPaintHex || null,
+        });
         clearInterval(interval);
         interval = null;
         showProgress(true, 100);
-        updateStatus('Spawn Complete', false);
-        if (wantedItem.isTitle) {
-            showToast(`Spawned title <strong>${formatTitleHtml(wantedName)}</strong> into your inventory!`, 'success');
-        } else {
-            showToast(`Spawned <strong>${escHtml(wantedName)}</strong> into your inventory!`, 'success');
-        }
+        updateStatus('Swap Complete', false);
+        const ownedName = ownedItem.product || ownedItem.Product || 'item';
+        const wantedName = wantedItem.product || wantedItem.Product || 'item';
+        const paintBit = customPaintHex ? ` (${escHtml(customPaintHex.toUpperCase())})` : (paintId > 0 ? ` (${escHtml(paintLabel(paintId))})` : '');
+        showToast(`Swapped <strong>${escHtml(ownedName)}</strong> → <strong>${escHtml(wantedName)}</strong>${paintBit}`, 'success');
 
-        if (spawnResult && spawnResult.includes && spawnResult.includes('Warnings:')) {
-            const warningPart = spawnResult.split('Warnings:\n')[1];
+        if (swapResult && swapResult.includes && swapResult.includes('Warnings:')) {
+            const warningPart = swapResult.split('Warnings:\n')[1];
             if (warningPart) {
                 showToast(`${escHtml(warningPart.trim())}`, 'warning');
             }
@@ -3079,7 +2366,7 @@ async function executeApply() {
         setTimeout(() => { showProgress(false); updateStatus('bitsfdb', false); }, 3000);
     } catch (err) {
         if (interval) clearInterval(interval);
-        updateStatus('Spawn Failed', true);
+        updateStatus('Swap Failed', true);
         showProgress(false);
         const msg = String(err);
         if (msg.includes('Game directory not set') || msg.includes('Game directory not configured') || msg.includes('Game directory not valid')) {
@@ -3088,16 +2375,14 @@ async function executeApply() {
             showToast(msg, 'error');
         }
         console.error(err);
-        invoke('report_diagnostic', {
-            payload: {
-                event: 'spawn_fail',
-                context: 'handleApply',
-                message: String(err),
-                backtrace: err?.stack ?? null,
-                owned_id: ownedItem ? String(ownedItem.id ?? ownedItem.ID ?? '') : null,
-                wanted_id: wantedItem ? String(wantedItem.id ?? wantedItem.ID ?? '') : null,
-            }
-        }).catch(() => { });
+        invoke('report_diagnostic', { payload: {
+            event:     'swap_fail',
+            context:   'handleApply',
+            message:   String(err),
+            backtrace: err?.stack ?? null,
+            owned_id:  ownedItem ? String(ownedItem.id ?? ownedItem.ID ?? '') : null,
+            wanted_id: wantedItem ? String(wantedItem.id ?? wantedItem.ID ?? '') : null,
+        }}).catch(() => {});
     } finally {
         if (interval) clearInterval(interval);
         swapBusy = false;
@@ -3119,7 +2404,6 @@ async function handleRestore() {
         const result = await invoke('restore_backups');
         updateStatus(result, false);
         refreshBackups();
-        refreshPaletteStatus();
         setTimeout(() => updateStatus('bitsfdb', false), 3000);
     } catch (err) {
         updateStatus('Restore Failed', true);
@@ -3161,11 +2445,7 @@ async function handleSaveSettings() {
     const selectedLang = langSelect ? langSelect.value : (existing.language || currentLanguage || 'en');
     const minTrayToggle = document.getElementById('minimize-to-tray');
     const minimizeToTray = minTrayToggle ? minTrayToggle.checked : (existing.minimize_to_tray || false);
-    const startupToggle = document.getElementById('launch-on-startup');
-    if (startupToggle) {
-        await invoke('set_launch_on_startup', { enable: startupToggle.checked }).catch(() => { });
-    }
-    const savedDir = await invoke('save_config', { config: { ...existing, game_dir: input.value.trim(), language: selectedLang, minimize_to_tray: minimizeToTray, launch_on_startup: startupToggle ? startupToggle.checked : (existing.launch_on_startup || false) } })
+    const savedDir = await invoke('save_config', { config: { ...existing, game_dir: input.value.trim(), language: selectedLang, minimize_to_tray: minimizeToTray } })
         .catch(e => { console.warn('Save config failed:', e); return input.value.trim(); });
     if (savedDir) input.value = savedDir;
     await setAppLanguage(selectedLang);
@@ -3185,11 +2465,6 @@ async function handleCancelSettings() {
         minTrayToggle.checked = !!existing.minimize_to_tray;
         syncNameSpoofSwitchAria(minTrayToggle);
     }
-    const startupToggle = document.getElementById('launch-on-startup');
-    if (startupToggle) {
-        startupToggle.checked = await invoke('get_launch_on_startup').catch(() => !!existing.launch_on_startup);
-        syncNameSpoofSwitchAria(startupToggle);
-    }
     document.getElementById('settings-modal').classList.remove('active');
     document.getElementById('install-chooser').style.display = 'none';
 }
@@ -3201,7 +2476,7 @@ async function handleAutoDetect() {
     } else if (installs.length === 1) {
         document.getElementById('game-dir').value = installs[0].path;
         const existing = await invoke('get_config').catch(() => ({}));
-        await invoke('save_config', { config: { ...existing, game_dir: installs[0].path } }).catch(() => { });
+        await invoke('save_config', { config: { ...existing, game_dir: installs[0].path } }).catch(() => {});
         showToast(`${installs[0].label} install detected and saved`, 'success');
         refreshPaletteStatus();
     } else {
@@ -3223,7 +2498,7 @@ function showInstallChooser(installs) {
         btn.onclick = async () => {
             document.getElementById('game-dir').value = install.path;
             const existing = await invoke('get_config').catch(() => ({}));
-            await invoke('save_config', { config: { ...existing, game_dir: install.path } }).catch(() => { });
+            await invoke('save_config', { config: { ...existing, game_dir: install.path } }).catch(() => {});
             container.innerHTML = '';
             container.style.display = 'none';
             showToast(`${install.label} selected and saved`, 'success');
@@ -3241,10 +2516,10 @@ async function handleBrowse() {
         try {
             const resolved = await invoke('validate_game_dir', { path: dir });
             if (resolved) finalDir = resolved;
-        } catch (_) { }
+        } catch (_) {}
         document.getElementById('game-dir').value = finalDir;
         const existing = await invoke('get_config').catch(() => ({}));
-        await invoke('save_config', { config: { ...existing, game_dir: finalDir } }).catch(() => { });
+        await invoke('save_config', { config: { ...existing, game_dir: finalDir } }).catch(() => {});
         showToast('Game path selected and saved', 'success');
         refreshPaletteStatus();
     }
@@ -3263,13 +2538,13 @@ async function checkForUpdates() {
                 const data = await res.json();
                 const latest = (data.tag_name || '').replace(/^v/, '');
                 if (!latest || latest === current) return;
-                invoke('append_launch_log', { message: `updater: github fallback sees v${latest}` }).catch(() => { });
+                invoke('append_launch_log', { message: `updater: github fallback sees v${latest}` }).catch(() => {});
                 const url = escHtml(data.html_url || 'https://github.com/bitsfdb/VelocityRL/releases/latest');
                 showToast(
                     `Update v${escHtml(latest)} available - <a href="#" class="toast-link" onclick="event.preventDefault(); window.__TAURI__.core.invoke('plugin:shell|open', { path: '${url}' })">Download</a>`,
                     'warning'
                 );
-            } catch (_) { }
+            } catch (_) {}
             return;
         }
         const toast = document.createElement('div');
@@ -3327,7 +2602,7 @@ async function checkForUpdates() {
             }
         });
     } catch (err) {
-        invoke('append_launch_log', { message: `updater: unexpected invoke error: ${err}` }).catch(() => { });
+        invoke('append_launch_log', { message: `updater: unexpected invoke error: ${err}` }).catch(() => {});
     }
 }
 
@@ -3397,7 +2672,7 @@ async function refreshDevPanel() {
                 const id = await invoke('get_replay_identity');
                 if (document.activeElement !== pidEl) pidEl.value = id.player_id || '';
                 if (document.activeElement !== rnEl) rnEl.value = id.real_name || '';
-            } catch { }
+            } catch {}
         }
 
         const logEl = document.getElementById('dev-log-output');
@@ -3477,7 +2752,7 @@ function formatChangelogNotes(raw) {
         .map(line => {
             const escaped = escHtml(line).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
             if (/^\+/.test(line)) return `<span class="cl-add">${escaped}</span>`;
-            if (/^-/.test(line)) return `<span class="cl-remove">${escaped}</span>`;
+            if (/^-/.test(line))  return `<span class="cl-remove">${escaped}</span>`;
             return escaped;
         })
         .join('\n');
@@ -3492,7 +2767,6 @@ const NAME_SPOOF_KEY = 'velocityrl_name_spoof';
 const CREDIT_SPOOF_KEY = 'velocityrl_credit_spoof';
 const LEADERBOARD_SPOOF_KEY = 'velocityrl_leaderboard_spoof';
 const MENU_BG_SPOOF_KEY = 'velocityrl_menu_bg_spoof';
-const PING_SPOOF_KEY = 'velocityrl_ping_spoof';
 const DEFAULT_SEASON23_LOGO_URL = 'https://api.velocityrl.tech/thumbnails/rl_jpn.png';
 const DEFAULT_BLOG_MOTD = 'Use VelocityRL';
 const DEFAULT_CAMERA_LIMITS = {
@@ -3547,7 +2821,7 @@ function flashButtonLabel(el, feedback, ms = 1500, onDone) {
 
 function loadSavedSpoof() {
     let titles = {};
-    try { titles = JSON.parse(localStorage.getItem(TITLE_SPOOF_KEY) || '{}'); } catch { }
+    try { titles = JSON.parse(localStorage.getItem(TITLE_SPOOF_KEY) || '{}'); } catch {  }
     return { ...titles };
 }
 
@@ -3685,7 +2959,7 @@ function migrateTitleSwaps(saved) {
 
 function loadTitleSwapsFromStorage() {
     let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(TITLE_SPOOF_KEY) || '{}'); } catch { }
+    try { saved = JSON.parse(localStorage.getItem(TITLE_SPOOF_KEY) || '{}'); } catch {  }
     titleSwaps = migrateTitleSwaps(saved);
     titleSwapsLoaded = true;
 }
@@ -3746,7 +3020,7 @@ function titleSpoofPayload() {
         enabled: titleSwaps.length > 0,
         method: 'raw',
         swaps: titleSwaps.map((s) => ({ ...s })),
-        equip_title_id: first.equip_title_id || first.display_title_id || '',
+        equip_title_id: first.equip_title_id || '',
         display_title_id: first.display_title_id || '',
         custom_text: first.custom_text || '',
         category: first.category || '',
@@ -3788,7 +3062,7 @@ async function hydrateSpoofToolsFromDisk() {
     try {
         disk = await invoke('get_psynet_spoof') || {};
     } catch (e) {
-        invoke('append_launch_log', { message: `psynet: get_psynet_spoof failed: ${e}` }).catch(() => { });
+        invoke('append_launch_log', { message: `psynet: get_psynet_spoof failed: ${e}` }).catch(() => {});
         disk = {};
     }
 
@@ -3863,13 +3137,9 @@ async function hydrateSpoofToolsFromDisk() {
 
     {
         const cs = toolSliceFromDiskOrLocal(disk, CREDIT_SPOOF_KEY, 'credit_spoof');
-        const credit_spoof = (cs && typeof cs === 'object' && ('enabled' in cs || cs.amount != null || cs.tournament_amount != null || cs.tournament_credits != null))
-            ? {
-                enabled: !!cs.enabled,
-                amount: (cs.amount != null && !isNaN(Number(cs.amount))) ? Math.max(0, Math.min(999999999, Math.floor(Number(cs.amount)))) : 100000,
-                tournament_amount: ((cs.tournament_amount ?? cs.tournament_credits) != null && !isNaN(Number(cs.tournament_amount ?? cs.tournament_credits))) ? Math.max(0, Math.min(999999999, Math.floor(Number(cs.tournament_amount ?? cs.tournament_credits)))) : 100000
-            }
-            : { enabled: false, amount: 100000, tournament_amount: 100000 };
+        const credit_spoof = (cs && typeof cs === 'object' && ('enabled' in cs || cs.amount != null))
+            ? { enabled: !!cs.enabled, amount: Number(cs.amount) || 100000 }
+            : { enabled: false, amount: 100000 };
         localStorage.setItem(CREDIT_SPOOF_KEY, JSON.stringify({ credit_spoof }));
     }
 
@@ -3887,11 +3157,6 @@ async function hydrateSpoofToolsFromDisk() {
             ? { enabled: !!bg.enabled, background: bg.background || 'MMBG_Default' }
             : { enabled: false, background: 'MMBG_Default' };
         localStorage.setItem(MENU_BG_SPOOF_KEY, JSON.stringify({ menu_bg_spoof }));
-    }
-
-    {
-        const ping_spoof = { enabled: false, min_ms: 16, max_ms: 24 };
-        localStorage.setItem(PING_SPOOF_KEY, JSON.stringify({ ping_spoof }));
     }
 
     applyHydratedToolsToUi();
@@ -3946,8 +3211,8 @@ function applyHydratedToolsToUi() {
         creditEn.checked = !!creditData.enabled;
         syncNameSpoofSwitchAria(creditEn);
     }
-    const cVal = (creditData.amount != null && !isNaN(Number(creditData.amount))) ? Math.max(0, Math.min(999999999, Math.floor(Number(creditData.amount)))) : 100000;
-    const tVal = ((creditData.tournament_amount ?? creditData.tournament_credits) != null && !isNaN(Number(creditData.tournament_amount ?? creditData.tournament_credits))) ? Math.max(0, Math.min(999999999, Math.floor(Number(creditData.tournament_amount ?? creditData.tournament_credits)))) : 100000;
+    const cVal = Number(creditData.amount) || 100000;
+    const tVal = Number(creditData.tournament_amount) || 100000;
     if (creditAmount) creditAmount.value = String(cVal);
     if (creditTourney) creditTourney.value = String(tVal);
     if (creditBadge) creditBadge.textContent = `${cVal.toLocaleString()} Credits`;
@@ -3978,49 +3243,6 @@ function applyHydratedToolsToUi() {
         syncNameSpoofSwitchAria(bgEn);
     }
     if (bgSelect) bgSelect.value = bgData.background || 'MMBG_Default';
-
-    const pingData = readLocalJson(PING_SPOOF_KEY).ping_spoof || {};
-    const pingEn = document.getElementById('ping-spoof-enabled');
-    const pingMin = document.getElementById('ping-spoof-min');
-    const pingMax = document.getElementById('ping-spoof-max');
-    const pingFixed = document.getElementById('ping-spoof-fixed');
-    const pingModeIntervalBtn = document.getElementById('ping-mode-interval-btn');
-    const pingModeFixedBtn = document.getElementById('ping-mode-fixed-btn');
-    const pingIntervalGroup = document.getElementById('ping-spoof-interval-group');
-    const pingFixedGroup = document.getElementById('ping-spoof-fixed-group');
-
-    if (pingEn) {
-        pingEn.checked = !!pingData.enabled;
-        syncNameSpoofSwitchAria(pingEn);
-    }
-    const isFixed = pingData.mode === 'fixed' || (pingData.min_ms != null && pingData.min_ms === pingData.max_ms && pingData.mode !== 'interval');
-    if (pingModeIntervalBtn && pingModeFixedBtn && pingIntervalGroup && pingFixedGroup) {
-        if (isFixed) {
-            pingModeFixedBtn.classList.add('active');
-            pingModeIntervalBtn.classList.remove('active');
-            pingFixedGroup.style.display = 'flex';
-            pingIntervalGroup.style.display = 'none';
-        } else {
-            pingModeIntervalBtn.classList.add('active');
-            pingModeFixedBtn.classList.remove('active');
-            pingIntervalGroup.style.display = 'flex';
-            pingFixedGroup.style.display = 'none';
-        }
-    }
-    if (pingMin) pingMin.value = String(pingData.min_ms ?? 16);
-    if (pingMax) pingMax.value = String(pingData.max_ms ?? 24);
-    if (pingFixed) pingFixed.value = String(pingData.fixed_ms ?? pingData.min_ms ?? 20);
-
-    if (pingData.enabled) {
-        const minMs = isFixed ? (parseInt(pingFixed?.value, 10) || pingData.min_ms || 20) : (pingData.min_ms ?? 16);
-        const maxMs = isFixed ? minMs : (pingData.max_ms ?? 24);
-        invoke('apply_ping_spoof_upk', {
-            minMs,
-            maxMs,
-            min_ms: minMs,
-            max_ms: maxMs,
-        }).catch(() => { });
-    }
 }
 
 function isSteamGameDir(gameDir) {
@@ -4050,7 +3272,6 @@ function payloadFromHydratedLocal() {
     const credit_spoof = readLocalJson(CREDIT_SPOOF_KEY).credit_spoof || { enabled: false, amount: 100000, tournament_amount: 100000 };
     const leaderboard_spoof = readLocalJson(LEADERBOARD_SPOOF_KEY).leaderboard_spoof || { enabled: false, sync_from_fake_ranks: true };
     const menu_bg_spoof = readLocalJson(MENU_BG_SPOOF_KEY).menu_bg_spoof || { enabled: false, background: 'MMBG_Default' };
-    const ping_spoof = readLocalJson(PING_SPOOF_KEY).ping_spoof || { enabled: false, min_ms: 16, max_ms: 24 };
     const gameDirInput = document.getElementById('game-dir')?.value || '';
     const is_steam = isSteamGameDir(gameDirInput);
 
@@ -4066,7 +3287,6 @@ function payloadFromHydratedLocal() {
         credit_spoof,
         leaderboard_spoof,
         menu_bg_spoof,
-        ping_spoof,
     };
 }
 
@@ -4105,14 +3325,13 @@ async function anySpoofToolEnabled(payload) {
     if (p.credit_spoof?.enabled) return true;
     if (p.leaderboard_spoof?.enabled) return true;
     if (p.menu_bg_spoof?.enabled) return true;
-    if (p.ping_spoof?.enabled) return true;
     if (p.boost_meter_spoof?.enabled) return true;
     if (p.sfx_spoof?.enabled) return true;
     if (PALETTE_UI_DISABLED) return false;
     try {
         const pal = await invoke('get_palette_status');
         if (pal?.applied) return true;
-    } catch { }
+    } catch {   }
     return false;
 }
 
@@ -4223,21 +3442,21 @@ async function autoStartPsyNetProxy() {
         const disk = await invoke('get_psynet_spoof') || {};
         payload = preserveEnabledLogoBlogFromDisk(payload, disk);
         applyHydratedToolsToUi();
-    } catch { }
+    } catch {   }
     try {
 
         await invoke('save_psynet_spoof', { payload });
     } catch (e) {
-        invoke('append_launch_log', { message: `psynet: boot write spoof failed: ${e}` }).catch(() => { });
+        invoke('append_launch_log', { message: `psynet: boot write spoof failed: ${e}` }).catch(() => {});
     }
     try {
         const st = await invoke('get_psynet_status');
         if (st.running) {
             setProxyUi(true);
-            invoke('append_launch_log', { message: 'psynet: existing proxy healthy - boot config written, skip restart' }).catch(() => { });
+            invoke('append_launch_log', { message: 'psynet: existing proxy healthy - boot config written, skip restart' }).catch(() => {});
             return;
         }
-    } catch { }
+    } catch {   }
     try {
         showToast('Starting PsyNet proxy…', 'success');
         const st = await invoke('start_psynet_proxy', {});
@@ -4247,7 +3466,7 @@ async function autoStartPsyNetProxy() {
         }
     } catch (e) {
         setProxyUi(false);
-        invoke('append_launch_log', { message: `psynet: auto-start failed: ${e}` }).catch(() => { });
+        invoke('append_launch_log', { message: `psynet: auto-start failed: ${e}` }).catch(() => {});
         showToast(e, 'error');
     }
 }
@@ -4359,7 +3578,7 @@ async function stopProxyOnClose(revertHosts) {
 function finishAppClose(appWindow, revertHosts) {
     closeInProgress = true;
     invoke('force_exit').catch(() => {
-        try { appWindow.destroy(); } catch { }
+        try { appWindow.destroy(); } catch {}
     });
 }
 
@@ -4787,11 +4006,11 @@ function openFakeRanksPicker(target, anchorEl) {
         <div class="rank-picker-section-label">Rank</div>
         <div class="rank-picker-tier-list" role="listbox">
             ${RL_RANKS.map((r) => (
-        `<button type="button" class="rank-tier-btn rank-tier-btn-compact${Number(r.tier) === activeTier ? ' is-active' : ''}" data-tier="${r.tier}" role="option" title="${escHtml(r.name)}">`
-        + `<img src="${rankIconSrc(r.tier)}" width="26" height="26" alt="">`
-        + `<span>${escHtml(r.name)}</span>`
-        + '</button>'
-    )).join('')}
+                `<button type="button" class="rank-tier-btn rank-tier-btn-compact${Number(r.tier) === activeTier ? ' is-active' : ''}" data-tier="${r.tier}" role="option" title="${escHtml(r.name)}">`
+                + `<img src="${rankIconSrc(r.tier)}" width="26" height="26" alt="">`
+                + `<span>${escHtml(r.name)}</span>`
+                + '</button>'
+            )).join('')}
         </div>
     `;
 
@@ -4992,7 +4211,7 @@ function initRanksTab() {
     if (!enabledEl || !saveBtn) return;
 
     let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(FAKE_RANKS_KEY) || '{}'); } catch { }
+    try { saved = JSON.parse(localStorage.getItem(FAKE_RANKS_KEY) || '{}'); } catch {  }
     loadFakeRanksFromSaved(saved);
 
     if (ranksTabReady) return;
@@ -5136,7 +4355,7 @@ function initCameraTab() {
     if (!enabledEl || !saveBtn) return;
 
     let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(CAMERA_SPOOF_KEY) || '{}'); } catch { }
+    try { saved = JSON.parse(localStorage.getItem(CAMERA_SPOOF_KEY) || '{}'); } catch {  }
     if (!saved.camera_spoof) {
         applyCameraDefaultsToUi();
         if (enabledEl) {
@@ -5197,7 +4416,7 @@ function initNamesTab() {
     if (!enabledEl || !saveBtn) return;
 
     let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(NAME_SPOOF_KEY) || '{}'); } catch { }
+    try { saved = JSON.parse(localStorage.getItem(NAME_SPOOF_KEY) || '{}'); } catch {}
     const ns = saved.name_spoof || {};
     enabledEl.checked = !!ns.enabled;
     syncNameSpoofSwitchAria(enabledEl);
@@ -5220,11 +4439,11 @@ function initNamesTab() {
                                 cur.name_spoof.player_id = ident.player_id;
                                 localStorage.setItem(NAME_SPOOF_KEY, JSON.stringify(cur));
                             }
-                        } catch { }
+                        } catch {}
                     }
                 }
-            }).catch(() => { });
-        } catch { }
+            }).catch(() => {});
+        } catch {}
     };
 
     refreshLearnedIdentity();
@@ -5244,7 +4463,7 @@ function initNamesTab() {
                 if (nameCard) nameCard.style.opacity = '1';
                 syncNameSpoofSwitchAria(enabledEl);
             }
-        } catch { }
+        } catch {}
     };
 
     updateSteamUiState();
@@ -5289,12 +4508,12 @@ function initCreditsTab() {
     if (!enabledEl || !saveBtn) return;
 
     let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(CREDIT_SPOOF_KEY) || '{}'); } catch { }
+    try { saved = JSON.parse(localStorage.getItem(CREDIT_SPOOF_KEY) || '{}'); } catch {}
     const cs = saved.credit_spoof || {};
     enabledEl.checked = !!cs.enabled;
     syncNameSpoofSwitchAria(enabledEl);
-    const cVal = (cs.amount != null && !isNaN(Number(cs.amount))) ? Math.max(0, Math.min(999999999, Math.floor(Number(cs.amount)))) : 100000;
-    const tVal = ((cs.tournament_amount ?? cs.tournament_credits) != null && !isNaN(Number(cs.tournament_amount ?? cs.tournament_credits))) ? Math.max(0, Math.min(999999999, Math.floor(Number(cs.tournament_amount ?? cs.tournament_credits)))) : 100000;
+    const cVal = Number(cs.amount) || 100000;
+    const tVal = Number(cs.tournament_amount) || 100000;
     if (amountEl) amountEl.value = String(cVal);
     if (tourneyEl) tourneyEl.value = String(tVal);
     if (badgeEl) badgeEl.textContent = `${cVal.toLocaleString()} Credits`;
@@ -5323,10 +4542,8 @@ function initCreditsTab() {
     saveBtn.onclick = async () => {
         if (isAppLoading() || spoofSaveInFlight) return;
         const enabled = !!enabledEl.checked;
-        const rawAmount = amountEl?.value?.trim();
-        const amount = (rawAmount !== '' && !isNaN(Number(rawAmount))) ? Math.max(0, Math.min(999999999, Math.floor(Number(rawAmount)))) : 100000;
-        const rawTourney = tourneyEl?.value?.trim();
-        const tournament_amount = (rawTourney !== '' && !isNaN(Number(rawTourney))) ? Math.max(0, Math.min(999999999, Math.floor(Number(rawTourney)))) : 0;
+        const amount = Math.max(0, Math.min(999999999, Number(amountEl?.value) || 100000));
+        const tournament_amount = Math.max(0, Math.min(999999999, Number(tourneyEl?.value) || 100000));
         const credit_spoof = { enabled, amount, tournament_amount };
         try {
             localStorage.setItem(CREDIT_SPOOF_KEY, JSON.stringify({ credit_spoof }));
@@ -5354,7 +4571,7 @@ function initLeaderboardTab() {
     if (!enabledEl || !saveBtn) return;
 
     let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(LEADERBOARD_SPOOF_KEY) || '{}'); } catch { }
+    try { saved = JSON.parse(localStorage.getItem(LEADERBOARD_SPOOF_KEY) || '{}'); } catch {}
     const lb = saved.leaderboard_spoof || {};
     enabledEl.checked = !!lb.enabled;
     syncNameSpoofSwitchAria(enabledEl);
@@ -5433,7 +4650,6 @@ function initDecalsTab() {
         const q = filterQuery.toLowerCase().trim();
         const filtered = q
             ? currentCarDecals.filter(d => {
-                if (!d) return false;
                 const name = (d.LongLabel || d.long_label || d.Product || d.product || '').toLowerCase();
                 return name.includes(q);
             })
@@ -5445,8 +4661,7 @@ function initDecalsTab() {
         }
 
         donorSelect.innerHTML = filtered.map(d => {
-            if (!d) return '';
-            const name = d.LongLabel || d.long_label || `${d.Product || d.product || 'Decal'} (${d.Slot || d.slot || ''})`;
+            const name = d.LongLabel || d.long_label || `${d.Product || d.product} (${d.Slot || d.slot})`;
             return `<option value="${d.ID || d.id}">${escHtml(name)}</option>`;
         }).join('');
     };
@@ -5458,16 +4673,15 @@ function initDecalsTab() {
                 catalogItems = await invoke('get_items');
             }
             const carName = (carId === 4284 ? 'fennec' : carId === 403 ? 'dominus' : carId === 1624 ? 'breakout' : carId === 1151 ? 'skyline' : 'octane');
-
-            currentCarDecals = Array.isArray(catalogItems) ? catalogItems.filter(item => {
-                if (!item) return false;
+            
+            currentCarDecals = catalogItems.filter(item => {
                 const s = (item.Slot || item.slot || '').toLowerCase();
                 if (s !== 'decal') return false;
                 const p = (item.Product || item.product || '').toLowerCase();
                 const l = (item.LongLabel || item.long_label || '').toLowerCase();
                 const pkg = (item.AssetPackage || item.asset_package || '').toLowerCase();
                 return p.includes(carName) || l.includes(carName) || pkg.includes(carName) || (carName === 'fennec' && pkg.includes('grain')) || (carName === 'dominus' && pkg.includes('musclecar')) || (carName === 'octane' && (pkg.includes('octane') || !pkg.includes('_')));
-            }) : [];
+            });
 
             const currentQuery = donorSearchInput?.value || '';
             renderDonorOptions(currentQuery);
@@ -5484,7 +4698,7 @@ function initDecalsTab() {
             }
             const activeCarId = car ? car.car_id : 23;
             loadDonorDecals(activeCarId);
-        } catch { }
+        } catch {}
     };
 
     const loadDecalConfig = async () => {
@@ -5501,7 +4715,7 @@ function initDecalsTab() {
                     loadDonorDecals(cfg.car_id);
                 }
             }
-        } catch { }
+        } catch {}
     };
 
     if (decalsTabReady) return;
@@ -5649,217 +4863,8 @@ function initDecalsTab() {
     });
 }
 
-let profileCatalog = null;
-let profileCardState = {
-    border_id: 'flames',
-    border_url: 'assets/borders/flames.png',
-    avatar_url: 'https://rlstats.net/images/epic.png'
-};
-
-function showProfileStatus(msg, type = 'info') {
-    const el = document.getElementById('pfp-status-msg');
-    if (!el) return;
-    el.style.display = 'block';
-    el.className = `profile-status-msg profile-status-${type}`;
-    el.textContent = msg;
-    clearTimeout(el._timer);
-    el._timer = setTimeout(() => {
-        el.style.display = 'none';
-    }, 6000);
-}
-
-function updateProfileCardPreview() {
-    const borderEl = document.getElementById('rl-card-border');
-    const pfpEl = document.getElementById('rl-card-pfp');
-
-    if (borderEl) {
-        borderEl.src = profileCardState.border_url || 'assets/borders/flames.png';
-    }
-    if (pfpEl) {
-        pfpEl.src = profileCardState.avatar_url || 'https://rlstats.net/images/epic.png';
-    }
-}
-
-function populateProfileBorderDropdown() {
-    const selectEl = document.getElementById('profile-border-select');
-    if (!selectEl || !profileCatalog?.borders) return;
-
-    selectEl.innerHTML = profileCatalog.borders.map(b => {
-        const isSelected = profileCardState.border_id === b.id || profileCardState.border_url === b.url;
-        return `<option value="${escHtml(b.url)}" data-id="${escHtml(b.id)}" ${isSelected ? 'selected' : ''}>${escHtml(b.name)} (${escHtml(b.category)})</option>`;
-    }).join('');
-
-    selectEl.onchange = () => {
-        const selectedOpt = selectEl.options[selectEl.selectedIndex];
-        profileCardState.border_url = selectEl.value;
-        profileCardState.border_id = selectedOpt?.dataset.id || '';
-        saveAvatarConfig();
-        updateProfileCardPreview();
-    };
-}
-
-function saveAvatarConfig() {
-    try {
-        localStorage.setItem('velocityrl_profile_card', JSON.stringify(profileCardState));
-        invoke('save_profile_card_config', { config: profileCardState }).catch(() => {});
-    } catch {}
-}
-
-let profileCardInitialized = false;
-async function initProfileCardTab() {
-    if (profileCardInitialized) return;
-    profileCardInitialized = true;
-
-    // Load saved avatar state
-    try {
-        const saved = await invoke('get_profile_card_config');
-        if (saved && (saved.avatar_url || saved.border_url)) {
-            profileCardState = { ...profileCardState, ...saved };
-        } else {
-            const local = localStorage.getItem('velocityrl_profile_card');
-            if (local) profileCardState = { ...profileCardState, ...JSON.parse(local) };
-        }
-    } catch {
-        const local = localStorage.getItem('velocityrl_profile_card');
-        if (local) {
-            try { profileCardState = { ...profileCardState, ...JSON.parse(local) }; } catch { }
-        }
-    }
-
-    // Fetch catalog for borders
-    try {
-        profileCatalog = await invoke('get_profile_catalog');
-    } catch {
-        try {
-            const res = await fetch('assets/profile_catalog.json');
-            profileCatalog = await res.json();
-        } catch { }
-    }
-
-    // Populate catalog UI
-    if (profileCatalog) {
-        populateProfileBorderDropdown();
-    }
-
-    // Wire Upload Image button
-    const uploadBtn = document.getElementById('pfp-upload-btn');
-    const fileInput = document.getElementById('pfp-file-input');
-    if (uploadBtn && fileInput) {
-        uploadBtn.onclick = () => fileInput.click();
-        fileInput.onchange = (e) => {
-            const file = e.target.files?.[0];
-            if (!file) return;
-            const fnEl = document.getElementById('pfp-filename');
-            if (fnEl) fnEl.textContent = file.name;
-            const reader = new FileReader();
-            reader.onload = (loadEvt) => {
-                const dataUrl = loadEvt.target?.result;
-                if (dataUrl) {
-                    profileCardState.avatar_url = dataUrl;
-                    saveAvatarConfig();
-                    updateProfileCardPreview();
-                    showProfileStatus('Loaded local image for preview!', 'success');
-                }
-            };
-            reader.readAsDataURL(file);
-        };
-    }
-
-    // Wire URL Fetch button
-    const fetchBtn = document.getElementById('pfp-url-fetch-btn');
-    const urlInput = document.getElementById('pfp-url-input');
-    if (fetchBtn && urlInput) {
-        const doFetch = async () => {
-            const url = urlInput.value.trim();
-            if (!url) return;
-            fetchBtn.disabled = true;
-            fetchBtn.textContent = 'Fetching...';
-            try {
-                const dataUrl = await invoke('fetch_image_from_url', { url });
-                if (dataUrl) {
-                    profileCardState.avatar_url = dataUrl;
-                    saveAvatarConfig();
-                    updateProfileCardPreview();
-                    showProfileStatus('Successfully fetched avatar from URL!', 'success');
-                }
-            } catch (err) {
-                showToast(`Fetch failed: ${err}`, 'error');
-            } finally {
-                fetchBtn.disabled = false;
-                fetchBtn.textContent = 'Fetch';
-            }
-        };
-        fetchBtn.onclick = doFetch;
-        urlInput.onkeydown = (e) => { if (e.key === 'Enter') doFetch(); };
-    }
-
-    // Wire Quick Presets chips
-    document.querySelectorAll('.profile-chip').forEach(chip => {
-        chip.onclick = () => {
-            const pfp = chip.dataset.pfp;
-            if (pfp) {
-                profileCardState.avatar_url = pfp;
-                saveAvatarConfig();
-                updateProfileCardPreview();
-                showProfileStatus(`Applied ${chip.textContent.trim()}`, 'success');
-            }
-        };
-    });
-
-    // Wire In-Game Apply button
-    const applyGameBtn = document.getElementById('pfp-apply-game-btn');
-    if (applyGameBtn) {
-        applyGameBtn.onclick = async () => {
-            if (!profileCardState.avatar_url) {
-                showToast('Please select or upload an avatar image first.', 'error');
-                return;
-            }
-            applyGameBtn.disabled = true;
-            applyGameBtn.textContent = 'Applying...';
-            try {
-                await invoke('apply_custom_avatar_upk', { avatarSource: profileCardState.avatar_url });
-                saveAvatarConfig();
-                applyGameBtn.textContent = 'Applied!';
-                setTimeout(() => {
-                    applyGameBtn.textContent = 'Apply Avatar to Game';
-                }, 2000);
-            } catch (err) {
-                showToast(`Failed to apply avatar: ${err}`, 'error');
-                applyGameBtn.textContent = 'Apply Avatar to Game';
-            } finally {
-                applyGameBtn.disabled = false;
-            }
-        };
-    }
-
-    // Wire In-Game Reset button
-    const restoreGameBtn = document.getElementById('pfp-restore-game-btn');
-    if (restoreGameBtn) {
-        restoreGameBtn.onclick = async () => {
-            restoreGameBtn.disabled = true;
-            restoreGameBtn.textContent = 'Resetting...';
-            try {
-                await invoke('restore_custom_avatar_upk');
-                restoreGameBtn.textContent = 'Reset!';
-                setTimeout(() => {
-                    restoreGameBtn.textContent = 'Reset Default';
-                }, 2000);
-            } catch (err) {
-                showToast(`Restore failed: ${err}`, 'error');
-                restoreGameBtn.textContent = 'Reset Default';
-            } finally {
-                restoreGameBtn.disabled = false;
-            }
-        };
-    }
-
-    // Initial render
-    updateProfileCardPreview();
-}
-
 function initCustomizationTab() {
     initNamesTab();
-    initProfileCardTab();
     initCreditsTab();
     initDecalsTab();
     initLeaderboardTab();
@@ -5923,7 +4928,7 @@ function setPaletteUnavailable() {
     if (applyBtn) applyBtn.disabled = true;
     if (restoreBtn) restoreBtn.disabled = true;
     document.getElementById('palette-switch-row')?.classList.remove('is-applied');
-    invoke('sync_palette_psynet_config', { forceEnabled: false }).catch(() => { });
+    invoke('sync_palette_psynet_config', { forceEnabled: false }).catch(() => {});
 }
 
 function setPaletteBusy(busy) {
@@ -5968,7 +4973,7 @@ async function refreshPaletteStatus() {
     try {
         const st = await invoke('get_palette_status');
         syncPaletteUi(!!st.applied, st);
-        await invoke('sync_palette_psynet_config').catch(() => { });
+        await invoke('sync_palette_psynet_config').catch(() => {});
     } catch {
         syncPaletteUi(false);
     }
@@ -6024,7 +5029,7 @@ async function wireReplayOptIn() {
     syncNameSpoofSwitchAria(toggle);
     toggle.addEventListener('change', async () => {
         const c = await invoke('get_config').catch(() => ({ game_dir: '' }));
-        await invoke('save_config', { config: { ...c, replay_opt_in: toggle.checked } }).catch(() => { });
+        await invoke('save_config', { config: { ...c, replay_opt_in: toggle.checked } }).catch(() => {});
         if (hint) {
             hint.style.display = 'block';
             hint.textContent = toggle.checked
@@ -6036,11 +5041,11 @@ async function wireReplayOptIn() {
         if (toggle.checked) {
             const status = await invoke('replay_token_status').catch(() => null);
             if (status && !status.registered) {
-                await invoke('register_replay_token').catch(() => { });
+                await invoke('register_replay_token').catch(() => {});
             }
         }
         updateReplayVaultVisibility(toggle.checked);
-        invoke('append_launch_log', { message: `replays: opt-in ${toggle.checked ? 'enabled' : 'disabled'}` }).catch(() => { });
+        invoke('append_launch_log', { message: `replays: opt-in ${toggle.checked ? 'enabled' : 'disabled'}` }).catch(() => {});
     });
 
     wireReplayVault();
@@ -6064,7 +5069,7 @@ function wireReplayVault() {
             let data = await invoke('get_my_replays');
             if (!data.registered) {
 
-                await invoke('register_replay_token').catch(() => { });
+                await invoke('register_replay_token').catch(() => {});
                 data = await invoke('get_my_replays').catch(() => ({ registered: false, total: 0, replays: [] }));
             }
             renderReplayVault(data);
@@ -6193,7 +5198,7 @@ function initMiscTab() {
             localStorage.setItem(LOGO_SPOOF_KEY, JSON.stringify({ logo_spoof }));
             invoke('append_launch_log', {
                 message: `psynet: season logo save enabled=${enabled} url_len=${logo_url.length}`,
-            }).catch(() => { });
+            }).catch(() => {});
             await runToolSave(saveBtn, 'season logo', { logo_spoof }, { enabled });
             flashButtonLabel(saveBtn, enabled ? 'Saved' : 'Saved (off)');
             if (!enabled) showToast('Season logo off.', 'success');
@@ -6219,106 +5224,9 @@ function initMiscTab() {
             showToast(String(e), 'error');
         }
     });
-
-    const pingEnabledEl = document.getElementById('ping-spoof-enabled');
-    const pingMinEl = document.getElementById('ping-spoof-min');
-    const pingMaxEl = document.getElementById('ping-spoof-max');
-    const pingFixedEl = document.getElementById('ping-spoof-fixed');
-    const pingModeIntervalBtn = document.getElementById('ping-mode-interval-btn');
-    const pingModeFixedBtn = document.getElementById('ping-mode-fixed-btn');
-    const pingIntervalGroup = document.getElementById('ping-spoof-interval-group');
-    const pingFixedGroup = document.getElementById('ping-spoof-fixed-group');
-    const pingSaveBtn = document.getElementById('ping-spoof-save-btn');
-
-    if (pingEnabledEl && pingMinEl && pingMaxEl && pingSaveBtn) {
-        let pingSaved = {};
-        try { pingSaved = JSON.parse(localStorage.getItem(PING_SPOOF_KEY) || '{}'); } catch { }
-        const ps = pingSaved.ping_spoof || {};
-        pingEnabledEl.checked = !!ps.enabled;
-        syncNameSpoofSwitchAria(pingEnabledEl);
-
-        let currentMode = ps.mode === 'fixed' || (ps.min_ms != null && ps.min_ms === ps.max_ms && ps.mode !== 'interval') ? 'fixed' : 'interval';
-        const setPingMode = (mode) => {
-            currentMode = mode;
-            if (mode === 'fixed') {
-                pingModeFixedBtn?.classList.add('active');
-                pingModeIntervalBtn?.classList.remove('active');
-                if (pingFixedGroup) pingFixedGroup.style.display = 'flex';
-                if (pingIntervalGroup) pingIntervalGroup.style.display = 'none';
-            } else {
-                pingModeIntervalBtn?.classList.add('active');
-                pingModeFixedBtn?.classList.remove('active');
-                if (pingIntervalGroup) pingIntervalGroup.style.display = 'flex';
-                if (pingFixedGroup) pingFixedGroup.style.display = 'none';
-            }
-        };
-
-        setPingMode(currentMode);
-
-        pingModeIntervalBtn?.addEventListener('click', () => setPingMode('interval'));
-        pingModeFixedBtn?.addEventListener('click', () => setPingMode('fixed'));
-
-        pingMinEl.value = String(ps.min_ms ?? 16);
-        pingMaxEl.value = String(ps.max_ms ?? 24);
-        if (pingFixedEl) pingFixedEl.value = String(ps.fixed_ms ?? ps.min_ms ?? 20);
-
-        pingEnabledEl.addEventListener('change', () => syncNameSpoofSwitchAria(pingEnabledEl));
-
-        pingSaveBtn.addEventListener('click', async () => {
-            if (isAppLoading() || spoofSaveInFlight) return;
-            const enabled = !!pingEnabledEl.checked;
-            let min_ms = 16;
-            let max_ms = 24;
-            let fixed_ms = 20;
-
-            if (currentMode === 'fixed') {
-                fixed_ms = Math.max(1, parseInt(pingFixedEl?.value, 10) || 20);
-                if (pingFixedEl) pingFixedEl.value = String(fixed_ms);
-                min_ms = fixed_ms;
-                max_ms = fixed_ms;
-            } else {
-                min_ms = Math.max(1, parseInt(pingMinEl.value, 10) || 16);
-                max_ms = Math.max(1, parseInt(pingMaxEl.value, 10) || 24);
-                if (min_ms > max_ms) {
-                    const tmp = min_ms;
-                    min_ms = max_ms;
-                    max_ms = tmp;
-                    pingMinEl.value = String(min_ms);
-                    pingMaxEl.value = String(max_ms);
-                }
-            }
-
-            const ping_spoof = { enabled, mode: currentMode, min_ms, max_ms, fixed_ms };
-            try {
-                localStorage.setItem(PING_SPOOF_KEY, JSON.stringify({ ping_spoof }));
-                await runToolSave(pingSaveBtn, 'ping spoof', { ping_spoof }, { enabled });
-                if (enabled) {
-                    await invoke('apply_ping_spoof_upk', { minMs: min_ms, maxMs: max_ms, min_ms, max_ms }).catch((err) => {
-                        console.error('apply_ping_spoof_upk failed:', err);
-                    });
-                } else {
-                    await invoke('restore_ping_spoof_upk').catch((err) => {
-                        console.error('restore_ping_spoof_upk failed:', err);
-                    });
-                }
-                flashButtonLabel(pingSaveBtn, enabled ? 'Saved' : 'Saved (off)');
-                if (enabled) {
-                    if (currentMode === 'fixed') {
-                        showToast(`Ping spoof active (${fixed_ms} ms).`, 'success');
-                    } else {
-                        showToast(`Ping spoof active (${min_ms}-${max_ms} ms).`, 'success');
-                    }
-                } else {
-                    showToast('Ping spoof off.', 'success');
-                }
-            } catch (e) {
-                showToast(String(e), 'error');
-            }
-        });
-    }
 }
 
-let setGlobalPaint = (id) => { };
+let setGlobalPaint = (id) => {};
 
 function wirePaintSwatches(swatchId, selectId, selectedLabelId) {
     const wrap = document.getElementById(swatchId);
@@ -6328,11 +5236,9 @@ function wirePaintSwatches(swatchId, selectId, selectedLabelId) {
     wrap.dataset.wired = '1';
 
     if (!wrap.querySelector('.paint-swatch')) {
-        wrap.innerHTML = Object.entries(PAINT_NAMES).map(([id, name]) => {
-            const bg = PAINT_SWATCH_COLORS[id] || '';
-            const bgStyle = bg ? ` background: ${bg};` : '';
-            return `<button type="button" class="paint-swatch${id === '0' ? ' is-active' : ''}" data-paint="${id}" style="${bgStyle}" aria-label="${escHtml(name)}" aria-checked="${id === '0' ? 'true' : 'false'}"></button>`;
-        }).join('');
+        wrap.innerHTML = Object.entries(PAINT_NAMES).map(([id, name]) => (
+            `<button type="button" class="paint-swatch${id === '0' ? ' is-active' : ''}" data-paint="${id}" aria-label="${escHtml(name)}" aria-checked="${id === '0' ? 'true' : 'false'}"></button>`
+        )).join('');
     }
 
     setGlobalPaint = (id) => {
@@ -6402,7 +5308,7 @@ function findTitleById(id) {
 function loadTitleSpoofForm() {
     ensureTitleSwapsLoaded();
     let saved = {};
-    try { saved = JSON.parse(localStorage.getItem(TITLE_SPOOF_KEY) || '{}'); } catch { }
+    try { saved = JSON.parse(localStorage.getItem(TITLE_SPOOF_KEY) || '{}'); } catch {  }
     const last = titleSwaps[titleSwaps.length - 1];
     const equipId = last?.equip_title_id || saved.equip_title_id || 'Team_Iraq_World_Cup_2026';
     const displayId = last?.display_title_id || saved.display_title_id || '';
@@ -6482,7 +5388,7 @@ function wireTitleSpoofControls() {
     });
 }
 
-window.insertTitleTag = function (tag) {
+window.insertTitleTag = function(tag) {
     const input = document.getElementById('title-custom-text');
     if (!input) return;
     const start = input.selectionStart ?? input.value.length;
@@ -6750,86 +5656,44 @@ function categoriesMapFromPayload(data) {
     return {};
 }
 
-async function loadTitlesDatabase(force = false) {
+async function loadTitlesDatabase() {
     const lists = [document.getElementById('donor-list'), document.getElementById('display-list')];
     const onTitlesLoadFailed = (msg) => lists.forEach(list => { if (list) list.innerHTML = `<div class="backup-empty">${escHtml(msg)}</div>`; });
     const bundledCats = await loadBundledCategories();
     const applyLoadedTitles = (raw) => {
         titlesDb = normalizeTitlesPayload(raw);
+
         titlesDb.categories = { ...titlesDb.categories, ...bundledCats };
-        window.titlesDatabase = titlesDb.titles;
-        localStorage.setItem('titles_fetched_at', String(Date.now()));
-        if (typeof populateProfileTitlePresets === 'function') {
-            try { populateProfileTitlePresets(); } catch { }
-        }
     };
-
-    if (!force && (!titlesDb || !titlesDb.titles || titlesDb.titles.length === 0)) {
-        try {
-            const localRes = await fetch('titles.json');
-            if (localRes.ok) {
-                applyLoadedTitles(await localRes.json());
-            }
-        } catch { }
-    }
-
-    if (!force) {
-        try {
-            const features = await invoke('get_features').catch(() => null);
-            const ttlSec = features?.cache?.titles_ttl_seconds ?? 172800;
-            const lastFetch = Number(localStorage.getItem('titles_fetched_at') || 0);
-            const ageMs = Date.now() - lastFetch;
-            if (titlesDb && titlesDb.titles && titlesDb.titles.length > 0 && lastFetch > 0 && ageMs < ttlSec * 1000) {
-                return titlesDb.titles.length;
-            }
-        } catch { }
-    }
-
-    const timeoutMs = force ? 5000 : 2500;
-    const fetchWithTimeout = async (url, ms = timeoutMs) => {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), ms);
-        try {
-            const res = await fetch(url, { cache: 'no-store', signal: controller.signal });
-            clearTimeout(timer);
-            return res;
-        } catch (e) {
-            clearTimeout(timer);
-            throw e;
-        }
-    };
-
     try {
-        const res = await fetchWithTimeout(`https://api.velocityrl.tech/titles.json?t=${Date.now()}`, timeoutMs);
+        const res = await fetch(`https://api.velocityrl.tech/titles.json?t=${Date.now()}`, { cache: 'no-store' });
         if (res.ok) {
             applyLoadedTitles(await res.json());
-            return titlesDb?.titles?.length || 0;
+            return;
         }
-    } catch { }
+    } catch {  }
     try {
-        const res = await fetchWithTimeout(`https://raw.githubusercontent.com/bitsfdb/VelocityRL/main/tools/psynet_proxy/titles.json?t=${Date.now()}`, timeoutMs);
+        const res = await fetch(`${API_BASE}/v2/rl/titles?t=${Date.now()}`, { cache: 'no-store' });
         if (res.ok) {
             applyLoadedTitles(await res.json());
-            return titlesDb?.titles?.length || 0;
+            return;
         }
-    } catch { }
-
-    if (force && (!titlesDb || !titlesDb.titles || titlesDb.titles.length === 0)) {
-        try {
-            const localRes = await fetch('titles.json');
-            if (localRes.ok) {
-                applyLoadedTitles(await localRes.json());
-                return titlesDb?.titles?.length || 0;
-            }
-        } catch { }
-    }
-
-    if (!titlesDb || !titlesDb.titles || titlesDb.titles.length === 0) {
-        onTitlesLoadFailed('Could not load titles database.');
-        if (force) throw new Error('Could not fetch title catalogue from server.');
-        return 0;
-    }
-    return titlesDb.titles.length;
+    } catch {  }
+    try {
+        const res = await fetch(`https://raw.githubusercontent.com/bitsfdb/VelocityRL/main/tools/psynet_proxy/titles.json?t=${Date.now()}`, { cache: 'no-store' });
+        if (res.ok) {
+            applyLoadedTitles(await res.json());
+            return;
+        }
+    } catch {  }
+    try {
+        const res = await fetch('titles.json', { cache: 'no-store' });
+        if (res.ok) {
+            applyLoadedTitles(await res.json());
+            return;
+        }
+    } catch {  }
+    onTitlesLoadFailed('Could not load titles database.');
 }
 
 function categoriesFromTitles(titles) {
@@ -6960,20 +5824,9 @@ async function saveTitleSpoof() {
     const applyBtn = document.getElementById('title-apply-btn');
     if (applyBtn?.dataset.labelFlashing === '1' || applyBtn?.dataset.saving === '1') return;
     const entry = pickerSwapEntry();
-    if (!entry?.equip_title_id && !entry?.display_title_id && !entry?.custom_text) {
-        showToast('Pick a title look or enter custom text.', 'error');
+    if (!entry?.equip_title_id) {
+        showToast('Pick a donor title first.', 'error');
         return;
-    }
-    if (!entry.equip_title_id) {
-        entry.equip_title_id = entry.display_title_id || 'custom';
-        invoke('apply_swap', {
-            ownedId: "0",
-            wantedId: "3036",
-            ownedPaintId: null,
-            ownedCustomHex: null,
-            paintId: 0,
-            customPaintHex: null,
-        }).catch((err) => console.warn('Could not inject base title into SaveData:', err));
     }
     // Empty custom text → use the look title's normal catalog text (proxy also
     // copies Text from display_title_id in BattleCars config when custom is blank).
@@ -6999,7 +5852,7 @@ async function saveTitleSpoof() {
         return;
     }
     ensureTitleSwapsLoaded();
-    titleSwaps = titleSwaps.filter((s) => s.equip_title_id !== entry.equip_title_id && s.display_title_id !== entry.display_title_id);
+    titleSwaps = titleSwaps.filter((s) => s.equip_title_id !== entry.equip_title_id);
     titleSwaps.unshift(entry);
     try {
         persistTitleSpoofLocal();
@@ -7067,48 +5920,16 @@ async function restoreAllTitleSwaps() {
     }
 }
 
-const CHANGELOG_CACHE_KEY = 'velocityrl_changelog_cache_v201';
+const CHANGELOG_CACHE_KEY = 'velocityrl_changelog_cache';
 const CHANGELOG_CACHE_TTL = 30 * 60 * 1000;
-
-const LOCAL_RELEASES = [
-    {
-        tag_name: "v2.0.1 (Hotfix)",
-        name: "v2.0.1 (Hotfix)",
-        published_at: "2026-10-05T12:00:00Z",
-        body: `**Hotfix update for item swapping and game stability:**
-+ **In-Match Swaps:** Your custom cars, decals, wheels, and boosts now stay equipped properly during online matches and Freeplay without resetting!
-+ **Goal Explosions:** Custom goal explosions now celebrate and animate in matches when you score.
-+ **Crash Fixes:** Fixed game crashes when opening the Garage, starting Freeplay, or loading into a match.
-+ **Name & Credits Display:** Easily change your displayed in-game name and preview item shop credits in menus.
-+ **Presets:** Save up to 50 custom car presets and easily share them with friends using short codes.
-+ **Smoother Connections:** Fixed background network setup so Rocket League connects smoothly.
-+ **New Languages:** VelocityRL is now available in 9 languages!`
-    },
-    {
-        tag_name: "v2.0.0",
-        name: "v2.0.0",
-        published_at: "2026-08-31T12:00:00Z",
-        body: `**Major release introducing all-new customization features:**
-+ **Item Swapper:** Swap any car, wheel, decal, boost, or topper locally.
-+ **Custom Color Palette:** Unlock full RGB custom team car colors.
-+ **Titles & Fake Ranks:** Equip any player title and customize competitive rank displays.
-+ **Camera Settings:** Unlock field of view, distance, and angle limits.
-+ **Workshop Maps:** Built-in community map browser and one-click offline play.
-+ **Live Tracker:** Real-time match score and MMR overlay.`
-    }
-];
 
 function renderChangelog(releases) {
     const body = document.getElementById('changelog-body');
-    let list = Array.isArray(releases) ? [...releases] : (releases?.releases ? [...releases.releases] : []);
-    if (!list.some(r => (r.tag_name || r.name || '').includes('2.0.1'))) {
-        list.unshift(LOCAL_RELEASES[0]);
-    }
-    if (!list.length) list = LOCAL_RELEASES;
-
+    const list = Array.isArray(releases) ? releases : (releases?.releases || []);
+    if (!list.length) { body.innerHTML = '<div style="color:var(--text-secondary);padding:20px;">No releases found.</div>'; return; }
     body.innerHTML = list.map(r => {
         const tag = r.tag_name || r.name || 'Release';
-        const date = r.published_at ? new Date(r.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '';
+        const date = r.published_at ? new Date(r.published_at).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' }) : '';
         return `
             <div class="changelog-release" style="margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid rgba(255,255,255,0.08);">
                 <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;">
@@ -7135,7 +5956,7 @@ async function openChangelog(forceRefresh = false) {
                 renderChangelog(cached.releases);
                 return;
             }
-        } catch { }
+        } catch {}
     }
 
     try {
@@ -7150,7 +5971,7 @@ async function openChangelog(forceRefresh = false) {
                 if (Array.isArray(data)) releases = data;
                 else if (Array.isArray(data?.releases)) releases = data.releases;
             }
-        } catch (_) { }
+        } catch (_) {}
 
         if (!releases) {
             try {
@@ -7159,19 +5980,33 @@ async function openChangelog(forceRefresh = false) {
                 const ghRes = await fetch('https://api.github.com/repos/bitsfdb/VelocityRL/releases?per_page=50', { signal: ctrl.signal });
                 clearTimeout(tid);
                 if (ghRes.ok) releases = await ghRes.json();
-            } catch (_) { }
+            } catch (_) {}
         }
 
         if (releases && Array.isArray(releases) && releases.length) {
             try {
                 localStorage.setItem(CHANGELOG_CACHE_KEY, JSON.stringify({ ts: Date.now(), releases }));
-            } catch { }
+            } catch {}
             renderChangelog(releases);
             return;
         }
-        renderChangelog(LOCAL_RELEASES);
+        throw new Error('No release data found');
     } catch (err) {
-        renderChangelog(LOCAL_RELEASES);
+        try {
+            const cached = JSON.parse(localStorage.getItem(CHANGELOG_CACHE_KEY) || 'null');
+            if (cached && cached.releases) {
+                renderChangelog(cached.releases);
+                return;
+            }
+        } catch {}
+
+        body.innerHTML = `
+            <div class="changelog-release">
+                <div class="changelog-release-tag">v2.0.0-alpha.1</div>
+                <div class="changelog-release-date">${new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' })}</div>
+                <div class="changelog-release-body">Item swapping, palette support, titles, fake ranks, camera limits, season logo, and PsyNet proxy.</div>
+            </div>
+            <div style="color:var(--text-secondary);padding:12px 0;font-size:12px;">Could not load changelog. <a href="#" onclick="window.__TAURI__.core.invoke('plugin:shell|open', { path: 'https://api.velocityrl.tech/v2/changelog' }); return false;" style="color:var(--accent-blue);">View on website</a>.</div>`;
     }
 }
 
@@ -7238,7 +6073,7 @@ async function loadWorkshopCatalog(page = 1, query = '') {
                 try {
                     localStorage.setItem('vrl_map_thumb_' + map.name.toLowerCase().trim(), banner);
                     if (map.id) localStorage.setItem('vrl_map_thumb_id_' + map.id, banner);
-                } catch { }
+                } catch {}
             }
             const author = (map.member && map.member.displayName) ? map.member.displayName : 'Community';
             const desc = map.shortDescription || '';
@@ -7313,8 +6148,8 @@ async function loadWorkshopCatalog(page = 1, query = '') {
                             try {
                                 localStorage.setItem('vrl_map_thumb_' + mapName.toLowerCase().trim(), banner);
                                 localStorage.setItem('vrl_map_thumb_path_' + imported.path, banner);
-                            } catch { }
-                            await invoke('workshop_set_map_thumbnail', { pathOrName: imported.path, thumbnailUrl: banner }).catch(() => { });
+                            } catch {}
+                            await invoke('workshop_set_map_thumbnail', { pathOrName: imported.path, thumbnailUrl: banner }).catch(() => {});
                         }
                     } else {
                         await invoke('workshop_install_map_from_url', {
@@ -7324,13 +6159,13 @@ async function loadWorkshopCatalog(page = 1, query = '') {
                         if (banner) {
                             try {
                                 localStorage.setItem('vrl_map_thumb_' + mapName.toLowerCase().trim(), banner);
-                            } catch { }
-                            await invoke('workshop_set_map_thumbnail', { pathOrName: mapName, thumbnailUrl: banner }).catch(() => { });
+                            } catch {}
+                            await invoke('workshop_set_map_thumbnail', { pathOrName: mapName, thumbnailUrl: banner }).catch(() => {});
                         }
                     }
 
                     showToast(`"${mapName}" installed! In Rocket League: select Underpass in Free Play or Exhibition to play.`, 'success');
-                    btn.textContent = 'Installed ';
+                    btn.textContent = 'Installed ✓';
                     btn.style.background = '#1b5e20';
                     await refreshWorkshopInstalled();
                 } catch (err) {
@@ -7583,7 +6418,7 @@ async function autoFetchMissingThumbnail(mapName) {
             localStorage.setItem('vrl_map_thumb_' + clean, match.bannerUrl);
             return match.bannerUrl;
         }
-    } catch { }
+    } catch {}
     return null;
 }
 
@@ -7595,7 +6430,7 @@ async function refreshWorkshopLibrary() {
     const guideBanner = document.createElement('div');
     guideBanner.className = 'map-how-to-play-banner';
     guideBanner.innerHTML = `
-        <div class="map-how-to-play-icon">️</div>
+        <div class="map-how-to-play-icon">ℹ️</div>
         <div class="map-how-to-play-text">
             <strong>How to play your custom map in Rocket League:</strong><br>
             Custom maps replace the <em>Underpass</em> arena. After loading a map below, start Rocket League and join:
@@ -7606,7 +6441,7 @@ async function refreshWorkshopLibrary() {
     list.appendChild(guideBanner);
 
     let installed = null;
-    try { installed = await invoke('workshop_get_installed'); } catch { }
+    try { installed = await invoke('workshop_get_installed'); } catch {}
 
     const replacedWrap = document.createElement('div');
     replacedWrap.style.cssText = 'margin-bottom:14px;';
@@ -7886,7 +6721,7 @@ async function refreshWorkshopInstalled() {
     const status = document.getElementById('workshop-installed-status');
     if (!status) return;
     let inst = null;
-    try { inst = await invoke('workshop_get_installed'); } catch { }
+    try { inst = await invoke('workshop_get_installed'); } catch {}
     if (inst) {
         status.style.display = 'block';
         status.textContent = `Loaded map: ${inst.map_name}`;
@@ -7974,7 +6809,7 @@ async function initTrackerModule() {
     try {
         const config = await invoke('get_config').catch(() => ({ game_dir: '' }));
         if (config && config.game_dir) {
-            invoke('tracker_ensure_stats_api', { gameDir: config.game_dir }).catch(() => { });
+            invoke('tracker_ensure_stats_api', { gameDir: config.game_dir }).catch(() => {});
         }
         const session = await invoke('tracker_load_session');
         trackerSessionCache = session;
@@ -8059,9 +6894,9 @@ function bindTrackerEvents() {
             lockBtn.className = isOverlayLocked ? 'action-btn action-btn-secondary' : 'action-btn';
             if (!trackerSessionCache) trackerSessionCache = await invoke('tracker_load_session');
             if (trackerSessionCache.master_enabled) {
-                await invoke('tracker_open_overlay_window', { style: trackerSessionCache.overlay_style || 'circle' }).catch(() => { });
+                await invoke('tracker_open_overlay_window', { style: trackerSessionCache.overlay_style || 'circle' }).catch(() => {});
             }
-            await invoke('tracker_set_overlay_locked', { locked: isOverlayLocked }).catch(() => { });
+            await invoke('tracker_set_overlay_locked', { locked: isOverlayLocked }).catch(() => {});
             showToast(isOverlayLocked ? 'Overlay locked in position for gameplay.' : 'Overlay unlocked! Drag it anywhere on your screen.', 'success');
         };
 
@@ -8093,8 +6928,8 @@ function bindTrackerEvents() {
         centerBtn.onclick = async (e) => {
             e.preventDefault();
             if (!trackerSessionCache) trackerSessionCache = await invoke('tracker_load_session');
-            await invoke('tracker_open_overlay_window', { style: trackerSessionCache.overlay_style || 'circle' }).catch(() => { });
-            await invoke('tracker_center_overlay').catch(() => { });
+            await invoke('tracker_open_overlay_window', { style: trackerSessionCache.overlay_style || 'circle' }).catch(() => {});
+            await invoke('tracker_center_overlay').catch(() => {});
             showToast('Tracker overlay centered on primary screen.', 'success');
         };
     }
@@ -8102,7 +6937,7 @@ function bindTrackerEvents() {
     if (closeBtn) {
         closeBtn.onclick = async (e) => {
             e.preventDefault();
-            await invoke('tracker_close_overlay_window').catch(() => { });
+            await invoke('tracker_close_overlay_window').catch(() => {});
             showToast('Tracker overlay hidden.', 'info');
         };
     }
@@ -8113,7 +6948,7 @@ function bindTrackerEvents() {
             trackerSessionCache.master_enabled = masterSw.checked;
             await saveTrackerSession(trackerSessionCache);
             if (trackerSessionCache.master_enabled) {
-                await invoke('tracker_open_overlay_window', { style: trackerSessionCache.overlay_style || 'circle' }).catch(() => { });
+                await invoke('tracker_open_overlay_window', { style: trackerSessionCache.overlay_style || 'circle' }).catch(() => {});
 
                 try {
                     const config = await invoke('get_config').catch(() => ({ game_dir: '' }));
@@ -8122,7 +6957,7 @@ function bindTrackerEvents() {
                         if (rewritten) {
                             showToast('Stats API files updated — restart Rocket League for changes to apply.', 'success');
                         } else {
-                            showToast('Stats API already configured ', 'info');
+                            showToast('Stats API already configured ✓', 'info');
                         }
                     } else {
                         showToast('Set your Rocket League path in Settings so Stats API can be configured.', 'error');
@@ -8131,7 +6966,7 @@ function bindTrackerEvents() {
                     showToast(`Stats API check failed: ${err.message || err}`, 'error');
                 }
             } else {
-                await invoke('tracker_close_overlay_window').catch(() => { });
+                await invoke('tracker_close_overlay_window').catch(() => {});
             }
         };
     }
@@ -8141,7 +6976,7 @@ function bindTrackerEvents() {
             if (!trackerSessionCache) trackerSessionCache = await invoke('tracker_load_session');
             trackerSessionCache.position = posSel.value;
             await saveTrackerSession(trackerSessionCache);
-            await invoke('tracker_position_overlay', { pos: posSel.value }).catch(() => { });
+            await invoke('tracker_position_overlay', { pos: posSel.value }).catch(() => {});
         };
     }
 
@@ -8159,7 +6994,7 @@ function bindTrackerEvents() {
         invoke('tracker_apply_scale_opacity', {
             scale: num,
             opacity: trackerSessionCache.opacity ?? 85
-        }).catch(() => { });
+        }).catch(() => {});
         await saveTrackerSession(trackerSessionCache);
     };
 
@@ -8172,7 +7007,7 @@ function bindTrackerEvents() {
         invoke('tracker_apply_scale_opacity', {
             scale: trackerSessionCache.scale ?? 100,
             opacity: num
-        }).catch(() => { });
+        }).catch(() => {});
         await saveTrackerSession(trackerSessionCache);
     };
 
@@ -8209,7 +7044,7 @@ function bindTrackerEvents() {
             trackerSessionCache.overlay_style = opt.dataset.style;
             await saveTrackerSession(trackerSessionCache);
             window.__TAURI__?.event?.emit('tracker-style-changed', opt.dataset.style);
-            await invoke('tracker_open_overlay_window', { style: opt.dataset.style }).catch(() => { });
+            await invoke('tracker_open_overlay_window', { style: opt.dataset.style }).catch(() => {});
         };
     });
 }
@@ -8414,13 +7249,13 @@ function showOutdatedBuildModal(feat) {
 
     if (websiteBtn) {
         websiteBtn.onclick = () => {
-            invoke('open_external_url', { url: 'https://velocityrl.tech' }).catch(() => { });
+            invoke('open_external_url', { url: 'https://velocityrl.tech' }).catch(() => {});
         };
     }
 
     if (exitBtn) {
         exitBtn.onclick = () => {
-            invoke('force_exit').catch(() => { });
+            invoke('force_exit').catch(() => {});
         };
     }
 }
@@ -8432,10 +7267,10 @@ document.addEventListener('click', (e) => {
     e.stopPropagation();
     if (e.shiftKey) {
         document.getElementById('dev-modal')?.classList.add('active');
-        refreshDevPanel().catch(() => { });
+        refreshDevPanel().catch(() => {});
         return;
     }
-    openChangelog().catch(() => { });
+    openChangelog().catch(() => {});
 }, true);
 
 document.addEventListener('keydown', (e) => {
@@ -8444,10 +7279,10 @@ document.addEventListener('keydown', (e) => {
         e.stopPropagation();
         if (e.shiftKey) {
             document.getElementById('dev-modal')?.classList.add('active');
-            refreshDevPanel().catch(() => { });
+            refreshDevPanel().catch(() => {});
             return;
         }
-        openChangelog().catch(() => { });
+        openChangelog().catch(() => {});
     }
 }, true);
 
