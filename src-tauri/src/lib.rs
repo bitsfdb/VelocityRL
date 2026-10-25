@@ -2500,6 +2500,45 @@ async fn upload_decal_package_bytes(
 }
 
 #[tauri::command]
+async fn download_decal_from_url(
+    app: tauri::AppHandle,
+    url: String,
+) -> Result<upk::ParsedDecalPackage, String> {
+    let clean_url = url.trim();
+    if clean_url.is_empty() {
+        return Err("URL cannot be empty".into());
+    }
+
+    let client = reqwest::Client::builder()
+        .user_agent(crate::app_user_agent())
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("Failed to create client: {e}"))?;
+
+    let resp = client.get(clean_url).send().await
+        .map_err(|e| format!("Download failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("Download failed with status: {}", resp.status()));
+    }
+
+    let filename = clean_url
+        .split('/')
+        .last()
+        .unwrap_or("package.zip")
+        .split('?')
+        .next()
+        .unwrap_or("package.zip")
+        .to_string();
+
+    let bytes = resp.bytes().await
+        .map_err(|e| format!("Failed to read response body: {e}"))?;
+
+    let base64_data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
+    upload_decal_package_bytes(app, filename, base64_data).await
+}
+
+#[tauri::command]
 async fn swap_custom_decal_to_donor(
     app: tauri::AppHandle,
     donor_item_id: i32,
@@ -3716,6 +3755,7 @@ pub fn run() {
             import_decal_json_path,
             import_decal_zip_path,
             upload_decal_package_bytes,
+            download_decal_from_url,
             swap_custom_decal_to_donor,
             apply_custom_decal,
             features::get_features,
