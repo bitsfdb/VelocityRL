@@ -34,6 +34,13 @@
     --emoji-font: "Segoe UI Emoji", "Noto Color Emoji", emoji;
 }
 
+@font-face {
+    font-family: 'FuturaTitle';
+    src: url('fonts/Futura-Bold.ttf') format('truetype');
+    font-weight: 700;
+    font-style: normal;
+}
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 html {
@@ -2582,9 +2589,9 @@ select::-ms-expand { display: none; }
 }
 
 .title-preview-chip {
-    font-family: var(--emoji-font), system-ui, -apple-system, Segoe UI, sans-serif;
+    font-family: 'FuturaTitle', Futura, 'Futura Bold', var(--emoji-font), system-ui, -apple-system, Segoe UI, sans-serif;
     font-size: 26px;
-    font-weight: 600;
+    font-weight: 700;
     font-style: normal;
     text-transform: uppercase;
     letter-spacing: 0.04em;
