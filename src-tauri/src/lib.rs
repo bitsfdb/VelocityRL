@@ -1706,16 +1706,6 @@ async fn apply_swap(
         paint_id = 0;
     }
 
-    // Locate player save file and inject item
-    let save_path = savedata::locate_latest_save()?;
-    let slot_idx = savedata::slot_name_to_index(&wanted.slot);
-    let base_pid = if oid > 0 && oid != wid {
-        Some(oid)
-    } else {
-        Some(wid)
-    };
-    let _ = savedata::spawn_item_native_ext(&save_path, wid, paint_id, slot_idx, base_pid)?;
-
     let owned_name = all_items.iter().find(|i| i.id == oid)
         .map(|i| i.product.clone())
         .unwrap_or_else(|| "Item".to_string());
@@ -1746,15 +1736,15 @@ async fn apply_swap(
         }
     }
 
-    record_swap_history(&app, "spawn", std::slice::from_ref(&new_entry), "");
-    applog::event(&format!("spawn: succeeded for product_id={} into save {}", wid, save_path.display()));
+    record_swap_history(&app, "swap", std::slice::from_ref(&new_entry), "");
+    applog::event(&format!("swap: succeeded for product_id={}", wid));
 
     let paint_suffix = if paint_id > 0 {
         format!(" ({})", upk::swapper::paint_label(paint_id))
     } else {
         String::new()
     };
-    Ok(format!("Successfully spawned {}{} into your inventory!", wanted.product, paint_suffix))
+    Ok(format!("Successfully swapped {}{}!", wanted.product, paint_suffix))
 }
 
 #[tauri::command]
@@ -1907,22 +1897,12 @@ async fn reswap_all(app: tauri::AppHandle) -> Result<String, String> {
     if let Ok(config) = get_config(app.clone()).await {
         if !config.game_dir.is_empty() {
             if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                let _ = sync_all_swaps_to_tagame(&app, &cooked, &[]).await;
+                let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
             }
         }
     }
 
-    let save_path = savedata::locate_latest_save()?;
-    for s in &swaps {
-        let slot_idx = s.slot.as_deref().and_then(savedata::slot_name_to_index);
-        let base_pid = if s.owned_id > 0 && s.owned_id != s.wanted_id {
-            Some(s.owned_id)
-        } else {
-            slot_idx.map(savedata::default_base_product_for_slot)
-        };
-        let _ = savedata::spawn_item_native_ext(&save_path, s.wanted_id, s.paint_id, slot_idx, base_pid);
-    }
-    Ok(format!("Re-spawned {} active item(s) into your inventory", swaps.len()))
+    Ok(format!("Re-applied {} active swap(s) to game files", swaps.len()))
 }
 
 
