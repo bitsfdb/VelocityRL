@@ -755,6 +755,7 @@ async function init() {
             document.getElementById(paneId)?.classList.add('active');
             if (paneId === 'custom-avatar-pane') initAvatarTab();
             if (paneId === 'custom-decals-pane') initDecalsTab();
+            if (paneId === 'custom-boost-pane') initBoostMeterTab();
             if (paneId === 'restore-pane') refreshBackups();
             if (paneId === 'presets-pane') refreshPresets();
             if (paneId === 'maplib-pane') refreshWorkshopLibrary();
@@ -2769,6 +2770,7 @@ const NAME_SPOOF_KEY = 'velocityrl_name_spoof';
 const CREDIT_SPOOF_KEY = 'velocityrl_credit_spoof';
 const LEADERBOARD_SPOOF_KEY = 'velocityrl_leaderboard_spoof';
 const MENU_BG_SPOOF_KEY = 'velocityrl_menu_bg_spoof';
+const BOOST_METER_SPOOF_KEY = 'velocityrl_boost_meter_spoof';
 const DEFAULT_SEASON23_LOGO_URL = 'https://api.velocityrl.tech/thumbnails/rl_jpn.png';
 const DEFAULT_BLOG_MOTD = 'Use VelocityRL';
 const DEFAULT_CAMERA_LIMITS = {
@@ -3161,6 +3163,14 @@ async function hydrateSpoofToolsFromDisk() {
         localStorage.setItem(MENU_BG_SPOOF_KEY, JSON.stringify({ menu_bg_spoof }));
     }
 
+    {
+        const bm = toolSliceFromDiskOrLocal(disk, BOOST_METER_SPOOF_KEY, 'boost_meter_spoof');
+        const boost_meter_spoof = (bm && typeof bm === 'object' && ('enabled' in bm || bm.style != null))
+            ? { enabled: !!bm.enabled, style: bm.style || 'default' }
+            : { enabled: false, style: 'default' };
+        localStorage.setItem(BOOST_METER_SPOOF_KEY, JSON.stringify({ boost_meter_spoof }));
+    }
+
     applyHydratedToolsToUi();
 
     return payloadFromHydratedLocal();
@@ -3245,6 +3255,15 @@ function applyHydratedToolsToUi() {
         syncNameSpoofSwitchAria(bgEn);
     }
     if (bgSelect) bgSelect.value = bgData.background || 'MMBG_Default';
+
+    const bmData = readLocalJson(BOOST_METER_SPOOF_KEY).boost_meter_spoof || {};
+    const bmEn = document.getElementById('boost-meter-enabled');
+    const bmSelect = document.getElementById('boost-meter-style-select');
+    if (bmEn) {
+        bmEn.checked = !!bmData.enabled;
+        syncNameSpoofSwitchAria(bmEn);
+    }
+    if (bmSelect && bmData.style) bmSelect.value = bmData.style;
 }
 
 function isSteamGameDir(gameDir) {
@@ -3274,6 +3293,7 @@ function payloadFromHydratedLocal() {
     const credit_spoof = readLocalJson(CREDIT_SPOOF_KEY).credit_spoof || { enabled: false, amount: 100000, tournament_amount: 100000 };
     const leaderboard_spoof = readLocalJson(LEADERBOARD_SPOOF_KEY).leaderboard_spoof || { enabled: false, sync_from_fake_ranks: true };
     const menu_bg_spoof = readLocalJson(MENU_BG_SPOOF_KEY).menu_bg_spoof || { enabled: false, background: 'MMBG_Default' };
+    const boost_meter_spoof = readLocalJson(BOOST_METER_SPOOF_KEY).boost_meter_spoof || { enabled: false, style: 'default' };
     const gameDirInput = document.getElementById('game-dir')?.value || '';
     const is_steam = isSteamGameDir(gameDirInput);
 
@@ -3289,6 +3309,7 @@ function payloadFromHydratedLocal() {
         credit_spoof,
         leaderboard_spoof,
         menu_bg_spoof,
+        boost_meter_spoof,
     };
 }
 
@@ -4628,6 +4649,249 @@ function initLeaderboardTab() {
 
 
 
+const COMMUNITY_ALPHACONSOLE_DECALS = [
+    {
+        id: '3994',
+        name: 'NRG Esports (Octane)',
+        car: 'Octane',
+        carId: 23,
+        author: 'RLCS Esports Series',
+        thumbnail: 'https://api.velocityrl.tech/thumbnails/skin_octane_nrg_tc_t.png',
+        previewColor: 'linear-gradient(135deg, #0a0a0a, #e60000)',
+        description: 'Official NRG RLCS competition decal with matte black finish and red accents.',
+        wanted_id: '3994'
+    },
+    {
+        id: '3883',
+        name: 'Cloud9 (Octane)',
+        car: 'Octane',
+        carId: 23,
+        author: 'RLCS Legacy Champions',
+        thumbnail: 'https://api.velocityrl.tech/thumbnails/skin_octane_cloud9_esports_t.png',
+        previewColor: 'linear-gradient(135deg, #001f3f, #0074d9)',
+        description: 'Legendary Cloud9 World Championship sky blue & white team livery.',
+        wanted_id: '3883'
+    },
+    {
+        id: '3842',
+        name: 'G2 Esports (Octane)',
+        car: 'Octane',
+        carId: 23,
+        author: 'RLCS Esports Series',
+        thumbnail: 'https://api.velocityrl.tech/thumbnails/grain_g2esports_home_t.png',
+        previewColor: 'linear-gradient(135deg, #1a1a1a, #ff1a1a)',
+        description: 'Iconic samurai crest in high-contrast carbon black and scarlet red.',
+        wanted_id: '3842'
+    },
+    {
+        id: '4051',
+        name: 'Team Vitality (Dominus)',
+        car: 'Dominus',
+        carId: 403,
+        author: 'RLCS World Champions',
+        thumbnail: 'https://api.velocityrl.tech/thumbnails/grain_teamvitality_home_t.png',
+        previewColor: 'linear-gradient(135deg, #111111, #ffcc00)',
+        description: 'V-Hive bumblebee gold and matte obsidian championship styling.',
+        wanted_id: '4051'
+    },
+    {
+        id: '5473',
+        name: 'Team BDS (Dominus)',
+        car: 'Dominus',
+        carId: 403,
+        author: 'RLCS Esports Series',
+        thumbnail: 'https://api.velocityrl.tech/thumbnails/skin_musclecar_teambds_esports_t.png',
+        previewColor: 'linear-gradient(135deg, #001829, #00a8ff)',
+        description: 'Team BDS official competition dynamic wave pattern in electric cyan.',
+        wanted_id: '5473'
+    },
+    {
+        id: '4989',
+        name: 'Interstellar',
+        car: 'Universal',
+        carId: 23,
+        author: 'Black Market Universal',
+        thumbnail: 'https://api.velocityrl.tech/thumbnails/interstellar_t.png',
+        previewColor: 'linear-gradient(135deg, #0b001a, #6a0dad)',
+        description: 'Cosmic nebula with animated drifting star clusters and space clouds.',
+        wanted_id: '4989'
+    },
+    {
+        id: '1435',
+        name: 'Heatwave',
+        car: 'Universal',
+        carId: 23,
+        author: 'Black Market Universal',
+        thumbnail: 'https://api.velocityrl.tech/thumbnails/skin_octane_heatwave_psp_t.png',
+        previewColor: 'linear-gradient(135deg, #330000, #ff4500)',
+        description: 'Animated rising thermal heat lines crawling across car chassis.',
+        wanted_id: '1435'
+    },
+    {
+        id: '2854',
+        name: 'Dissolver',
+        car: 'Universal',
+        carId: 23,
+        author: 'Black Market Universal',
+        thumbnail: 'https://api.velocityrl.tech/thumbnails/skin_gusher_t.png',
+        previewColor: 'linear-gradient(135deg, #002233, #00d4ff)',
+        description: 'Hypnotic liquid energy waves disintegrating from front to rear bumper.',
+        wanted_id: '2854'
+    },
+    {
+        id: '2966',
+        name: 'Fire God',
+        car: 'Universal',
+        carId: 23,
+        author: 'Black Market Universal',
+        thumbnail: 'https://api.velocityrl.tech/thumbnails/skin_charred_t.png',
+        previewColor: 'linear-gradient(135deg, #2b0c00, #ff6600)',
+        description: 'Raging animated wildfire inferno engulfing vehicle panels.',
+        wanted_id: '2966'
+    },
+    {
+        id: '302',
+        name: 'Flames (Octane)',
+        car: 'Octane',
+        carId: 23,
+        author: 'Stock Octane Series',
+        thumbnail: 'https://api.velocityrl.tech/thumbnails/skin_octane_flames_t.png',
+        previewColor: 'linear-gradient(135deg, #300, #f80)',
+        description: 'Classic hot-rod flame licks racing down hood and fenders.',
+        wanted_id: '302'
+    },
+    {
+        id: '303',
+        name: 'Lightning (Octane)',
+        car: 'Octane',
+        carId: 23,
+        author: 'Stock Octane Series',
+        thumbnail: 'https://api.velocityrl.tech/thumbnails/skin_octane_lightning_t.png',
+        previewColor: 'linear-gradient(135deg, #001f3f, #00f2fe)',
+        description: 'High-voltage electric lightning strikes radiating across the roof.',
+        wanted_id: '303'
+    },
+    {
+        id: '306',
+        name: 'Stripes (Octane)',
+        car: 'Octane',
+        carId: 23,
+        author: 'Stock Octane Series',
+        thumbnail: 'https://api.velocityrl.tech/thumbnails/skin_octane_stripes_t.png',
+        previewColor: 'linear-gradient(135deg, #1c1c1c, #eee)',
+        description: 'Twin rally racing stripes running center-line over hood and spoiler.',
+        wanted_id: '306'
+    },
+    {
+        id: '307',
+        name: 'Tech (Octane)',
+        car: 'Octane',
+        carId: 23,
+        author: 'Stock Octane Series',
+        thumbnail: 'https://api.velocityrl.tech/thumbnails/skin_octane_tech_t.png',
+        previewColor: 'linear-gradient(135deg, #002b36, #268bd2)',
+        description: 'Geometric digital cyber pattern with sharp circuit lines.',
+        wanted_id: '307'
+    },
+    {
+        id: '304',
+        name: 'Skulls (Octane)',
+        car: 'Octane',
+        carId: 23,
+        author: 'Stock Octane Series',
+        thumbnail: 'https://api.velocityrl.tech/thumbnails/skin_octane_skulls_t.png',
+        previewColor: 'linear-gradient(135deg, #111, #555)',
+        description: 'Aggressive street graffiti skull graphics with splatter detailing.',
+        wanted_id: '304'
+    },
+    {
+        id: '305',
+        name: 'Stars (Octane)',
+        car: 'Octane',
+        carId: 23,
+        author: 'Stock Octane Series',
+        thumbnail: 'https://api.velocityrl.tech/thumbnails/skin_octane_stars_t.png',
+        previewColor: 'linear-gradient(135deg, #1a0033, #e056fd)',
+        description: 'Starlight galaxy constellations over dark metallic paintwork.',
+        wanted_id: '305'
+    }
+];
+
+const COMMUNITY_BOOST_METERS = [
+    {
+        id: 'default',
+        name: 'Default Psyonix HUD',
+        author: 'Psyonix',
+        type: 'Stock HUD',
+        gradient: 'linear-gradient(90deg, #ff9800, #ff5722)',
+        accent: '#ff9800',
+        description: 'Vanilla Rocket League boost meter gauge layout.'
+    },
+    {
+        id: 'circular_neon',
+        name: 'Circular Neon Ring',
+        author: 'AlphaConsole Team',
+        type: 'Circular HUD',
+        gradient: 'linear-gradient(90deg, #00f2fe, #4facfe)',
+        accent: '#00f2fe',
+        description: 'Futuristic glowing neon cyan ring wrapping around the boost count.'
+    },
+    {
+        id: 'cyberpunk_blue',
+        name: 'Cyberpunk Hex Mesh',
+        author: 'NexusStudio',
+        type: 'Digital HUD',
+        gradient: 'linear-gradient(90deg, #00e5ff, #7c4dff)',
+        accent: '#00e5ff',
+        description: 'High-tech electric blue and violet hex readout with boost warning.'
+    },
+    {
+        id: 'digital_crimson',
+        name: 'Digital Crimson Gauge',
+        author: 'Pulse Modding',
+        type: 'Racing Gauge',
+        gradient: 'linear-gradient(90deg, #ff1744, #d50000)',
+        accent: '#ff1744',
+        description: 'Aggressive race-car red cluster with bold high-contrast numbers.'
+    },
+    {
+        id: 'minimal_clean',
+        name: 'Minimal Clean Bar',
+        author: 'MinimalistRL',
+        type: 'Competitive Flat',
+        gradient: 'linear-gradient(90deg, #00e676, #1de9b6)',
+        accent: '#00e676',
+        description: 'Ultra-thin, zero-distraction emerald gradient bar for competitive focus.'
+    },
+    {
+        id: 'retro_synthwave',
+        name: 'Retro Synthwave 84',
+        author: 'VaporModz',
+        type: 'Stylized HUD',
+        gradient: 'linear-gradient(90deg, #f50057, #ff9100)',
+        accent: '#f50057',
+        description: 'Sunset magenta into golden amber with retro 80s arcade glow.'
+    },
+    {
+        id: 'golden_hex',
+        name: 'Golden Champion RPM',
+        author: 'CrownRL',
+        type: 'Tachometer',
+        gradient: 'linear-gradient(90deg, #ffd700, #ff8c00)',
+        accent: '#ffd700',
+        description: 'Prestigious metallic gold sweep meter inspired by luxury hypercars.'
+    },
+    {
+        id: 'void_pulse',
+        name: 'Void Nebula Arc',
+        author: 'CosmicMods',
+        type: 'Radial Arc',
+        gradient: 'linear-gradient(90deg, #9c27b0, #673ab7)',
+        accent: '#9c27b0',
+        description: 'Deep cosmic purple arc with ambient energy shimmer.'
+    }
+];
+
 let decalsTabReady = false;
 
 function initDecalsTab() {
@@ -4638,17 +4902,42 @@ function initDecalsTab() {
     const donorSearchInput = document.getElementById('decal-donor-search');
     const donorSelect = document.getElementById('decal-donor-item-select');
     const dropzone = document.getElementById('decal-dropzone');
-    const browseBtn = document.getElementById('decal-browse-btn');
     const jsonInput = document.getElementById('decal-json-file');
     const swapBtn = document.getElementById('decal-swap-btn');
+    const urlInput = document.getElementById('decal-url-input');
+    const urlDownloadBtn = document.getElementById('decal-url-download-btn');
+
+    const tabCatalogBtn = document.getElementById('decal-tab-catalog-btn');
+    const tabImportBtn = document.getElementById('decal-tab-import-btn');
+    const catalogView = document.getElementById('decal-catalog-view');
+    const importView = document.getElementById('decal-import-view');
+    const catalogGrid = document.getElementById('decal-catalog-grid');
+    const catalogSearch = document.getElementById('decal-catalog-search');
+    const catalogCarFilter = document.getElementById('decal-catalog-car-filter');
+    const catalogDonorSelect = document.getElementById('decal-catalog-donor-select');
 
     if (!enabledEl || !swapBtn) return;
 
     let catalogItems = [];
     let currentCarDecals = [];
 
+    // View Switching
+    if (tabCatalogBtn && tabImportBtn && catalogView && importView) {
+        tabCatalogBtn.onclick = () => {
+            tabCatalogBtn.classList.add('active');
+            tabImportBtn.classList.remove('active');
+            catalogView.style.display = 'block';
+            importView.style.display = 'none';
+        };
+        tabImportBtn.onclick = () => {
+            tabImportBtn.classList.add('active');
+            tabCatalogBtn.classList.remove('active');
+            catalogView.style.display = 'none';
+            importView.style.display = 'block';
+        };
+    }
+
     const renderDonorOptions = (filterQuery = '') => {
-        if (!donorSelect) return;
         const q = filterQuery.toLowerCase().trim();
         const filtered = q
             ? currentCarDecals.filter(d => {
@@ -4657,19 +4946,18 @@ function initDecalsTab() {
             })
             : currentCarDecals;
 
-        if (filtered.length === 0) {
-            donorSelect.innerHTML = '<option value="">No matching decals found</option>';
-            return;
-        }
+        const optionsHtml = filtered.length === 0
+            ? '<option value="">No matching decals found</option>'
+            : filtered.map(d => {
+                const name = d.LongLabel || d.long_label || `${d.Product || d.product} (${d.Slot || d.slot})`;
+                return `<option value="${d.ID || d.id}">${escHtml(name)}</option>`;
+            }).join('');
 
-        donorSelect.innerHTML = filtered.map(d => {
-            const name = d.LongLabel || d.long_label || `${d.Product || d.product} (${d.Slot || d.slot})`;
-            return `<option value="${d.ID || d.id}">${escHtml(name)}</option>`;
-        }).join('');
+        if (donorSelect) donorSelect.innerHTML = optionsHtml;
+        if (catalogDonorSelect) catalogDonorSelect.innerHTML = optionsHtml;
     };
 
     const loadDonorDecals = async (carId) => {
-        if (!donorSelect) return;
         try {
             if (!catalogItems || catalogItems.length === 0) {
                 catalogItems = await invoke('get_items');
@@ -4691,6 +4979,125 @@ function initDecalsTab() {
             console.error('Failed to load donor decals:', err);
         }
     };
+
+    const renderCommunityDecals = () => {
+        if (!catalogGrid) return;
+        const q = (catalogSearch?.value || '').toLowerCase().trim();
+        const carFilter = catalogCarFilter?.value || 'all';
+
+        const filtered = COMMUNITY_ALPHACONSOLE_DECALS.filter(item => {
+            if (carFilter !== 'all' && item.car.toLowerCase() !== carFilter.toLowerCase()) return false;
+            if (q) {
+                const str = `${item.name} ${item.car} ${item.author} ${item.description}`.toLowerCase();
+                if (!str.includes(q)) return false;
+            }
+            return true;
+        });
+
+        if (filtered.length === 0) {
+            catalogGrid.innerHTML = `
+                <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--muted);">
+                    <p style="font-size: 14px;">No community decals match your filter.</p>
+                </div>`;
+            return;
+        }
+
+        catalogGrid.innerHTML = filtered.map(d => `
+            <div class="card" style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; transition: transform 0.15s, border-color 0.15s;">
+                <div style="height: 110px; width: 100%; background: ${d.previewColor}; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+                    <img src="${d.thumbnail}" alt="${escHtml(d.name)}" style="height: 70px; object-fit: contain; filter: drop-shadow(0 4px 10px rgba(0,0,0,0.5));" onerror="this.style.display='none';">
+                    <span style="position: absolute; top: 8px; right: 8px; font-size: 10px; font-weight: 700; background: rgba(0,0,0,0.7); color: var(--accent); padding: 3px 8px; border-radius: 4px; text-transform: uppercase;">${d.car}</span>
+                </div>
+                <div style="padding: 12px; flex: 1; display: flex; flex-direction: column; justify-content: space-between;">
+                    <div>
+                        <strong style="display: block; font-size: 13.5px; color: var(--text);">${escHtml(d.name)}</strong>
+                        <span style="display: block; font-size: 11px; color: var(--muted); margin: 2px 0 6px;">by ${escHtml(d.author)}</span>
+                        <p style="font-size: 11.5px; color: var(--muted); line-height: 1.35; margin: 0 0 10px;">${escHtml(d.description)}</p>
+                    </div>
+                    <button type="button" class="action-btn community-swap-btn" data-decal-id="${d.id}" data-wanted-id="${d.wanted_id || d.id}" data-car-id="${d.carId}" data-name="${escHtml(d.name)}" style="width: 100%; font-size: 12px; padding: 6px 10px;">
+                        1-Click Swap
+                    </button>
+                </div>
+            </div>
+        `).join('');
+
+        // Wire 1-Click Swap buttons
+        catalogGrid.querySelectorAll('.community-swap-btn').forEach(btn => {
+            btn.onclick = async () => {
+                const decalName = btn.dataset.name;
+                const wantedId = btn.dataset.wantedId || btn.dataset.decalId;
+                let donorId = parseInt(catalogDonorSelect?.value || donorSelect?.value || '0', 10);
+
+                // Auto-pick the first donor decal option if none explicitly selected
+                if (!donorId && catalogDonorSelect && catalogDonorSelect.options.length > 0) {
+                    for (let i = 0; i < catalogDonorSelect.options.length; i++) {
+                        const optVal = parseInt(catalogDonorSelect.options[i].value, 10);
+                        if (optVal) {
+                            donorId = optVal;
+                            catalogDonorSelect.selectedIndex = i;
+                            break;
+                        }
+                    }
+                }
+
+                if (!donorId) {
+                    showToast('Please select a donor decal to swap over.', 'error');
+                    return;
+                }
+
+                btn.disabled = true;
+                const originalText = btn.textContent;
+                btn.textContent = 'Swapping…';
+                showProgress(true, 40);
+                updateStatus(`Swapping ${decalName}...`, false);
+
+                try {
+                    showProgress(true, 75);
+                    try {
+                        await invoke('apply_swap', {
+                            ownedId: String(donorId),
+                            wantedId: String(wantedId),
+                            ownedPaintId: 0,
+                            ownedCustomHex: null,
+                            paintId: 0,
+                            customPaintHex: null,
+                        });
+                    } catch (swapErr) {
+                        // Fallback to custom decal injection
+                        await invoke('swap_custom_decal_to_donor', {
+                            donorItemId: donorId,
+                            decalName,
+                            diffuseBase64: null,
+                            skinBase64: null,
+                            roughnessBase64: null,
+                            metallicBase64: null,
+                            normalBase64: null,
+                        });
+                    }
+                    showProgress(true, 100);
+                    btn.textContent = 'Swapped! ✓';
+                    showToast(`Successfully swapped "${decalName}" into Rocket League!`, 'success');
+                    refreshBackups();
+                    setTimeout(() => {
+                        btn.textContent = originalText;
+                        btn.disabled = false;
+                    }, 2500);
+                } catch (err) {
+                    btn.textContent = originalText;
+                    btn.disabled = false;
+                    showToast(String(err), 'error');
+                } finally {
+                    setTimeout(() => {
+                        showProgress(false);
+                        updateStatus('bitsfdb', false);
+                    }, 1000);
+                }
+            };
+        });
+    };
+
+    catalogSearch?.addEventListener('input', renderCommunityDecals);
+    catalogCarFilter?.addEventListener('change', renderCommunityDecals);
 
     const refreshDetectedCar = async () => {
         try {
@@ -4725,6 +5132,7 @@ function initDecalsTab() {
 
     refreshDetectedCar();
     loadDecalConfig();
+    renderCommunityDecals();
 
     enabledEl.addEventListener('change', () => syncNameSpoofSwitchAria(enabledEl));
 
@@ -4738,11 +5146,42 @@ function initDecalsTab() {
         loadDonorDecals(carId);
     });
 
+    // URL Download Handler
+    if (urlDownloadBtn && urlInput) {
+        urlDownloadBtn.addEventListener('click', async () => {
+            const url = urlInput.value.trim();
+            if (!url) {
+                showToast('Please enter an AlphaConsole package URL (.zip or .json)', 'error');
+                return;
+            }
+
+            urlDownloadBtn.disabled = true;
+            const originalText = urlDownloadBtn.textContent;
+            urlDownloadBtn.textContent = 'Fetching…';
+            showToast('Downloading and parsing AlphaConsole package…', 'success');
+
+            try {
+                const parsed = await invoke('download_decal_from_url', { url });
+                if (nameInput && parsed.decal_name) nameInput.value = parsed.decal_name;
+                if (carBadge && parsed.car_name) carBadge.textContent = parsed.car_name;
+                if (carSelect && parsed.car_id) carSelect.value = String(parsed.car_id);
+                loadDonorDecals(parsed.car_id);
+                enabledEl.checked = true;
+                syncNameSpoofSwitchAria(enabledEl);
+                showToast(`Successfully loaded "${parsed.decal_name}" for ${parsed.car_name}! Select donor decal to swap over.`, 'success');
+            } catch (e) {
+                showToast('Download/parse failed: ' + String(e), 'error');
+            } finally {
+                urlDownloadBtn.textContent = originalText;
+                urlDownloadBtn.disabled = false;
+            }
+        });
+    }
+
     const handleDecalPackageFile = async (file) => {
         if (!file) return;
         flashButtonLabel(swapBtn, 'Analyzing…', 10000);
 
-        // Try path first if present
         if (file.path) {
             try {
                 const isZip = file.name.toLowerCase().endsWith('.zip');
@@ -4751,12 +5190,8 @@ function initDecalsTab() {
                     : await invoke('import_decal_json_path', { jsonFilePath: file.path });
 
                 if (nameInput && parsed.decal_name) nameInput.value = parsed.decal_name;
-                if (carBadge && parsed.car_name) {
-                    carBadge.textContent = parsed.car_name;
-                }
-                if (carSelect && parsed.car_id) {
-                    carSelect.value = String(parsed.car_id);
-                }
+                if (carBadge && parsed.car_name) carBadge.textContent = parsed.car_name;
+                if (carSelect && parsed.car_id) carSelect.value = String(parsed.car_id);
                 loadDonorDecals(parsed.car_id);
                 enabledEl.checked = true;
                 syncNameSpoofSwitchAria(enabledEl);
@@ -4767,7 +5202,6 @@ function initDecalsTab() {
             }
         }
 
-        // Always read bytes directly (works for all drop and file-picker scenarios)
         const reader = new FileReader();
         reader.onload = async (ev) => {
             const dataUrl = ev.target?.result;
@@ -4778,12 +5212,8 @@ function initDecalsTab() {
                     base64Data: String(dataUrl),
                 });
                 if (nameInput && parsed.decal_name) nameInput.value = parsed.decal_name;
-                if (carBadge && parsed.car_name) {
-                    carBadge.textContent = parsed.car_name;
-                }
-                if (carSelect && parsed.car_id) {
-                    carSelect.value = String(parsed.car_id);
-                }
+                if (carBadge && parsed.car_name) carBadge.textContent = parsed.car_name;
+                if (carSelect && parsed.car_id) carSelect.value = String(parsed.car_id);
                 loadDonorDecals(parsed.car_id);
                 enabledEl.checked = true;
                 syncNameSpoofSwitchAria(enabledEl);
@@ -4835,7 +5265,7 @@ function initDecalsTab() {
 
         try {
             showProgress(true, 75);
-            const res = await invoke('swap_custom_decal_to_donor', {
+            await invoke('swap_custom_decal_to_donor', {
                 donorItemId: donorId,
                 decalName,
                 diffuseBase64: null,
@@ -4865,11 +5295,154 @@ function initDecalsTab() {
     });
 }
 
+let boostMeterTabReady = false;
+
+function initBoostMeterTab() {
+    const enabledEl = document.getElementById('boost-meter-enabled');
+    const styleSelect = document.getElementById('boost-meter-style-select');
+    const previewCircle = document.getElementById('boost-preview-circle');
+    const previewBar = document.getElementById('boost-meter-preview-bar');
+    const previewName = document.getElementById('boost-preview-name');
+    const previewPct = document.getElementById('boost-preview-pct');
+    const descText = document.getElementById('boost-meter-desc-text');
+    const testBtn = document.getElementById('boost-test-btn');
+    const communityGrid = document.getElementById('boost-community-grid');
+
+    if (!enabledEl) return;
+
+    let activeStyle = 'default';
+
+    const updatePreview = (styleId) => {
+        activeStyle = styleId;
+        const meter = COMMUNITY_BOOST_METERS.find(m => m.id === styleId) || COMMUNITY_BOOST_METERS[0];
+        if (previewName) previewName.textContent = meter.name;
+        if (descText) descText.textContent = meter.description;
+        if (previewBar) previewBar.style.background = meter.gradient;
+        if (previewCircle) {
+            previewCircle.style.borderColor = meter.accent;
+            previewCircle.style.boxShadow = `0 0 14px ${meter.accent}66`;
+        }
+        if (styleSelect) styleSelect.value = styleId;
+
+        // Update active checkmarks on grid
+        if (communityGrid) {
+            communityGrid.querySelectorAll('.boost-meter-card').forEach(card => {
+                const isSelected = card.dataset.styleId === styleId;
+                card.style.borderColor = isSelected ? 'var(--accent)' : 'var(--border)';
+                const btn = card.querySelector('.boost-apply-btn');
+                if (btn) {
+                    btn.textContent = isSelected ? 'Active ✓' : 'Apply Meter';
+                    btn.classList.toggle('action-btn-secondary', isSelected);
+                }
+            });
+        }
+    };
+
+    const renderCommunityBoostMeters = () => {
+        if (!communityGrid) return;
+        communityGrid.innerHTML = COMMUNITY_BOOST_METERS.map(m => {
+            const isSelected = m.id === activeStyle;
+            return `
+                <div class="card boost-meter-card" data-style-id="${m.id}" style="background: rgba(255,255,255,0.02); border: 1px solid ${isSelected ? 'var(--accent)' : 'var(--border)'}; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between; transition: border-color 0.2s;">
+                    <div>
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                            <strong style="font-size: 13.5px; color: var(--text);">${escHtml(m.name)}</strong>
+                            <span style="font-size: 10px; font-weight: 700; background: rgba(255,255,255,0.06); color: var(--accent); padding: 2px 6px; border-radius: 4px;">${m.type}</span>
+                        </div>
+                        <div style="height: 8px; width: 100%; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden; margin: 8px 0;">
+                            <div style="height: 100%; width: 100%; background: ${m.gradient}; border-radius: 4px;"></div>
+                        </div>
+                        <p style="font-size: 11.5px; color: var(--muted); margin: 6px 0 12px; line-height: 1.35;">${escHtml(m.description)}</p>
+                    </div>
+                    <button type="button" class="action-btn boost-apply-btn ${isSelected ? 'action-btn-secondary' : ''}" data-style-id="${m.id}" style="width: 100%; font-size: 12px; padding: 6px 10px;">
+                        ${isSelected ? 'Active ✓' : 'Apply Meter'}
+                    </button>
+                </div>
+            `;
+        }).join('');
+
+        communityGrid.querySelectorAll('.boost-apply-btn').forEach(btn => {
+            btn.onclick = async () => {
+                const styleId = btn.dataset.styleId;
+                updatePreview(styleId);
+
+                const payload = {
+                    enabled: true,
+                    style: styleId,
+                };
+                enabledEl.checked = true;
+                syncNameSpoofSwitchAria(enabledEl);
+                localStorage.setItem(BOOST_METER_SPOOF_KEY, JSON.stringify({ boost_meter_spoof: payload }));
+
+                await runToolSave(btn, 'Boost meter style', { boost_meter_spoof: payload }, { enabled: true });
+                showToast(`Applied ${btn.closest('.card')?.querySelector('strong')?.textContent || styleId} boost meter!`, 'success');
+            };
+        });
+    };
+
+    // Animated Boost Simulation Tester
+    if (testBtn) {
+        let testInterval = null;
+        testBtn.onclick = () => {
+            if (testInterval) return;
+            let current = 100;
+            testBtn.disabled = true;
+            testBtn.textContent = 'Boosting… 🔥';
+
+            testInterval = setInterval(() => {
+                current -= 8;
+                if (current < 0) current = 0;
+                if (previewCircle) previewCircle.textContent = String(current);
+                if (previewPct) previewPct.textContent = `${current}%`;
+                if (previewBar) previewBar.style.width = `${current}%`;
+
+                if (current <= 0) {
+                    clearInterval(testInterval);
+                    testInterval = null;
+                    setTimeout(() => {
+                        // Recharge
+                        current = 100;
+                        if (previewCircle) previewCircle.textContent = '100';
+                        if (previewPct) previewPct.textContent = '100%';
+                        if (previewBar) previewBar.style.width = '100%';
+                        testBtn.disabled = false;
+                        testBtn.textContent = 'Test Boost 🚀';
+                    }, 500);
+                }
+            }, 50);
+        };
+    }
+
+    const loadBoostConfig = () => {
+        const stored = readLocalJson(BOOST_METER_SPOOF_KEY).boost_meter_spoof || { enabled: false, style: 'default' };
+        enabledEl.checked = !!stored.enabled;
+        syncNameSpoofSwitchAria(enabledEl);
+        updatePreview(stored.style || 'default');
+    };
+
+    if (boostMeterTabReady) return;
+    boostMeterTabReady = true;
+
+    loadBoostConfig();
+    renderCommunityBoostMeters();
+
+    enabledEl.addEventListener('change', async () => {
+        syncNameSpoofSwitchAria(enabledEl);
+        const payload = {
+            enabled: enabledEl.checked,
+            style: activeStyle || 'default',
+        };
+        localStorage.setItem(BOOST_METER_SPOOF_KEY, JSON.stringify({ boost_meter_spoof: payload }));
+        await runToolSave(null, 'Boost meter toggle', { boost_meter_spoof: payload }, { enabled: payload.enabled });
+    });
+}
+
 function initCustomizationTab() {
     initNamesTab();
     initCreditsTab();
     initAvatarTab();
     initDecalsTab();
+    initBoostMeterTab();
     initLeaderboardTab();
     if (customizationTabReady) return;
     customizationTabReady = true;

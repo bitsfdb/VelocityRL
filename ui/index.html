@@ -287,6 +287,8 @@
                     <button type="button" class="subtab-btn active" data-subtab="custom-names-pane" data-i18n="custom.subtab_names">Names</button>
                     <button type="button" class="subtab-btn" data-subtab="custom-credits-pane" data-i18n="custom.subtab_credits">Credits</button>
                     <button type="button" class="subtab-btn" data-subtab="custom-avatar-pane" data-i18n="custom.subtab_avatar">Profile Picture (PFP)</button>
+                    <button type="button" class="subtab-btn" data-subtab="custom-decals-pane" data-i18n="custom.subtab_decals">Custom Decals</button>
+                    <button type="button" class="subtab-btn" data-subtab="custom-boost-pane" data-i18n="custom.subtab_boost">Boost Meters</button>
                 </div>
 
                 <div id="custom-names-pane" class="subtab-pane active">
@@ -404,6 +406,183 @@
                             <button id="avatar-restore-btn" class="action-btn action-btn-secondary" type="button" data-i18n="custom.restore_avatar">Restore Default</button>
                         </div>
                     </div>
+                </div>
+
+                <div id="custom-decals-pane" class="subtab-pane">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 6px;">
+                        <div>
+                            <h2 class="section-title">Custom Car Decals</h2>
+                            <p class="section-desc" style="margin-bottom: 0;">Browse and swap community AlphaConsole decals, or import custom packages and textures.</p>
+                        </div>
+                        <div class="subtab-strip" style="margin-bottom: 0; padding-bottom: 0; border-bottom: none;">
+                            <button type="button" class="subtab-btn active" id="decal-tab-catalog-btn">Community Catalog</button>
+                            <button type="button" class="subtab-btn" id="decal-tab-import-btn">Import Package / URL</button>
+                        </div>
+                    </div>
+
+                    <!-- Catalog View -->
+                    <div id="decal-catalog-view">
+                        <div class="browser-toolbar" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: space-between; margin: 12px 0;">
+                            <div style="display: flex; gap: 8px; align-items: center; flex: 1; min-width: 260px;">
+                                <input type="text" id="decal-catalog-search" placeholder="Search AlphaConsole decals (e.g. Ghost, Gold, Dragon, Carbon)..." style="flex: 1; background: var(--input-bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 12px;">
+                                <select id="decal-catalog-car-filter" style="background: var(--input-bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 12px;">
+                                    <option value="all">All Cars</option>
+                                    <option value="Octane">Octane</option>
+                                    <option value="Dominus">Dominus</option>
+                                    <option value="Fennec">Fennec</option>
+                                    <option value="Nissan Skyline">Nissan Skyline</option>
+                                </select>
+                            </div>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <label for="decal-catalog-donor-select" style="font-size: 12px; color: var(--muted); white-space: nowrap;">Swap Over:</label>
+                                <select id="decal-catalog-donor-select" style="background: var(--input-bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 12px; min-width: 170px;">
+                                    <option value="">Loading donor decals...</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div id="decal-catalog-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; max-height: calc(100vh - 280px); overflow-y: auto; padding-right: 6px;"></div>
+                    </div>
+
+                    <!-- Import / URL View -->
+                    <div id="decal-import-view" style="display: none;">
+                        <div class="card spoof-card" style="max-width: 720px; margin-top: 12px;">
+                            <div class="settings-group">
+                                <label class="switch-row" for="custom-decal-enabled">
+                                    <input type="checkbox" id="custom-decal-enabled" class="switch-input" role="switch">
+                                    <span class="switch-ui" aria-hidden="true">
+                                        <span class="switch-track"><span class="switch-thumb"></span></span>
+                                        <span class="switch-state">
+                                            <span class="switch-state-on">On</span>
+                                            <span class="switch-state-off">Off</span>
+                                        </span>
+                                    </span>
+                                    <span class="switch-copy">
+                                        <span class="switch-title">Custom Decals</span>
+                                        <span class="switch-hint">Enable custom decal replacement in matches and garage</span>
+                                    </span>
+                                </label>
+                            </div>
+
+                            <div class="settings-group" style="background: rgba(33, 150, 243, 0.04); border: 1px solid rgba(33, 150, 243, 0.2); padding: 12px; border-radius: 8px;">
+                                <label for="decal-url-input" style="color: var(--accent); font-weight: 600;">Download from AlphaConsole / VideoGameMods URL</label>
+                                <div style="display: flex; gap: 8px; margin-top: 6px;">
+                                    <input type="text" id="decal-url-input" placeholder="https://example.com/alphaconsole_decal.zip or direct JSON link..." autocomplete="off" spellcheck="false" style="flex: 1;">
+                                    <button type="button" id="decal-url-download-btn" class="action-btn" style="white-space: nowrap; padding: 6px 14px;">Fetch & Load</button>
+                                </div>
+                                <span class="field-hint" style="margin-top: 4px;">Automatically downloads the package, parses the AlphaConsole descriptor, and prepares textures for 1-click injection.</span>
+                            </div>
+
+                            <div style="display: flex; gap: 12px; margin-bottom: 14px; flex-wrap: wrap;">
+                                <div style="flex: 1; min-width: 200px;">
+                                    <label for="decal-target-car-select" style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--text);">Target Car Body</label>
+                                    <select id="decal-target-car-select" style="width: 100%; background: var(--input-bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 13px;">
+                                        <option value="auto">Auto-Detect Car</option>
+                                        <option value="23" selected>Octane</option>
+                                        <option value="403">Dominus</option>
+                                        <option value="4284">Fennec</option>
+                                        <option value="1624">Breakout</option>
+                                        <option value="1151">Nissan Skyline</option>
+                                    </select>
+                                </div>
+                                <div style="display: flex; align-items: flex-end; padding-bottom: 4px;">
+                                    <span style="font-size: 12px; color: var(--muted); margin-right: 6px;">Detected Car:</span>
+                                    <span id="decal-detected-car-badge" style="display: inline-block; padding: 4px 10px; background: rgba(33,150,243,0.15); color: var(--accent); border-radius: 4px; font-weight: 600; font-size: 12px;">Octane</span>
+                                </div>
+                            </div>
+
+                            <div class="settings-group">
+                                <label for="decal-name-input">Decal Name / Label</label>
+                                <input type="text" id="decal-name-input" placeholder="e.g. Clean Carbon Octane" autocomplete="off" spellcheck="false">
+                            </div>
+
+                            <div class="settings-group">
+                                <label>Decal Package (ZIP / JSON / Textures)</label>
+                                <div id="decal-dropzone" style="border: 2px dashed var(--border); border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; background: rgba(255,255,255,0.02); transition: border-color 0.2s, background 0.2s;">
+                                    <div style="font-size: 28px; margin-bottom: 8px;">🎨</div>
+                                    <strong style="display: block; font-size: 13px; color: var(--text);">Drag and drop AlphaConsole ZIP or JSON here</strong>
+                                    <span style="font-size: 11px; color: var(--muted); display: block; margin-top: 4px;">or click anywhere in this box to browse local files</span>
+                                </div>
+                                <input type="file" id="decal-json-file" accept=".zip,.json,image/png" style="display: none;">
+                            </div>
+
+                            <div class="settings-group">
+                                <label for="decal-donor-search">Donor Decal to Replace</label>
+                                <input type="text" id="decal-donor-search" placeholder="Search donor decal (e.g. Flames, Stripes, Tech)..." autocomplete="off" style="margin-bottom: 8px;">
+                                <select id="decal-donor-item-select" size="4" style="width: 100%; height: 110px; background: var(--input-bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 12.5px;"></select>
+                                <span class="field-hint">Choose which stock or owned decal will display your custom texture in-game.</span>
+                            </div>
+
+                            <div class="swapper-controls" style="margin-top: 16px;">
+                                <button id="decal-swap-btn" class="action-btn" type="button">Swap Custom Decal</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="custom-boost-pane" class="subtab-pane">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 6px;">
+                        <div>
+                            <h2 class="section-title">Custom Boost Meters</h2>
+                            <p class="section-desc" style="margin-bottom: 0;">Customize the appearance, theme, and geometry of your in-game boost gauge.</p>
+                        </div>
+                        <div class="settings-group" style="margin-bottom: 0;">
+                            <label class="switch-row" for="boost-meter-enabled" style="margin-bottom: 0;">
+                                <input type="checkbox" id="boost-meter-enabled" class="switch-input" role="switch">
+                                <span class="switch-ui" aria-hidden="true">
+                                    <span class="switch-track"><span class="switch-thumb"></span></span>
+                                    <span class="switch-state">
+                                        <span class="switch-state-on">On</span>
+                                        <span class="switch-state-off">Off</span>
+                                    </span>
+                                </span>
+                                <span class="switch-copy">
+                                    <span class="switch-title" style="font-size: 12.5px;">Custom Boost Meter</span>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Live HUD Interactive Tester -->
+                    <div style="margin: 12px 0 16px; padding: 16px 20px; background: rgba(0,0,0,0.35); border-radius: 10px; border: 1px solid var(--border); display: flex; align-items: center; gap: 24px; flex-wrap: wrap;">
+                        <div style="display: flex; align-items: center; gap: 14px;">
+                            <div id="boost-preview-circle" style="width: 56px; height: 56px; border-radius: 50%; border: 3px solid #ff9800; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 800; font-family: monospace; color: var(--text); box-shadow: 0 0 12px rgba(255,152,0,0.4); transition: border-color 0.3s, box-shadow 0.3s;">
+                                100
+                            </div>
+                            <div>
+                                <span id="boost-preview-name" style="display: block; font-size: 14px; font-weight: 700; color: var(--text);">Default Psyonix HUD</span>
+                                <span id="boost-meter-desc-text" style="display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px;">Vanilla Rocket League boost meter layout.</span>
+                            </div>
+                        </div>
+
+                        <div style="flex: 1; min-width: 220px;">
+                            <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-bottom: 4px;">
+                                <span>Boost Simulation</span>
+                                <span id="boost-preview-pct">100%</span>
+                            </div>
+                            <div style="height: 10px; width: 100%; background: rgba(255,255,255,0.08); border-radius: 5px; overflow: hidden;">
+                                <div id="boost-meter-preview-bar" style="height: 100%; width: 100%; background: linear-gradient(90deg, #ff9800, #ff5722); border-radius: 5px; transition: width 0.15s ease-out;"></div>
+                            </div>
+                        </div>
+
+                        <button type="button" id="boost-test-btn" class="action-btn action-btn-secondary" style="padding: 6px 14px; font-size: 12px;">Test Boost 🚀</button>
+                    </div>
+
+                    <!-- Community Boost Meter Grid -->
+                    <h3 style="font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px;">Community Boost Meters</h3>
+                    <div id="boost-community-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; max-height: calc(100vh - 360px); overflow-y: auto; padding-right: 6px;"></div>
+
+                    <select id="boost-meter-style-select" style="display: none;">
+                        <option value="default">Default Psyonix HUD</option>
+                        <option value="circular_neon">Circular Neon Ring</option>
+                        <option value="cyberpunk_blue">Cyberpunk Cyan HUD</option>
+                        <option value="digital_crimson">Digital Crimson Gauge</option>
+                        <option value="minimal_clean">Minimal Clean Bar</option>
+                        <option value="retro_synthwave">Retro Synthwave 80s</option>
+                        <option value="golden_hex">Golden Champion RPM</option>
+                        <option value="void_pulse">Void Nebula Arc</option>
+                    </select>
+                    <button id="boost-meter-save-btn" type="button" style="display: none;"></button>
                 </div>
             </div>
 
