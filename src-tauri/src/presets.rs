@@ -333,18 +333,6 @@ pub async fn apply_preset(app: tauri::AppHandle, id: String) -> Result<Vec<Strin
     crate::save_swaps(&app, &current_swaps);
     let _ = crate::sync_all_swaps_to_tagame(&app, &cooked, &current_swaps).await;
 
-    // Inject preset items into player save file
-    if let Ok(save_path) = crate::savedata::locate_latest_save() {
-        for s in &current_swaps {
-            let slot_idx = s.slot.as_deref().and_then(crate::savedata::slot_name_to_index);
-            let base_pid = if s.owned_id > 0 && s.owned_id != s.wanted_id {
-                Some(s.owned_id)
-            } else {
-                slot_idx.map(crate::savedata::default_base_product_for_slot)
-            };
-            let _ = crate::savedata::spawn_item_native_ext(&save_path, s.wanted_id, s.paint_id, slot_idx, base_pid);
-        }
-    }
 
     let target_map_id = preset.active_map_id.as_ref().or_else(|| preset.maps.first().map(|m| &m.id));
     if let Some(id) = target_map_id {
@@ -981,18 +969,6 @@ pub async fn apply_swap_plan(
     crate::save_swaps(&app, &swaps);
     let _ = crate::sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
 
-    // Inject random loadout items into player save file
-    if let Ok(save_path) = crate::savedata::locate_latest_save() {
-        for s in &plan {
-            let slot_idx = s.slot.as_deref().and_then(crate::savedata::slot_name_to_index);
-            let base_pid = if s.owned_id > 0 && s.owned_id != s.wanted_id {
-                Some(s.owned_id)
-            } else {
-                slot_idx.map(crate::savedata::default_base_product_for_slot)
-            };
-            let _ = crate::savedata::spawn_item_native_ext(&save_path, s.wanted_id, s.paint_id, slot_idx, base_pid);
-        }
-    }
 
     append_history(&app, "random", &plan, "random loadout applied");
     Ok(results)
