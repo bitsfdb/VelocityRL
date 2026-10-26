@@ -7871,7 +7871,7 @@ async function initFeatures() {
             // Item Swapper
             const swapperNav = document.querySelector('.nav-item[data-tab="swapper-tab"]');
             if (swapperNav) {
-                swapperNav.style.display = feat.flags.item_swapper === false ? 'none' : '';
+                swapperNav.style.display = (feat.flags.item_swapper === false || feat.flags.swapper === false) ? 'none' : '';
             }
 
             // Workshop upload

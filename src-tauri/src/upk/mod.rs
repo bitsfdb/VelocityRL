@@ -9,13 +9,16 @@ pub mod crypto;
 pub mod parser;
 pub mod compression;
 pub mod nametable;
+pub mod legacy_swapper;
 pub mod swapper;
 pub mod palette;
-pub mod tagame_swapper;
 pub mod decal_compiler;
 
-pub use swapper::{swap_asset, restore_single, restore_all, SwapOptions, SwapError};
+pub use swapper::{
+    TagameSwapItem, TagameSwapperStatus, TagameSwapError, ensure_projectx_patched,
+    TagameSwapItem as SwapItem, TagameSwapperStatus as SwapperStatus, TagameSwapError as SwapError,
+};
+pub use legacy_swapper::{swap_asset, restore_single, restore_all, SwapOptions};
 pub use palette::{PaletteStatus, PaletteError};
-pub use tagame_swapper::{TagameSwapItem, TagameSwapperStatus, TagameSwapError, ensure_projectx_patched};
 pub use decal_compiler::{CustomDecalConfig, DetectedCarInfo, ParsedDecalPackage};
 

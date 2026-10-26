@@ -12,7 +12,7 @@ use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use tauri::Manager;
 use crate::upk::crypto;
-use crate::upk::tagame_swapper::{TAGAME_KEY, TAGAME_BACKUP_NAME};
+use crate::upk::swapper::{TAGAME_KEY, TAGAME_BACKUP_NAME};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomProfileConfig {
@@ -272,7 +272,7 @@ pub async fn apply_custom_avatar_upk(app: tauri::AppHandle, avatar_source: Strin
 
     // Locate TAGame.upk
     let tagame_path = if let Some(game_dir) = get_game_dir(&app) {
-        crate::upk::tagame_swapper::resolve_cooked_dir(&game_dir)
+        crate::upk::swapper::resolve_cooked_dir(&game_dir)
             .map(|p| p.join("TAGame.upk"))
             .map_err(|e| e.to_string())?
     } else {
@@ -292,7 +292,7 @@ pub async fn apply_custom_avatar_upk(app: tauri::AppHandle, avatar_source: Strin
 #[tauri::command]
 pub fn restore_custom_avatar_upk(app: tauri::AppHandle) -> Result<String, String> {
     let tagame_path = if let Some(game_dir) = get_game_dir(&app) {
-        crate::upk::tagame_swapper::resolve_cooked_dir(&game_dir)
+        crate::upk::swapper::resolve_cooked_dir(&game_dir)
             .map(|p| p.join("TAGame.upk"))
             .map_err(|e| e.to_string())?
     } else {

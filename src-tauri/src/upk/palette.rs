@@ -355,7 +355,7 @@ fn decrypt_tagame(
         .get("tagame")
         .copied()
         .or_else(|| keys_map.get("TAGame").copied())
-        .or(Some(crate::upk::tagame_swapper::TAGAME_KEY));
+        .or(Some(crate::upk::swapper::TAGAME_KEY));
     let key = map_key
         .and_then(|k| {
             // Verify key by checking if decrypted first name block contains a plausible length
