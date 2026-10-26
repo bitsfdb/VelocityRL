@@ -1625,7 +1625,7 @@ pub(crate) async fn sync_all_swaps_to_tagame(
         })
         .collect();
 
-    let _ = upk::tagame_swapper::apply_tagame_modifications(
+    let _ = upk::swapper::apply_tagame_modifications(
         cooked,
         &tagame_items,
         keys_txt,
@@ -1664,9 +1664,9 @@ async fn delete_swap(app: tauri::AppHandle, owned_id: i32) -> Result<(), String>
 
     if let Ok(config) = get_config(app.clone()).await {
         if !config.game_dir.is_empty() {
-            if let Ok(cooked) = upk::tagame_swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
+            if let Ok(cooked) = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
                 if swaps.is_empty() {
-                    let _ = upk::tagame_swapper::restore_tagame_upk(&cooked);
+                    let _ = upk::swapper::restore_tagame_upk(&cooked);
                 } else {
                     let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
                 }
@@ -1845,9 +1845,9 @@ async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<()
 
     if let Ok(config) = get_config(app.clone()).await {
         if !config.game_dir.is_empty() {
-            if let Ok(cooked) = upk::tagame_swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
+            if let Ok(cooked) = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
                 if swaps.is_empty() {
-                    let _ = upk::tagame_swapper::restore_tagame_upk(&cooked);
+                    let _ = upk::swapper::restore_tagame_upk(&cooked);
                 } else {
                     let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
                 }
@@ -1873,8 +1873,8 @@ async fn restore_backups(app: tauri::AppHandle) -> Result<String, String> {
 
     if let Ok(config) = get_config(app.clone()).await {
         if !config.game_dir.is_empty() {
-            if let Ok(cooked) = upk::tagame_swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                let _ = upk::tagame_swapper::restore_tagame_upk(&cooked);
+            if let Ok(cooked) = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                let _ = upk::swapper::restore_tagame_upk(&cooked);
             }
         }
     }
@@ -2010,14 +2010,14 @@ async fn apply_tagame_swaps(
     if config.game_dir.is_empty() {
         return Err("Game directory not set. Open Settings and select CookedPCConsole folder.".into());
     }
-    let cooked = upk::tagame_swapper::resolve_cooked_dir(Path::new(&config.game_dir))
+    let cooked = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir))
         .map_err(|e| e.to_string())?;
 
     let keys_txt = include_str!("../resources/keys.txt");
     let keys_map_json = include_str!("../resources/keys_map.json");
 
     let integrity = load_integrity(&app);
-    let status = upk::tagame_swapper::apply_tagame_modifications(
+    let status = upk::swapper::apply_tagame_modifications(
         &cooked,
         &swaps,
         keys_txt,
@@ -2026,7 +2026,7 @@ async fn apply_tagame_swaps(
     ).map_err(|e| e.to_string())?;
 
     applog::event(&format!(
-        "tagame_swapper: applied {} swaps",
+        "swapper: applied {} swaps",
         swaps.len()
     ));
     Ok(status)
@@ -2038,13 +2038,13 @@ async fn restore_tagame_swaps(app: tauri::AppHandle) -> Result<upk::TagameSwappe
     if config.game_dir.is_empty() {
         return Err("Game directory not set. Open Settings and select CookedPCConsole folder.".into());
     }
-    let cooked = upk::tagame_swapper::resolve_cooked_dir(Path::new(&config.game_dir))
+    let cooked = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir))
         .map_err(|e| e.to_string())?;
 
-    let status = upk::tagame_swapper::restore_tagame_upk(&cooked)
+    let status = upk::swapper::restore_tagame_upk(&cooked)
         .map_err(|e| e.to_string())?;
 
-    applog::event("tagame_swapper: restored TAGame.upk");
+    applog::event("swapper: restored TAGame.upk");
     Ok(status)
 }
 
@@ -2064,13 +2064,13 @@ async fn apply_ping_spoof_upk(
     if config.game_dir.is_empty() {
         return Ok(());
     }
-    let cooked = match upk::tagame_swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
+    let cooked = match upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
         Ok(c) => c,
         Err(_) => return Ok(()),
     };
     let keys_txt = include_str!("../resources/keys.txt");
     let keys_map_json = include_str!("../resources/keys_map.json");
-    upk::tagame_swapper::apply_tagame_ping_spoof(&cooked, min, max, keys_txt, keys_map_json)
+    upk::swapper::apply_tagame_ping_spoof(&cooked, min, max, keys_txt, keys_map_json)
         .map_err(|e| e.to_string())?;
     applog::event(&format!("ping_spoof: applied TAGame.upk GetPing spoof [{min}..{max}] ms"));
     Ok(())
@@ -2082,23 +2082,23 @@ async fn restore_ping_spoof_upk(app: tauri::AppHandle) -> Result<(), String> {
     if config.game_dir.is_empty() {
         return Ok(());
     }
-    let cooked = match upk::tagame_swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
+    let cooked = match upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
         Ok(c) => c,
         Err(_) => return Ok(()),
     };
     let keys_txt = include_str!("../resources/keys.txt");
     let keys_map_json = include_str!("../resources/keys_map.json");
-    upk::tagame_swapper::restore_tagame_ping_spoof(&cooked, keys_txt, keys_map_json)
+    upk::swapper::restore_tagame_ping_spoof(&cooked, keys_txt, keys_map_json)
         .map_err(|e| e.to_string())?;
     applog::event("ping_spoof: restored vanilla TAGame.upk GetPing");
     Ok(())
 }
 
 #[tauri::command]
-async fn get_tagame_swapper_status(app: tauri::AppHandle) -> Result<upk::TagameSwapperStatus, String> {
+async fn get_swapper_status(app: tauri::AppHandle) -> Result<upk::TagameSwapperStatus, String> {
     let config = get_config(app.clone()).await?;
     let tagame_path = if !config.game_dir.is_empty() {
-        if let Ok(cooked) = upk::tagame_swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
+        if let Ok(cooked) = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
             cooked.join("TAGame.upk").to_string_lossy().into_owned()
         } else {
             String::new()
@@ -2123,6 +2123,11 @@ async fn get_tagame_swapper_status(app: tauri::AppHandle) -> Result<upk::TagameS
     })
 }
 
+#[tauri::command]
+async fn get_tagame_swapper_status(app: tauri::AppHandle) -> Result<upk::TagameSwapperStatus, String> {
+    get_swapper_status(app).await
+}
+
 #[derive(Clone, serde::Serialize)]
 struct TagameDownloadProgress {
     downloaded: usize,
@@ -2137,7 +2142,7 @@ async fn download_official_tagame(app: tauri::AppHandle) -> Result<String, Strin
     if config.game_dir.is_empty() {
         return Err("Game directory not set. Open Settings and select CookedPCConsole folder.".into());
     }
-    let cooked = upk::tagame_swapper::resolve_cooked_dir(Path::new(&config.game_dir))
+    let cooked = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir))
         .map_err(|e| e.to_string())?;
 
     let target_path = cooked.join("TAGame.upk");
@@ -2145,7 +2150,7 @@ async fn download_official_tagame(app: tauri::AppHandle) -> Result<String, Strin
 
     // If a clean backup doesn't exist, we will preserve/create it after download
     let app_handle = app.clone();
-    let res = upk::tagame_swapper::download_official_tagame_upk(&target_path, move |downloaded, total| {
+    let res = upk::swapper::download_official_tagame_upk(&target_path, move |downloaded, total| {
         let percent = if total > 0 { ((downloaded as f64 / total as f64) * 100.0) as u32 } else { 0 };
         let _ = app_handle.emit("tagame-download-progress", TagameDownloadProgress {
             downloaded,
@@ -2158,11 +2163,11 @@ async fn download_official_tagame(app: tauri::AppHandle) -> Result<String, Strin
         Ok(()) => {
             // Also update TAGame.upk.bak so future restores/modifications use the fresh official copy
             let _ = std::fs::copy(&target_path, &backup_path);
-            applog::event("tagame_swapper: official TAGame.upk downloaded and backed up successfully");
+            applog::event("swapper: official TAGame.upk downloaded and backed up successfully");
             Ok("Official TAGame.upk downloaded and verified successfully.".into())
         }
         Err(e) => {
-            applog::event(&format!("tagame_swapper: failed to download TAGame.upk: {e}"));
+            applog::event(&format!("swapper: failed to download TAGame.upk: {e}"));
             Err(e)
         }
     }
@@ -3484,11 +3489,11 @@ pub fn run() {
                     // If game directory is configured, verify TAGame.upk integrity / updates
                     if let Ok(config) = get_config(ttl_app.clone()).await {
                         if !config.game_dir.is_empty() {
-                            if let Ok(cooked) = upk::tagame_swapper::resolve_cooked_dir(std::path::Path::new(&config.game_dir)) {
+                            if let Ok(cooked) = upk::swapper::resolve_cooked_dir(std::path::Path::new(&config.game_dir)) {
                                 let tagame = cooked.join("TAGame.upk");
                                 if !tagame.exists() {
                                     applog::event("periodic_check: TAGame.upk missing, attempting automatic download...");
-                                    let _ = upk::tagame_swapper::download_official_tagame_upk(&tagame, |_, _| {}).await;
+                                    let _ = upk::swapper::download_official_tagame_upk(&tagame, |_, _| {}).await;
                                 }
                             }
                         }
@@ -3747,6 +3752,7 @@ pub fn run() {
             restore_tagame_swaps,
             apply_ping_spoof_upk,
             restore_ping_spoof_upk,
+            get_swapper_status,
             get_tagame_swapper_status,
             download_official_tagame,
             get_detected_car_body,
