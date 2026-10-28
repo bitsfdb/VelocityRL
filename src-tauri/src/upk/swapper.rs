@@ -29,8 +29,7 @@ pub mod opcodes {
     pub const EX_LOCAL_VARIABLE: u8 = 0x46;
     pub const EX_INSTANCE_VARIABLE: u8 = 0x2B;
     pub const EX_STRUCT_MEMBER: u8 = 0x35;
-    pub const EX_DYN_ARRAY_OP: u8 = 0x57;
-    pub const EX_DYN_ARRAY_ELEMENT: u8 = 0x5E;
+    pub const EX_DYN_ARRAY_ELEMENT: u8 = 0x57;
     pub const EX_INT_ZERO: u8 = 0x25;
     pub const EX_INT_CONST_BYTE: u8 = 0x2C;
     pub const EX_INT_CONST: u8 = 0x1D;
@@ -182,10 +181,10 @@ pub fn emit_car_set_loadout_bytecode(
         } else {
             (5, 5u32)
         };
-        let assign_disk_len = 21 + index_disk_len + target_disk_len;
+        let assign_disk_len = 18 + index_disk_len + target_disk_len;
 
         if let Some(owned_id) = rule.owned_id {
-            let cond_disk_len = 3 + 1 + 3 + 1 + index_disk_len + 23 + 5 + 1;
+            let cond_disk_len = 27 + index_disk_len;
             let total_rule_disk = cond_disk_len + assign_disk_len;
             if bc.len() + total_rule_disk > available_space {
                 break;
@@ -197,8 +196,6 @@ pub fn emit_car_set_loadout_bytecode(
             bc.extend_from_slice(&[0x00, 0x00]);
 
             bc.push(opcodes::EX_EQUAL_EQUAL_INT_INT);
-            bc.push(opcodes::EX_DYN_ARRAY_OP);
-            bc.extend_from_slice(&[0x00, 0x00]);
             bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
             let cond_index_mem = if rule.slot_idx == 0 {
                 bc.push(opcodes::EX_INT_ZERO);
@@ -211,20 +208,18 @@ pub fn emit_car_set_loadout_bytecode(
             bc.push(opcodes::EX_STRUCT_MEMBER);
             bc.extend_from_slice(&products_id.to_le_bytes());
             bc.extend_from_slice(&cld_id.to_le_bytes());
-            bc.extend_from_slice(&[0x00, 0x01]);
+            bc.extend_from_slice(&[0x00, 0x00]);
             bc.push(opcodes::EX_LOCAL_VARIABLE);
             bc.extend_from_slice(&data_var_id.to_le_bytes());
             bc.push(opcodes::EX_INT_CONST);
             bc.extend_from_slice(&owned_id.to_le_bytes());
             bc.push(opcodes::EX_END_FUNCTION_PARMS);
 
-            let cond_mem = 3 + 1 + 3 + 1 + cond_index_mem + 28 + 5 + 1;
+            let cond_mem = 39 + cond_index_mem;
             mem_sz += cond_mem;
 
             // 2. Data.Products[rule.slot_idx] = rule.target_id;
             bc.push(opcodes::EX_LET);
-            bc.push(opcodes::EX_DYN_ARRAY_OP);
-            bc.extend_from_slice(&[0x00, 0x00]);
             bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
             let assign_index_mem = if rule.slot_idx == 0 {
                 bc.push(opcodes::EX_INT_ZERO);
@@ -237,7 +232,7 @@ pub fn emit_car_set_loadout_bytecode(
             bc.push(opcodes::EX_STRUCT_MEMBER);
             bc.extend_from_slice(&products_id.to_le_bytes());
             bc.extend_from_slice(&cld_id.to_le_bytes());
-            bc.extend_from_slice(&[0x00, 0x01]);
+            bc.extend_from_slice(&[0x00, 0x00]);
             bc.push(opcodes::EX_LOCAL_VARIABLE);
             bc.extend_from_slice(&data_var_id.to_le_bytes());
             if rule.target_id <= 255 && rule.target_id >= 0 {
@@ -248,7 +243,7 @@ pub fn emit_car_set_loadout_bytecode(
                 bc.extend_from_slice(&rule.target_id.to_le_bytes());
             }
 
-            let assign_mem = 1 + 3 + 1 + assign_index_mem + 28 + target_mem_len;
+            let assign_mem = 30 + assign_index_mem + target_mem_len;
             mem_sz += assign_mem;
 
             let jump_target = mem_sz as u16;
@@ -258,8 +253,6 @@ pub fn emit_car_set_loadout_bytecode(
                 break;
             }
             bc.push(opcodes::EX_LET);
-            bc.push(opcodes::EX_DYN_ARRAY_OP);
-            bc.extend_from_slice(&[0x00, 0x00]);
             bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
             let assign_index_mem = if rule.slot_idx == 0 {
                 bc.push(opcodes::EX_INT_ZERO);
@@ -272,7 +265,7 @@ pub fn emit_car_set_loadout_bytecode(
             bc.push(opcodes::EX_STRUCT_MEMBER);
             bc.extend_from_slice(&products_id.to_le_bytes());
             bc.extend_from_slice(&cld_id.to_le_bytes());
-            bc.extend_from_slice(&[0x00, 0x01]);
+            bc.extend_from_slice(&[0x00, 0x00]);
             bc.push(opcodes::EX_LOCAL_VARIABLE);
             bc.extend_from_slice(&data_var_id.to_le_bytes());
             if rule.target_id <= 255 && rule.target_id >= 0 {
@@ -283,7 +276,7 @@ pub fn emit_car_set_loadout_bytecode(
                 bc.extend_from_slice(&rule.target_id.to_le_bytes());
             }
 
-            let assign_mem = 1 + 3 + 1 + assign_index_mem + 28 + target_mem_len;
+            let assign_mem = 30 + assign_index_mem + target_mem_len;
             mem_sz += assign_mem;
         }
     }
@@ -364,10 +357,10 @@ pub fn emit_car_preview_set_loadout_bytecode(
         } else {
             (5, 5u32)
         };
-        let assign_disk_len = 21 + index_disk_len + target_disk_len;
+        let assign_disk_len = 18 + index_disk_len + target_disk_len;
 
         if let Some(owned_id) = rule.owned_id {
-            let cond_disk_len = 3 + 1 + 3 + 1 + index_disk_len + 23 + 5 + 1;
+            let cond_disk_len = 27 + index_disk_len;
             let total_rule_disk = cond_disk_len + assign_disk_len;
             if bc.len() + total_rule_disk > available_space {
                 break;
@@ -379,8 +372,6 @@ pub fn emit_car_preview_set_loadout_bytecode(
             bc.extend_from_slice(&[0x00, 0x00]);
 
             bc.push(opcodes::EX_EQUAL_EQUAL_INT_INT);
-            bc.push(opcodes::EX_DYN_ARRAY_OP);
-            bc.extend_from_slice(&[0x00, 0x00]);
             bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
             let cond_index_mem = if rule.slot_idx == 0 {
                 bc.push(opcodes::EX_INT_ZERO);
@@ -393,20 +384,18 @@ pub fn emit_car_preview_set_loadout_bytecode(
             bc.push(opcodes::EX_STRUCT_MEMBER);
             bc.extend_from_slice(&products_id.to_le_bytes());
             bc.extend_from_slice(&loadout_data_id.to_le_bytes());
-            bc.extend_from_slice(&[0x00, 0x01]);
+            bc.extend_from_slice(&[0x00, 0x00]);
             bc.push(opcodes::EX_INSTANCE_VARIABLE);
             bc.extend_from_slice(&new_loadout_id.to_le_bytes());
             bc.push(opcodes::EX_INT_CONST);
             bc.extend_from_slice(&owned_id.to_le_bytes());
             bc.push(opcodes::EX_END_FUNCTION_PARMS);
 
-            let cond_mem = 3 + 1 + 3 + 1 + cond_index_mem + 28 + 5 + 1;
+            let cond_mem = 39 + cond_index_mem;
             mem_sz += cond_mem;
 
             // 2. NewLoadout.Products[rule.slot_idx] = rule.target_id;
             bc.push(opcodes::EX_LET);
-            bc.push(opcodes::EX_DYN_ARRAY_OP);
-            bc.extend_from_slice(&[0x00, 0x00]);
             bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
             let assign_index_mem = if rule.slot_idx == 0 {
                 bc.push(opcodes::EX_INT_ZERO);
@@ -419,7 +408,7 @@ pub fn emit_car_preview_set_loadout_bytecode(
             bc.push(opcodes::EX_STRUCT_MEMBER);
             bc.extend_from_slice(&products_id.to_le_bytes());
             bc.extend_from_slice(&loadout_data_id.to_le_bytes());
-            bc.extend_from_slice(&[0x00, 0x01]);
+            bc.extend_from_slice(&[0x00, 0x00]);
             bc.push(opcodes::EX_INSTANCE_VARIABLE);
             bc.extend_from_slice(&new_loadout_id.to_le_bytes());
             if rule.target_id <= 255 && rule.target_id >= 0 {
@@ -430,7 +419,7 @@ pub fn emit_car_preview_set_loadout_bytecode(
                 bc.extend_from_slice(&rule.target_id.to_le_bytes());
             }
 
-            let assign_mem = 1 + 3 + 1 + assign_index_mem + 28 + target_mem_len;
+            let assign_mem = 30 + assign_index_mem + target_mem_len;
             mem_sz += assign_mem;
 
             let jump_target = mem_sz as u16;
@@ -440,8 +429,6 @@ pub fn emit_car_preview_set_loadout_bytecode(
                 break;
             }
             bc.push(opcodes::EX_LET);
-            bc.push(opcodes::EX_DYN_ARRAY_OP);
-            bc.extend_from_slice(&[0x00, 0x00]);
             bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
             let assign_index_mem = if rule.slot_idx == 0 {
                 bc.push(opcodes::EX_INT_ZERO);
@@ -454,7 +441,7 @@ pub fn emit_car_preview_set_loadout_bytecode(
             bc.push(opcodes::EX_STRUCT_MEMBER);
             bc.extend_from_slice(&products_id.to_le_bytes());
             bc.extend_from_slice(&loadout_data_id.to_le_bytes());
-            bc.extend_from_slice(&[0x00, 0x01]);
+            bc.extend_from_slice(&[0x00, 0x00]);
             bc.push(opcodes::EX_INSTANCE_VARIABLE);
             bc.extend_from_slice(&new_loadout_id.to_le_bytes());
             if rule.target_id <= 255 && rule.target_id >= 0 {
@@ -465,7 +452,7 @@ pub fn emit_car_preview_set_loadout_bytecode(
                 bc.extend_from_slice(&rule.target_id.to_le_bytes());
             }
 
-            let assign_mem = 1 + 3 + 1 + assign_index_mem + 28 + target_mem_len;
+            let assign_mem = 30 + assign_index_mem + target_mem_len;
             mem_sz += assign_mem;
         }
     }
@@ -586,7 +573,7 @@ pub fn emit_car_mesh_apply_paint_settings_bytecode(
         bc.push(opcodes::EX_STRUCT_MEMBER);
         bc.extend_from_slice(&prop_id.to_le_bytes());
         bc.extend_from_slice(&(-4233i32).to_le_bytes());
-        bc.extend_from_slice(&[0x00, 0x01]);
+        bc.extend_from_slice(&[0x00, 0x00]);
         bc.push(opcodes::EX_INSTANCE_VARIABLE);
         bc.extend_from_slice(&15655i32.to_le_bytes());
         bc.push(opcodes::EX_FLOAT_CONST);
@@ -595,7 +582,7 @@ pub fn emit_car_mesh_apply_paint_settings_bytecode(
         mem_sz += 1 + 18 + 8 + 4;
     }
 
-    let jump_target = bc.len() as u16;
+    let jump_target = mem_sz as u16;
     bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
 
     bc.push(opcodes::EX_RETURN);
@@ -843,7 +830,7 @@ pub fn emit_pick_fx_actor_bytecode(
     payload.push(opcodes::EX_INSTANCE_VARIABLE);
     payload.extend_from_slice(&painted_fx_idx.to_le_bytes());
 
-    let jump_target = payload.len() as u16;
+    let jump_target = (3 + (1 + 9 + 1 + 1) + (1 + 9)) as u16; // 25 bytes in 64-bit UScript memory
     payload[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
 
     // return FXActor;
