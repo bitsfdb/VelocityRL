@@ -54,6 +54,7 @@
         "scanning": "Scanning for backups...",
         "restore_all": "Restore All Items",
         "reswap_all": "Reswap All Items",
+        "redownload_assets": "Redownload assets",
         "no_backups": "No backups found."
     },
     "presets": {

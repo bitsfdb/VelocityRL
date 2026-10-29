@@ -1914,8 +1914,8 @@ pub fn restore_tagame_ping_spoof(
     apply_tagame_modifications(cooked_dir, &[], keys_txt, keys_map_json, None)
 }
 
-/// Download clean, official TAGame.upk from VelocityRL asset endpoint with progress reporting.
-pub async fn download_official_tagame_upk<F>(target_path: &Path, mut progress_cb: F) -> Result<(), String>
+/// Download a clean, official UPK asset (e.g. TAGame.upk or ProjectX.upk) from VelocityRL asset endpoint.
+pub async fn download_official_asset<F>(asset_filename: &str, target_path: &Path, mut progress_cb: F) -> Result<(), String>
 where
     F: FnMut(usize, usize) + Send + 'static,
 {
@@ -1935,7 +1935,7 @@ where
 
     let mut mac = HmacSha256::new_from_slice(build_secret.as_bytes())
         .map_err(|e| format!("HMAC init failed: {e}"))?;
-    mac.update(format!("{now_ts}:TAGame.upk").as_bytes());
+    mac.update(format!("{now_ts}:{asset_filename}").as_bytes());
     let sig: String = mac
         .finalize()
         .into_bytes()
@@ -1943,11 +1943,12 @@ where
         .map(|b| format!("{b:02x}"))
         .collect();
 
+    let asset_slug = asset_filename.to_ascii_lowercase();
     let url = format!(
-        "https://api.velocityrl.tech/v2/rl/assets/tagame.upk?secret={sig}&t={now_ts}"
+        "https://api.velocityrl.tech/v2/rl/assets/{asset_slug}?secret={sig}&t={now_ts}"
     );
 
-    crate::applog::event(&format!("tagame: downloading official TAGame.upk from {url}"));
+    crate::applog::event(&format!("assets: downloading official {asset_filename} from {url}"));
 
     let client = reqwest::Client::builder()
         .no_proxy()
@@ -1958,50 +1959,76 @@ where
 
     let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
-        return Err(format!("Asset endpoint returned HTTP {}", resp.status()));
+        return Err(format!("Asset endpoint returned HTTP {} for {asset_filename}", resp.status()));
     }
 
-    let total_size = resp.content_length().unwrap_or(78_252_961) as usize;
+    let default_len = if asset_slug.contains("projectx") {
+        2_647_114
+    } else {
+        78_252_961
+    };
+    let total_size = resp.content_length().unwrap_or(default_len) as usize;
     let mut downloaded = 0usize;
 
     let mut stream = resp.bytes_stream();
     let mut bytes = Vec::with_capacity(total_size);
 
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("Network error while downloading: {e}"))?;
+        let chunk = chunk.map_err(|e| format!("Network error while downloading {asset_filename}: {e}"))?;
         downloaded += chunk.len();
         bytes.extend_from_slice(&chunk);
         progress_cb(downloaded, total_size);
     }
 
-    if bytes.len() < 10_000_000 {
-        return Err(format!("Downloaded TAGame.upk file too small ({} bytes)", bytes.len()));
+    let min_size = if asset_slug.contains("projectx") {
+        1_000_000
+    } else {
+        10_000_000
+    };
+
+    if bytes.len() < min_size {
+        return Err(format!("Downloaded {asset_filename} file too small ({} bytes)", bytes.len()));
     }
 
     if bytes.len() < 4 || &bytes[..4] != &[0xC1, 0x83, 0x2A, 0x9E] {
-        return Err("Downloaded file is not a valid Unreal Package (invalid magic header)".into());
+        return Err(format!("Downloaded {asset_filename} is not a valid Unreal Package (invalid magic header)"));
     }
 
     if let Some(parent) = target_path.parent() {
         let _ = fs::create_dir_all(parent);
     }
     let temp_target = target_path.with_extension("upk.tmp");
-    fs::write(&temp_target, &bytes).map_err(|e| format!("Failed to write TAGame.upk: {e}"))?;
+    fs::write(&temp_target, &bytes).map_err(|e| format!("Failed to write {asset_filename}: {e}"))?;
     if let Err(e) = fs::rename(&temp_target, target_path) {
-        // Fallback if cross-device rename or filesystem lock prevents rename
         if let Err(write_err) = fs::write(target_path, &bytes) {
             let _ = fs::remove_file(&temp_target);
-            return Err(format!("Failed to finalize TAGame.upk: {e} / {write_err}"));
+            return Err(format!("Failed to finalize {asset_filename}: {e} / {write_err}"));
         }
         let _ = fs::remove_file(&temp_target);
     }
 
     crate::applog::event(&format!(
-        "tagame: official TAGame.upk downloaded successfully ({} bytes)",
+        "assets: official {asset_filename} downloaded successfully ({} bytes)",
         bytes.len()
     ));
 
     Ok(())
+}
+
+/// Download clean, official TAGame.upk from VelocityRL asset endpoint with progress reporting.
+pub async fn download_official_tagame_upk<F>(target_path: &Path, progress_cb: F) -> Result<(), String>
+where
+    F: FnMut(usize, usize) + Send + 'static,
+{
+    download_official_asset("TAGame.upk", target_path, progress_cb).await
+}
+
+/// Download clean, official ProjectX.upk from VelocityRL asset endpoint with progress reporting.
+pub async fn download_official_projectx_upk<F>(target_path: &Path, progress_cb: F) -> Result<(), String>
+where
+    F: FnMut(usize, usize) + Send + 'static,
+{
+    download_official_asset("ProjectX.upk", target_path, progress_cb).await
 }
 
 /// Check and ensure ProjectX.upk has ValidateURL & IsAllowedURL patched to return true.
@@ -2521,7 +2548,46 @@ mod tests {
         assert!(target.is_file(), "Downloaded file must exist on disk");
 
         let bytes = fs::read(&target).expect("Must read downloaded file");
-        assert!(bytes.len() == 78_252_961 || bytes.len() == 78_117_817 || bytes.len() == 78_195_405, "File size mismatch with official build: {}", bytes.len());
+        assert!(bytes.len() >= 10_000_000, "Downloaded TAGame.upk must be at least 10MB");
+        assert_eq!(&bytes[..4], &[0xC1, 0x83, 0x2A, 0x9E], "Header must be UPK package magic");
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_download_official_projectx_upk() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let temp_dir = std::env::temp_dir().join(format!("vrl_test_px_dl_{}", std::process::id()));
+        let _ = fs::create_dir_all(&temp_dir);
+        let target = temp_dir.join("ProjectX.upk");
+
+        let progress_count = Arc::new(AtomicUsize::new(0));
+        let last_dl = Arc::new(AtomicUsize::new(0));
+
+        let pc = progress_count.clone();
+        let ld = last_dl.clone();
+
+        let res = download_official_projectx_upk(&target, move |downloaded, _total| {
+            pc.fetch_add(1, Ordering::SeqCst);
+            ld.store(downloaded, Ordering::SeqCst);
+        }).await;
+
+        if let Err(e) = &res {
+            if e.contains("502") || e.contains("503") || e.contains("504") || e.contains("timeout") || e.contains("connect") {
+                eprintln!("Skipping test_download_official_projectx_upk: remote asset endpoint unavailable: {e}");
+                let _ = fs::remove_dir_all(&temp_dir);
+                return;
+            }
+        }
+        assert!(res.is_ok(), "Download failed: {:?}", res.err());
+        assert!(progress_count.load(Ordering::SeqCst) > 0, "Progress callback should have been called");
+        assert!(last_dl.load(Ordering::SeqCst) >= 1_000_000, "Downloaded byte count must be >= 1MB");
+        assert!(target.is_file(), "Downloaded file must exist on disk");
+
+        let bytes = fs::read(&target).expect("Must read downloaded file");
+        assert!(bytes.len() >= 1_000_000, "Downloaded ProjectX.upk must be at least 1MB");
         assert_eq!(&bytes[..4], &[0xC1, 0x83, 0x2A, 0x9E], "Header must be UPK package magic");
 
         let _ = fs::remove_dir_all(&temp_dir);

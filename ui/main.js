@@ -777,6 +777,12 @@ async function init() {
 
     applyBtn.onclick = handleApply;
     document.getElementById('restore-btn').onclick = handleRestore;
+    const redownloadBtn = document.getElementById('redownload-assets-btn');
+    if (redownloadBtn) redownloadBtn.onclick = handleRedownloadAssets;
+    const settingsRedownloadBtn = document.getElementById('settings-redownload-assets-btn');
+    if (settingsRedownloadBtn) settingsRedownloadBtn.onclick = handleRedownloadAssets;
+    const devRedownloadBtn = document.getElementById('dev-redownload-assets-btn');
+    if (devRedownloadBtn) devRedownloadBtn.onclick = handleRedownloadAssets;
     document.getElementById('website-btn').onclick = () => {
         if (isAppLoading()) return;
         window.__TAURI__.core.invoke('plugin:shell|open', { path: 'https://velocityrl.tech' });
@@ -2421,6 +2427,61 @@ async function handleRestore() {
         if (restoreBtn) {
             restoreBtn.disabled = false;
             delete restoreBtn.dataset.busy;
+        }
+    }
+}
+
+async function handleRedownloadAssets() {
+    if (isAppLoading()) return;
+    const btns = [
+        document.getElementById('redownload-assets-btn'),
+        document.getElementById('settings-redownload-assets-btn'),
+        document.getElementById('dev-redownload-assets-btn'),
+    ].filter(Boolean);
+
+    for (const b of btns) {
+        b.disabled = true;
+        b.dataset.busy = '1';
+    }
+
+    let unlisten = null;
+    try {
+        await refreshSwapRlHint();
+        updateStatus('Downloading clean assets (0%)...', false);
+        showProgress(true, 0);
+
+        if (window.__TAURI__?.event?.listen) {
+            unlisten = await window.__TAURI__.event.listen('assets-download-progress', (evt) => {
+                const { file, percent, downloaded, total } = evt.payload || {};
+                const mbDown = (downloaded / (1024 * 1024)).toFixed(1);
+                const mbTot = (total / (1024 * 1024)).toFixed(1);
+                updateStatus(`Downloading ${file} (${percent}%) - ${mbDown}/${mbTot} MB`, false);
+                showProgress(true, percent || 0);
+            });
+        }
+
+        const result = await invoke('redownload_assets');
+        updateStatus(result, false);
+        showToast('Clean official game assets redownloaded and verified successfully.', 'success');
+        refreshBackups();
+        setTimeout(() => updateStatus('bitsfdb', false), 4000);
+    } catch (err) {
+        updateStatus('Redownload Failed', true);
+        const msg = String(err);
+        if (msg.includes('Game directory not set') || msg.includes('Game directory not configured') || msg.includes('game_dir')) {
+            showGameDirToast();
+        } else {
+            showToast(`Asset Redownload Error: ${msg}`, 'error');
+        }
+        console.error(err);
+    } finally {
+        if (unlisten) {
+            try { unlisten(); } catch {}
+        }
+        showProgress(false);
+        for (const b of btns) {
+            b.disabled = false;
+            delete b.dataset.busy;
         }
     }
 }

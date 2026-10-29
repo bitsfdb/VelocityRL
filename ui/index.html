@@ -104,9 +104,10 @@
                         <div id="backup-container" class="backup-list">
                             <div class="backup-empty" data-i18n="restore.scanning">Scanning for backups...</div>
                         </div>
-                        <div style="display: flex; gap: 12px; margin-top: 12px;">
+                        <div style="display: flex; gap: 12px; margin-top: 12px; flex-wrap: wrap;">
                             <button id="restore-btn" class="action-btn action-btn-secondary" disabled data-i18n="restore.restore_all">Restore All Items</button>
                             <button id="reswap-btn" class="action-btn" style="background: var(--accent-blue); color: #fff;" disabled data-i18n="restore.reswap_all">Reswap All Items</button>
+                            <button id="redownload-assets-btn" class="action-btn action-btn-secondary" type="button" data-i18n="restore.redownload_assets">Redownload assets</button>
                         </div>
                     </div>
                 </div>
@@ -1016,7 +1017,8 @@
                 <div>
                     <div style="font-weight:600; font-size:12px;" data-i18n="settings.diagnostics_title">Troubleshooting</div>
                 </div>
-                <div style="display:flex; gap:8px;">
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <button type="button" id="settings-redownload-assets-btn" class="path-btn"><span data-i18n="restore.redownload_assets">Redownload assets</span></button>
                     <button type="button" id="settings-dev-panel-btn" class="path-btn"><span data-i18n="settings.debug_panel">Debug Panel</span></button>
                     <button type="button" id="settings-export-diag-btn" class="path-btn"><span data-i18n="settings.export_diagnostics">Export Diagnostics</span></button>
                 </div>
@@ -1110,6 +1112,7 @@
                 <button id="dev-restart-proxy-btn" class="path-btn"><span>Restart Proxy</span></button>
                 <button id="dev-stop-proxy-btn" class="path-btn"><span>Stop Proxy</span></button>
                 <button id="dev-delete-certs-btn" class="path-btn" style="color:var(--danger, #ff5252);"><span>Delete Certificates</span></button>
+                <button id="dev-redownload-assets-btn" class="path-btn"><span>Redownload assets</span></button>
                 <button id="dev-open-log-btn" class="path-btn"><span>Open Log Folder</span></button>
                 <button id="dev-export-diag-btn" class="path-btn"><span>Export Diagnostics</span></button>
             </div>

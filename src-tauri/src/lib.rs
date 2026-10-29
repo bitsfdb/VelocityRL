@@ -2132,6 +2132,14 @@ async fn get_tagame_swapper_status(app: tauri::AppHandle) -> Result<upk::TagameS
 }
 
 #[derive(Clone, serde::Serialize)]
+struct AssetDownloadProgress {
+    file: String,
+    downloaded: usize,
+    total: usize,
+    percent: u32,
+}
+
+#[derive(Clone, serde::Serialize)]
 struct TagameDownloadProgress {
     downloaded: usize,
     total: usize,
@@ -2139,7 +2147,7 @@ struct TagameDownloadProgress {
 }
 
 #[tauri::command]
-async fn download_official_tagame(app: tauri::AppHandle) -> Result<String, String> {
+async fn redownload_assets(app: tauri::AppHandle) -> Result<String, String> {
     use tauri::Emitter;
     let config = get_config(app.clone()).await?;
     if config.game_dir.is_empty() {
@@ -2148,32 +2156,58 @@ async fn download_official_tagame(app: tauri::AppHandle) -> Result<String, Strin
     let cooked = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir))
         .map_err(|e| e.to_string())?;
 
-    let target_path = cooked.join("TAGame.upk");
-    let backup_path = cooked.join("TAGame.upk.bak");
-
-    // If a clean backup doesn't exist, we will preserve/create it after download
-    let app_handle = app.clone();
-    let res = upk::swapper::download_official_tagame_upk(&target_path, move |downloaded, total| {
+    // 1. Download official TAGame.upk
+    let tagame_path = cooked.join("TAGame.upk");
+    let tagame_bak = cooked.join("TAGame.upk.bak");
+    let app_handle_tagame = app.clone();
+    let res_tagame = upk::swapper::download_official_tagame_upk(&tagame_path, move |downloaded, total| {
         let percent = if total > 0 { ((downloaded as f64 / total as f64) * 100.0) as u32 } else { 0 };
-        let _ = app_handle.emit("tagame-download-progress", TagameDownloadProgress {
+        let _ = app_handle_tagame.emit("assets-download-progress", AssetDownloadProgress {
+            file: "TAGame.upk".into(),
+            downloaded,
+            total,
+            percent,
+        });
+        let _ = app_handle_tagame.emit("tagame-download-progress", TagameDownloadProgress {
             downloaded,
             total,
             percent,
         });
     }).await;
 
-    match res {
-        Ok(()) => {
-            // Also update TAGame.upk.bak so future restores/modifications use the fresh official copy
-            let _ = std::fs::copy(&target_path, &backup_path);
-            applog::event("swapper: official TAGame.upk downloaded and backed up successfully");
-            Ok("Official TAGame.upk downloaded and verified successfully.".into())
-        }
-        Err(e) => {
-            applog::event(&format!("swapper: failed to download TAGame.upk: {e}"));
-            Err(e)
-        }
+    if let Err(e) = res_tagame {
+        applog::event(&format!("swapper: failed to download TAGame.upk: {e}"));
+        return Err(format!("Failed to download TAGame.upk: {e}"));
     }
+    let _ = std::fs::copy(&tagame_path, &tagame_bak);
+
+    // 2. Download official ProjectX.upk
+    let projectx_path = cooked.join("ProjectX.upk");
+    let projectx_bak = cooked.join("ProjectX.upk.bak");
+    let app_handle_projectx = app.clone();
+    let res_projectx = upk::swapper::download_official_projectx_upk(&projectx_path, move |downloaded, total| {
+        let percent = if total > 0 { ((downloaded as f64 / total as f64) * 100.0) as u32 } else { 0 };
+        let _ = app_handle_projectx.emit("assets-download-progress", AssetDownloadProgress {
+            file: "ProjectX.upk".into(),
+            downloaded,
+            total,
+            percent,
+        });
+    }).await;
+
+    if let Err(e) = res_projectx {
+        applog::event(&format!("swapper: failed to download ProjectX.upk: {e}"));
+        return Err(format!("Failed to download ProjectX.upk: {e}"));
+    }
+    let _ = std::fs::copy(&projectx_path, &projectx_bak);
+
+    applog::event("swapper: official assets (TAGame.upk and ProjectX.upk) downloaded and backed up successfully");
+    Ok("Official assets (TAGame.upk and ProjectX.upk) downloaded and verified successfully.".into())
+}
+
+#[tauri::command]
+async fn download_official_tagame(app: tauri::AppHandle) -> Result<String, String> {
+    redownload_assets(app).await
 }
 
 #[tauri::command]
@@ -3759,6 +3793,7 @@ pub fn run() {
             restore_ping_spoof_upk,
             get_swapper_status,
             get_tagame_swapper_status,
+            redownload_assets,
             download_official_tagame,
             get_detected_car_body,
             get_custom_decal_config,
