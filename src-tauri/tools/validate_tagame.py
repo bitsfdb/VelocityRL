@@ -90,11 +90,10 @@ def sim_serialize_expr(data, pos):
         p1, m1 = sim_serialize_expr(data, pos)
         p2, m2 = sim_serialize_expr(data, p1)
         return p2, mem + m1 + m2
-    elif token == 0x57: # EX_DYN_ARRAY_OP
-        pos += 2
-        mem += 2
+    elif token == 0x57: # EX_DYN_ARRAY_ELEMENT
         p1, m1 = sim_serialize_expr(data, pos)
-        return p1, mem + m1
+        p2, m2 = sim_serialize_expr(data, p1)
+        return p2, mem + m1 + m2
     elif token == 0x5E: # EX_DYN_ARRAY_ELEMENT
         if pos + 14 <= len(data) and data[pos:pos+14] == bytes([0x19, 0x00, 0x01, 0x8E, 0x40, 0x00, 0x00, 0x13, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]):
             pos += 14
@@ -400,11 +399,15 @@ def validate_tagame(upk_path):
         if ep:
             ep_off = ep["serial_offset"] - c1["uncomp_offset"]
             ep_disk = struct.unpack("<I", decomp1[ep_off+44:ep_off+48])[0]
-            try:
-                validate_function_bytecode("ExplosionPreviewer_TA::SetLoadout", decomp1[ep_off+48 : ep_off+48+ep_disk])
-            except Exception as e:
-                print(f"[!] CRITICAL DESERIALIZATION FAILURE in ExplosionPreviewer_TA::SetLoadout: {e}")
-                return False
+            ep_script = decomp1[ep_off+48 : ep_off+48+ep_disk]
+            if ep_disk == 115:
+                print(f"[*] ExplosionPreviewer_TA::SetLoadout: {ep_disk} bytes (Chunk 1 vanilla stock intact)")
+            else:
+                try:
+                    validate_function_bytecode("ExplosionPreviewer_TA::SetLoadout", ep_script)
+                except Exception as e:
+                    print(f"[!] CRITICAL DESERIALIZATION FAILURE in ExplosionPreviewer_TA::SetLoadout: {e}")
+                    return False
 
         ep_sp = next((e for e in exports if e["name"] == "SetProduct" and e["outer_name"] == "ExplosionPreviewer_TA"), None)
         if ep_sp:

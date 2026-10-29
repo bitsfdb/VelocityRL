@@ -27,10 +27,15 @@ pub async fn run_stats_api_loop(app: AppHandle, tracker: Arc<Mutex<SessionTracke
                 t.status_detail = binding.detail.clone();
                 let _ = app.emit("overlay-state", t.to_overlay_payload());
             }
+
+            let is_overlay_enabled = crate::tracker::commands::tracker_load_session(app.clone())
+                .map(|s| s.master_enabled)
+                .unwrap_or(false);
+
             let fix_due = last_fix_attempt
                 .map(|t| t.elapsed() >= std::time::Duration::from_secs(60))
                 .unwrap_or(true);
-            if binding.needs_fix && fix_due {
+            if is_overlay_enabled && binding.needs_fix && fix_due {
                 last_fix_attempt = Some(std::time::Instant::now());
                 crate::applog::event(&format!(
                     "tracker: Stats API binding broken, rewriting configs ({})",
@@ -170,6 +175,7 @@ pub fn simulate_fake_match(app: &AppHandle, tracker: &Arc<Mutex<SessionTracker>>
     let mut t = tracker.lock().unwrap();
     t.connection_status = "connected".into();
     t.is_match_active = true;
+    let delta = if win { 9 } else { -9 };
     t.live_stats = LiveMatchStats {
         team_score: if win { 3 } else { 1 },
         opponent_score: if win { 2 } else { 4 },
@@ -184,8 +190,8 @@ pub fn simulate_fake_match(app: &AppHandle, tracker: &Arc<Mutex<SessionTracker>>
     let mock_ended = MatchEndedData {
         winner_team_num: Some(if win { 0 } else { 1 }),
         match_guid: Some(format!("sim_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis())),
-        mmr_delta: None,
-        new_rating: None,
+        mmr_delta: Some(delta),
+        new_rating: if t.current_mmr > 0 { Some((t.current_mmr + delta).max(0)) } else { None },
     };
     t.handle_match_ended(Some(mock_ended));
 
