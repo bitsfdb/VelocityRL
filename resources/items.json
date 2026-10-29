@@ -264496,7 +264496,7 @@
       "Slot": "Rocket Boost",
       "Quality": "Limited",
       "UnlockMethod": "UnlockMethod_Online",
-      "Paintable": true,
+      "Paintable": false,
       "AssetPackage": "boost_alphadevreward",
       "AssetPath": "boost_alphadevreward.boost_alphadevreward"
     },

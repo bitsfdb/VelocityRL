@@ -2188,6 +2188,8 @@ function attrValue(entry) {
 
 function itemIsPaintable(item) {
     if (!item) return false;
+    const itemId = Number(item.ID !== undefined ? item.ID : item.id);
+    if (itemId === 12968) return false;
     const slot = normSlot(item.Slot || item.slot || item.Type || item.type);
     if (UNPAINTABLE_SLOTS.has(slot)) return false;
 
