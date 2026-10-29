@@ -1628,13 +1628,13 @@ pub(crate) async fn sync_all_swaps_to_tagame(
         })
         .collect();
 
-    let _ = upk::swapper::apply_tagame_modifications(
+    upk::swapper::apply_tagame_modifications(
         cooked,
         &tagame_items,
         keys_txt,
         keys_map_json,
         Some(state.palette_active),
-    );
+    ).map_err(|e| format!("Failed to apply modifications to TAGame.upk: {e}"))?;
 
     if let Ok(entries) = std::fs::read_dir(cooked) {
         for entry in entries.flatten() {
@@ -1728,16 +1728,16 @@ async fn apply_swap(
         slot: Some(wanted.slot.clone()),
         timestamp: Some(chrono::Utc::now().to_rfc3339()),
     };
+    let config = get_config(app.clone()).await?;
+    if config.game_dir.trim().is_empty() {
+        return Err("Rocket League directory not found. Please verify your game path in Settings.".into());
+    }
+    let cooked = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir))
+        .map_err(|e| format!("Rocket League directory not found: {e}"))?;
+    sync_all_swaps_to_tagame(&app, &cooked, &swaps).await?;
+
     swaps.push(new_entry.clone());
     save_swaps(&app, &swaps);
-
-    if let Ok(config) = get_config(app.clone()).await {
-        if !config.game_dir.is_empty() {
-            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
-            }
-        }
-    }
 
     record_swap_history(&app, "swap", std::slice::from_ref(&new_entry), "");
     applog::event(&format!("swap: succeeded for product_id={}", wid));
@@ -1846,16 +1846,17 @@ async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<()
         record_swap_history(&app, "restore", &[], &format!("restored item #{id}"));
     }
 
-    if let Ok(config) = get_config(app.clone()).await {
-        if !config.game_dir.is_empty() {
-            if let Ok(cooked) = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                if swaps.is_empty() {
-                    let _ = upk::swapper::restore_tagame_upk(&cooked);
-                } else {
-                    let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
-                }
-            }
-        }
+    let config = get_config(app.clone()).await?;
+    if config.game_dir.trim().is_empty() {
+        return Err("Rocket League directory not found. Please verify your game path in Settings.".into());
+    }
+    let cooked = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir))
+        .map_err(|e| format!("Rocket League directory not found: {e}"))?;
+    if swaps.is_empty() {
+        upk::swapper::restore_tagame_upk(&cooked)
+            .map_err(|e| format!("Failed to restore TAGame.upk: {e}"))?;
+    } else {
+        sync_all_swaps_to_tagame(&app, &cooked, &swaps).await?;
     }
 
     applog::event(&format!("restore_single_backup: restored {path}"));
@@ -1864,6 +1865,13 @@ async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<()
 
 #[tauri::command]
 async fn restore_backups(app: tauri::AppHandle) -> Result<String, String> {
+    let config = get_config(app.clone()).await?;
+    if config.game_dir.trim().is_empty() {
+        return Err("Rocket League directory not found. Please verify your game path in Settings.".into());
+    }
+    let cooked = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir))
+        .map_err(|e| format!("Rocket League directory not found: {e}"))?;
+
     let swaps = load_swaps(&app);
     let count = swaps.len();
     if let Ok(save_path) = savedata::locate_latest_save() {
@@ -1873,14 +1881,8 @@ async fn restore_backups(app: tauri::AppHandle) -> Result<String, String> {
     }
 
     save_swaps(&app, &[]);
-
-    if let Ok(config) = get_config(app.clone()).await {
-        if !config.game_dir.is_empty() {
-            if let Ok(cooked) = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                let _ = upk::swapper::restore_tagame_upk(&cooked);
-            }
-        }
-    }
+    upk::swapper::restore_tagame_upk(&cooked)
+        .map_err(|e| format!("Failed to restore TAGame.upk: {e}"))?;
 
     record_swap_history(&app, "restore_all", &[], "restored all active items");
     applog::event(&format!("restore_backups: restored {count} items"));
@@ -1897,13 +1899,13 @@ async fn reswap_all(app: tauri::AppHandle) -> Result<String, String> {
         return Err("No recorded items to re-apply.".into());
     }
 
-    if let Ok(config) = get_config(app.clone()).await {
-        if !config.game_dir.is_empty() {
-            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
-            }
-        }
+    let config = get_config(app.clone()).await?;
+    if config.game_dir.trim().is_empty() {
+        return Err("Rocket League directory not found. Please verify your game path in Settings.".into());
     }
+    let cooked = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir))
+        .map_err(|e| format!("Rocket League directory not found: {e}"))?;
+    sync_all_swaps_to_tagame(&app, &cooked, &swaps).await?;
 
     Ok(format!("Re-applied {} active swap(s) to game files", swaps.len()))
 }
