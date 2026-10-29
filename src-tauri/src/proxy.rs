@@ -3768,18 +3768,6 @@ async fn handle_http_config(
                     out_body.len()
                 ));
             }
-        } else {
-            let (next_prod, prod_changed) = patch_products_config(&out_body);
-            if prod_changed {
-                out_body = next_prod;
-                patched = true;
-            }
-        }
-    } else {
-        let (next_prod, prod_changed) = patch_products_config(&out_body);
-        if prod_changed {
-            out_body = next_prod;
-            patched = true;
         }
     }
 
@@ -4409,12 +4397,6 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
     // Modern Rocket League UPsyNetUrl_X::ValidateURL explicitly rejects non-HTTPS URLs
     // (disallowed https URL: http://...). Never rewrite PsyNetUrl to plain http broker,
     // which caused the engine to disconnect and report OSCS_NotConnected / OSCS_ServiceUnavailable.
-
-    let (next_prod, prod_changed) = patch_products_config(&out);
-    if prod_changed {
-        out = next_prod;
-        any_change = true;
-    }
 
     (out, any_change)
 }
@@ -5702,107 +5684,6 @@ pub fn patch_cross_entitlement_json(
     }
 }
 
-pub fn patch_products_config(body: &[u8]) -> (Vec<u8>, bool) {
-    let mut out = body.to_vec();
-    let mut any_changed = false;
-
-    let overrides = [
-        ("ProductsConfig_TA", "bUseSaveDataCacheProducts", "True"),
-        ("SaveData_TA", "bClearSyncTimestampOnMissingProduct", "False"),
-        ("ProductsConfig_TA", "bEnableOfflineItemsDuplicationPrevention", "False"),
-        ("ProductsConfig_TA", "MaxSecondsBetweenFullProductSyncs", "2147483647"),
-    ];
-
-    for (cls, prop, val) in overrides {
-        let (next, ch) = upsert_class_property_override(&out, cls, prop, val);
-        if ch {
-            out = next;
-            any_changed = true;
-        }
-    }
-
-    if let Some((start, end)) = find_named_object(&out, "ProductsConfig")
-        .or_else(|| find_named_object(&out, "ProductsConfig_TA"))
-    {
-        let obj = &out[start..end];
-        let mut obj_str = String::from_utf8_lossy(obj).into_owned();
-        let mut obj_changed = false;
-
-        if let Some(pos) = obj_str.find("\"bUseSaveDataCacheProducts\"") {
-            if let Some(fpos) = obj_str[pos..].find("false") {
-                let abs_fpos = pos + fpos;
-                obj_str.replace_range(abs_fpos..abs_fpos + 5, "true");
-                obj_changed = true;
-            }
-        } else if let Some(last_brace) = obj_str.rfind('}') {
-            obj_str.insert_str(last_brace, ",\"bUseSaveDataCacheProducts\":true");
-            obj_changed = true;
-        }
-
-        if let Some(pos) = obj_str.find("\"bClearSyncTimestampOnMissingProduct\"") {
-            if let Some(tpos) = obj_str[pos..].find("true") {
-                let abs_tpos = pos + tpos;
-                obj_str.replace_range(abs_tpos..abs_tpos + 4, "false");
-                obj_changed = true;
-            }
-        } else if let Some(last_brace) = obj_str.rfind('}') {
-            obj_str.insert_str(last_brace, ",\"bClearSyncTimestampOnMissingProduct\":false");
-            obj_changed = true;
-        }
-
-        if let Some(pos) = obj_str.find("\"bEnableOfflineItemsDuplicationPrevention\"") {
-            if let Some(tpos) = obj_str[pos..].find("true") {
-                let abs_tpos = pos + tpos;
-                obj_str.replace_range(abs_tpos..abs_tpos + 4, "false");
-                obj_changed = true;
-            }
-        } else if let Some(last_brace) = obj_str.rfind('}') {
-            obj_str.insert_str(last_brace, ",\"bEnableOfflineItemsDuplicationPrevention\":false");
-            obj_changed = true;
-        }
-
-        if let Some(pos) = obj_str.find("\"MaxSecondsBetweenFullProductSyncs\"") {
-            if let Some(col) = obj_str[pos..].find(':') {
-                let num_start = pos + col + 1;
-                let trimmed = obj_str[num_start..].trim_start();
-                let skip = obj_str[num_start..].len() - trimmed.len();
-                let actual_num_start = num_start + skip;
-                let num_end = actual_num_start + obj_str[actual_num_start..]
-                    .find(|c: char| !c.is_ascii_digit())
-                    .unwrap_or(obj_str.len() - actual_num_start);
-                if &obj_str[actual_num_start..num_end] != "2147483647" {
-                    obj_str.replace_range(actual_num_start..num_end, "2147483647");
-                    obj_changed = true;
-                }
-            }
-        } else if let Some(last_brace) = obj_str.rfind('}') {
-            obj_str.insert_str(last_brace, ",\"MaxSecondsBetweenFullProductSyncs\":2147483647");
-            obj_changed = true;
-        }
-
-        if obj_changed {
-            let mut next = Vec::with_capacity(out.len() + 64);
-            next.extend_from_slice(&out[..start]);
-            next.extend_from_slice(obj_str.as_bytes());
-            next.extend_from_slice(&out[end..]);
-            out = next;
-            any_changed = true;
-        }
-    } else {
-        if let Some(close_idx) = out.iter().rposition(|&c| c == b'}') {
-            let block = ",\"ProductsConfig\":{\"Class\":\"ProductsConfig_X\",\"bUseSaveDataCacheProducts\":true,\"MaxSecondsBetweenFullProductSyncs\":2147483647,\"bClearSyncTimestampOnMissingProduct\":false,\"bEnableOfflineItemsDuplicationPrevention\":false}";
-            let mut res = Vec::with_capacity(out.len() + block.len());
-            res.extend_from_slice(&out[..close_idx]);
-            res.extend_from_slice(block.as_bytes());
-            res.extend_from_slice(&out[close_idx..]);
-            out = res;
-            any_changed = true;
-        }
-    }
-
-    (out, any_changed)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -6074,19 +5955,6 @@ mod tests {
             assert!(c.is_some(), "Currency ID {tid} must be present for season compatibility");
             assert_eq!(c.unwrap()["Amount"], 500000);
         }
-    }
-
-    #[test]
-    fn test_patch_products_config_and_overrides() {
-        let body = br#"{"Config":{},"ClassPropertyConfig":{"Class":"ClassPropertyConfig_X","Overrides":[]}}"#;
-        let (patched, changed) = patch_products_config(body);
-        assert!(changed);
-        let s = String::from_utf8(patched).unwrap();
-        assert!(s.contains("\"bUseSaveDataCacheProducts\",\"Value\":\"True\""));
-        assert!(s.contains("\"MaxSecondsBetweenFullProductSyncs\",\"Value\":\"2147483647\""));
-        assert!(s.contains("\"bClearSyncTimestampOnMissingProduct\",\"Value\":\"False\""));
-        assert!(s.contains("\"bEnableOfflineItemsDuplicationPrevention\",\"Value\":\"False\""));
-        assert!(s.contains("\"ProductsConfig\":{"));
     }
 
     #[test]

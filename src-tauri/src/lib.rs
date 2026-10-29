@@ -327,6 +327,14 @@ fn attr_flag(value: &serde_json::Value) -> Option<bool> {
 }
 
 fn item_is_paintable(item: &Item) -> bool {
+    if let Some(p) = item.paintable {
+        if !p {
+            return false;
+        }
+    }
+    if item.id == 12968 {
+        return false;
+    }
     let slot = item.slot.trim().to_lowercase().replace([' ', '_', '-'], "");
     let unpaintable_slots = [
         "playeranthem", "anthem", "audio", "engineaudio",
@@ -1728,6 +1736,9 @@ async fn apply_swap(
         slot: Some(wanted.slot.clone()),
         timestamp: Some(chrono::Utc::now().to_rfc3339()),
     };
+    swaps.push(new_entry.clone());
+    save_swaps(&app, &swaps);
+
     let config = get_config(app.clone()).await?;
     if config.game_dir.trim().is_empty() {
         return Err("Rocket League directory not found. Please verify your game path in Settings.".into());
@@ -1735,9 +1746,6 @@ async fn apply_swap(
     let cooked = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir))
         .map_err(|e| format!("Rocket League directory not found: {e}"))?;
     sync_all_swaps_to_tagame(&app, &cooked, &swaps).await?;
-
-    swaps.push(new_entry.clone());
-    save_swaps(&app, &swaps);
 
     record_swap_history(&app, "swap", std::slice::from_ref(&new_entry), "");
     applog::event(&format!("swap: succeeded for product_id={}", wid));
