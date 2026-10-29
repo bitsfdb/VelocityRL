@@ -103,9 +103,28 @@ pub fn resolve_ipv4_public(host: &str) -> Option<std::net::SocketAddr> {
             }
         }
     }
-    for server in ["1.1.1.1:53", "8.8.8.8:53"] {
+
+    // 1. Attempt system DNS resolution first (if not loopback, e.g. host is not redirected in hosts file)
+    use std::net::ToSocketAddrs;
+    if let Ok(addrs) = format!("{host}:443").to_socket_addrs() {
+        for addr in addrs {
+            if let std::net::SocketAddr::V4(v4) = addr {
+                if !v4.ip().is_loopback() && !v4.ip().is_unspecified() {
+                    crate::applog::event(&format!("proxy: system DNS {host} -> {}", v4.ip()));
+                    let out = std::net::SocketAddr::from((*v4.ip(), 443));
+                    if let Ok(mut guard) = RESOLVED_IPS_CACHE.lock() {
+                        guard.get_or_insert_with(std::collections::HashMap::new).insert(host.to_string(), out);
+                    }
+                    return Some(out);
+                }
+            }
+        }
+    }
+
+    // 2. Query public DNS resolvers via UDP
+    for server in ["1.1.1.1:53", "8.8.8.8:53", "9.9.9.9:53", "208.67.222.222:53"] {
         if let Some(ip) = dns_query_a(host, server) {
-            crate::applog::event(&format!("proxy: public DNS {host} -> {ip} via {server}"));
+            crate::applog::event(&format!("proxy: public DNS UDP {host} -> {ip} via {server}"));
             let addr = std::net::SocketAddr::from((ip, 443));
             if let Ok(mut guard) = RESOLVED_IPS_CACHE.lock() {
                 guard.get_or_insert_with(std::collections::HashMap::new).insert(host.to_string(), addr);
@@ -113,13 +132,58 @@ pub fn resolve_ipv4_public(host: &str) -> Option<std::net::SocketAddr> {
             return Some(addr);
         }
     }
-    if host.eq_ignore_ascii_case("api.epicgames.dev") {
-        let fallback = std::net::SocketAddr::from(([104, 18, 125, 108], 443));
-        crate::applog::event("proxy: using fallback Cloudflare IP for api.epicgames.dev");
-        return Some(fallback);
+
+    // 3. Query public DNS resolvers via TCP (RFC 1035 fallback when UDP 53 is blocked by VPN/firewall)
+    for server in ["1.1.1.1:53", "8.8.8.8:53", "9.9.9.9:53"] {
+        if let Some(ip) = dns_query_a_tcp(host, server) {
+            crate::applog::event(&format!("proxy: public DNS TCP {host} -> {ip} via {server}"));
+            let addr = std::net::SocketAddr::from((ip, 443));
+            if let Ok(mut guard) = RESOLVED_IPS_CACHE.lock() {
+                guard.get_or_insert_with(std::collections::HashMap::new).insert(host.to_string(), addr);
+            }
+            return Some(addr);
+        }
     }
+
     crate::applog::event(&format!("proxy: public DNS lookup failed for {host}"));
     None
+}
+
+fn dns_query_a_tcp(host: &str, server: &str) -> Option<std::net::Ipv4Addr> {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
+
+    let mut q = Vec::with_capacity(16 + host.len());
+    q.extend_from_slice(&[0x12, 0x34, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    for label in host.trim_end_matches('.').split('.') {
+        if label.is_empty() || label.len() > 63 {
+            return None;
+        }
+        q.push(label.len() as u8);
+        q.extend_from_slice(label.as_bytes());
+    }
+    q.push(0);
+    q.extend_from_slice(&[0x00, 0x01, 0x00, 0x01]);
+
+    let server_addr: std::net::SocketAddr = server.parse().ok()?;
+    let mut sock = TcpStream::connect_timeout(&server_addr, Duration::from_millis(1500)).ok()?;
+    sock.set_read_timeout(Some(Duration::from_millis(1500))).ok()?;
+    sock.set_write_timeout(Some(Duration::from_millis(1500))).ok()?;
+
+    let len = (q.len() as u16).to_be_bytes();
+    sock.write_all(&len).ok()?;
+    sock.write_all(&q).ok()?;
+
+    let mut len_buf = [0u8; 2];
+    sock.read_exact(&mut len_buf).ok()?;
+    let resp_len = u16::from_be_bytes(len_buf) as usize;
+    if resp_len < 12 || resp_len > 4096 {
+        return None;
+    }
+    let mut buf = vec![0u8; resp_len];
+    sock.read_exact(&mut buf).ok()?;
+    parse_dns_a_answer(&buf)
 }
 
 fn dns_query_a(host: &str, server: &str) -> Option<std::net::Ipv4Addr> {
@@ -1174,19 +1238,23 @@ pub async fn start_native_proxy() -> Result<(), String> {
     }
 
     let intercept_client = build_intercept_http_client();
-    let client = pin_eos_hosts_on_builder(
-        reqwest::Client::builder()
-            .danger_accept_invalid_certs(true)
-            .no_proxy()
-            .no_gzip()
-            .no_brotli()
-            .no_deflate()
-            .redirect(reqwest::redirect::Policy::none())
-            .resolve("config.psynet.gg", "34.160.180.65:443".parse().unwrap())
-            .resolve("api.rlpp.psynet.gg", "34.54.194.77:443".parse().unwrap()),
-    )
-    .build()
-    .map_err(|e| format!("failed to create reqwest client: {e}"))?;
+    let mut builder = reqwest::Client::builder()
+        .http1_only()
+        .danger_accept_invalid_certs(true)
+        .no_proxy()
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
+        .redirect(reqwest::redirect::Policy::none());
+    if let Some(addr) = resolve_ipv4_public("config.psynet.gg") {
+        builder = builder.resolve("config.psynet.gg", addr);
+    }
+    if let Some(addr) = resolve_ipv4_public("api.rlpp.psynet.gg") {
+        builder = builder.resolve("api.rlpp.psynet.gg", addr);
+    }
+    let client = pin_eos_hosts_on_builder(builder)
+        .build()
+        .map_err(|e| format!("failed to create reqwest client: {e}"))?;
 
     tokio::spawn(async move {
         loop {
@@ -1892,14 +1960,17 @@ pub async fn start_ws_broker() -> Result<u16, String> {
         "broker: listening on http://127.0.0.1:{port} (PsyNetUrl RPC + local WS forward)"
     ));
 
-    let client = reqwest::Client::builder()
+    let mut builder = reqwest::Client::builder()
         .http1_only()
         .danger_accept_invalid_certs(true)
         .no_proxy()
         .no_gzip()
         .no_brotli()
-        .no_deflate()
-        .resolve("api.rlpp.psynet.gg", "34.54.194.77:443".parse().unwrap())
+        .no_deflate();
+    if let Some(addr) = resolve_ipv4_public("api.rlpp.psynet.gg") {
+        builder = builder.resolve("api.rlpp.psynet.gg", addr);
+    }
+    let client = builder
         .build()
         .map_err(|e| format!("failed to create reqwest client for broker: {e}"))?;
 
@@ -2009,7 +2080,7 @@ async fn handle_broker_request(
             up_builder = up_builder.header(k.as_str(), v.as_bytes());
         }
     }
-    up_builder = up_builder.header("Host", "api.rlpp.psynet.gg");
+    // Note: Reqwest automatically sets the Host / :authority header to the upstream hostname.
     if !body_bytes.is_empty() {
         up_builder = up_builder.body(body_bytes.clone());
     }
@@ -2372,17 +2443,33 @@ async fn handle_websocket(
     );
 
     let connector = create_upstream_tls_connector();
-    let tcp_conn = match tokio::net::TcpStream::connect("34.149.116.40:443").await {
-        Ok(t) => t,
-        Err(e) => {
-            crate::applog::event(&format!("proxy: direct connect to 34.149.116.40:443 failed ({e}), trying DNS ws.rlpp.psynet.gg:443"));
+    let upstream_addr = resolve_ipv4_public("ws.rlpp.psynet.gg");
+    let tcp_conn = match upstream_addr {
+        Some(addr) => match tokio::net::TcpStream::connect(addr).await {
+            Ok(t) => t,
+            Err(e) => {
+                crate::applog::event(&format!("proxy: connect to resolved ws {addr} failed ({e}), trying DNS ws.rlpp.psynet.gg:443"));
+                match tokio::net::TcpStream::connect("ws.rlpp.psynet.gg:443").await {
+                    Ok(t) => t,
+                    Err(e2) => {
+                        crate::applog::event(&format!("proxy: failed to connect to upstream ws: {e2}"));
+                        let resp = Response::builder()
+                            .status(StatusCode::BAD_GATEWAY)
+                            .body(full_body(format!("connect ws upstream error: {e2}")))
+                            .unwrap();
+                        return Ok(resp);
+                    }
+                }
+            }
+        },
+        None => {
             match tokio::net::TcpStream::connect("ws.rlpp.psynet.gg:443").await {
                 Ok(t) => t,
-                Err(e2) => {
-                    crate::applog::event(&format!("proxy: failed to connect to upstream ws: {e2}"));
+                Err(e) => {
+                    crate::applog::event(&format!("proxy: failed to connect to upstream ws: {e}"));
                     let resp = Response::builder()
                         .status(StatusCode::BAD_GATEWAY)
-                        .body(full_body(format!("connect ws upstream error: {e2}")))
+                        .body(full_body(format!("connect ws upstream error: {e}")))
                         .unwrap();
                     return Ok(resp);
                 }

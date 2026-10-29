@@ -981,8 +981,6 @@ fn hosts_path() -> PathBuf {
 pub fn active_config_host_pairs() -> Vec<(&'static str, &'static str)> {
     let mut pairs = vec![
         ("127.0.0.1", "config.psynet.gg"),
-        ("127.0.0.1", "api.rlpp.psynet.gg"),
-        ("127.0.0.1", "ws.rlpp.psynet.gg"),
     ];
     let spoof_cfg = load_active_spoof_from_disk();
     let name_spoof_on = spoof_cfg
@@ -2664,13 +2662,15 @@ pub async fn verify_config_psynet_live() -> ConfigPsynetHealth {
     }
 
     // 4. Check upstream PsyNet connectivity
-    let upstream_client = reqwest::Client::builder()
+    let mut builder = reqwest::Client::builder()
+        .http1_only()
         .danger_accept_invalid_certs(true)
         .no_proxy()
-        .resolve("config.psynet.gg", "34.160.180.65:443".parse().unwrap())
-        .timeout(std::time::Duration::from_millis(2500))
-        .build()
-        .ok();
+        .timeout(std::time::Duration::from_millis(2500));
+    if let Some(addr) = crate::proxy::resolve_ipv4_public("config.psynet.gg") {
+        builder = builder.resolve("config.psynet.gg", addr);
+    }
+    let upstream_client = builder.build().ok();
 
     let mut upstream_psynet_reachable = false;
     if let Some(client) = upstream_client {
