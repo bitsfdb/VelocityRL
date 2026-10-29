@@ -20,6 +20,8 @@ pub struct PersistedSession {
     pub longest_win_streak: i32,
     pub finalized_matches: Vec<String>,
     #[serde(default)]
+    pub session_mmr_delta: i32,
+    #[serde(default)]
     pub hash: String,
 }
 
@@ -28,6 +30,31 @@ impl PersistedSession {
         use sha2::{Digest, Sha256};
         let matches = self.finalized_matches.join(",");
         let input = format!(
+            "vrl-session-v3:{}:{}:{}:{}:{}:{}:{}",
+            self.wins,
+            self.losses,
+            self.streak_type,
+            self.streak_count,
+            self.longest_win_streak,
+            self.session_mmr_delta,
+            matches
+        );
+        let mut hasher = Sha256::new();
+        hasher.update(input.as_bytes());
+        format!("{:x}", hasher.finalize())
+    }
+
+    pub fn is_valid(&self) -> bool {
+        if self.hash.is_empty() {
+            return false;
+        }
+        if self.hash == self.compute_hash() {
+            return true;
+        }
+        // Backward compatibility with v2 hash
+        use sha2::{Digest, Sha256};
+        let matches = self.finalized_matches.join(",");
+        let v2_input = format!(
             "vrl-session-v2:{}:{}:{}:{}:{}:{}",
             self.wins,
             self.losses,
@@ -37,12 +64,8 @@ impl PersistedSession {
             matches
         );
         let mut hasher = Sha256::new();
-        hasher.update(input.as_bytes());
-        format!("{:x}", hasher.finalize())
-    }
-
-    pub fn is_valid(&self) -> bool {
-        !self.hash.is_empty() && self.hash == self.compute_hash()
+        hasher.update(v2_input.as_bytes());
+        self.hash == format!("{:x}", hasher.finalize())
     }
 
     pub fn seal(&mut self) {
@@ -59,6 +82,7 @@ impl Default for PersistedSession {
             streak_count: 0,
             longest_win_streak: 0,
             finalized_matches: Vec::new(),
+            session_mmr_delta: 0,
             hash: String::new(),
         };
         s.seal();
@@ -109,6 +133,7 @@ impl SessionTracker {
             fresh
         };
         let config = OverlayConfig::default();
+        let session_mmr_delta = session.session_mmr_delta;
 
         Self {
             config,
@@ -121,12 +146,13 @@ impl SessionTracker {
             connection_status: "disconnected".into(),
             status_detail: String::new(),
             current_mmr: 0,
-            session_mmr_delta: 0,
+            session_mmr_delta,
             save_path,
         }
     }
 
     pub fn save(&mut self) {
+        self.session.session_mmr_delta = self.session_mmr_delta;
         self.session.seal();
         if let Ok(json) = serde_json::to_string_pretty(&self.session) {
             let _ = fs::write(&self.save_path, json);
@@ -135,6 +161,7 @@ impl SessionTracker {
 
     pub fn reset_session(&mut self) {
         self.session = PersistedSession::default();
+        self.session_mmr_delta = 0;
         self.last_result = "none".into();
         self.save();
     }
@@ -356,6 +383,16 @@ impl SessionTracker {
             self.session.wins, self.session.losses
         ));
 
+        let mut match_delta: Option<i32> = None;
+        if let Some(ref ed) = ended_data {
+            if let Some(delta) = ed.mmr_delta {
+                match_delta = Some(delta);
+            }
+            if let Some(new_r) = ed.new_rating {
+                self.current_mmr = new_r;
+            }
+        }
+
         match outcome {
             "win" => {
                 self.session.wins += 1;
@@ -369,6 +406,11 @@ impl SessionTracker {
                     self.session.longest_win_streak = self.session.streak_count;
                 }
                 self.last_result = "win".into();
+                let delta = match_delta.unwrap_or(9);
+                self.session_mmr_delta += delta;
+                if self.current_mmr > 0 {
+                    self.current_mmr += delta;
+                }
             }
             "loss" => {
                 self.session.losses += 1;
@@ -379,16 +421,16 @@ impl SessionTracker {
                     self.session.streak_count = 1;
                 }
                 self.last_result = "loss".into();
-            }
-            _ => {}
-        }
-
-        if let Some(ref ed) = ended_data {
-            if let Some(delta) = ed.mmr_delta {
+                let delta = match_delta.unwrap_or(-9);
                 self.session_mmr_delta += delta;
+                if self.current_mmr > 0 {
+                    self.current_mmr = (self.current_mmr + delta).max(0);
+                }
             }
-            if let Some(new_r) = ed.new_rating {
-                self.current_mmr = new_r;
+            _ => {
+                if let Some(delta) = match_delta {
+                    self.session_mmr_delta += delta;
+                }
             }
         }
 
@@ -401,6 +443,12 @@ impl SessionTracker {
     }
 
     pub fn to_overlay_payload(&self) -> OverlayStatePayload {
+        let display_mmr = if self.current_mmr > 0 {
+            self.current_mmr
+        } else {
+            crate::psynet::get_real_skill_mmr(Some(self.config.playlist)).unwrap_or(0)
+        };
+
         OverlayStatePayload {
             connection: self.connection_status.clone(),
             status_detail: self.status_detail.clone(),
@@ -415,7 +463,7 @@ impl SessionTracker {
             last_result: self.last_result.clone(),
             playlist: self.config.playlist,
             playlist_name: playlist_display_name(self.config.playlist).into(),
-            mmr: self.current_mmr,
+            mmr: display_mmr,
             mmr_delta: self.session_mmr_delta,
         }
     }

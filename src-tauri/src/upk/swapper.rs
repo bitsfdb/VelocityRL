@@ -1126,7 +1126,8 @@ pub fn apply_tagame_modifications(
     let ping_cfg = crate::udp_proxy::get_ping_spoof();
     let ping_active = ping_cfg.as_ref().map(|p| p.enabled).unwrap_or(false);
 
-    let should_patch = !swaps.is_empty() || ping_active;
+    // Always patch TAGame to ensure Car_TA::SetLoadout expansion (4000 bytes padding), bytecode hooks, and integrity
+    let should_patch = true;
 
     if should_patch {
         if file_bytes.len() < 32 {
@@ -2189,7 +2190,7 @@ mod tests {
         assert_eq!(bc.len(), 300);
         assert_eq!(bc[0], opcodes::EX_JUMP_IF_NOT);
         assert_eq!(bc[3], opcodes::EX_EQUAL_EQUAL_INT_INT);
-        assert_eq!(bc[4], opcodes::EX_DYN_ARRAY_OP);
+        assert_eq!(bc[4], opcodes::EX_DYN_ARRAY_ELEMENT);
         assert!(mem_sz >= 300);
     }
 

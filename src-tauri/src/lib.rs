@@ -1602,6 +1602,9 @@ pub(crate) async fn sync_all_swaps_to_tagame(
     cooked: &Path,
     swaps: &[SwapEntry],
 ) -> Result<(), String> {
+    // Ensure ProjectX.upk has ValidateURL & IsAllowedURL patched to allow URLs
+    let _ = upk::ensure_projectx_patched(cooked);
+
     let state = load_integrity(app);
     let all_swaps = if swaps.is_empty() {
         load_swaps(app)
@@ -3469,6 +3472,8 @@ pub fn run() {
                 if let Ok(config) = get_config(boot_app.clone()).await {
                     if !config.game_dir.is_empty() {
                         if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                            // On startup, patch ProjectX to allow URLs and patch TAGame with expanded bytecode and padding
+                            let _ = upk::ensure_projectx_patched(&cooked);
                             let swaps = load_swaps(&boot_app);
                             let _ = sync_all_swaps_to_tagame(&boot_app, &cooked, &swaps).await;
                         }

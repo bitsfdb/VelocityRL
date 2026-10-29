@@ -60,12 +60,15 @@ pub fn set_overlay_config(
 
 #[tauri::command]
 pub fn update_player_skill(
-    _rating: i32,
+    rating: i32,
     tracker: State<'_, Arc<Mutex<SessionTracker>>>,
     app: AppHandle,
 ) -> Result<(), String> {
     use tauri::Emitter;
-    let t = tracker.lock().map_err(|e| e.to_string())?;
+    let mut t = tracker.lock().map_err(|e| e.to_string())?;
+    if rating > 0 {
+        t.current_mmr = rating;
+    }
     let payload = t.to_overlay_payload();
     let _ = app.emit("overlay-state", &payload);
     Ok(())
@@ -73,12 +76,13 @@ pub fn update_player_skill(
 
 #[tauri::command]
 pub fn tracker_set_playlist(
-    _playlist: i32,
+    playlist: i32,
     tracker: State<'_, Arc<Mutex<SessionTracker>>>,
     app: AppHandle,
 ) -> Result<OverlayStatePayload, String> {
     use tauri::Emitter;
-    let t = tracker.lock().map_err(|e| e.to_string())?;
+    let mut t = tracker.lock().map_err(|e| e.to_string())?;
+    t.config.playlist = playlist;
     let payload = t.to_overlay_payload();
     let _ = app.emit("overlay-state", &payload);
     Ok(payload)
@@ -114,6 +118,10 @@ pub fn tracker_open_overlay_window(app: AppHandle, style: Option<String>) -> Res
         _ => (280.0, 165.0),
     };
     let (w, h) = (base_w * scale_factor, base_h * scale_factor);
+
+    // Patch Stats API configs when overlay is turned on
+    let game_dir = stats_api_game_dir(&app);
+    let _ = ensure_stats_api_files(&game_dir);
 
     if let Some(win) = app.get_webview_window("tracker_overlay") {
         let _ = win.unminimize();
@@ -299,6 +307,11 @@ pub fn tracker_save_session(
             t.config.player_name_fallback = session.display_name.clone();
         }
     }
+    if session.master_enabled {
+        let game_dir = stats_api_game_dir(&app);
+        let _ = ensure_stats_api_files(&game_dir);
+    }
+
     let _ = app.emit("tracker-style-changed", &session.overlay_style);
     let _ = app.emit("tracker-overlay-locked", session.is_locked);
 
