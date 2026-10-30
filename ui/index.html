@@ -14,7 +14,8 @@
         </div>
 
         <nav class="nav-links">
-            <div class="nav-item active" data-tab="swapper-tab" data-i18n="nav.swapper">Spawner</div>
+            <div class="nav-item active" data-tab="spawner-tab" data-i18n="nav.spawner">Spawner</div>
+            <div class="nav-item" data-tab="swapper-tab" data-i18n="nav.swapper">Swapper</div>
             <div class="nav-item" data-tab="titles-tab" data-i18n="nav.titles">Titles</div>
             <div class="nav-item" data-tab="customization-tab" data-i18n="nav.customization">Customization</div>
             <div class="nav-item" data-tab="ranks-tab" data-i18n="nav.ranks">Fake Ranks</div>
@@ -39,16 +40,8 @@
                 </div>
             </div>
 
-            <div id="swapper-tab" class="tab-content active">
-                <div class="subtab-strip" role="tablist">
-                    <button type="button" class="subtab-btn active" data-subtab="spawner-pane" data-i18n="subtabs.spawner">Spawner</button>
-                    <button type="button" class="subtab-btn" data-subtab="swaps-pane" data-i18n="subtabs.swapper">Swapper</button>
-                    <button type="button" class="subtab-btn" data-subtab="restore-pane" data-i18n="subtabs.restore">Restore</button>
-                    <button type="button" class="subtab-btn" data-subtab="presets-pane" data-i18n="subtabs.presets">Presets</button>
-                </div>
-
-                <div id="spawner-pane" class="subtab-pane active catalog-pane">
-                    <div class="catalog-toolbar">
+            <div id="spawner-tab" class="tab-content active catalog-pane active">
+                <div class="catalog-toolbar">
                         <div class="catalog-select-wrap">
                             <svg class="catalog-toolbar-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <rect x="3" y="3" width="7" height="7"></rect>
@@ -165,9 +158,16 @@
                         <span id="catalog-count-info" class="catalog-count-info">1–48 of 0 items</span>
                         <div id="catalog-pagination-controls" class="catalog-pagination"></div>
                     </div>
+            </div>
+
+            <div id="swapper-tab" class="tab-content">
+                <div class="subtab-strip" role="tablist">
+                    <button type="button" class="subtab-btn active" data-subtab="swaps-pane" data-i18n="subtabs.swapper">Swapper</button>
+                    <button type="button" class="subtab-btn" data-subtab="restore-pane" data-i18n="subtabs.restore">Restore</button>
+                    <button type="button" class="subtab-btn" data-subtab="presets-pane" data-i18n="subtabs.presets">Presets</button>
                 </div>
 
-                <div id="swaps-pane" class="subtab-pane">
+                <div id="swaps-pane" class="subtab-pane active">
                     <div class="category-strip">
                         <button class="cat-btn active" data-slot="All" data-i18n="categories.all">All Items</button>
                         <button class="cat-btn" data-slot="Body" data-i18n="categories.bodies">Bodies</button>

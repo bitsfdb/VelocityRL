@@ -10,7 +10,8 @@
         "tracker": "Tracker Overlay",
         "misc": "Verschiedenes",
         "website": "Webseite",
-        "settings": "Einstellungen"
+        "settings": "Einstellungen",
+        "spawner": "Spawner"
     },
     "banner": {
         "keep_open_title": "VelocityRL geöffnet lassen",

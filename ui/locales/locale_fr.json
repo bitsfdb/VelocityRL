@@ -10,7 +10,8 @@
         "tracker": "Tracker Overlay",
         "misc": "Divers",
         "website": "Site web",
-        "settings": "Paramètres"
+        "settings": "Paramètres",
+        "spawner": "Spawner"
     },
     "banner": {
         "keep_open_title": "Garder VelocityRL ouvert",

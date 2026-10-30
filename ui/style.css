@@ -245,6 +245,16 @@ main {
     gap: var(--section-gap);
 }
 
+#spawner-tab.active {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+    gap: 8px;
+}
+
 #names-tab.active,
 #ranks-tab.active,
 #camera-tab.active,
@@ -530,7 +540,7 @@ main > .repair-banner {
 
 .catalog-grid-wrap {
     flex: 1 1 0;
-    min-height: 0;
+    min-height: 250px;
     overflow-y: auto;
     overflow-x: hidden;
     padding-right: 4px;

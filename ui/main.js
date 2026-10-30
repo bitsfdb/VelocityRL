@@ -727,6 +727,10 @@ async function init() {
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
             btn.classList.add('active');
             document.getElementById(btn.dataset.tab).classList.add('active');
+            if (btn.dataset.tab === 'spawner-tab') {
+                initCatalogGrid();
+                renderCatalogGridPage();
+            }
             if (btn.dataset.tab === 'swapper-tab') refreshSwapRlHint();
             if (btn.dataset.tab === 'titles-tab') initTitlesTab();
             if (btn.dataset.tab === 'customization-tab' || btn.dataset.tab === 'names-tab') initCustomizationTab();
@@ -8369,6 +8373,12 @@ async function initFeatures() {
             const trackerNav = document.querySelector('.nav-item[data-tab="tracker-tab"]');
             if (trackerNav) {
                 trackerNav.style.display = feat.flags.live_tracker_overlay === false ? 'none' : '';
+            }
+
+            // Item Spawner
+            const spawnerNav = document.querySelector('.nav-item[data-tab="spawner-tab"]');
+            if (spawnerNav) {
+                spawnerNav.style.display = (feat.flags.item_spawner === false || feat.flags.spawner === false) ? 'none' : '';
             }
 
             // Item Swapper
