@@ -2018,4 +2018,48 @@ mod tests {
         assert!(pairs_intra.iter().any(|(o, n)| o == "skin_strokes" && n == "skin_strokes_Orig"));
         assert!(pairs_intra.iter().any(|(o, n)| o == "skin_strokes_manga" && n == "skin_strokes"));
     }
+
+    #[test]
+    fn test_swap_asset_bubbles_to_alpha_boost() {
+        let cooked_dir = Path::new("/root/velrlapi/games/rocketleague/TAGame/CookedPCConsole");
+        if !cooked_dir.is_dir() {
+            return;
+        }
+
+        let temp_dir = std::env::temp_dir().join(format!("vrl_test_swap_alpha_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&temp_dir);
+
+        let src_bubbles = cooked_dir.join("Boost_Bubble_SF.upk");
+        let src_alpha = cooked_dir.join("boost_alphareward_SF.upk");
+        if !src_bubbles.is_file() || !src_alpha.is_file() {
+            let _ = std::fs::remove_dir_all(&temp_dir);
+            return;
+        }
+
+        let target_bubbles = temp_dir.join("Boost_Bubble_SF.upk");
+        let target_alpha = temp_dir.join("boost_alphareward_SF.upk");
+        std::fs::copy(&src_bubbles, &target_bubbles).unwrap();
+        std::fs::copy(&src_alpha, &target_alpha).unwrap();
+
+        let items_json = include_str!("../../../resources/items.json");
+        let keys_txt = include_str!("../../resources/keys.txt");
+        let keys_map_json = include_str!("../../resources/keys_map.json");
+
+        let opts = SwapOptions {
+            game_dir: temp_dir.clone(),
+            items_json: items_json.to_string(),
+            keys_txt: keys_txt.to_string(),
+            keys_map_json: keys_map_json.to_string(),
+        };
+
+        let res = swap_asset("33", "32", 0, &opts);
+        println!("swap_asset result: {:?}", res);
+        assert!(res.is_ok(), "swap_asset failed: {:?}", res.err());
+
+        assert!(target_bubbles.is_file());
+        let swapped_bytes = std::fs::read(&target_bubbles).unwrap();
+        assert!(swapped_bytes.len() > 10_000);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
 }
