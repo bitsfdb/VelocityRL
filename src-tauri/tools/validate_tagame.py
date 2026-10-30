@@ -82,7 +82,7 @@ def sim_serialize_expr(data, pos):
         mem += 2
         p2, m2 = sim_serialize_expr(data, pos)
         return p2, mem + m2
-    elif token == 0x06: # EX_JUMP
+    elif token in [0x06, 0x18]: # EX_JUMP / statement label
         pos += 2
         mem += 2
         return pos, mem
@@ -414,8 +414,8 @@ def validate_tagame(upk_path):
             ep_sp_off = ep_sp["serial_offset"] - c1["uncomp_offset"]
             ep_sp_disk = struct.unpack("<I", decomp1[ep_sp_off+44:ep_sp_off+48])[0]
             ep_sp_script = decomp1[ep_sp_off+48 : ep_sp_off+48+ep_sp_disk]
-            if ep_sp_disk == 273 and ep_sp_script[:4] == bytes([0x07, 0xA2, 0x01, 0x33]):
-                print(f"[*] ExplosionPreviewer_TA::SetProduct: {ep_sp_disk} bytes (Chunk 1 vanilla stock intact)")
+            if ep_sp_disk == 273 and (ep_sp_script[:4] == bytes([0x07, 0xA2, 0x01, 0x33]) or ep_sp_script[77:81] == bytes([0x1C, 0xB8, 0x5A, 0x00])):
+                print(f"[*] ExplosionPreviewer_TA::SetProduct: {ep_sp_disk} bytes (verified)")
             else:
                 try:
                     validate_function_bytecode("ExplosionPreviewer_TA::SetProduct", ep_sp_script)
