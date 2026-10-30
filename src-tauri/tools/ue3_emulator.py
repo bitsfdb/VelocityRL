@@ -292,6 +292,11 @@ def run_emulator_test_suite(upk_path):
         ("PlayerVanitySave_TA", "Validate", {}),
         ("PostMatchCelebrationPreviewer_TA", "ResetInvalidAssets", {}),
         ("PRI_TA", "ValidateLoadout", {}),
+        ("JoinGameConnectionChecker_TA", "ShowConnectionError", {}),
+        ("JoinGameConnectionChecker_TA", "ShowConnectionErrorIfWaiting", {}),
+        ("JoinGameConnectionChecker_TA", "HandleDisconnected", {}),
+        ("MenuTreeNode_Playlist_TA", "HandleLockForGatedPlaylists", {}),
+        ("MenuTreeNode_Playlist_TA", "UpdateLock", {}),
     ]
     
     passed = 0
@@ -326,6 +331,16 @@ def run_projectx_emulator_test_suite(upk_path):
         ("URLValidator_X", "IsIPv4AddressValid", {"HostAndPort": "127.0.0.1"}, True),
         ("URLValidator_X", "IsIPv4AndPortValid", {"HostAndPort": "127.0.0.1:8080"}, True),
         ("URLValidator_X", "HostLooksLikeIPv4", {"HostAndPort": "127.0.0.1"}, True),
+        ("URLValidator_X", "IsHostnameValid", {"Hostname": "api.rlpp.psynet.gg"}, True),
+        ("URLValidator_X", "IsHostnameAndPortValid", {"HostAndPort": "api.rlpp.psynet.gg:443"}, True),
+        ("URLValidator_X", "IsPortValid", {"Port": "443"}, True),
+        ("OnlineGame_X", "ValidateUserOnlineAccount", {}, True),
+        ("PrivilegeCheck_X", "CheckPsyNet", {}, None),
+        ("PrivilegeCheck_X", "CheckPsyNetComplete", {}, None),
+        ("PrivilegeCheck_X", "ValidateUserOnlineAccount", {}, None),
+        ("OnlineGamePlaylists_X", "IsRankedEnabled", {}, True),
+        ("OnlineGameSkill_X", "AllPlayersAreAroundTheSameRank", {"PlaylistId": 11}, True),
+        ("PlaylistSkillCache_X", "AllPlayersAreAroundTheSameRank", {}, True),
     ]
     
     passed = 0
