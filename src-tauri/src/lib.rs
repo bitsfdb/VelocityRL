@@ -1436,7 +1436,10 @@ async fn ensure_game_patches(app: tauri::AppHandle) -> Result<bool, String> {
     }
     let game = PathBuf::from(&config.game_dir);
     let cooked = upk::palette::resolve_cooked_dir(&game).unwrap_or(game);
-    upk::ensure_projectx_patched(&cooked)
+    let projectx_patched = upk::ensure_projectx_patched(&cooked)?;
+    let swaps = load_swaps(&app);
+    let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
+    Ok(projectx_patched)
 }
 
 #[tauri::command]
