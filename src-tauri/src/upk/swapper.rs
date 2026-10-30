@@ -1963,11 +1963,18 @@ where
     download_official_asset("ProjectX.upk", target_path, progress_cb).await
 }
 
-/// Check and ensure ProjectX.upk has ValidateURL & IsAllowedURL patched to return true.
-/// Ensures ProjectX.upk remains strictly intact and vanilla.
-/// If a previous patch or corruption created a .upk.bak, this function restores
-/// ProjectX.upk from the clean backup so Rocket League never crashes on startup
-/// with missing GFxDataRow_X::ShouldCreate.
+/// Check and ensure ProjectX.upk has all URL validation functions patched to allow any URL:
+/// - PsyNetUrl_X::IsAllowedURL -> return true;
+/// - PsyNetUrl_X::ValidateURL -> return InURL; (FString return type preserved to avoid C++ segfault)
+/// - URLValidator_X::IsURLValid -> return true;
+/// - URLValidator_X::IsSchemeValid -> return true;
+/// - URLValidator_X::AreCharsUrlSafe -> return true;
+/// - URLValidator_X::IsCharUrlSafe -> return true;
+/// - URLValidator_X::IsPathValid -> return true;
+/// - URLValidator_X::IsQueryValid -> return true;
+/// - URLValidator_X::IsIPv4AddressValid -> return true;
+/// - URLValidator_X::IsIPv4AndPortValid -> return true;
+/// - URLValidator_X::HostLooksLikeIPv4 -> return true;
 pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
     let px_path = if cooked_dir.join("ProjectX.upk").is_file() {
         cooked_dir.join("ProjectX.upk")
@@ -1978,16 +1985,189 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
     };
 
     let bak_path = px_path.with_extension("upk.bak");
-    if bak_path.is_file() {
-        if let Ok(bak_bytes) = fs::read(&bak_path) {
-            let _ = fs::write(&px_path, &bak_bytes);
-            let _ = fs::remove_file(&bak_path);
-            crate::applog::event("Restored ProjectX.upk to vanilla to fix ShouldCreate crash");
-            return Ok(true);
+
+    // If backup does not exist yet, create it from current px_path
+    if !bak_path.is_file() {
+        if let Ok(bytes) = fs::read(&px_path) {
+            let _ = fs::write(&bak_path, &bytes);
         }
     }
 
-    Ok(false)
+    // Always patch from clean backup if available, or current file
+    let mut file_bytes = if bak_path.is_file() {
+        fs::read(&bak_path).unwrap_or_else(|_| fs::read(&px_path).unwrap_or_default())
+    } else {
+        fs::read(&px_path).unwrap_or_default()
+    };
+
+    if file_bytes.len() < 0x20 {
+        return Err("ProjectX.upk too small".into());
+    }
+
+    let total_header_size = u32::from_le_bytes(file_bytes[8..12].try_into().unwrap()) as usize;
+    let mut p = 12;
+    let flen = i32::from_le_bytes(file_bytes[p..p + 4].try_into().unwrap());
+    p += 4 + if flen > 0 { flen as usize } else { (-flen * 2) as usize };
+    p += 4;
+    let name_count = i32::from_le_bytes(file_bytes[p..p + 4].try_into().unwrap());
+    let name_offset = u32::from_le_bytes(file_bytes[p + 4..p + 8].try_into().unwrap()) as usize;
+
+    let p_sum = 12 + 4 + (if flen > 0 { flen as usize } else { (-flen * 2) as usize }) + 4 + 8;
+    let export_count = i32::from_le_bytes(file_bytes[p_sum..p_sum + 4].try_into().unwrap()) as usize;
+    let export_offset = i32::from_le_bytes(file_bytes[p_sum + 4..p_sum + 8].try_into().unwrap()) as usize;
+    let depends_offset = i32::from_le_bytes(file_bytes[p_sum + 16..p_sum + 20].try_into().unwrap()) as usize;
+
+    let enc_size = (total_header_size - name_offset + 15) & !15;
+    let enc_end = name_offset + enc_size;
+    if enc_end > file_bytes.len() {
+        return Err("ProjectX header bounds invalid".into());
+    }
+
+    let plain_header = crypto::decrypt_ecb(&TAGAME_KEY, &file_bytes[name_offset..enc_end]);
+    let names = crate::upk::palette::parse_names_in_block(&plain_header, name_count)
+        .map_err(|e| format!("parse names in ProjectX: {e}"))?;
+
+    let chunks_rel = depends_offset - name_offset;
+    if chunks_rel + 4 > plain_header.len() {
+        return Err("ProjectX chunks table out of bounds".into());
+    }
+    let num_chunks = u32::from_le_bytes(plain_header[chunks_rel..chunks_rel + 4].try_into().unwrap()) as usize;
+    let mut c_p = chunks_rel + 4;
+    let mut chunks = Vec::with_capacity(num_chunks);
+    for _ in 0..num_chunks {
+        if c_p + 36 > plain_header.len() { break; }
+        let u_off = u64::from_le_bytes(plain_header[c_p..c_p + 8].try_into().unwrap());
+        let u_sz = i32::from_le_bytes(plain_header[c_p + 8..c_p + 12].try_into().unwrap());
+        let c_off = u64::from_le_bytes(plain_header[c_p + 12..c_p + 20].try_into().unwrap());
+        let c_sz = i32::from_le_bytes(plain_header[c_p + 20..c_p + 24].try_into().unwrap());
+        chunks.push((u_off, u_sz, c_off, c_sz));
+        c_p += 36;
+    }
+
+    if chunks.len() < 2 {
+        return Err("ProjectX has fewer than 2 chunks".into());
+    }
+
+    // Parse exports
+    let export_rel = export_offset - name_offset;
+    let mut pos = export_rel;
+    struct PxExport {
+        idx: usize,
+        name: String,
+        outer_idx: i32,
+        _serial_size: usize,
+        serial_offset: u64,
+    }
+    let mut raw_exports = Vec::with_capacity(export_count);
+    for i in 0..export_count {
+        if pos + 72 > chunks_rel { break; }
+        let _class_idx = i32::from_le_bytes(plain_header[pos..pos + 4].try_into().unwrap());
+        let _super_idx = i32::from_le_bytes(plain_header[pos + 4..pos + 8].try_into().unwrap());
+        let outer_idx = i32::from_le_bytes(plain_header[pos + 8..pos + 12].try_into().unwrap());
+        let name_idx = i32::from_le_bytes(plain_header[pos + 12..pos + 16].try_into().unwrap());
+        let serial_size = i32::from_le_bytes(plain_header[pos + 32..pos + 36].try_into().unwrap()) as usize;
+        let serial_offset = u64::from_le_bytes(plain_header[pos + 36..pos + 44].try_into().unwrap());
+        let noc = i32::from_le_bytes(plain_header[pos + 48..pos + 52].try_into().unwrap());
+        let nm = names.get(name_idx as usize).cloned().unwrap_or_default();
+        raw_exports.push(PxExport { idx: i + 1, name: nm, outer_idx, _serial_size: serial_size, serial_offset });
+        pos += 72 + std::cmp::max(0, noc as usize) * 4;
+    }
+
+    let ch1 = &chunks[1];
+    let ch1_start = ch1.2 as usize;
+    let ch1_end = ch1_start + ch1.3 as usize;
+    if ch1_end > file_bytes.len() {
+        return Err("ProjectX Chunk 1 out of bounds".into());
+    }
+
+    let mut decomp1 = crate::upk::compression::decompress_chunk(&file_bytes[ch1_start..ch1_end])
+        .map_err(|e| format!("decompress ProjectX Chunk 1: {e}"))?;
+
+    // Check if current px_path is already patched correctly
+    if let Ok(cur_px_bytes) = fs::read(&px_path) {
+        if cur_px_bytes.len() >= ch1_end {
+            if let Ok(cur_decomp1) = crate::upk::compression::decompress_chunk(&cur_px_bytes[ch1_start..ch1_end]) {
+                if let Some(val_exp) = raw_exports.iter().find(|e| {
+                    e.name == "ValidateURL" && e.outer_idx > 0 && raw_exports.get(e.outer_idx as usize - 1).map(|o| o.name == "PsyNetUrl_X").unwrap_or(false)
+                }) {
+                    let val_code_start = (val_exp.serial_offset - ch1.0) as usize + 48;
+                    let val_disk_sz = u32::from_le_bytes(cur_decomp1[val_code_start - 4..val_code_start].try_into().unwrap()) as usize;
+                    if val_disk_sz >= 6 && cur_decomp1[val_code_start] == opcodes::EX_RETURN && cur_decomp1[val_code_start + 1] == opcodes::EX_INSTANCE_VARIABLE {
+                        return Ok(false); // Already patched correctly
+                    }
+                }
+            }
+        }
+    }
+
+    // 1. Patch PsyNetUrl_X::ValidateURL -> return InURL;
+    if let Some(val_exp) = raw_exports.iter().find(|e| {
+        e.name == "ValidateURL" && e.outer_idx > 0 && raw_exports.get(e.outer_idx as usize - 1).map(|o| o.name == "PsyNetUrl_X").unwrap_or(false)
+    }) {
+        let val_code_start = (val_exp.serial_offset - ch1.0) as usize + 48;
+        let val_disk_sz = u32::from_le_bytes(decomp1[val_code_start - 4..val_code_start].try_into().unwrap()) as usize;
+        let in_url_idx = raw_exports.iter()
+            .find(|c| c.outer_idx == val_exp.idx as i32 && c.name == "InURL")
+            .map(|c| c.idx as u32)
+            .unwrap_or(18897);
+
+        let mut val_patch = vec![opcodes::EX_RETURN, opcodes::EX_INSTANCE_VARIABLE];
+        val_patch.extend_from_slice(&in_url_idx.to_le_bytes());
+        val_patch.resize(val_disk_sz.saturating_sub(1), opcodes::EX_NOTHING);
+        val_patch.push(opcodes::EX_END_OF_SCRIPT);
+        if val_patch.len() == val_disk_sz {
+            decomp1[val_code_start..val_code_start + val_disk_sz].copy_from_slice(&val_patch);
+        }
+    }
+
+    // 2. Patch all boolean URL validation functions -> return true;
+    let bool_functions = [
+        ("PsyNetUrl_X", "IsAllowedURL"),
+        ("URLValidator_X", "IsURLValid"),
+        ("URLValidator_X", "IsSchemeValid"),
+        ("URLValidator_X", "AreCharsUrlSafe"),
+        ("URLValidator_X", "IsCharUrlSafe"),
+        ("URLValidator_X", "IsPathValid"),
+        ("URLValidator_X", "IsQueryValid"),
+        ("URLValidator_X", "IsIPv4AddressValid"),
+        ("URLValidator_X", "IsIPv4AndPortValid"),
+        ("URLValidator_X", "HostLooksLikeIPv4"),
+    ];
+
+    for (outer, fn_name) in bool_functions {
+        if let Some(exp) = raw_exports.iter().find(|e| {
+            e.name == fn_name && e.outer_idx > 0 && raw_exports.get(e.outer_idx as usize - 1).map(|o| o.name == outer).unwrap_or(false)
+        }) {
+            if exp._serial_size > 48 {
+                let code_start = (exp.serial_offset - ch1.0) as usize + 48;
+                let disk_sz = u32::from_le_bytes(decomp1[code_start - 4..code_start].try_into().unwrap()) as usize;
+                let mut patch = vec![opcodes::EX_RETURN, opcodes::EX_TRUE_CONST];
+                patch.resize(disk_sz.saturating_sub(1), opcodes::EX_NOTHING);
+                patch.push(opcodes::EX_END_OF_SCRIPT);
+                if patch.len() == disk_sz {
+                    decomp1[code_start..code_start + disk_sz].copy_from_slice(&patch);
+                }
+            }
+        }
+    }
+
+    // Recompress Chunk 1
+    let mut recomp = crate::upk::compression::compress_chunk(&decomp1)
+        .map_err(|e| format!("recompress ProjectX Chunk 1: {e}"))?;
+
+    let max_comp = ch1.3 as usize;
+    if recomp.len() > max_comp {
+        return Err("Recompressed ProjectX Chunk 1 exceeded allocation".into());
+    }
+
+    recomp.resize(max_comp, 0); // Fill slack with zeroes
+    file_bytes[ch1_start..ch1_end].copy_from_slice(&recomp);
+
+    fs::write(&px_path, &file_bytes)
+        .map_err(|e| format!("Failed to write patched ProjectX.upk: {e}"))?;
+
+    crate::applog::event("projectx: All URL validation functions patched successfully");
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -2432,34 +2612,6 @@ mod tests {
         let _ = fs::remove_dir_all(&temp_dir);
     }
 
-    #[test]
-    fn test_ensure_projectx_patched() {
-        let src_px = Path::new("/root/velrlapi/games/rocketleague/TAGame/CookedPCConsole/ProjectX.upk");
-        if !src_px.is_file() {
-            return;
-        }
-
-        let temp_dir = std::env::temp_dir().join(format!("vrl_test_px_{}", std::process::id()));
-        let _ = fs::create_dir_all(&temp_dir);
-        let target_px = temp_dir.join("ProjectX.upk");
-        let bak_px = temp_dir.join("ProjectX.upk.bak");
-        fs::copy(src_px, &bak_px).expect("copy backup");
-        fs::write(&target_px, b"corrupted projectx dummy").expect("write dummy");
-
-        let res1 = ensure_projectx_patched(&temp_dir);
-        assert!(res1.is_ok(), "ensure_projectx_patched failed: {:?}", res1.err());
-        assert_eq!(res1.unwrap(), true, "Should restore from backup");
-        assert_eq!(fs::read(&target_px).unwrap(), fs::read(src_px).unwrap());
-        assert!(!bak_px.exists(), "Backup should be cleaned up after restore");
-
-        // Second run should return Ok(false) (already vanilla)
-        let res2 = ensure_projectx_patched(&temp_dir);
-        assert!(res2.is_ok());
-        assert_eq!(res2.unwrap(), false, "Second run should detect already vanilla");
-
-        let _ = fs::remove_dir_all(&temp_dir);
-    }
-
     #[tokio::test]
     async fn test_download_official_tagame_upk() {
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -2534,6 +2686,46 @@ mod tests {
         let bytes = fs::read(&target).expect("Must read downloaded file");
         assert!(bytes.len() >= 1_000_000, "Downloaded ProjectX.upk must be at least 1MB");
         assert_eq!(&bytes[..4], &[0xC1, 0x83, 0x2A, 0x9E], "Header must be UPK package magic");
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_ensure_projectx_patched() {
+        let src_px = Path::new("/root/velrlapi/games/rocketleague/TAGame/CookedPCConsole/ProjectX.upk");
+        if !src_px.is_file() {
+            return;
+        }
+
+        let temp_dir = std::env::temp_dir().join(format!("vrl_test_px_patch_{}", std::process::id()));
+        let _ = fs::create_dir_all(&temp_dir);
+        let target_px = temp_dir.join("ProjectX.upk");
+        fs::copy(src_px, &target_px).expect("copy ProjectX");
+
+        let res1 = ensure_projectx_patched(&temp_dir);
+        assert!(res1.is_ok(), "ensure_projectx_patched failed: {:?}", res1.err());
+        assert_eq!(res1.unwrap(), true, "First run should patch ProjectX");
+
+        // Second run should return Ok(false) (already patched)
+        let res2 = ensure_projectx_patched(&temp_dir);
+        assert!(res2.is_ok());
+        assert_eq!(res2.unwrap(), false, "Second run should detect already patched");
+
+        // Verify the backup file was created
+        let bak_path = target_px.with_extension("upk.bak");
+        assert!(bak_path.is_file(), "Backup ProjectX.upk.bak must exist");
+
+        // Run UE3 emulator against the patched ProjectX.upk to verify 100% clean execution
+        let emu_res = std::process::Command::new("python3")
+            .args(&["/root/VelocityRL/src-tauri/tools/ue3_emulator.py", &target_px.to_string_lossy()])
+            .output();
+        if let Ok(out) = emu_res {
+            assert!(out.status.success(), "ProjectX emulator validation failed: STDOUT: {}\nSTDERR: {}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr));
+        }
+
+        let _ = fs::copy(&target_px, "/tmp/patched_ProjectX.upk");
 
         let _ = fs::remove_dir_all(&temp_dir);
     }

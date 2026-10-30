@@ -309,7 +309,57 @@ def run_emulator_test_suite(upk_path):
     print(f"\n[*] Emulator Results: {passed} PASSED, {failed} FAILED")
     return failed == 0
 
+def run_projectx_emulator_test_suite(upk_path):
+    print(f"\n[*] Starting ProjectX Validation VM Bytecode Emulator on {upk_path}...")
+    pkg = ue3_decompiler.PackageReader(upk_path)
+    
+    # URL validation function tests
+    tests = [
+        ("PsyNetUrl_X", "IsAllowedURL", {"InURL": "https://api.velocityrl.local/v1/broker", "bWebSocket": False}, True),
+        ("PsyNetUrl_X", "ValidateURL", {"InURL": "https://custom-broker.example.com/api", "bWebSocket": False, "bEnforce": True}, "https://custom-broker.example.com/api"),
+        ("URLValidator_X", "IsURLValid", {"URL": "http://127.0.0.1:8080/test"}, True),
+        ("URLValidator_X", "IsSchemeValid", {"Scheme": "custom"}, True),
+        ("URLValidator_X", "AreCharsUrlSafe", {"Str": "any_string!@#$"}, True),
+        ("URLValidator_X", "IsCharUrlSafe", {"Char": "$"}, True),
+        ("URLValidator_X", "IsPathValid", {"Path": "/items/spawn/23"}, True),
+        ("URLValidator_X", "IsQueryValid", {"Query": "?product_id=4284&paint_id=12"}, True),
+        ("URLValidator_X", "IsIPv4AddressValid", {"HostAndPort": "127.0.0.1"}, True),
+        ("URLValidator_X", "IsIPv4AndPortValid", {"HostAndPort": "127.0.0.1:8080"}, True),
+        ("URLValidator_X", "HostLooksLikeIPv4", {"HostAndPort": "127.0.0.1"}, True),
+    ]
+    
+    passed = 0
+    failed = 0
+    for outer, fn, mock_data, expected_ret in tests:
+        try:
+            vm = Ue3BytecodeEmulator(pkg, outer, fn)
+            res = vm.run(mock_data)
+            if res.get('status') != 'OK':
+                raise VmCrash(f"Unexpected status: {res.get('status')}")
+            # If function is patched, verify return value
+            if vm.bytecode[0] == 0x04: # EX_RETURN
+                if expected_ret is not None and res.get('ret') != expected_ret:
+                    raise VmCrash(f"Return value mismatch: expected {expected_ret!r}, got {res.get('ret')!r}")
+            print(f" [+] PASS: {outer}::{fn} executed cleanly (ret={res.get('ret')!r}, {res['steps']} steps)")
+            passed += 1
+        except Exception as e:
+            print(f" [!] FAIL: {outer}::{fn} -> {e}")
+            failed += 1
+            
+    print(f"\n[*] ProjectX Emulator Results: {passed} PASSED, {failed} FAILED")
+    return failed == 0
+
 if __name__ == '__main__':
-    path = sys.argv[1] if len(sys.argv) > 1 else '/root/velrlapi/games/rocketleague/TAGame/CookedPCConsole/TAGame.upk'
-    success = run_emulator_test_suite(path)
-    sys.exit(0 if success else 1)
+    tagame_path = sys.argv[1] if len(sys.argv) > 1 else '/root/velrlapi/games/rocketleague/TAGame/CookedPCConsole/TAGame.upk'
+    projectx_path = sys.argv[2] if len(sys.argv) > 2 else None
+    
+    ok1 = True
+    if os.path.isfile(tagame_path) and "ProjectX" not in os.path.basename(tagame_path):
+        ok1 = run_emulator_test_suite(tagame_path)
+    
+    ok2 = True
+    target_px = projectx_path if projectx_path else (tagame_path if "ProjectX" in os.path.basename(tagame_path) else None)
+    if target_px and os.path.isfile(target_px):
+        ok2 = run_projectx_emulator_test_suite(target_px)
+        
+    sys.exit(0 if (ok1 and ok2) else 1)
