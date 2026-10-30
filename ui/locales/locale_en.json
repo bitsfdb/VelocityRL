@@ -1,6 +1,6 @@
 {
     "nav": {
-        "swapper": "Swapper",
+        "swapper": "Spawner",
         "titles": "Titles",
         "customization": "Customization",
         "avatar": "Profile Picture",
@@ -17,7 +17,9 @@
         "keep_open_desc": "VelocityRL must remain running in the background for titles, spoofing, and names to appear in Rocket League."
     },
     "subtabs": {
-        "swaps": "Swaps",
+        "spawner": "Spawner",
+        "swapper": "Swapper",
+        "swaps": "Swapper",
         "restore": "Restore",
         "presets": "Presets"
     },
@@ -34,19 +36,27 @@
         "trails": "Trails",
         "borders": "Avatar Borders",
         "paint_finishes": "Paint Finishes",
-        "engine_audio": "Engine Audio"
+        "engine_audio": "Engine Audio",
+        "titles": "Titles"
     },
     "swapper": {
         "owned_item": "Owned Item",
         "target_asset": "Target Asset",
         "search_owned": "Search your items...",
-        "search_target": "Search target assets...",
+        "search_target": "Search items and series...",
         "no_item_selected": "No item selected",
         "paint": "Paint",
         "coming_soon": "None",
         "paint_hint": "Select a paint color to apply to the target item.",
         "swap_btn": "Swap Items",
-        "rl_running_hint": "Rocket League is running — close it before swapping or restoring."
+        "spawn_selected": "Spawn Selected",
+        "any_rarity": "Any rarity",
+        "ctrl_hint": "Click items to select. Spawn directly into inventory.",
+        "select_page": "Select Page",
+        "clear_selection": "Clear Selection",
+        "no_items_found": "No items found matching your filters.",
+        "rl_running_hint": "Rocket League is running — close it before swapping or restoring.",
+        "all_paints": "Paint: All Variants"
     },
     "restore": {
         "title": "Restore / Revert",
