@@ -528,13 +528,16 @@ function renderSelectedItem(container, item, onClear) {
     const decalBody = getItemDecalBody(item);
     const decalBadge = decalBody ? `<span class="quality-badge" style="background:rgba(91,140,255,0.18);color:#93c5fd;border:1px solid rgba(91,140,255,0.35);">${escHtml(decalBody)} Decal</span>` : '';
 
-    const isPaintable = itemIsPaintable(item);
-    if (!isPaintable) {
-        if (isTarget) { wantedPaintId = '0'; wantedCustomHex = null; }
-        else { ownedPaintId = '0'; ownedCustomHex = null; }
+    const isPaintable = isTarget && itemIsPaintable(item);
+    if (!isTarget) {
+        ownedPaintId = '0';
+        ownedCustomHex = null;
+    } else if (!isPaintable) {
+        wantedPaintId = '0';
+        wantedCustomHex = null;
     }
-    const currentPaintId = Number((isTarget ? wantedPaintId : ownedPaintId) || 0);
-    const currentCustomHex = isTarget ? wantedCustomHex : ownedCustomHex;
+    const currentPaintId = Number((isTarget ? wantedPaintId : '0') || 0);
+    const currentCustomHex = isTarget ? wantedCustomHex : null;
     const isCustomActive = !!(currentCustomHex && !currentPaintId);
 
     const itemPaintsList = Array.isArray(item.Paints) && item.Paints.length > 0 
@@ -628,13 +631,8 @@ function renderSelectedItem(container, item, onClear) {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const pid = btn.dataset.paint;
-                if (isTarget) {
-                    wantedPaintId = pid;
-                    wantedCustomHex = null;
-                } else {
-                    ownedPaintId = pid;
-                    ownedCustomHex = null;
-                }
+                wantedPaintId = pid;
+                wantedCustomHex = null;
                 container.querySelectorAll('.paint-chip-pill').forEach(b => {
                     b.classList.toggle('is-active', b.dataset.paint === pid);
                 });
@@ -652,13 +650,8 @@ function renderSelectedItem(container, item, onClear) {
             colorInput.addEventListener('input', (e) => {
                 e.stopPropagation();
                 const hex = e.target.value;
-                if (isTarget) {
-                    wantedCustomHex = hex;
-                    wantedPaintId = '0';
-                } else {
-                    ownedCustomHex = hex;
-                    ownedPaintId = '0';
-                }
+                wantedCustomHex = hex;
+                wantedPaintId = '0';
                 container.querySelectorAll('.paint-chip-pill').forEach(b => {
                     b.classList.remove('is-active');
                 });
@@ -2347,15 +2340,13 @@ async function handleApply() {
         interval = setInterval(() => { if (p < 85) p += 5; showProgress(true, p); }, 400);
         const ownedId = (ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id).toString();
         const wantedId = (wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id).toString();
-        const activeOwnedPaintId = Number(ownedPaintId || 0);
-        const activeOwnedCustomHex = ownedCustomHex || null;
         let paintId = itemIsPaintable(wantedItem) ? Number(wantedPaintId || 0) : 0;
         const customPaintHex = itemIsPaintable(wantedItem) ? (wantedCustomHex || null) : null;
         const swapResult = await invoke('apply_swap', {
             ownedId,
             wantedId,
-            ownedPaintId: activeOwnedPaintId > 0 ? activeOwnedPaintId : null,
-            ownedCustomHex: activeOwnedCustomHex || null,
+            ownedPaintId: null,
+            ownedCustomHex: null,
             paintId,
             customPaintHex: customPaintHex || null,
         });
