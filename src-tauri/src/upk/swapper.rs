@@ -1626,6 +1626,7 @@ pub fn apply_tagame_modifications(
                         ("Validate", "LoadoutSet_TA"),
                         ("ValidateProductID", "Loadout_TA"),
                         ("ValidateForcedProducts", "Loadout_TA"),
+                        ("SetBodyProductAndValidate", "Loadout_TA"),
                         ("ResetInvalidAssets", "PostMatchCelebrationPreviewer_TA"),
                         ("ResetInvalidAssets", "PremiumGaragePreviewSet_TA"),
                         ("OnLoadoutValidationError", "PRI_TA"),
