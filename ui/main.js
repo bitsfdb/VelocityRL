@@ -770,8 +770,6 @@ async function init() {
 
     applyBtn.onclick = handleApply;
     document.getElementById('restore-btn').onclick = handleRestore;
-    const redownloadBtn = document.getElementById('redownload-assets-btn');
-    if (redownloadBtn) redownloadBtn.onclick = handleRedownloadAssets;
     const settingsRedownloadBtn = document.getElementById('settings-redownload-assets-btn');
     if (settingsRedownloadBtn) settingsRedownloadBtn.onclick = handleRedownloadAssets;
     const devRedownloadBtn = document.getElementById('dev-redownload-assets-btn');
@@ -2427,7 +2425,6 @@ async function handleRestore() {
 async function handleRedownloadAssets() {
     if (isAppLoading()) return;
     const btns = [
-        document.getElementById('redownload-assets-btn'),
         document.getElementById('settings-redownload-assets-btn'),
         document.getElementById('dev-redownload-assets-btn'),
     ].filter(Boolean);

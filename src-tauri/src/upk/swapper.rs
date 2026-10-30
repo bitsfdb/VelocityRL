@@ -246,7 +246,7 @@ pub fn emit_car_set_loadout_bytecode(
             let assign_mem = 30 + assign_index_mem + target_mem_len;
             mem_sz += assign_mem;
 
-            let jump_target = bc.len() as u16;
+            let jump_target = mem_sz as u16;
             bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
         } else {
             if bc.len() + assign_disk_len > available_space {
@@ -428,7 +428,7 @@ pub fn emit_car_preview_set_loadout_bytecode(
             let assign_mem = 30 + assign_index_mem + target_mem_len;
             mem_sz += assign_mem;
 
-            let jump_target = bc.len() as u16;
+            let jump_target = mem_sz as u16;
             bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
         } else {
             if bc.len() + assign_disk_len > available_space {
@@ -562,7 +562,7 @@ pub fn emit_car_mesh_apply_paint_settings_bytecode(
     bc.push(opcodes::EX_BOOL_VARIABLE);
     bc.extend_from_slice(&15648i32.to_le_bytes());
     bc.push(0x00);
-    mem_sz += 3 + 8;
+    mem_sz += 3 + 9;
 
     // 2. Struct member assignments on CustomColorOverride (Export #15655)
     // LinearColor struct (-4233)
@@ -585,7 +585,7 @@ pub fn emit_car_mesh_apply_paint_settings_bytecode(
         bc.push(opcodes::EX_FLOAT_CONST);
         bc.extend_from_slice(val_bytes);
 
-        mem_sz += 1 + 18 + 8 + 4;
+        mem_sz += 1 + 19 + 9 + 5;
     }
 
     let jump_target = mem_sz as u16;
@@ -603,13 +603,28 @@ pub fn emit_car_mesh_apply_paint_settings_bytecode(
     Ok((bc, mem_sz))
 }
 
+pub const EXPLOSION_PREVIEWER_SET_PRODUCT_TAIL: [u8; 196] = [
+    0x1c, 0xb8, 0x5a, 0x00, 0x00, 0x16, 0x07, 0x81, 0x01, 0x82, 0x97, 0x2b, 0xbe, 0x5a, 0x00, 0x00,
+    0x25, 0x16, 0x18, 0x79, 0x00, 0xcf, 0x5e, 0x19, 0x01, 0x19, 0x00, 0x12, 0x00, 0x20, 0x16, 0x64,
+    0x00, 0x00, 0x09, 0x00, 0xe7, 0x63, 0x00, 0x00, 0x00, 0x02, 0xe7, 0x63, 0x00, 0x00, 0x13, 0x00,
+    0x7a, 0x61, 0x00, 0x00, 0x00, 0x1c, 0x7c, 0x61, 0x00, 0x00, 0x2b, 0xbe, 0x5a, 0x00, 0x00, 0x16,
+    0x09, 0x00, 0x38, 0x9c, 0x00, 0x00, 0x00, 0x01, 0x38, 0x9c, 0x00, 0x00, 0x5e, 0x12, 0x00, 0x20,
+    0x16, 0x64, 0x00, 0x00, 0x09, 0x00, 0xd3, 0x63, 0x00, 0x00, 0x00, 0x02, 0xd3, 0x63, 0x00, 0x00,
+    0x16, 0x16, 0x52, 0x5e, 0x19, 0x00, 0x01, 0xb2, 0x5a, 0x00, 0x00, 0x09, 0x00, 0xf7, 0x3e, 0x00,
+    0x00, 0x00, 0x01, 0xf7, 0x3e, 0x00, 0x00, 0x49, 0xf2, 0x5f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x5e, 0x19, 0x00, 0x01, 0xb2, 0x5a, 0x00, 0x00, 0x2a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1c,
+    0x07, 0x3f, 0x00, 0x00, 0x57, 0x28, 0x2b, 0xbc, 0x5a, 0x00, 0x00, 0x00, 0x00, 0x2b, 0xbe, 0x5a,
+    0x00, 0x00, 0x16, 0x2b, 0xbc, 0x5a, 0x00, 0x00, 0x16, 0x06, 0xa2, 0x01, 0x5e, 0x19, 0x00, 0x01,
+    0xb2, 0x5a, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1c, 0x52, 0x3f, 0x00, 0x00,
+    0x16, 0x04, 0x0b, 0x4c,
+];
+
 pub fn emit_explosion_previewer_set_product_bytecode(
     owned_id_opt: Option<i32>,
     target_id: i32,
     max_disk_size: usize,
 ) -> Result<(Vec<u8>, u32), TagameSwapError> {
     let mut bc = Vec::with_capacity(max_disk_size);
-    let mut mem_sz: u32 = 0;
     let product_id_var = 23230i32; // ProductID local parameter
 
     if let Some(owned) = owned_id_opt {
@@ -629,8 +644,8 @@ pub fn emit_explosion_previewer_set_product_bytecode(
         bc.push(opcodes::EX_INSTANCE_VARIABLE);
         bc.extend_from_slice(&product_id_var.to_le_bytes());
         bc.push(opcodes::EX_INT_CONST);
-        mem_sz += 3 + (1 + 9 + 5 + 1) + (1 + 9 + 5);
-        let jump_target = mem_sz as u16;
+        bc.extend_from_slice(&target_id.to_le_bytes());
+        let jump_target = 34u16;
         bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
     } else {
         // ProductID = target;
@@ -639,20 +654,19 @@ pub fn emit_explosion_previewer_set_product_bytecode(
         bc.extend_from_slice(&product_id_var.to_le_bytes());
         bc.push(opcodes::EX_INT_CONST);
         bc.extend_from_slice(&target_id.to_le_bytes());
-
-        mem_sz += 1 + 9 + 5;
     }
 
-    bc.push(opcodes::EX_RETURN);
-    bc.push(opcodes::EX_NOTHING);
-    bc.push(opcodes::EX_END_OF_SCRIPT);
-    mem_sz += 3;
+    // Pad prefix with EX_NOTHING up to byte 77
+    bc.resize(77, opcodes::EX_NOTHING);
 
-    let nop_count = max_disk_size.saturating_sub(bc.len());
-    bc.resize(max_disk_size, opcodes::EX_NOTHING);
-    mem_sz += nop_count as u32;
+    // Append vanilla tail (offset 77 to 273: calls UpdateExplosion & LoadProducts)
+    bc.extend_from_slice(&EXPLOSION_PREVIEWER_SET_PRODUCT_TAIL);
 
-    Ok((bc, mem_sz))
+    if bc.len() < max_disk_size {
+        bc.resize(max_disk_size, opcodes::EX_NOTHING);
+    }
+
+    Ok((bc, 421))
 }
 
 #[allow(dead_code)]
@@ -1665,36 +1679,8 @@ pub fn apply_tagame_modifications(
                         }
                     }
 
-                    // 7. PaintedFXSelector_TA::PickFXActor -> always return PaintedFXActor if present
-                    if let Some(exp) = exports.iter().find(|e| e.name == "PickFXActor" && e.outer_name == "PaintedFXSelector_TA") {
-                        if exp.serial_offset >= c2_uncomp_offset && exp.serial_offset < (c2_uncomp_offset + chunks[2].uncomp_size as i64) {
-                            let func_off = (exp.serial_offset - c2_uncomp_offset) as usize;
-                            if func_off + 48 <= decomp2.len() {
-                                let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                                if orig_disk_sz >= 20 {
-                                    let pick_idx = exp.idx as i32;
-                                    let painted_fx_idx = exports.iter()
-                                        .find(|e| e.name == "PaintedFXActor" && e.outer_idx == pick_idx)
-                                        .map(|e| e.idx as i32)
-                                        .unwrap_or(54163);
-                                    let fx_idx = exports.iter()
-                                        .find(|e| e.name == "FXActor" && e.outer_idx == pick_idx)
-                                        .map(|e| e.idx as i32)
-                                        .unwrap_or(54162);
-                                    let return_val_idx = exports.iter()
-                                        .find(|e| e.name == "ReturnValue" && e.outer_idx == pick_idx)
-                                        .map(|e| e.idx as i32)
-                                        .unwrap_or(54161);
-                                    let (payload, mem_sz) = emit_pick_fx_actor_bytecode(painted_fx_idx, fx_idx, return_val_idx, orig_disk_sz);
-                                    if &decomp2[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
-                                        decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                        decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
-                                        c2_modified = true;
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    // 7. PaintedFXSelector_TA::PickFXActor is left 100% clean vanilla
+                    // (Native logic already checks PaintedFXActor != None && HasPaint(), avoiding jump misalignments)
 
                     // Patch PRI_TA::GetPing if ping spoof is active
                     if ping_active {
@@ -2385,6 +2371,15 @@ mod tests {
                 custom_paint_hex: None,
                 package_name: Some("boost_alphadevreward".to_string()),
             },
+            TagameSwapItem {
+                slot: "Goal Explosion".to_string(),
+                slot_index: Some(15),
+                owned_id: Some(2044),
+                product_id: 8840,
+                paint_id: None,
+                custom_paint_hex: None,
+                package_name: Some("GoalExplosion_BubbleGum".to_string()),
+            },
         ];
 
         let keys_txt = include_str!("../../resources/keys.txt");
@@ -2413,6 +2408,23 @@ mod tests {
             output.status.code(),
             stdout,
             stderr
+        );
+
+        let emu_output = std::process::Command::new("python3")
+            .arg("/root/VelocityRL/src-tauri/tools/ue3_emulator.py")
+            .arg(&target)
+            .output()
+            .expect("execute ue3_emulator.py");
+
+        let emu_stdout = String::from_utf8_lossy(&emu_output.stdout);
+        let emu_stderr = String::from_utf8_lossy(&emu_output.stderr);
+        println!("EMULATOR OUTPUT:\n{}", emu_stdout);
+        assert!(
+            emu_output.status.success(),
+            "ue3_emulator.py detected crash/invalid bytecode with exit code {:?}\nSTDOUT:\n{}\nSTDERR:\n{}",
+            emu_output.status.code(),
+            emu_stdout,
+            emu_stderr
         );
 
         let _ = fs::copy(&target, "/tmp/modified_TAGame.upk");
