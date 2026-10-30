@@ -1802,7 +1802,7 @@ async fn spawn_items_batch(
     }
     let all_items = get_items(app.clone(), None).await
         .map_err(|e| format!("Failed to load items database: {}", e))?;
-    let save_path = savedata::locate_latest_save()?;
+    let save_path = savedata::locate_latest_save().ok();
 
     let mut swaps = load_swaps(&app);
     let mut spawned_entries = Vec::new();
@@ -1815,9 +1815,11 @@ async fn spawn_items_batch(
             if !(0..=29).contains(&paint_id) || !item_is_paintable(wanted) {
                 paint_id = 0;
             }
-            let slot_idx = savedata::slot_name_to_index(&wanted.slot);
-            let base_pid = Some(wid);
-            let _ = savedata::spawn_item_native_ext(&save_path, wid, paint_id, slot_idx, base_pid);
+            if let Some(ref sp) = save_path {
+                let slot_idx = savedata::slot_name_to_index(&wanted.slot);
+                let base_pid = Some(wid);
+                let _ = savedata::spawn_item_native_ext(sp, wid, paint_id, slot_idx, base_pid);
+            }
 
             swaps.retain(|s| !(s.wanted_id == wid && s.paint_id == paint_id));
             let new_entry = SwapEntry {
@@ -1850,7 +1852,11 @@ async fn spawn_items_batch(
     if !spawned_entries.is_empty() {
         record_swap_history(&app, "spawn", &spawned_entries, "batch spawn");
     }
-    applog::event(&format!("spawn_items_batch: successfully spawned {count} items into save {}", save_path.display()));
+    if let Some(ref sp) = save_path {
+        applog::event(&format!("spawn_items_batch: successfully spawned {count} items into save {}", sp.display()));
+    } else {
+        applog::event(&format!("spawn_items_batch: successfully spawned {count} items into loadout state"));
+    }
     Ok(count)
 }
 
