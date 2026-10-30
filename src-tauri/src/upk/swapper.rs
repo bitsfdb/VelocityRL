@@ -1631,6 +1631,9 @@ pub fn apply_tagame_modifications(
                         ("ResetInvalidAssets", "PremiumGaragePreviewSet_TA"),
                         ("OnLoadoutValidationError", "PRI_TA"),
                         ("OnLoadoutCorrected", "PRI_TA"),
+                        ("ShowConnectionError", "JoinGameConnectionChecker_TA"),
+                        ("ShowConnectionErrorIfWaiting", "JoinGameConnectionChecker_TA"),
+                        ("HandleDisconnected", "JoinGameConnectionChecker_TA"),
                     ];
                     for &(f_name, o_name) in &void_funcs_to_noop {
                         if let Some(exp) = exports.iter().find(|e| e.name == f_name && e.outer_name == o_name) {
@@ -1662,6 +1665,9 @@ pub fn apply_tagame_modifications(
                         ("ValidatePaintedAttribute", "LoadoutValidation_TA", true),
                         ("ValidateOnlineProductWithLoadoutProduct", "LoadoutValidation_TA", true),
                         ("ShouldValidateOnlineProducts", "LoadoutValidation_TA", false),
+                        ("IsInMainMenu", "JoinGameConnectionChecker_TA", true),
+                        ("IsPlayerWaiting", "JoinGameConnectionChecker_TA", false),
+                        ("HandleLockForGatedPlaylists", "MenuTreeNode_Playlist_TA", false),
                     ];
                     for &(f_name, o_name, ret_val) in &bool_funcs_to_patch {
                         if let Some(exp) = exports.iter().find(|e| e.name == f_name && e.outer_name == o_name) {
@@ -1676,6 +1682,34 @@ pub fn apply_tagame_modifications(
                                             decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
                                             c2_modified = true;
                                         }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // C. Patch MenuTreeNode_Playlist_TA::UpdateLock to immediately enable node and clear lock banner
+                    if let Some(exp) = exports.iter().find(|e| e.name == "UpdateLock" && e.outer_name == "MenuTreeNode_Playlist_TA") {
+                        if exp.serial_offset >= c2_uncomp_offset && exp.serial_offset < (c2_uncomp_offset + chunks[2].uncomp_size as i64) {
+                            let func_off = (exp.serial_offset - c2_uncomp_offset) as usize;
+                            if func_off + 48 <= decomp2.len() {
+                                let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                                if orig_disk_sz >= 0x0080 && func_off + 48 + orig_disk_sz <= decomp2.len() {
+                                    let action = [
+                                        0x1c, 0x1f, 0x7e, 0x01, 0x00, 0x27, 0x16, // SetEnabled(true)
+                                        0x5e, 0x19, 0x00, 0x01, 0xc9, 0xc2, 0x00, 0x00, 0x0e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // GFxNode.
+                                        0x1c, 0xb5, 0x89, 0x00, 0x00, 0x24, 0x00, 0x48, 0x48, 0x16, // SetBanner(0, "", "")
+                                        0x04, 0x0b, // return;
+                                    ];
+                                    let patch_start = func_off + 48 + 0x0062;
+                                    let patch_end = func_off + 48 + orig_disk_sz;
+                                    if patch_start + action.len() < patch_end {
+                                        decomp2[patch_start..patch_start + action.len()].copy_from_slice(&action);
+                                        for b in &mut decomp2[patch_start + action.len()..patch_end - 1] {
+                                            *b = opcodes::EX_NOTHING;
+                                        }
+                                        decomp2[patch_end - 1] = opcodes::EX_END_OF_SCRIPT;
+                                        c2_modified = true;
                                     }
                                 }
                             }
@@ -2090,14 +2124,36 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
     if let Ok(cur_px_bytes) = fs::read(&px_path) {
         if cur_px_bytes.len() >= ch1_end {
             if let Ok(cur_decomp1) = crate::upk::compression::decompress_chunk(&cur_px_bytes[ch1_start..ch1_end]) {
-                if let Some(val_exp) = raw_exports.iter().find(|e| {
+                let val_patched = if let Some(val_exp) = raw_exports.iter().find(|e| {
                     e.name == "ValidateURL" && e.outer_idx > 0 && raw_exports.get(e.outer_idx as usize - 1).map(|o| o.name == "PsyNetUrl_X").unwrap_or(false)
                 }) {
                     let val_code_start = (val_exp.serial_offset - ch1.0) as usize + 48;
                     let val_disk_sz = u32::from_le_bytes(cur_decomp1[val_code_start - 4..val_code_start].try_into().unwrap()) as usize;
-                    if val_disk_sz >= 6 && cur_decomp1[val_code_start] == opcodes::EX_RETURN && cur_decomp1[val_code_start + 1] == opcodes::EX_INSTANCE_VARIABLE {
-                        return Ok(false); // Already patched correctly
-                    }
+                    val_disk_sz >= 6 && cur_decomp1[val_code_start] == opcodes::EX_RETURN && cur_decomp1[val_code_start + 1] == opcodes::EX_INSTANCE_VARIABLE
+                } else {
+                    false
+                };
+
+                let chk_patched = if let Some(chk_exp) = raw_exports.iter().find(|e| {
+                    e.name == "CheckPsyNet" && e.outer_idx > 0 && raw_exports.get(e.outer_idx as usize - 1).map(|o| o.name == "PrivilegeCheck_X").unwrap_or(false)
+                }) {
+                    let chk_code_start = (chk_exp.serial_offset - ch1.0) as usize + 48;
+                    cur_decomp1.get(chk_code_start) == Some(&opcodes::EX_RETURN)
+                } else {
+                    false
+                };
+
+                let rank_patched = if let Some(rank_exp) = raw_exports.iter().find(|e| {
+                    e.name == "IsRankedEnabled" && e.outer_idx > 0 && raw_exports.get(e.outer_idx as usize - 1).map(|o| o.name == "OnlineGamePlaylists_X").unwrap_or(false)
+                }) {
+                    let rank_code_start = (rank_exp.serial_offset - ch1.0) as usize + 48;
+                    cur_decomp1.get(rank_code_start) == Some(&opcodes::EX_RETURN)
+                } else {
+                    false
+                };
+
+                if val_patched && chk_patched && rank_patched {
+                    return Ok(false); // Already patched correctly
                 }
             }
         }
@@ -2123,18 +2179,35 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
         }
     }
 
-    // 2. Patch all boolean URL validation functions -> return true;
+    // 2. Patch all boolean URL and PsyNet validation functions -> return true;
     let bool_functions = [
         ("PsyNetUrl_X", "IsAllowedURL"),
         ("URLValidator_X", "IsURLValid"),
         ("URLValidator_X", "IsSchemeValid"),
-        ("URLValidator_X", "AreCharsUrlSafe"),
-        ("URLValidator_X", "IsCharUrlSafe"),
-        ("URLValidator_X", "IsPathValid"),
-        ("URLValidator_X", "IsQueryValid"),
-        ("URLValidator_X", "IsIPv4AddressValid"),
-        ("URLValidator_X", "IsIPv4AndPortValid"),
         ("URLValidator_X", "HostLooksLikeIPv4"),
+        ("URLValidator_X", "IsIPv4AndPortValid"),
+        ("URLValidator_X", "IsIPv4AddressValid"),
+        ("URLValidator_X", "IsIPv4OctetValid"),
+        ("URLValidator_X", "IsPortValid"),
+        ("URLValidator_X", "AreAllDigits"),
+        ("URLValidator_X", "IsDigit"),
+        ("URLValidator_X", "IsIPv6AndPortValid"),
+        ("URLValidator_X", "IsIPv6AddressValid"),
+        ("URLValidator_X", "AreAllIPv6GroupsValid"),
+        ("URLValidator_X", "IsIPv6GroupValid"),
+        ("URLValidator_X", "AreAllHex"),
+        ("URLValidator_X", "IsHostnameAndPortValid"),
+        ("URLValidator_X", "IsHostnameValid"),
+        ("URLValidator_X", "IsHexChar"),
+        ("URLValidator_X", "IsAlpha"),
+        ("URLValidator_X", "IsPathValid"),
+        ("URLValidator_X", "IsCharUrlSafe"),
+        ("URLValidator_X", "IsQueryValid"),
+        ("URLValidator_X", "AreCharsUrlSafe"),
+        ("OnlineGame_X", "ValidateUserOnlineAccount"),
+        ("OnlineGamePlaylists_X", "IsRankedEnabled"),
+        ("OnlineGameSkill_X", "AllPlayersAreAroundTheSameRank"),
+        ("PlaylistSkillCache_X", "AllPlayersAreAroundTheSameRank"),
     ];
 
     for (outer, fn_name) in bool_functions {
@@ -2145,6 +2218,30 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
                 let code_start = (exp.serial_offset - ch1.0) as usize + 48;
                 let disk_sz = u32::from_le_bytes(decomp1[code_start - 4..code_start].try_into().unwrap()) as usize;
                 let mut patch = vec![opcodes::EX_RETURN, opcodes::EX_TRUE_CONST];
+                patch.resize(disk_sz.saturating_sub(1), opcodes::EX_NOTHING);
+                patch.push(opcodes::EX_END_OF_SCRIPT);
+                if patch.len() == disk_sz {
+                    decomp1[code_start..code_start + disk_sz].copy_from_slice(&patch);
+                }
+            }
+        }
+    }
+
+    // 3. Patch PsyNet check and privilege validation functions -> return;
+    let void_functions = [
+        ("PrivilegeCheck_X", "CheckPsyNet"),
+        ("PrivilegeCheck_X", "CheckPsyNetComplete"),
+        ("PrivilegeCheck_X", "ValidateUserOnlineAccount"),
+    ];
+
+    for (outer, fn_name) in void_functions {
+        if let Some(exp) = raw_exports.iter().find(|e| {
+            e.name == fn_name && e.outer_idx > 0 && raw_exports.get(e.outer_idx as usize - 1).map(|o| o.name == outer).unwrap_or(false)
+        }) {
+            if exp._serial_size > 48 {
+                let code_start = (exp.serial_offset - ch1.0) as usize + 48;
+                let disk_sz = u32::from_le_bytes(decomp1[code_start - 4..code_start].try_into().unwrap()) as usize;
+                let mut patch = vec![opcodes::EX_RETURN];
                 patch.resize(disk_sz.saturating_sub(1), opcodes::EX_NOTHING);
                 patch.push(opcodes::EX_END_OF_SCRIPT);
                 if patch.len() == disk_sz {
@@ -2525,6 +2622,8 @@ mod tests {
             Path::new("/root/TAGame_clean.upk")
         } else if Path::new("/root/TAGame.upk.bak").exists() {
             Path::new("/root/TAGame.upk.bak")
+        } else if Path::new("/tmp/test_TAGame.upk").exists() {
+            Path::new("/tmp/test_TAGame.upk")
         } else {
             return;
         };
@@ -2695,10 +2794,13 @@ mod tests {
 
     #[test]
     fn test_ensure_projectx_patched() {
-        let src_px = Path::new("/root/velrlapi/games/rocketleague/TAGame/CookedPCConsole/ProjectX.upk");
-        if !src_px.is_file() {
+        let src_px = if Path::new("/root/velrlapi/games/rocketleague/TAGame/CookedPCConsole/ProjectX.upk").is_file() {
+            Path::new("/root/velrlapi/games/rocketleague/TAGame/CookedPCConsole/ProjectX.upk")
+        } else if Path::new("/tmp/test_ProjectX.upk").is_file() {
+            Path::new("/tmp/test_ProjectX.upk")
+        } else {
             return;
-        }
+        };
 
         let temp_dir = std::env::temp_dir().join(format!("vrl_test_px_patch_{}", std::process::id()));
         let _ = fs::create_dir_all(&temp_dir);

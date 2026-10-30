@@ -3551,6 +3551,14 @@ fn apply_rank_override(
     }
     if let Some(tier) = ov.tier {
         skill["Tier"] = serde_json::json!(tier);
+        if tier > 0 {
+            let current_matches = skill.get("MatchesPlayed").and_then(|v| v.as_i64()).unwrap_or(0);
+            if current_matches < 10 {
+                skill["MatchesPlayed"] = serde_json::json!(100);
+            }
+            skill["PlacementMatches"] = serde_json::json!(10);
+            skill["PlacementMatchesPlayed"] = serde_json::json!(10);
+        }
         modified = true;
     }
     if let Some(div) = ov.division {
@@ -6003,6 +6011,32 @@ mod tests {
         assert_eq!(val["Result"]["Value"], 22);
         assert_eq!(val["Result"]["Tier"], 22);
         assert_eq!(val["Result"]["MMR"], 145.0);
+    }
+
+    #[test]
+    fn test_patch_get_player_skill_json_places_fake_rank() {
+        let body = br#"{"Result":{"Skills":[{"Playlist":11,"Tier":0,"Division":0,"MatchesPlayed":0}]}}"#;
+        let mut ov = std::collections::HashMap::new();
+        ov.insert("11".to_string(), crate::psynet::FakeRankOverridePayload {
+            display_mmr: Some(1900.0),
+            tier: Some(22),
+            division: Some(3),
+            ..Default::default()
+        });
+        let fr = crate::psynet::FakeRanksPayload {
+            enabled: true,
+            playlists: Some(ov),
+            ..Default::default()
+        };
+        let (patched, changed) = patch_get_player_skill_json(body, &fr);
+        assert!(changed);
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        let s = &val["Result"]["Skills"][0];
+        assert_eq!(s["Tier"], 22);
+        assert_eq!(s["Division"], 3);
+        assert_eq!(s["MatchesPlayed"], 100);
+        assert_eq!(s["PlacementMatches"], 10);
+        assert_eq!(s["PlacementMatchesPlayed"], 10);
     }
 
     #[test]
