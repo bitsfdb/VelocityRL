@@ -1,6 +1,7 @@
 {
     "nav": {
-        "swapper": "Spawner",
+        "spawner": "Spawner",
+        "swapper": "Swapper",
         "titles": "Titles",
         "customization": "Customization",
         "avatar": "Profile Picture",

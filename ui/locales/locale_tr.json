@@ -10,7 +10,8 @@
         "misc": "Çeşitli",
         "website": "Web Sitesi",
         "settings": "Ayarlar",
-        "avatar": "Profil Resmi"
+        "avatar": "Profil Resmi",
+        "spawner": "Spawner"
     },
     "banner": {
         "keep_open_title": "VelocityRL'yi Açık Tutun",
