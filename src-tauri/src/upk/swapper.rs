@@ -1612,6 +1612,8 @@ pub fn apply_tagame_modifications(
                         ("SetLoadoutSlotToDefaultID", "LoadoutValidation_TA"),
                         ("SetLoadoutSlotToDefaultID", "PRI_TA"),
                         ("CorrectLoadoutFromValidationError", "LoadoutValidation_TA"),
+                        ("CorrectDLCOwnership", "LoadoutValidation_TA"),
+                        ("ValidateLoadoutDLC", "LoadoutValidation_TA"),
                         ("StaticValidate", "Loadout_TA"),
                         ("Validate", "Loadout_TA"),
                         ("ValidateReplicatedLoadout", "PRI_TA"),
@@ -1648,17 +1650,17 @@ pub fn apply_tagame_modifications(
                         }
                     }
 
-                    // B. Patch all boolean validation/correction functions:
+                    // B. Patch boolean validation bypasses without out parameters:
+                    // Note: CorrectOnlineData, CorrectOfflineData, ValidateLoadoutSlots, ValidateLoadoutTeamPaints,
+                    // and ValidateDataProducts MUST remain vanilla because they populate out parameters
+                    // (OutLoadout, TeamLoadouts, OutDataProducts). Overwriting them with a blind return wiped out
+                    // the loadout arrays, causing the engine to revert everything to stock Octane.
+                    // Instead, ValidateOnlineProductWithLoadoutProduct -> return true and ValidatePaintedAttribute -> return true
+                    // inform vanilla CorrectOnlineData that all spawned items and paints are 100% valid.
                     let bool_funcs_to_patch = [
-                        ("ValidateLoadoutSlots", "LoadoutValidation_TA", false),
-                        ("ValidateLoadoutTeamPaints", "LoadoutValidation_TA", false),
-                        ("ValidateLoadoutDLC", "LoadoutValidation_TA", false),
                         ("ValidatePaintedAttribute", "LoadoutValidation_TA", true),
-                        ("CorrectOnlineData", "LoadoutValidation_TA", true),
-                        ("CorrectOfflineData", "LoadoutValidation_TA", true),
                         ("ValidateOnlineProductWithLoadoutProduct", "LoadoutValidation_TA", true),
                         ("ShouldValidateOnlineProducts", "LoadoutValidation_TA", false),
-                        ("ValidateDataProducts", "LoadoutValidation_TA", false),
                     ];
                     for &(f_name, o_name, ret_val) in &bool_funcs_to_patch {
                         if let Some(exp) = exports.iter().find(|e| e.name == f_name && e.outer_name == o_name) {

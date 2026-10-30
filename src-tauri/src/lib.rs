@@ -1764,6 +1764,22 @@ async fn spawn_item(
     wanted_id: String,
     paint_id: Option<i32>,
 ) -> Result<String, String> {
+    let wid: i32 = wanted_id.parse().unwrap_or(0);
+    if let Ok(all_items) = get_items(app.clone(), None).await {
+        if let Some(wanted) = all_items.iter().find(|i| i.id == wid) {
+            let mut paint = paint_id.unwrap_or(0);
+            if !(0..=29).contains(&paint) || !item_is_paintable(wanted) {
+                paint = 0;
+            }
+
+            if let Ok(save_path) = savedata::locate_latest_save() {
+                let slot_idx = savedata::slot_name_to_index(&wanted.slot);
+                let base_pid = Some(wid);
+                let _ = savedata::spawn_item_native_ext(&save_path, wid, paint, slot_idx, base_pid);
+            }
+        }
+    }
+
     apply_swap(app, "0".to_string(), wanted_id, None, None, paint_id, None).await
 }
 
