@@ -1,6 +1,5 @@
 {
     "nav": {
-        "spawner": "Spawner",
         "swapper": "Swapper",
         "titles": "Titles",
         "customization": "Customization",
@@ -18,7 +17,6 @@
         "keep_open_desc": "VelocityRL must remain running in the background for titles, spoofing, and names to appear in Rocket League."
     },
     "subtabs": {
-        "spawner": "Spawner",
         "swapper": "Swapper",
         "swaps": "Swapper",
         "restore": "Restore",

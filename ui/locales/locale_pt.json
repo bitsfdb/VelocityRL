@@ -10,8 +10,7 @@
         "misc": "Diversos",
         "website": "Site",
         "settings": "Configurações",
-        "avatar": "Foto de perfil",
-        "spawner": "Spawner"
+        "avatar": "Foto de perfil"
     },
     "banner": {
         "keep_open_title": "Mantenha o VelocityRL Aberto",
