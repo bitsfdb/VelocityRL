@@ -356,8 +356,25 @@ def validate_tagame(upk_path):
         else:
             try:
                 validate_function_bytecode("CarPreviewActor_TA::SetLoadout", cp_script)
+                print(f"[+] CarPreviewActor_TA::SetLoadout: 0 invalid tokens, consumed {cp_disk}/{cp_disk} bytes.")
             except Exception as e:
                 print(f"[!] CRITICAL DESERIALIZATION FAILURE in CarPreviewActor_TA::SetLoadout: {e}")
+                return False
+
+    # Check Chunk 0 CarPreviewActor_TA::ChangeCarPart
+    cpa_ccp = next((e for e in exports if e["name"] == "ChangeCarPart" and e.get("outer_name") == "CarPreviewActor_TA"), None)
+    if cpa_ccp:
+        ccp_off = cpa_ccp["serial_offset"] - c0["uncomp_offset"]
+        ccp_disk = struct.unpack("<I", decomp0[ccp_off+44:ccp_off+48])[0]
+        ccp_script = decomp0[ccp_off+48 : ccp_off+48+ccp_disk]
+        if ccp_disk == 230 and ccp_script[:2] == bytes([0x14, 0x2D]):
+            print(f"[*] CarPreviewActor_TA::ChangeCarPart: {ccp_disk} bytes (Chunk 0 vanilla stock intact)")
+        else:
+            try:
+                validate_function_bytecode("CarPreviewActor_TA::ChangeCarPart", ccp_script)
+                print(f"[+] CarPreviewActor_TA::ChangeCarPart: 0 invalid tokens, consumed {ccp_disk}/{ccp_disk} bytes.")
+            except Exception as e:
+                print(f"[!] CRITICAL DESERIALIZATION FAILURE in CarPreviewActor_TA::ChangeCarPart: {e}")
                 return False
 
     # Check Chunk 0 ConvertToClientLoadout

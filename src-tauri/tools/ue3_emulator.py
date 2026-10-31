@@ -284,6 +284,7 @@ def run_emulator_test_suite(upk_path):
         ("Car_TA", "SetLoadout", {"Data": {"Products": [23, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}}),
         ("Car_TA", "SetLoadout", {"Data": {"Products": [4284, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}}), # unswapped
         ("CarPreviewActor_TA", "SetLoadout", {"InLoadout": {"Products": [23, 0, 0, 33, 0, 0]}}),
+        ("CarPreviewActor_TA", "ChangeCarPart", {"ProductID": 23, "SlotIndex": 0}),
         ("ExplosionPreviewer_TA", "SetProduct", {"ProductID": 2044}),
         ("ProductAttribute_TA", "ModifyLoadout", {"LoadoutProductIDs": [23, 33, 4038]}),
         ("PaintedFXSelector_TA", "PickFXActor", {"PaintedFXActor": 1234, "FXActor": 5678}),
