@@ -484,6 +484,182 @@ pub fn emit_car_preview_set_loadout_bytecode(
     Ok((bc, mem_sz))
 }
 
+pub fn emit_car_preview_change_car_part_bytecode(
+    slot_overrides: &[SlotSwapRule],
+    max_disk_size: usize,
+    product_id_opt: Option<i32>,
+    slot_index_opt: Option<i32>,
+    loadout_id_opt: Option<i32>,
+    products_id_opt: Option<i32>,
+    loadout_data_id_opt: Option<i32>,
+    force_set_loadout_name_idx_opt: Option<i32>,
+) -> Result<(Vec<u8>, u32), TagameSwapError> {
+    let mut bc = Vec::new();
+    let mut mem_sz: u32 = 0;
+
+    let product_id_var = product_id_opt.unwrap_or(18109);
+    let slot_index_var = slot_index_opt.unwrap_or(18110);
+    let loadout_id = loadout_id_opt.unwrap_or(18067);
+    let products_id = products_id_opt.unwrap_or(1871);
+    let loadout_data_id = loadout_data_id_opt.unwrap_or(2364);
+    let force_set_idx = force_set_loadout_name_idx_opt.unwrap_or(20264);
+
+    let mut seen = std::collections::HashSet::new();
+    let mut unique_rules = Vec::new();
+    for r in slot_overrides.iter().rev() {
+        if is_car_loadout_slot(r.slot_idx) && seen.insert((r.slot_idx, r.owned_id)) {
+            unique_rules.push(r.clone());
+        }
+    }
+    unique_rules.reverse();
+
+    // Tail size:
+    // Stmt 1 (Loadout.Products[SlotIndex] = ProductID): 1+1+5+12+5+5 = 29 bytes disk, 47 mem
+    // Stmt 2 (ForceSetLoadout(Loadout, true)): 9+5+1+1 = 16 bytes disk, 27 mem
+    // Stmt 3 (return true): 1+1+1 = 3 bytes disk, 3 mem
+    // Total tail disk = 48 bytes
+    let tail_disk_len = 48;
+    let available_space = max_disk_size.saturating_sub(tail_disk_len);
+
+    for rule in unique_rules {
+        let (target_disk_len, target_mem_len) = if rule.target_id <= 255 && rule.target_id >= 0 {
+            (2, 2u32)
+        } else {
+            (5, 5u32)
+        };
+
+        if let Some(owned_id) = rule.owned_id {
+            let (owned_disk_len, owned_mem_len) = if owned_id <= 255 && owned_id >= 0 {
+                (2, 2u32)
+            } else {
+                (5, 5u32)
+            };
+            let cond_disk_len = 8 + owned_disk_len;
+            let assign_disk_len = 6 + target_disk_len;
+            let total_rule_disk = cond_disk_len + assign_disk_len;
+            if bc.len() + total_rule_disk > available_space {
+                break;
+            }
+
+            // if (ProductID == owned_id) ProductID = target_id;
+            bc.push(opcodes::EX_JUMP_IF_NOT);
+            let jump_pos = bc.len();
+            bc.extend_from_slice(&[0x00, 0x00]);
+
+            bc.push(opcodes::EX_EQUAL_EQUAL_INT_INT);
+            bc.push(opcodes::EX_INSTANCE_VARIABLE);
+            bc.extend_from_slice(&product_id_var.to_le_bytes());
+            if owned_id <= 255 && owned_id >= 0 {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(owned_id as u8);
+            } else {
+                bc.push(opcodes::EX_INT_CONST);
+                bc.extend_from_slice(&owned_id.to_le_bytes());
+            }
+            bc.push(opcodes::EX_END_FUNCTION_PARMS);
+            let cond_mem = 1 + 9 + owned_mem_len + 1;
+
+            bc.push(opcodes::EX_LET);
+            bc.push(opcodes::EX_INSTANCE_VARIABLE);
+            bc.extend_from_slice(&product_id_var.to_le_bytes());
+            if rule.target_id <= 255 && rule.target_id >= 0 {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(rule.target_id as u8);
+            } else {
+                bc.push(opcodes::EX_INT_CONST);
+                bc.extend_from_slice(&rule.target_id.to_le_bytes());
+            }
+            let assign_mem = 1 + 9 + target_mem_len;
+
+            let total_rule_mem = 3 + cond_mem + assign_mem;
+            mem_sz += total_rule_mem;
+            let jump_target = mem_sz as u16;
+            bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
+        } else {
+            // Wildcard slot match: if (SlotIndex == rule.slot_idx) ProductID = target_id;
+            let idx_disk_len = if rule.slot_idx == 0 { 1 } else { 2 };
+            let idx_mem_len = if rule.slot_idx == 0 { 1u32 } else { 2u32 };
+            let cond_disk_len = 8 + idx_disk_len;
+            let assign_disk_len = 6 + target_disk_len;
+            let total_rule_disk = cond_disk_len + assign_disk_len;
+            if bc.len() + total_rule_disk > available_space {
+                break;
+            }
+
+            bc.push(opcodes::EX_JUMP_IF_NOT);
+            let jump_pos = bc.len();
+            bc.extend_from_slice(&[0x00, 0x00]);
+
+            bc.push(opcodes::EX_EQUAL_EQUAL_INT_INT);
+            bc.push(opcodes::EX_INSTANCE_VARIABLE);
+            bc.extend_from_slice(&slot_index_var.to_le_bytes());
+            if rule.slot_idx == 0 {
+                bc.push(opcodes::EX_INT_ZERO);
+            } else {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(rule.slot_idx);
+            }
+            bc.push(opcodes::EX_END_FUNCTION_PARMS);
+            let cond_mem = 1 + 9 + idx_mem_len + 1;
+
+            bc.push(opcodes::EX_LET);
+            bc.push(opcodes::EX_INSTANCE_VARIABLE);
+            bc.extend_from_slice(&product_id_var.to_le_bytes());
+            if rule.target_id <= 255 && rule.target_id >= 0 {
+                bc.push(opcodes::EX_INT_CONST_BYTE);
+                bc.push(rule.target_id as u8);
+            } else {
+                bc.push(opcodes::EX_INT_CONST);
+                bc.extend_from_slice(&rule.target_id.to_le_bytes());
+            }
+            let assign_mem = 1 + 9 + target_mem_len;
+
+            let total_rule_mem = 3 + cond_mem + assign_mem;
+            mem_sz += total_rule_mem;
+            let jump_target = mem_sz as u16;
+            bc[jump_pos..jump_pos + 2].copy_from_slice(&jump_target.to_le_bytes());
+        }
+    }
+
+    // Stmt 1: Loadout.Products[SlotIndex] = ProductID; (29 bytes disk, 47 mem)
+    bc.push(opcodes::EX_LET);
+    bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
+    bc.push(opcodes::EX_INSTANCE_VARIABLE);
+    bc.extend_from_slice(&slot_index_var.to_le_bytes());
+    bc.push(opcodes::EX_STRUCT_MEMBER);
+    bc.extend_from_slice(&products_id.to_le_bytes());
+    bc.extend_from_slice(&loadout_data_id.to_le_bytes());
+    bc.extend_from_slice(&[0x00, 0x00]);
+    bc.push(opcodes::EX_INSTANCE_VARIABLE);
+    bc.extend_from_slice(&loadout_id.to_le_bytes());
+    bc.push(opcodes::EX_INSTANCE_VARIABLE);
+    bc.extend_from_slice(&product_id_var.to_le_bytes());
+    mem_sz += 47;
+
+    // Stmt 2: ForceSetLoadout(Loadout, true); (16 bytes disk, 27 mem)
+    bc.push(opcodes::EX_VIRTUAL_FUNCTION);
+    bc.extend_from_slice(&force_set_idx.to_le_bytes());
+    bc.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+    bc.push(opcodes::EX_INSTANCE_VARIABLE);
+    bc.extend_from_slice(&loadout_id.to_le_bytes());
+    bc.push(opcodes::EX_TRUE_CONST);
+    bc.push(opcodes::EX_END_FUNCTION_PARMS);
+    mem_sz += 27;
+
+    // Stmt 3: return true; (3 bytes disk, 3 mem)
+    bc.push(opcodes::EX_RETURN);
+    bc.push(opcodes::EX_TRUE_CONST);
+    bc.push(opcodes::EX_END_OF_SCRIPT);
+    mem_sz += 3;
+
+    // Pad with EX_NOTHING up to max_disk_size
+    let nop_count = max_disk_size.saturating_sub(bc.len());
+    bc.resize(max_disk_size, opcodes::EX_NOTHING);
+    mem_sz += nop_count as u32;
+
+    Ok((bc, mem_sz))
+}
+
 pub fn emit_explosion_previewer_set_loadout_bytecode(
     target_ge: i32,
     max_disk_size: usize,
@@ -1383,7 +1559,7 @@ pub fn apply_tagame_modifications(
                                     .map(|e| e.idx as i32)
                                     .unwrap_or(2364);
                                 let products_idx = exports.iter()
-                                    .find(|e| e.name == "Products" && e.outer_idx == loadout_data_idx)
+                                    .find(|e| e.name == "Products")
                                     .map(|e| e.idx as i32)
                                     .unwrap_or(1871);
                                 let force_set_idx = names.iter()
@@ -1398,6 +1574,60 @@ pub fn apply_tagame_modifications(
                                     Some(loadout_data_idx),
                                     Some(new_loadout_idx),
                                     Some(in_loadout_idx),
+                                    Some(force_set_idx),
+                                ) {
+                                    if &decomp0[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
+                                        decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                        decomp0[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                        c0_modified = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Patch CarPreviewActor_TA::ChangeCarPart (230 bytes) in Chunk 0 for live garage item clicks
+                    if let Some(exp_ccp) = exports.iter().find(|e| e.name == "ChangeCarPart" && e.outer_name == "CarPreviewActor_TA") {
+                        let cur_serial_offset = exp_ccp.serial_offset + if exp_ccp.serial_offset > car_set_loadout_orig_off { delta as i64 } else { 0 };
+                        let func_off = (cur_serial_offset - c0_uncomp_offset) as usize;
+                        if func_off + 48 <= decomp0.len() {
+                            let orig_disk_sz = u32::from_le_bytes(decomp0[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                            if orig_disk_sz >= 30 && func_off + 48 + orig_disk_sz <= decomp0.len() {
+                                let ccp_idx = exp_ccp.idx as i32;
+                                let product_id_idx = exports.iter()
+                                    .find(|e| e.name == "ProductID" && e.outer_idx == ccp_idx)
+                                    .map(|e| e.idx as i32)
+                                    .unwrap_or(18109);
+                                let slot_index_idx = exports.iter()
+                                    .find(|e| e.name == "SlotIndex" && e.outer_idx == ccp_idx)
+                                    .map(|e| e.idx as i32)
+                                    .unwrap_or(18110);
+                                let cpa_idx = exp_ccp.outer_idx;
+                                let loadout_idx = exports.iter()
+                                    .find(|e| e.name == "Loadout" && e.outer_idx == cpa_idx)
+                                    .map(|e| e.idx as i32)
+                                    .unwrap_or(18067);
+                                let loadout_data_idx = exports.iter()
+                                    .find(|e| e.name == "LoadoutData")
+                                    .map(|e| e.idx as i32)
+                                    .unwrap_or(2364);
+                                let products_idx = exports.iter()
+                                    .find(|e| e.name == "Products")
+                                    .map(|e| e.idx as i32)
+                                    .unwrap_or(1871);
+                                let force_set_idx = names.iter()
+                                    .position(|n| n == "ForceSetLoadout")
+                                    .map(|i| i as i32)
+                                    .unwrap_or(20264);
+
+                                if let Ok((payload, mem_sz)) = emit_car_preview_change_car_part_bytecode(
+                                    &slot_overrides,
+                                    orig_disk_sz,
+                                    Some(product_id_idx),
+                                    Some(slot_index_idx),
+                                    Some(loadout_idx),
+                                    Some(products_idx),
+                                    Some(loadout_data_idx),
                                     Some(force_set_idx),
                                 ) {
                                     if &decomp0[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
@@ -2316,6 +2546,20 @@ mod tests {
         let (bc, mem_sz) = emit_car_preview_set_loadout_bytecode(&rules, 230, None, None, None, None, None).unwrap();
         assert_eq!(bc.len(), 230);
         assert_eq!(bc[0], opcodes::EX_LET);
+        assert!(mem_sz >= 230);
+    }
+
+    #[test]
+    fn test_emit_car_preview_change_car_part_bytecode() {
+        let rules = [
+            SlotSwapRule { slot_idx: 0, owned_id: Some(23), target_id: 4284 },
+            SlotSwapRule { slot_idx: 2, owned_id: Some(376), target_id: 30 },
+            SlotSwapRule { slot_idx: 3, owned_id: Some(29), target_id: 12968 },
+            SlotSwapRule { slot_idx: 15, owned_id: Some(1903), target_id: 2044 },
+        ];
+        let (bc, mem_sz) = emit_car_preview_change_car_part_bytecode(&rules, 230, None, None, None, None, None, None).unwrap();
+        assert_eq!(bc.len(), 230);
+        assert_eq!(bc[0], opcodes::EX_JUMP_IF_NOT);
         assert!(mem_sz >= 230);
     }
 
