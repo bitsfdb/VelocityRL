@@ -1053,12 +1053,10 @@ async function loadData() {
 
         if (itemsResult) {
             items = Array.isArray(itemsResult) ? itemsResult : (itemsResult.items || itemsResult.Items || []);
-            renderCatalogGridPage();
         } else {
             invoke('get_items').catch(() => {}).then(fetched => {
                 if (fetched) {
                     items = Array.isArray(fetched) ? fetched : (fetched.items || fetched.Items || []);
-                    renderCatalogGridPage();
                 }
             });
         }
