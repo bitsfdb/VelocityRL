@@ -289,6 +289,9 @@ def run_emulator_test_suite(upk_path):
         ("PaintedFXSelector_TA", "PickFXActor", {"PaintedFXActor": 1234, "FXActor": 5678}),
         ("LoadoutValidation_TA", "ValidateLoadoutSlots", {}),
         ("LoadoutValidation_TA", "CorrectOnlineData", {}),
+        ("LoadoutValidation_TA", "ValidatePaintedAttribute", {}),
+        ("LoadoutValidation_TA", "ValidateCertifiedAttribute", {}),
+        ("LoadoutValidation_TA", "ValidateTitleIDAttribute", {}),
         ("PlayerVanitySave_TA", "Validate", {}),
         ("PostMatchCelebrationPreviewer_TA", "ResetInvalidAssets", {}),
         ("PRI_TA", "ValidateLoadout", {}),
@@ -341,6 +344,7 @@ def run_projectx_emulator_test_suite(upk_path):
         ("OnlineGamePlaylists_X", "IsRankedEnabled", {}, True),
         ("OnlineGameSkill_X", "AllPlayersAreAroundTheSameRank", {"PlaylistId": 11}, True),
         ("PlaylistSkillCache_X", "AllPlayersAreAroundTheSameRank", {}, True),
+        ("OnlineGameDLC_X", "DoesPlayerOwnDLC", {}, True),
     ]
     
     passed = 0

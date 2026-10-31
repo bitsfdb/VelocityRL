@@ -1663,6 +1663,8 @@ pub fn apply_tagame_modifications(
                     // inform vanilla CorrectOnlineData that all spawned items and paints are 100% valid.
                     let bool_funcs_to_patch = [
                         ("ValidatePaintedAttribute", "LoadoutValidation_TA", true),
+                        ("ValidateCertifiedAttribute", "LoadoutValidation_TA", true),
+                        ("ValidateTitleIDAttribute", "LoadoutValidation_TA", true),
                         ("ValidateOnlineProductWithLoadoutProduct", "LoadoutValidation_TA", true),
                         ("ShouldValidateOnlineProducts", "LoadoutValidation_TA", false),
                         ("IsInMainMenu", "JoinGameConnectionChecker_TA", true),
@@ -2208,6 +2210,7 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
         ("OnlineGamePlaylists_X", "IsRankedEnabled"),
         ("OnlineGameSkill_X", "AllPlayersAreAroundTheSameRank"),
         ("PlaylistSkillCache_X", "AllPlayersAreAroundTheSameRank"),
+        ("OnlineGameDLC_X", "DoesPlayerOwnDLC"),
     ];
 
     for (outer, fn_name) in bool_functions {
