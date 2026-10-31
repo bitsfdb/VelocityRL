@@ -341,9 +341,6 @@ def run_projectx_emulator_test_suite(upk_path):
         ("PrivilegeCheck_X", "CheckPsyNet", {}, None),
         ("PrivilegeCheck_X", "CheckPsyNetComplete", {}, None),
         ("PrivilegeCheck_X", "ValidateUserOnlineAccount", {}, None),
-        ("OnlineGamePlaylists_X", "IsRankedEnabled", {}, True),
-        ("OnlineGameSkill_X", "AllPlayersAreAroundTheSameRank", {"PlaylistId": 11}, True),
-        ("PlaylistSkillCache_X", "AllPlayersAreAroundTheSameRank", {}, True),
         ("OnlineGameDLC_X", "DoesPlayerOwnDLC", {}, True),
     ]
     

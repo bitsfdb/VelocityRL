@@ -2207,9 +2207,6 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
         ("URLValidator_X", "IsQueryValid"),
         ("URLValidator_X", "AreCharsUrlSafe"),
         ("OnlineGame_X", "ValidateUserOnlineAccount"),
-        ("OnlineGamePlaylists_X", "IsRankedEnabled"),
-        ("OnlineGameSkill_X", "AllPlayersAreAroundTheSameRank"),
-        ("PlaylistSkillCache_X", "AllPlayersAreAroundTheSameRank"),
         ("OnlineGameDLC_X", "DoesPlayerOwnDLC"),
     ];
 
