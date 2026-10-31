@@ -10,8 +10,7 @@
         "misc": "Overig",
         "website": "Website",
         "settings": "Instellingen",
-        "avatar": "Profielfoto",
-        "spawner": "Spawner"
+        "avatar": "Profielfoto"
     },
     "banner": {
         "keep_open_title": "Houd VelocityRL Open",

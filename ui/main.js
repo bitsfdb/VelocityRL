@@ -747,7 +747,6 @@ async function init() {
             }
             btn.classList.add('active');
             document.getElementById(paneId)?.classList.add('active');
-            if (paneId === 'spawner-pane') renderCatalogGridPage();
             if (paneId === 'custom-avatar-pane') initAvatarTab();
             if (paneId === 'custom-decals-pane') initDecalsTab();
             if (paneId === 'custom-boost-pane') initBoostMeterTab();
@@ -7947,11 +7946,8 @@ async function initFeatures() {
                 trackerNav.style.display = feat.flags.live_tracker_overlay === false ? 'none' : '';
             }
 
-            // Item Spawner
-            const spawnerNav = document.querySelector('.nav-item[data-tab="spawner-tab"]');
-            if (spawnerNav) {
-                spawnerNav.style.display = (feat.flags.item_spawner === false || feat.flags.spawner === false) ? 'none' : '';
-            }
+            // Item Spawner (permanently removed)
+            document.querySelectorAll('.nav-item[data-tab="spawner-tab"], #spawner-tab').forEach(el => el.remove());
 
             // Item Swapper
             const swapperNav = document.querySelector('.nav-item[data-tab="swapper-tab"]');
