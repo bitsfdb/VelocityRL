@@ -1762,108 +1762,6 @@ async fn apply_swap(
 }
 
 #[tauri::command]
-async fn spawn_item(
-    app: tauri::AppHandle,
-    wanted_id: String,
-    paint_id: Option<i32>,
-) -> Result<String, String> {
-    let wid: i32 = wanted_id.parse().unwrap_or(0);
-    if let Ok(all_items) = get_items(app.clone(), None).await {
-        if let Some(wanted) = all_items.iter().find(|i| i.id == wid) {
-            let mut paint = paint_id.unwrap_or(0);
-            if !(0..=29).contains(&paint) || !item_is_paintable(wanted) {
-                paint = 0;
-            }
-
-            if let Ok(save_path) = savedata::locate_latest_save() {
-                let slot_idx = savedata::slot_name_to_index(&wanted.slot);
-                let base_pid = Some(wid);
-                let _ = savedata::spawn_item_native_ext(&save_path, wid, paint, slot_idx, base_pid);
-            }
-        }
-    }
-
-    apply_swap(app, "0".to_string(), wanted_id, None, None, paint_id, None).await
-}
-
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
-pub struct SpawnBatchItem {
-    pub wanted_id: String,
-    pub paint_id: Option<i32>,
-}
-
-#[tauri::command]
-async fn spawn_items_batch(
-    app: tauri::AppHandle,
-    items: Vec<SpawnBatchItem>,
-) -> Result<usize, String> {
-    if !features::is_build_supported() {
-        return Err("VelocityRL build is outdated. Please update to the latest version.".into());
-    }
-    if items.is_empty() {
-        return Ok(0);
-    }
-    let all_items = get_items(app.clone(), None).await
-        .map_err(|e| format!("Failed to load items database: {}", e))?;
-    let save_path = savedata::locate_latest_save().ok();
-
-    let mut swaps = load_swaps(&app);
-    let mut spawned_entries = Vec::new();
-    let mut count = 0;
-
-    for entry in &items {
-        let wid: i32 = entry.wanted_id.parse().unwrap_or(0);
-        if let Some(wanted) = all_items.iter().find(|i| i.id == wid) {
-            let mut paint_id = entry.paint_id.unwrap_or(0);
-            if !(0..=29).contains(&paint_id) || !item_is_paintable(wanted) {
-                paint_id = 0;
-            }
-            if let Some(ref sp) = save_path {
-                let slot_idx = savedata::slot_name_to_index(&wanted.slot);
-                let base_pid = Some(wid);
-                let _ = savedata::spawn_item_native_ext(sp, wid, paint_id, slot_idx, base_pid);
-            }
-
-            swaps.retain(|s| !(s.wanted_id == wid && s.paint_id == paint_id));
-            let new_entry = SwapEntry {
-                owned_id: wid,
-                wanted_id: wid,
-                owned_name: wanted.product.clone(),
-                wanted_name: wanted.product.clone(),
-                owned_paint_id: None,
-                owned_custom_hex: None,
-                paint_id,
-                custom_paint_hex: None,
-                asset_package: wanted.asset_package.clone(),
-                slot: Some(wanted.slot.clone()),
-                timestamp: Some(chrono::Utc::now().to_rfc3339()),
-            };
-            swaps.push(new_entry.clone());
-            spawned_entries.push(new_entry);
-            count += 1;
-        }
-    }
-
-    save_swaps(&app, &swaps);
-    if let Ok(config) = get_config(app.clone()).await {
-        if !config.game_dir.is_empty() {
-            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
-            }
-        }
-    }
-    if !spawned_entries.is_empty() {
-        record_swap_history(&app, "spawn", &spawned_entries, "batch spawn");
-    }
-    if let Some(ref sp) = save_path {
-        applog::event(&format!("spawn_items_batch: successfully spawned {count} items into save {}", sp.display()));
-    } else {
-        applog::event(&format!("spawn_items_batch: successfully spawned {count} items into loadout state"));
-    }
-    Ok(count)
-}
-
-#[tauri::command]
 async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<(), String> {
     let mut swaps = load_swaps(&app);
     let target_id = path
@@ -3540,11 +3438,14 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 if let Ok(config) = get_config(boot_app.clone()).await {
                     if !config.game_dir.is_empty() {
-                        if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                            // On startup, patch ProjectX to allow URLs and patch TAGame with expanded bytecode and padding
+                        if let Ok(cooked) = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                            // On startup, patch ProjectX and sync active swaps with auto-backup of updated files
                             let _ = upk::ensure_projectx_patched(&cooked);
                             let swaps = load_swaps(&boot_app);
-                            let _ = sync_all_swaps_to_tagame(&boot_app, &cooked, &swaps).await;
+                            if !swaps.is_empty() {
+                                applog::event(&format!("startup: auto-applying {} active swap(s) to game files", swaps.len()));
+                                let _ = sync_all_swaps_to_tagame(&boot_app, &cooked, &swaps).await;
+                            }
                         }
                     }
                 }
@@ -3568,6 +3469,17 @@ pub fn run() {
                                 if !tagame.exists() {
                                     applog::event("periodic_check: TAGame.upk missing, attempting automatic download...");
                                     let _ = upk::swapper::download_official_tagame_upk(&tagame, |_, _| {}).await;
+                                } else {
+                                    let keys_txt = include_str!("../resources/keys.txt");
+                                    let keys_map_json = include_str!("../resources/keys_map.json");
+                                    if upk::palette::is_vanilla_stock_file(&tagame, keys_txt, keys_map_json) {
+                                        let swaps = load_swaps(&ttl_app);
+                                        if !swaps.is_empty() {
+                                            applog::event("periodic_check: game update detected (TAGame.upk is vanilla), auto-healing active swaps...");
+                                            let _ = upk::ensure_projectx_patched(&cooked);
+                                            let _ = sync_all_swaps_to_tagame(&ttl_app, &cooked, &swaps).await;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -3764,8 +3676,6 @@ pub fn run() {
             set_launch_on_startup,
             get_backups,
             apply_swap,
-            spawn_item,
-            spawn_items_batch,
             reswap_all,
             restore_backups,
             restore_single_backup,

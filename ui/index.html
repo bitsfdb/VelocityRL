@@ -14,8 +14,7 @@
         </div>
 
         <nav class="nav-links">
-            <div class="nav-item active" data-tab="spawner-tab" data-i18n="nav.spawner">Spawner</div>
-            <div class="nav-item" data-tab="swapper-tab" data-i18n="nav.swapper">Swapper</div>
+            <div class="nav-item active" data-tab="swapper-tab" data-i18n="nav.swapper">Swapper</div>
             <div class="nav-item" data-tab="titles-tab" data-i18n="nav.titles">Titles</div>
             <div class="nav-item" data-tab="customization-tab" data-i18n="nav.customization">Customization</div>
             <div class="nav-item" data-tab="ranks-tab" data-i18n="nav.ranks">Fake Ranks</div>
@@ -40,127 +39,7 @@
                 </div>
             </div>
 
-            <div id="spawner-tab" class="tab-content active catalog-pane active">
-                <div class="catalog-toolbar">
-                        <div class="catalog-select-wrap">
-                            <svg class="catalog-toolbar-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <rect x="3" y="3" width="7" height="7"></rect>
-                                <rect x="14" y="3" width="7" height="7"></rect>
-                                <rect x="14" y="14" width="7" height="7"></rect>
-                                <rect x="3" y="14" width="7" height="7"></rect>
-                            </svg>
-                            <select id="catalog-category-select" class="catalog-dropdown" aria-label="Filter by category">
-                                <option value="All" data-i18n="categories.all">All Items</option>
-                                <option value="Body" data-i18n="categories.bodies">Bodies</option>
-                                <option value="Decal" data-i18n="categories.decals">Decals</option>
-                                <option value="Wheels" data-i18n="categories.wheels">Wheels</option>
-                                <option value="Rocket Boost" data-i18n="categories.boosts">Boosts</option>
-                                <option value="Trail" data-i18n="categories.trails">Trails</option>
-                                <option value="Goal Explosion" data-i18n="categories.explosions">Goal Explosions</option>
-                                <option value="Player Banner" data-i18n="categories.banners">Player Banners</option>
-                                <option value="Avatar Border" data-i18n="categories.borders">Avatar Borders</option>
-                                <option value="Antenna" data-i18n="categories.antennas">Antennas</option>
-                                <option value="Topper" data-i18n="categories.toppers">Toppers</option>
-                                <option value="Engine Audio" data-i18n="categories.engine_audio">Engine Audio</option>
-                                <option value="Paint Finish" data-i18n="categories.paint_finishes">Paint Finishes</option>
-                                <option value="Player Title" data-i18n="categories.titles">Titles</option>
-                            </select>
-                        </div>
-
-                        <div class="catalog-search-wrap">
-                            <svg class="catalog-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <circle cx="11" cy="11" r="8"></circle>
-                                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                            </svg>
-                            <input type="text" id="catalog-search-input" class="catalog-search-input" placeholder="Search items and series..." data-i18n-placeholder="swapper.search_target" autocomplete="off" spellcheck="false">
-                            <button type="button" id="catalog-search-clear" class="catalog-search-clear" style="display:none;" title="Clear search">✕</button>
-                        </div>
-
-                        <button type="button" id="catalog-spawn-btn" class="action-btn catalog-spawn-btn" disabled>
-                            <span id="catalog-spawn-btn-text" data-i18n="swapper.spawn_selected">Spawn Selected</span>
-                        </button>
-
-                        <div class="catalog-select-wrap catalog-paint-wrap">
-                            <span id="catalog-paint-preview" class="catalog-paint-dot"></span>
-                            <select id="catalog-paint-select" class="catalog-dropdown" aria-label="Select paint color">
-                                <option value="0">Paint: None</option>
-                                <option value="all" data-i18n="swapper.all_paints">Paint: All Variants</option>
-                                <option value="1">Crimson</option>
-                                <option value="2">Lime</option>
-                                <option value="3">Black</option>
-                                <option value="4">Sky Blue</option>
-                                <option value="5">Cobalt</option>
-                                <option value="6">Burnt Sienna</option>
-                                <option value="7">Forest Green</option>
-                                <option value="8">Purple</option>
-                                <option value="9">Pink</option>
-                                <option value="10">Orange</option>
-                                <option value="11">Grey</option>
-                                <option value="12">Titanium White</option>
-                                <option value="13">Saffron</option>
-                                <option value="14">Gold</option>
-                                <option value="15">Rose Gold</option>
-                                <option value="16">White Gold</option>
-                                <option value="17">Onyx</option>
-                                <option value="18">Platinum</option>
-                                <option value="19">Sky Blue Glow</option>
-                                <option value="20">Cobalt Glow</option>
-                                <option value="21">Burnt Sienna Glow</option>
-                                <option value="22">Forest Green Glow</option>
-                                <option value="23">Lime Glow</option>
-                                <option value="24">Orange Glow</option>
-                                <option value="25">Pink Glow</option>
-                                <option value="26">Purple Glow</option>
-                                <option value="27">Crimson Glow</option>
-                                <option value="28">Titanium White Glow</option>
-                                <option value="29">Saffron Glow</option>
-                            </select>
-                        </div>
-
-                        <div class="catalog-select-wrap">
-                            <svg class="catalog-toolbar-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-                            </svg>
-                            <select id="catalog-rarity-select" class="catalog-dropdown" aria-label="Filter by rarity">
-                                <option value="All" data-i18n="swapper.any_rarity">Any rarity</option>
-                                <option value="Common">Common</option>
-                                <option value="Uncommon">Uncommon</option>
-                                <option value="Rare">Rare</option>
-                                <option value="Very Rare">Very Rare</option>
-                                <option value="Import">Import</option>
-                                <option value="Exotic">Exotic</option>
-                                <option value="Black Market">Black Market</option>
-                                <option value="Limited">Limited</option>
-                                <option value="Premium">Premium</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="catalog-subbar">
-                        <span class="catalog-hint-text" data-i18n="swapper.ctrl_hint">Click items to select. Spawn directly into inventory.</span>
-                        <div class="catalog-selection-actions">
-                            <span id="catalog-selection-count" class="catalog-selection-count">0 items selected</span>
-                            <button type="button" id="catalog-select-page-btn" class="catalog-text-btn" data-i18n="swapper.select_page">Select Page</button>
-                            <button type="button" id="catalog-clear-sel-btn" class="catalog-text-btn" style="display:none;" data-i18n="swapper.clear_selection">Clear Selection</button>
-                        </div>
-                    </div>
-
-                    <div class="catalog-grid-wrap" id="catalog-grid-wrap">
-                        <div id="catalog-grid" class="catalog-grid">
-                            <div class="catalog-loading">
-                                <div class="loading-spinner"></div>
-                                <span>Loading items catalog...</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="catalog-bottom-bar">
-                        <span id="catalog-count-info" class="catalog-count-info">1–48 of 0 items</span>
-                        <div id="catalog-pagination-controls" class="catalog-pagination"></div>
-                    </div>
-            </div>
-
-            <div id="swapper-tab" class="tab-content">
+            <div id="swapper-tab" class="tab-content active">
                 <div class="subtab-strip" role="tablist">
                     <button type="button" class="subtab-btn active" data-subtab="swaps-pane" data-i18n="subtabs.swapper">Swapper</button>
                     <button type="button" class="subtab-btn" data-subtab="restore-pane" data-i18n="subtabs.restore">Restore</button>
