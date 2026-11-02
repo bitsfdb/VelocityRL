@@ -337,7 +337,7 @@ pub fn emit_car_preview_set_loadout_bytecode(
 
     // 1. Assignment: NewLoadout = InLoadout; (11 bytes disk, 19 mem)
     bc.push(opcodes::EX_LET);
-    bc.push(opcodes::EX_INSTANCE_VARIABLE);
+    bc.push(opcodes::EX_LOCAL_VARIABLE);
     bc.extend_from_slice(&new_loadout_id.to_le_bytes());
     bc.push(opcodes::EX_LOCAL_VARIABLE);
     bc.extend_from_slice(&in_loadout_id.to_le_bytes());
@@ -391,7 +391,7 @@ pub fn emit_car_preview_set_loadout_bytecode(
             bc.extend_from_slice(&products_id.to_le_bytes());
             bc.extend_from_slice(&loadout_data_id.to_le_bytes());
             bc.extend_from_slice(&[0x00, 0x00]);
-            bc.push(opcodes::EX_INSTANCE_VARIABLE);
+            bc.push(opcodes::EX_LOCAL_VARIABLE);
             bc.extend_from_slice(&new_loadout_id.to_le_bytes());
             bc.push(opcodes::EX_INT_CONST);
             bc.extend_from_slice(&owned_id.to_le_bytes());
@@ -415,7 +415,7 @@ pub fn emit_car_preview_set_loadout_bytecode(
             bc.extend_from_slice(&products_id.to_le_bytes());
             bc.extend_from_slice(&loadout_data_id.to_le_bytes());
             bc.extend_from_slice(&[0x00, 0x00]);
-            bc.push(opcodes::EX_INSTANCE_VARIABLE);
+            bc.push(opcodes::EX_LOCAL_VARIABLE);
             bc.extend_from_slice(&new_loadout_id.to_le_bytes());
             if rule.target_id <= 255 && rule.target_id >= 0 {
                 bc.push(opcodes::EX_INT_CONST_BYTE);
@@ -448,7 +448,7 @@ pub fn emit_car_preview_set_loadout_bytecode(
             bc.extend_from_slice(&products_id.to_le_bytes());
             bc.extend_from_slice(&loadout_data_id.to_le_bytes());
             bc.extend_from_slice(&[0x00, 0x00]);
-            bc.push(opcodes::EX_INSTANCE_VARIABLE);
+            bc.push(opcodes::EX_LOCAL_VARIABLE);
             bc.extend_from_slice(&new_loadout_id.to_le_bytes());
             if rule.target_id <= 255 && rule.target_id >= 0 {
                 bc.push(opcodes::EX_INT_CONST_BYTE);
@@ -467,7 +467,7 @@ pub fn emit_car_preview_set_loadout_bytecode(
     bc.push(opcodes::EX_VIRTUAL_FUNCTION);
     bc.extend_from_slice(&force_set_loadout_name_idx.to_le_bytes());
     bc.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
-    bc.push(opcodes::EX_INSTANCE_VARIABLE);
+    bc.push(opcodes::EX_LOCAL_VARIABLE);
     bc.extend_from_slice(&new_loadout_id.to_le_bytes());
     bc.push(opcodes::EX_FALSE_CONST);
     bc.push(opcodes::EX_END_FUNCTION_PARMS);
@@ -547,7 +547,7 @@ pub fn emit_car_preview_change_car_part_bytecode(
             bc.extend_from_slice(&[0x00, 0x00]);
 
             bc.push(opcodes::EX_EQUAL_EQUAL_INT_INT);
-            bc.push(opcodes::EX_INSTANCE_VARIABLE);
+            bc.push(opcodes::EX_LOCAL_VARIABLE);
             bc.extend_from_slice(&product_id_var.to_le_bytes());
             if owned_id <= 255 && owned_id >= 0 {
                 bc.push(opcodes::EX_INT_CONST_BYTE);
@@ -560,7 +560,7 @@ pub fn emit_car_preview_change_car_part_bytecode(
             let cond_mem = 1 + 9 + owned_mem_len + 1;
 
             bc.push(opcodes::EX_LET);
-            bc.push(opcodes::EX_INSTANCE_VARIABLE);
+            bc.push(opcodes::EX_LOCAL_VARIABLE);
             bc.extend_from_slice(&product_id_var.to_le_bytes());
             if rule.target_id <= 255 && rule.target_id >= 0 {
                 bc.push(opcodes::EX_INT_CONST_BYTE);
@@ -591,7 +591,7 @@ pub fn emit_car_preview_change_car_part_bytecode(
             bc.extend_from_slice(&[0x00, 0x00]);
 
             bc.push(opcodes::EX_EQUAL_EQUAL_INT_INT);
-            bc.push(opcodes::EX_INSTANCE_VARIABLE);
+            bc.push(opcodes::EX_LOCAL_VARIABLE);
             bc.extend_from_slice(&slot_index_var.to_le_bytes());
             if rule.slot_idx == 0 {
                 bc.push(opcodes::EX_INT_ZERO);
@@ -603,7 +603,7 @@ pub fn emit_car_preview_change_car_part_bytecode(
             let cond_mem = 1 + 9 + idx_mem_len + 1;
 
             bc.push(opcodes::EX_LET);
-            bc.push(opcodes::EX_INSTANCE_VARIABLE);
+            bc.push(opcodes::EX_LOCAL_VARIABLE);
             bc.extend_from_slice(&product_id_var.to_le_bytes());
             if rule.target_id <= 255 && rule.target_id >= 0 {
                 bc.push(opcodes::EX_INT_CONST_BYTE);
@@ -624,7 +624,7 @@ pub fn emit_car_preview_change_car_part_bytecode(
     // Stmt 1: Loadout.Products[SlotIndex] = ProductID; (29 bytes disk, 47 mem)
     bc.push(opcodes::EX_LET);
     bc.push(opcodes::EX_DYN_ARRAY_ELEMENT);
-    bc.push(opcodes::EX_INSTANCE_VARIABLE);
+    bc.push(opcodes::EX_LOCAL_VARIABLE);
     bc.extend_from_slice(&slot_index_var.to_le_bytes());
     bc.push(opcodes::EX_STRUCT_MEMBER);
     bc.extend_from_slice(&products_id.to_le_bytes());
@@ -632,7 +632,7 @@ pub fn emit_car_preview_change_car_part_bytecode(
     bc.extend_from_slice(&[0x00, 0x00]);
     bc.push(opcodes::EX_INSTANCE_VARIABLE);
     bc.extend_from_slice(&loadout_id.to_le_bytes());
-    bc.push(opcodes::EX_INSTANCE_VARIABLE);
+    bc.push(opcodes::EX_LOCAL_VARIABLE);
     bc.extend_from_slice(&product_id_var.to_le_bytes());
     mem_sz += 47;
 
@@ -810,14 +810,14 @@ pub fn emit_explosion_previewer_set_product_bytecode(
         bc.extend_from_slice(&[0x00, 0x00]);
 
         bc.push(opcodes::EX_EQUAL_EQUAL_INT_INT);
-        bc.push(opcodes::EX_INSTANCE_VARIABLE);
+        bc.push(opcodes::EX_LOCAL_VARIABLE);
         bc.extend_from_slice(&product_id_var.to_le_bytes());
         bc.push(opcodes::EX_INT_CONST);
         bc.extend_from_slice(&owned.to_le_bytes());
         bc.push(opcodes::EX_END_FUNCTION_PARMS);
 
         bc.push(opcodes::EX_LET);
-        bc.push(opcodes::EX_INSTANCE_VARIABLE);
+        bc.push(opcodes::EX_LOCAL_VARIABLE);
         bc.extend_from_slice(&product_id_var.to_le_bytes());
         bc.push(opcodes::EX_INT_CONST);
         bc.extend_from_slice(&target_id.to_le_bytes());
@@ -826,7 +826,7 @@ pub fn emit_explosion_previewer_set_product_bytecode(
     } else {
         // ProductID = target;
         bc.push(opcodes::EX_LET);
-        bc.push(opcodes::EX_INSTANCE_VARIABLE);
+        bc.push(opcodes::EX_LOCAL_VARIABLE);
         bc.extend_from_slice(&product_id_var.to_le_bytes());
         bc.push(opcodes::EX_INT_CONST);
         bc.extend_from_slice(&target_id.to_le_bytes());
@@ -1640,25 +1640,7 @@ pub fn apply_tagame_modifications(
                         }
                     }
 
-                    // Patch ProductLoader_TA::GetAssetByID in Chunk 0 for dynamic asset resolution (including Goal Explosions)
-                    if let Some(exp_gab) = exports.iter().find(|e| e.name == "GetAssetByID" && e.outer_name == "ProductLoader_TA") {
-                        let cur_serial_offset = exp_gab.serial_offset + if exp_gab.serial_offset > car_set_loadout_orig_off { delta as i64 } else { 0 };
-                        let func_off = (cur_serial_offset - c0_uncomp_offset) as usize;
-                        if func_off + 48 <= decomp0.len() {
-                            let orig_disk_sz = u32::from_le_bytes(decomp0[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                            let orig_mem_sz = u32::from_le_bytes(decomp0[func_off + 40..func_off + 44].try_into().unwrap());
-                            if orig_disk_sz >= 20 && func_off + 48 + orig_disk_sz <= decomp0.len() {
-                                let orig_script = &decomp0[func_off + 48..func_off + 48 + orig_disk_sz];
-                                if let Ok((payload, mem_sz)) = emit_get_asset_by_id_bytecode(&slot_overrides, orig_script, orig_mem_sz, orig_disk_sz) {
-                                    if &decomp0[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
-                                        decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                        decomp0[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
-                                        c0_modified = true;
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    // ProductLoader_TA::GetAssetByID is kept 100% vanilla to guarantee reliable asset resolution across maps and modes
 
                     // Patch CarMeshComponentBase_TA::ApplyPaintSettings in Chunk 0 if custom car paint is requested
                     let car_paint_override = swaps.iter().find(|s| {
