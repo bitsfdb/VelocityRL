@@ -519,12 +519,18 @@ function emptyStateHtml() {
 }
 
 function renderSelectedItem(container, item, onClear) {
+    if (!container) return;
+    if (!item) {
+        container.innerHTML = emptyStateHtml();
+        container.classList.remove('selected');
+        return;
+    }
     const isTarget = container.id === 'wanted-selected';
-    const pName = item.Product || item.product || 'Unknown';
-    const pQuality = item.Quality || item.quality || 'Common';
-    const pSlot = item.Slot || item.slot || '';
-    const pId = item.ID ?? item.id;
-    const pImg = item.image_url || item.src || '';
+    const pName = item?.Product || item?.product || 'Unknown';
+    const pQuality = item?.Quality || item?.quality || 'Common';
+    const pSlot = item?.Slot || item?.slot || '';
+    const pId = item?.ID ?? item?.id;
+    const pImg = item?.image_url || item?.src || '';
     const bgClass = getQualityBgClass(pQuality);
     const decalBody = getItemDecalBody(item);
     const decalBadge = decalBody ? `<span class="quality-badge" style="background:rgba(91,140,255,0.18);color:#93c5fd;border:1px solid rgba(91,140,255,0.35);">${escHtml(decalBody)} Decal</span>` : '';
@@ -702,16 +708,18 @@ async function init() {
     backupContainer = document.getElementById('backup-container');
 
     setupSearch(ownedSearch, ownedResults, (item) => {
+        if (!item) return;
         ownedItem = item;
         renderSelectedItem(document.getElementById('owned-selected'), item, clearOwned);
-        ownedSearch.value = item.Product || item.product || 'Unknown';
+        if (ownedSearch) ownedSearch.value = item?.Product || item?.product || 'Unknown';
         validateSwapInputs();
     });
 
     setupSearch(wantedSearch, wantedResults, (item) => {
+        if (!item) return;
         wantedItem = item;
         renderSelectedItem(document.getElementById('wanted-selected'), item, clearWanted);
-        wantedSearch.value = item.Product || item.product || 'Unknown';
+        if (wantedSearch) wantedSearch.value = item?.Product || item?.product || 'Unknown';
         validateSwapInputs();
     });
 
@@ -836,7 +844,8 @@ async function init() {
         await invoke('save_config', { config: { ...cfg, language: newLang } }).catch(() => {});
         invoke('get_items', { lang: newLang }).then(fetched => {
             if (fetched) {
-                items = Array.isArray(fetched) ? fetched : (fetched.items || fetched.Items || []);
+                const raw = Array.isArray(fetched) ? fetched : (fetched.items || fetched.Items || []);
+                items = raw.filter(Boolean);
             }
         }).catch(() => {});
         const toastMsg = newLang === 'es' ? 'Idioma cambiado a Español' :
@@ -1052,11 +1061,13 @@ async function loadData() {
         }
 
         if (itemsResult) {
-            items = Array.isArray(itemsResult) ? itemsResult : (itemsResult.items || itemsResult.Items || []);
+            const raw = Array.isArray(itemsResult) ? itemsResult : (itemsResult.items || itemsResult.Items || []);
+            items = raw.filter(Boolean);
         } else {
             invoke('get_items').catch(() => {}).then(fetched => {
                 if (fetched) {
-                    items = Array.isArray(fetched) ? fetched : (fetched.items || fetched.Items || []);
+                    const raw = Array.isArray(fetched) ? fetched : (fetched.items || fetched.Items || []);
+                    items = raw.filter(Boolean);
                 }
             });
         }
@@ -1360,11 +1371,11 @@ function renderPresetItemsPage() {
         const slot = normItemSlot(s.slot || 'Item');
         let wantedItemObj = findItemByProductId(s.wanted_id);
         if (!wantedItemObj && s.wanted_name) {
-            wantedItemObj = Array.isArray(items) ? items.find(it => (it.Product || it.product || '').toLowerCase() === s.wanted_name.toLowerCase()) : null;
+            wantedItemObj = Array.isArray(items) ? items.find(it => it && (it.Product || it.product || '').toLowerCase() === s.wanted_name.toLowerCase()) : null;
         }
         let ownedItemObj = findItemByProductId(s.owned_id);
         if (!ownedItemObj && s.owned_name) {
-            ownedItemObj = Array.isArray(items) ? items.find(it => (it.Product || it.product || '').toLowerCase() === s.owned_name.toLowerCase()) : null;
+            ownedItemObj = Array.isArray(items) ? items.find(it => it && (it.Product || it.product || '').toLowerCase() === s.owned_name.toLowerCase()) : null;
         }
 
         const pImg = wantedItemObj?.image_url || wantedItemObj?.src || ownedItemObj?.image_url || ownedItemObj?.src || '';
@@ -1828,9 +1839,9 @@ function wirePresetsUI() {
                     const wantedId = Number(wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id);
                     let paintId = itemIsPaintable(wantedItem) ? Number(wantedPaintId || 0) : 0;
                     const customPaintHex = itemIsPaintable(wantedItem) ? (wantedCustomHex || null) : null;
-                    const oName = ownedItem.Product || ownedItem.product || '';
-                    const wName = wantedItem.Product || wantedItem.product || '';
-                    const pkg = ownedItem.AssetPackage || ownedItem.asset_package || '';
+                    const oName = ownedItem?.Product || ownedItem?.product || '';
+                    const wName = wantedItem?.Product || wantedItem?.product || '';
+                    const pkg = ownedItem?.AssetPackage || ownedItem?.asset_package || '';
                     const list = Array.isArray(existingSwaps) ? existingSwaps.filter(s => s.owned_id !== ownedId) : [];
                     list.push({
                         owned_id: ownedId,
@@ -1954,12 +1965,13 @@ async function refreshBackups() {
             const fileName = file.path.split(/[/\\]/).pop();
             const cleanName = fileName.toLowerCase().replace('.bak', '').replace('.upk', '');
             let matched = items && items.length > 0 ? items.find(it => {
+                if (!it) return false;
                 const dbPkg = (it.asset_package || '').toLowerCase().replace('.upk', '');
                 if (!dbPkg || dbPkg === 'none') return false;
                 return dbPkg === cleanName || (dbPkg.length > 4 && (cleanName.includes(dbPkg) || dbPkg.includes(cleanName)));
             }) : null;
             if (!matched && file.swap_from && items && items.length > 0) {
-                matched = items.find(it => (it.product || it.Product || '') === file.swap_from);
+                matched = items.find(it => it && (it.product || it.Product || '') === file.swap_from);
             }
             if (matched && matched.image_url && !pImg) {
                 pImg = matched.image_url;
@@ -2066,6 +2078,7 @@ function setupSearch(input, resultsDiv, selectionHandler) {
         }
 
         const matches = items.filter(item => {
+            if (!item) return false;
             const pName = (item.Product || item.product || '').toLowerCase();
             const pAsset = (item.AssetPackage || item.asset_package || '').toLowerCase();
             const pSlot = item.Slot || item.slot || '';
@@ -2088,6 +2101,7 @@ function setupSearch(input, resultsDiv, selectionHandler) {
 
         if (lockCategory !== 'All' && input.value === '') {
             const matches = items.filter(item => {
+                if (!item) return false;
                 return normSlot(item.Slot || item.slot) === normSlot(lockCategory);
             }).slice(0, 50);
             renderResults(matches, resultsDiv, selectionHandler);
@@ -2107,12 +2121,13 @@ function renderResults(matches, resultsDiv, selectionHandler) {
         return;
     }
     matches.forEach(item => {
+        if (!item) return;
         const div = document.createElement('div');
         div.className = 'flyout-row';
-        const pName = item.Product || item.product || 'Unknown';
-        const pSlot = item.Slot || item.slot || '';
-        const pId = item.ID ?? item.id;
-        const pImg = item.image_url || item.src || '';
+        const pName = item?.Product || item?.product || 'Unknown';
+        const pSlot = item?.Slot || item?.slot || '';
+        const pId = item?.ID ?? item?.id;
+        const pImg = item?.image_url || item?.src || '';
 
         const decalBody = getItemDecalBody(item);
         const decalPill = decalBody ? ` <span style="font-size:10px;padding:1px 5px;background:rgba(91,140,255,0.15);color:#93c5fd;border-radius:3px;font-weight:600;">${escHtml(decalBody)}</span>` : '';
@@ -2218,7 +2233,7 @@ function itemIsPaintable(item) {
 function findItemByProductId(productId) {
     const n = Number(productId);
     if (!n || !Array.isArray(items)) return null;
-    return items.find((it) => Number(it.ID ?? it.id) === n) || null;
+    return items.find((it) => it && Number(it.ID ?? it.id) === n) || null;
 }
 
 function resetPaintToNone(swatchId, selectId, selectedLabelId) {
@@ -2329,7 +2344,9 @@ async function handleApply() {
     let interval;
     try {
         await refreshSwapRlHint();
-        if (!ownedItem || !wantedItem) {
+        const curOwned = ownedItem;
+        const curWanted = wantedItem;
+        if (!curOwned || !curWanted) {
             showToast('Select an owned item and a target asset first.', 'error');
             return;
         }
@@ -2337,10 +2354,10 @@ async function handleApply() {
         showProgress(true, 15);
         let p = 15;
         interval = setInterval(() => { if (p < 85) p += 5; showProgress(true, p); }, 400);
-        const ownedId = (ownedItem.ID !== undefined ? ownedItem.ID : ownedItem.id).toString();
-        const wantedId = (wantedItem.ID !== undefined ? wantedItem.ID : wantedItem.id).toString();
-        let paintId = itemIsPaintable(wantedItem) ? Number(wantedPaintId || 0) : 0;
-        const customPaintHex = itemIsPaintable(wantedItem) ? (wantedCustomHex || null) : null;
+        const ownedId = (curOwned.ID !== undefined ? curOwned.ID : curOwned.id).toString();
+        const wantedId = (curWanted.ID !== undefined ? curWanted.ID : curWanted.id).toString();
+        let paintId = itemIsPaintable(curWanted) ? Number(wantedPaintId || 0) : 0;
+        const customPaintHex = itemIsPaintable(curWanted) ? (wantedCustomHex || null) : null;
         const swapResult = await invoke('apply_swap', {
             ownedId,
             wantedId,
@@ -2353,8 +2370,8 @@ async function handleApply() {
         interval = null;
         showProgress(true, 100);
         updateStatus('Swap Complete', false);
-        const ownedName = ownedItem.product || ownedItem.Product || 'item';
-        const wantedName = wantedItem.product || wantedItem.Product || 'item';
+        const ownedName = curOwned?.product || curOwned?.Product || ownedItem?.product || ownedItem?.Product || 'item';
+        const wantedName = curWanted?.product || curWanted?.Product || wantedItem?.product || wantedItem?.Product || 'item';
         const paintBit = customPaintHex ? ` (${escHtml(customPaintHex.toUpperCase())})` : (paintId > 0 ? ` (${escHtml(paintLabel(paintId))})` : '');
         showToast(`Swapped <strong>${escHtml(ownedName)}</strong> → <strong>${escHtml(wantedName)}</strong>${paintBit}`, 'success');
 
@@ -5017,6 +5034,7 @@ function initDecalsTab() {
         const q = filterQuery.toLowerCase().trim();
         const filtered = q
             ? currentCarDecals.filter(d => {
+                if (!d) return false;
                 const name = (d.LongLabel || d.long_label || d.Product || d.product || '').toLowerCase();
                 return name.includes(q);
             })
@@ -5025,7 +5043,8 @@ function initDecalsTab() {
         const optionsHtml = filtered.length === 0
             ? '<option value="">No matching decals found</option>'
             : filtered.map(d => {
-                const name = d.LongLabel || d.long_label || `${d.Product || d.product} (${d.Slot || d.slot})`;
+                if (!d) return '';
+                const name = d.LongLabel || d.long_label || `${d.Product || d.product || 'Decal'} (${d.Slot || d.slot || ''})`;
                 return `<option value="${d.ID || d.id}">${escHtml(name)}</option>`;
             }).join('');
 
@@ -5036,11 +5055,13 @@ function initDecalsTab() {
     const loadDonorDecals = async (carId) => {
         try {
             if (!catalogItems || catalogItems.length === 0) {
-                catalogItems = await invoke('get_items');
+                const raw = await invoke('get_items');
+                catalogItems = (Array.isArray(raw) ? raw : (raw?.items || raw?.Items || [])).filter(Boolean);
             }
             const carName = (carId === 4284 ? 'fennec' : carId === 403 ? 'dominus' : carId === 1624 ? 'breakout' : carId === 1151 ? 'skyline' : 'octane');
             
             currentCarDecals = catalogItems.filter(item => {
+                if (!item) return false;
                 const s = (item.Slot || item.slot || '').toLowerCase();
                 if (s !== 'decal') return false;
                 const p = (item.Product || item.product || '').toLowerCase();
