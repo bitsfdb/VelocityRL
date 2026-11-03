@@ -1742,7 +1742,21 @@ pub fn apply_tagame_modifications(
                     }
 
                     // Chunk 1: ExplosionPreviewer_TA::SetProduct (273 bytes) if goal explosion swap is present
-                    // ProductDatabase_TA::DoesPlayerOwnProduct is kept 100% vanilla stock so inventory & match joining initialize cleanly.
+                    // ProductDatabase_TA::DoesPlayerOwnProduct (260 bytes) -> return true; (unlocks catalog and prevents inventory stripping)
+                    if let Some(exp_dpop) = exports.iter().find(|e| e.name == "DoesPlayerOwnProduct" && e.outer_name == "ProductDatabase_TA") {
+                        let func_off = (exp_dpop.serial_offset - c1_uncomp_offset) as usize;
+                        if func_off + 48 <= decomp1.len() {
+                            let orig_disk_sz = u32::from_le_bytes(decomp1[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                            if orig_disk_sz >= 3 && func_off + 48 + orig_disk_sz <= decomp1.len() {
+                                let (payload, mem_sz) = emit_noop_bool_function_bytecode(true, orig_disk_sz);
+                                if &decomp1[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
+                                    decomp1[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                    decomp1[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                    c1_modified = true;
+                                }
+                            }
+                        }
+                    }
 
                     if c1_modified {
                         if let Ok(mut recomp1) = crate::upk::compression::compress_chunk(&decomp1) {
@@ -1825,7 +1839,6 @@ pub fn apply_tagame_modifications(
                         ("SetLoadoutSlotToDefaultID", "PRI_TA"),
                         ("CorrectLoadoutFromValidationError", "LoadoutValidation_TA"),
                         ("CorrectDLCOwnership", "LoadoutValidation_TA"),
-                        ("ValidateLoadoutDLC", "LoadoutValidation_TA"),
                         ("StaticValidate", "Loadout_TA"),
                         ("Validate", "Loadout_TA"),
                         ("ValidateReplicatedLoadout", "PRI_TA"),
@@ -1879,6 +1892,7 @@ pub fn apply_tagame_modifications(
                         ("ValidateTitleIDAttribute", "LoadoutValidation_TA", true),
                         ("ValidateOnlineProductWithLoadoutProduct", "LoadoutValidation_TA", true),
                         ("ShouldValidateOnlineProducts", "LoadoutValidation_TA", false),
+                        ("ValidateLoadoutDLC", "LoadoutValidation_TA", true),
                         ("IsInMainMenu", "JoinGameConnectionChecker_TA", true),
                         ("IsPlayerWaiting", "JoinGameConnectionChecker_TA", false),
                         ("HandleLockForGatedPlaylists", "MenuTreeNode_Playlist_TA", false),
