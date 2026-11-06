@@ -1,5 +1,13 @@
 # VelocityRL
 
+> [!WARNING]
+> ## ⚠️ Project Sunset & Shutdown Notice
+> **VelocityRL is officially sunsetting today (November 6, 2026).**
+>
+> Active development and support have concluded. All associated backend infrastructure, proxies, and APIs will be closed and completely shut down within a week (by November 13, 2026).
+>
+> We want to express our deepest gratitude to all contributors, translators, testers, and community members who supported VelocityRL throughout its journey.
+
 The all-in-one customization app for Rocket League. Swap items, show off ranks, play community maps, track your matches — all client-side, all in one clean app.
 
 ![Downloads](https://img.shields.io/github/downloads/bitsfdb/velocityrl/total?style=for-the-badge&color=5865F2&labelColor=111111)
