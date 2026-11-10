@@ -494,6 +494,9 @@ function renderPaintBadgeHtml(paintIdOrName) {
         color = getPaintTextColor(raw);
     } else if (raw) {
         const str = String(raw).trim();
+        if (str.toLowerCase() === 'all variants' || str.toLowerCase() === 'all paints') {
+            return `<span class="paint-white-pill" style="background:linear-gradient(135deg, #ec4899, #3b82f6); color:#ffffff; font-weight:800; border:none; box-shadow:0 1px 6px rgba(59, 130, 246, 0.4);">All Variants</span>`;
+        }
         if (str.startsWith('#')) {
             label = str.toUpperCase();
             color = str;

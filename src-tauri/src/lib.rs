@@ -1341,7 +1341,22 @@ async fn get_backups(app: tauri::AppHandle) -> Result<Vec<BackupFile>, String> {
     let mut backups = Vec::new();
     let mut seen_ids = std::collections::HashSet::<i32>::new();
 
+    // Count how many paint variants exist for each spawned item
+    let mut spawn_paint_counts = std::collections::HashMap::<i32, usize>::new();
+    for s in &swaps {
+        if s.owned_id == s.wanted_id {
+            *spawn_paint_counts.entry(s.owned_id).or_insert(0) += 1;
+        }
+    }
+
     for swap in &swaps {
+        let is_spawn = swap.owned_id == swap.wanted_id;
+        let multi_paint = is_spawn && spawn_paint_counts.get(&swap.owned_id).copied().unwrap_or(0) > 1;
+
+        if !seen_ids.insert(swap.owned_id) {
+            continue;
+        }
+
         let owned_item = items.iter().find(|i| i.id == swap.owned_id);
         let wanted_item = items.iter().find(|i| i.id == swap.wanted_id);
         let display_name = if !swap.owned_name.is_empty() {
@@ -1359,7 +1374,9 @@ async fn get_backups(app: tauri::AppHandle) -> Result<Vec<BackupFile>, String> {
         let swap_to_image = wanted_item.map(|i| i.image_url.clone()).unwrap_or_default();
 
         let slot = wanted_item.or(owned_item).map(|i| i.slot.clone()).unwrap_or_default();
-        let paint_name = if let Some(hex) = swap.custom_paint_hex.as_ref().filter(|h| !h.trim().is_empty()) {
+        let paint_name = if multi_paint {
+            "All Variants".to_string()
+        } else if let Some(hex) = swap.custom_paint_hex.as_ref().filter(|h| !h.trim().is_empty()) {
             hex.clone()
         } else if swap.paint_id > 0 {
             upk::swapper::paint_label(swap.paint_id).to_string()
@@ -1375,19 +1392,17 @@ async fn get_backups(app: tauri::AppHandle) -> Result<Vec<BackupFile>, String> {
             String::new()
         };
 
-        if seen_ids.insert(swap.owned_id) {
-            backups.push(BackupFile {
-                name: display_name,
-                path: format!("item_{}", swap.owned_id),
-                image_url,
-                swap_from,
-                swap_from_paint: from_paint_name,
-                swap_to,
-                swap_to_image,
-                slot,
-                paint_name,
-            });
-        }
+        backups.push(BackupFile {
+            name: display_name,
+            path: format!("item_{}", swap.owned_id),
+            image_url,
+            swap_from,
+            swap_from_paint: from_paint_name,
+            swap_to,
+            swap_to_image,
+            slot,
+            paint_name,
+        });
     }
 
     Ok(backups)
@@ -1574,11 +1589,20 @@ fn load_swaps(app: &tauri::AppHandle) -> Vec<SwapEntry> {
         .and_then(|p| fs::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
-    let mut seen = std::collections::HashSet::new();
+    let mut seen_swaps = std::collections::HashSet::new();
+    let mut seen_spawns = std::collections::HashSet::new();
     let mut deduped = Vec::new();
     for entry in list.into_iter().rev() {
-        if seen.insert(entry.owned_id) {
-            deduped.push(entry);
+        if entry.owned_id == entry.wanted_id {
+            // Spawner item: preserve distinct paints & custom hexes
+            if seen_spawns.insert((entry.owned_id, entry.paint_id, entry.custom_paint_hex.clone())) {
+                deduped.push(entry);
+            }
+        } else {
+            // Donor swap: 1 active target per donor item
+            if seen_swaps.insert(entry.owned_id) {
+                deduped.push(entry);
+            }
         }
     }
     deduped.reverse();
@@ -1776,10 +1800,11 @@ async fn spawn_item(
                 paint = 0;
             }
 
-            if let Ok(save_path) = savedata::locate_latest_save() {
+            let save_path = savedata::ensure_or_create_savedata().ok();
+            if let Some(ref sp) = save_path {
                 let slot_idx = savedata::slot_name_to_index(&wanted.slot);
                 let base_pid = Some(wid);
-                let _ = savedata::spawn_item_native_ext(&save_path, wid, paint, slot_idx, base_pid);
+                let _ = savedata::spawn_item_native_ext(sp, wid, paint, slot_idx, base_pid);
             }
         }
     }
@@ -1791,6 +1816,14 @@ async fn spawn_item(
 pub struct SpawnBatchItem {
     pub wanted_id: String,
     pub paint_id: Option<i32>,
+}
+
+#[tauri::command]
+async fn make_savedata(_app: tauri::AppHandle) -> Result<String, String> {
+    let save_path = savedata::ensure_or_create_savedata()
+        .map_err(|e| format!("Failed to create SaveData: {e}"))?;
+    applog::event(&format!("make_savedata: successfully ensured save file at {}", save_path.display()));
+    Ok(format!("Save data ready at {}", save_path.display()))
 }
 
 #[tauri::command]
@@ -1806,7 +1839,7 @@ async fn spawn_items_batch(
     }
     let all_items = get_items(app.clone(), None).await
         .map_err(|e| format!("Failed to load items database: {}", e))?;
-    let save_path = savedata::locate_latest_save().ok();
+    let save_path = savedata::ensure_or_create_savedata().ok();
 
     let mut swaps = load_swaps(&app);
     let mut spawned_entries = Vec::new();
@@ -3813,6 +3846,7 @@ pub fn run() {
             apply_swap,
             spawn_item,
             spawn_items_batch,
+            make_savedata,
             reswap_all,
             restore_backups,
             restore_single_backup,
