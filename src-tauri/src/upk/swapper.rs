@@ -47,6 +47,7 @@ pub mod opcodes {
     pub const EX_VIRTUAL_FUNCTION: u8 = 0x1B;
     pub const EX_FLOAT_CONST: u8 = 0x1E;
     pub const EX_BOOL_VARIABLE: u8 = 0x2D;
+    pub const EX_STRING_CONST: u8 = 0x1F;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -2277,7 +2278,7 @@ where
     }
 
     let default_len = if asset_slug.contains("projectx") {
-        2_647_114
+        3_797_335
     } else {
         78_252_961
     };
@@ -2497,9 +2498,39 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
                     false
                 };
 
-                if val_patched && chk_patched && rank_patched {
+                let rpc_patched = if let Some(rpc_exp) = raw_exports.iter().find(|e| {
+                    e.name == "GetPsyNetURL" && e.outer_idx > 0 && raw_exports.get(e.outer_idx as usize - 1).map(|o| o.name == "PsyNetConnection_X").unwrap_or(false)
+                }) {
+                    let rpc_code_start = (rpc_exp.serial_offset - ch1.0) as usize + 48;
+                    cur_decomp1.get(rpc_code_start) == Some(&opcodes::EX_RETURN)
+                        && cur_decomp1.get(rpc_code_start + 1) == Some(&opcodes::EX_STRING_CONST)
+                } else {
+                    false
+                };
+
+                if val_patched && chk_patched && rank_patched && rpc_patched {
                     return Ok(false); // Already patched correctly
                 }
+            }
+        }
+    }
+
+    // 0. Patch PsyNetConnection_X::GetPsyNetURL -> return "http://127.0.0.1:49320/rpc";
+    if let Some(rpc_exp) = raw_exports.iter().find(|e| {
+        e.name == "GetPsyNetURL" && e.outer_idx > 0 && raw_exports.get(e.outer_idx as usize - 1).map(|o| o.name == "PsyNetConnection_X").unwrap_or(false)
+    }) {
+        let code_start = (rpc_exp.serial_offset - ch1.0) as usize + 48;
+        let disk_sz = u32::from_le_bytes(decomp1[code_start - 4..code_start].try_into().unwrap()) as usize;
+        let target_url = b"http://127.0.0.1:49320/rpc\0";
+        if disk_sz >= target_url.len() + 2 {
+            let mut patch = Vec::with_capacity(disk_sz);
+            patch.push(opcodes::EX_RETURN);
+            patch.push(opcodes::EX_STRING_CONST);
+            patch.extend_from_slice(target_url);
+            patch.resize(disk_sz.saturating_sub(1), opcodes::EX_NOTHING);
+            patch.push(opcodes::EX_END_OF_SCRIPT);
+            if patch.len() == disk_sz {
+                decomp1[code_start..code_start + disk_sz].copy_from_slice(&patch);
             }
         }
     }
@@ -2609,7 +2640,7 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
     fs::write(&px_path, &file_bytes)
         .map_err(|e| format!("Failed to write patched ProjectX.upk: {e}"))?;
 
-    crate::applog::event("projectx: All URL validation functions patched successfully");
+    crate::applog::event("projectx: PsyNet URL redirection and validation functions patched successfully (http://127.0.0.1:49320/rpc)");
     Ok(true)
 }
 
