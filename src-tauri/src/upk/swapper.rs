@@ -1919,6 +1919,7 @@ pub fn apply_tagame_modifications(
                         ("ValidateLoadoutDLC", "LoadoutValidation_TA", true),
                         ("IsProductIDProhibited", "ProductsConfig_TA", false),
                         ("IsPlayerTradeProhibited", "ProductsConfig_TA", false),
+                        ("CanShowForOwningClient", "ProductsConfig_TA", true),
                         ("ValidateProduct", "ProductAttribute_TeamForcedProduct_TA", true),
                         ("IsInMainMenu", "JoinGameConnectionChecker_TA", true),
                         ("IsPlayerWaiting", "JoinGameConnectionChecker_TA", false),
@@ -2031,6 +2032,14 @@ pub fn apply_tagame_modifications(
                         ("ValidateLoadouts", "SaveData_TA"),
                         ("ValidateLoadoutsWithProduct", "SaveData_TA"),
                         ("ValidateLastUnlockDisplayId", "SaveData_TA"),
+                        ("ClearOnlineProducts", "SaveData_TA"),
+                        ("ClearOfflineProducts", "SaveData_TA"),
+                        ("RemoveDuplicateGeneratedItems", "SaveData_TA"),
+                        ("RemoveOnlineProductId", "SaveData_TA"),
+                        ("RemoveOnlineProductIdNoNotify", "SaveData_TA"),
+                        ("LockProducts", "SaveData_TA"),
+                        ("RemoveNewProducts", "SaveData_TA"),
+                        ("DisableSaving", "SaveGameManager_TA"),
                     ];
                     for &(f_name, o_name) in &c3_void_noops {
                         if let Some(exp) = exports.iter().find(|e| e.name == f_name && e.outer_name == o_name) {
@@ -2054,6 +2063,8 @@ pub fn apply_tagame_modifications(
                     let c3_bool_funcs = [
                         ("IsProductOwned", "SaveData_TA", true),
                         ("ValidateShop", "ShopTabsConfig_TA", true),
+                        ("CanUseOnlineData", "SaveData_TA", true),
+                        ("CanSave", "SaveGameManager_TA", true),
                     ];
                     for &(f_name, o_name, ret_val) in &c3_bool_funcs {
                         if let Some(exp) = exports.iter().find(|e| e.name == f_name && e.outer_name == o_name) {
