@@ -1977,6 +1977,7 @@ pub async fn start_ws_broker() -> Result<u16, String> {
     let (stop_tx, mut stop_rx) = oneshot::channel::<()>();
     *BROKER_STOP_TX.lock().unwrap() = Some(stop_tx);
 
+    let client_main = client.clone();
     tokio::spawn(async move {
         loop {
             let conn = tokio::select! {
@@ -1995,7 +1996,7 @@ pub async fn start_ws_broker() -> Result<u16, String> {
 
             let Some((stream, peer_addr)) = conn else { break };
 
-            let client = client.clone();
+            let client = client_main.clone();
             tokio::spawn(async move {
                 let io = TokioIo::new(stream);
                 let service = service_fn(move |req: Request<Incoming>| {
@@ -2015,6 +2016,45 @@ pub async fn start_ws_broker() -> Result<u16, String> {
         }
         BROKER_PORT.store(0, Ordering::SeqCst);
     });
+
+    // Auxiliary Shift legacy listeners (49320 for HTTP RPC, 49325 for WS)
+    for aux_port in [49320u16, 49325u16] {
+        let client_aux = client.clone();
+        tokio::spawn(async move {
+            match tokio::net::TcpListener::bind(format!("127.0.0.1:{aux_port}")).await {
+                Ok(aux_listener) => {
+                    crate::applog::event(&format!(
+                        "broker: auxiliary listener active on http://127.0.0.1:{aux_port}"
+                    ));
+                    loop {
+                        let Ok((stream, peer_addr)) = aux_listener.accept().await else { break };
+                        let c = client_aux.clone();
+                        tokio::spawn(async move {
+                            let io = TokioIo::new(stream);
+                            let service = service_fn(move |req: Request<Incoming>| {
+                                let c2 = c.clone();
+                                async move {
+                                    handle_broker_request(req, c2).await
+                                }
+                            });
+                            if let Err(e) = hyper::server::conn::http1::Builder::new()
+                                .serve_connection(io, service)
+                                .with_upgrades()
+                                .await
+                            {
+                                log::debug!("aux broker connection error on port {aux_port} from {peer_addr}: {e}");
+                            }
+                        });
+                    }
+                }
+                Err(e) => {
+                    crate::applog::event(&format!(
+                        "broker: auxiliary port {aux_port} note ({e}) — primary broker active on {port}"
+                    ));
+                }
+            }
+        });
+    }
 
     Ok(port)
 }
@@ -5087,13 +5127,13 @@ pub fn load_active_spawned_items(cfg: Option<&crate::psynet::SpoofPayload>) -> V
     let mut items = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for r in load_active_swap_rules(cfg) {
-        if r.wanted_id > 0 && seen.insert(r.wanted_id) {
+        if r.wanted_id > 0 && seen.insert((r.wanted_id, r.paint_id)) {
             items.push((r.wanted_id, r.paint_id));
         }
     }
     if let Ok(save_path) = crate::savedata::locate_latest_save() {
         for (pid, paint) in crate::savedata::get_save_online_products(&save_path) {
-            if pid > 0 && seen.insert(pid) {
+            if pid > 0 && seen.insert((pid, paint)) {
                 items.push((pid, paint));
             }
         }
@@ -5646,40 +5686,15 @@ pub fn patch_player_products_json(
                 .or_else(|| item.get("id"))
                 .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())));
             if pid == Some(wanted_id as i64) {
-                matched = true;
-                if paint_id > 0 {
-                    let mut has_paint = false;
-                    if let Some(attrs) = item.get_mut("Attributes").and_then(|v| v.as_array_mut()) {
-                        for attr in attrs.iter_mut() {
-                            if attr.get("Key").and_then(|k| k.as_str()) == Some("Painted") {
-                                let cur_val_matches = attr.get("Value").and_then(|v| v.as_str()) == Some(&paint_id.to_string())
-                                    || attr.get("Value").and_then(|v| v.as_i64()) == Some(paint_id as i64);
-                                if !cur_val_matches {
-                                    attr["Value"] = serde_json::json!(paint_id.to_string());
-                                    changed = true;
-                                }
-                                has_paint = true;
-                                break;
-                            }
-                        }
-                        if !has_paint {
-                            attrs.push(serde_json::json!({
-                                "Key": "Painted",
-                                "Value": paint_id.to_string()
-                            }));
-                            changed = true;
-                        }
-                    } else {
-                        item["Attributes"] = serde_json::json!([
-                            {
-                                "Key": "Painted",
-                                "Value": paint_id.to_string()
-                            }
-                        ]);
-                        changed = true;
-                    }
+                let item_paint = item.get("Attributes").and_then(|v| v.as_array()).and_then(|attrs| {
+                    attrs.iter().find(|a| a.get("Key").and_then(|k| k.as_str()) == Some("Painted")).and_then(|a| {
+                        a.get("Value").and_then(|v| v.as_str().and_then(|s| s.parse::<i32>().ok()).or_else(|| v.as_i64().map(|n| n as i32)))
+                    })
+                }).unwrap_or(0);
+                if item_paint == paint_id {
+                    matched = true;
+                    break;
                 }
-                break;
             }
         }
 
