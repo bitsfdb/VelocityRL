@@ -420,6 +420,235 @@ pub fn save_envelope_to_file(envelope: &SaveEnvelope, path: &Path) -> Result<(),
     Ok(())
 }
 
+pub fn write_prop_int(name: &str, val: i32) -> Vec<u8> {
+    let mut b = Vec::new();
+    b.extend_from_slice(&write_ue3_string(name));
+    b.extend_from_slice(&write_ue3_string("IntProperty"));
+    b.extend_from_slice(&4i32.to_le_bytes());
+    b.extend_from_slice(&0i32.to_le_bytes());
+    b.extend_from_slice(&val.to_le_bytes());
+    b
+}
+
+pub fn write_prop_object(name: &str, obj_idx: i32) -> Vec<u8> {
+    let mut b = Vec::new();
+    b.extend_from_slice(&write_ue3_string(name));
+    b.extend_from_slice(&write_ue3_string("ObjectProperty"));
+    b.extend_from_slice(&4i32.to_le_bytes());
+    b.extend_from_slice(&0i32.to_le_bytes());
+    b.extend_from_slice(&obj_idx.to_le_bytes());
+    b
+}
+
+pub fn write_prop_array_of_objects(name: &str, obj_indices: &[i32]) -> Vec<u8> {
+    let mut b = Vec::new();
+    b.extend_from_slice(&write_ue3_string(name));
+    b.extend_from_slice(&write_ue3_string("ArrayProperty"));
+    let len = (4 + obj_indices.len() * 4) as i32;
+    b.extend_from_slice(&len.to_le_bytes());
+    b.extend_from_slice(&0i32.to_le_bytes());
+    b.extend_from_slice(&(obj_indices.len() as i32).to_le_bytes());
+    for &idx in obj_indices {
+        b.extend_from_slice(&idx.to_le_bytes());
+    }
+    b
+}
+
+pub fn write_prop_array_of_ints(name: &str, ints: &[i32]) -> Vec<u8> {
+    let mut b = Vec::new();
+    b.extend_from_slice(&write_ue3_string(name));
+    b.extend_from_slice(&write_ue3_string("ArrayProperty"));
+    let len = (4 + ints.len() * 4) as i32;
+    b.extend_from_slice(&len.to_le_bytes());
+    b.extend_from_slice(&0i32.to_le_bytes());
+    b.extend_from_slice(&(ints.len() as i32).to_le_bytes());
+    for &val in ints {
+        b.extend_from_slice(&val.to_le_bytes());
+    }
+    b
+}
+
+pub fn make_empty_product_instance_struct() -> Vec<u8> {
+    let mut buf = Vec::with_capacity(105);
+    // UpperBits (QWordProperty = 0)
+    buf.extend_from_slice(&write_ue3_string("UpperBits"));
+    buf.extend_from_slice(&write_ue3_string("QWordProperty"));
+    buf.extend_from_slice(&8i32.to_le_bytes());
+    buf.extend_from_slice(&0i32.to_le_bytes());
+    buf.extend_from_slice(&0u64.to_le_bytes());
+    // LowerBits (QWordProperty = 0)
+    buf.extend_from_slice(&write_ue3_string("LowerBits"));
+    buf.extend_from_slice(&write_ue3_string("QWordProperty"));
+    buf.extend_from_slice(&8i32.to_le_bytes());
+    buf.extend_from_slice(&0i32.to_le_bytes());
+    buf.extend_from_slice(&0u64.to_le_bytes());
+    // None
+    buf.extend_from_slice(&write_ue3_string("None"));
+    buf
+}
+
+pub fn write_prop_array_of_product_instances(name: &str, count: usize) -> Vec<u8> {
+    let elem = make_empty_product_instance_struct();
+    let mut b = Vec::new();
+    b.extend_from_slice(&write_ue3_string(name));
+    b.extend_from_slice(&write_ue3_string("ArrayProperty"));
+    let total_elem_bytes = elem.len() * count;
+    let len = (4 + total_elem_bytes) as i32;
+    b.extend_from_slice(&len.to_le_bytes());
+    b.extend_from_slice(&0i32.to_le_bytes());
+    b.extend_from_slice(&(count as i32).to_le_bytes());
+    for _ in 0..count {
+        b.extend_from_slice(&elem);
+    }
+    b
+}
+
+pub fn build_default_save_envelope() -> SaveEnvelope {
+    let mut header = vec![0u8; 24];
+    header[0..4].copy_from_slice(&0x9E2A83C1u32.to_le_bytes());
+    header[4..8].copy_from_slice(&868u32.to_le_bytes());
+    header[8..12].copy_from_slice(&32u32.to_le_bytes());
+    header[12..16].copy_from_slice(&1u32.to_le_bytes());
+    header[16..20].copy_from_slice(&0u32.to_le_bytes());
+
+    let mut sd = Vec::new();
+    let mut table = Vec::new();
+
+    // Root properties
+    sd.extend_from_slice(&write_prop_int("SaveDataVersion", 1));
+    sd.extend_from_slice(&write_prop_array_of_objects("OnlineProducts", &[]));
+    sd.extend_from_slice(&write_ue3_string("None"));
+
+    // Object 0: TAGame.ProfileLoadoutSave_TA
+    let pos0 = sd.len() as u32;
+    sd.extend_from_slice(&OBJHEADER.to_le_bytes());
+    sd.extend_from_slice(&write_prop_object("EquippedLoadoutSet", 1));
+    sd.extend_from_slice(&write_ue3_string("None"));
+    table.push(ObjectTableEntry {
+        type_name: "TAGame.ProfileLoadoutSave_TA".into(),
+        file_position: pos0 + 4,
+        object_index: 0,
+    });
+
+    // Object 1: TAGame.LoadoutSet_TA
+    let pos1 = sd.len() as u32;
+    sd.extend_from_slice(&OBJHEADER.to_le_bytes());
+    sd.extend_from_slice(&write_prop_array_of_objects("Loadouts", &[2, 3]));
+    sd.extend_from_slice(&write_ue3_string("None"));
+    table.push(ObjectTableEntry {
+        type_name: "TAGame.LoadoutSet_TA".into(),
+        file_position: pos1 + 4,
+        object_index: 1,
+    });
+
+    let default_products = [
+        23,   // 0: Octane
+        0,    // 1: None
+        376,  // 2: OEM
+        63,   // 3: Standard Boost
+        0,    // 4: None
+        0,    // 5: None
+        0,    // 6: None
+        0,    // 7: None
+        0,    // 8: Engine Audio
+        3220, // 9: Classic Trail
+        4038, // 10: Standard Goal Explosion
+        2526, // 11: Player Banner
+        3085, // 12: Avatar Border
+        3036, // 13: Player Title
+    ];
+
+    // Object 2: TAGame.Loadout_TA (Blue team)
+    let pos2 = sd.len() as u32;
+    sd.extend_from_slice(&OBJHEADER.to_le_bytes());
+    sd.extend_from_slice(&write_prop_array_of_ints("Products", &default_products));
+    sd.extend_from_slice(&write_prop_array_of_product_instances("OnlineProducts128", 14));
+    sd.extend_from_slice(&write_ue3_string("None"));
+    table.push(ObjectTableEntry {
+        type_name: "TAGame.Loadout_TA".into(),
+        file_position: pos2 + 4,
+        object_index: 2,
+    });
+
+    // Object 3: TAGame.Loadout_TA (Orange team)
+    let pos3 = sd.len() as u32;
+    sd.extend_from_slice(&OBJHEADER.to_le_bytes());
+    sd.extend_from_slice(&write_prop_array_of_ints("Products", &default_products));
+    sd.extend_from_slice(&write_prop_array_of_product_instances("OnlineProducts128", 14));
+    sd.extend_from_slice(&write_ue3_string("None"));
+    table.push(ObjectTableEntry {
+        type_name: "TAGame.Loadout_TA".into(),
+        file_position: pos3 + 4,
+        object_index: 3,
+    });
+
+    SaveEnvelope { header, sd, table }
+}
+
+pub fn ensure_or_create_savedata() -> Result<PathBuf, String> {
+    if let Ok(path) = locate_latest_save() {
+        return Ok(path);
+    }
+
+    let mut target_dir: Option<PathBuf> = None;
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(userprofile) = std::env::var("USERPROFILE") {
+            let p = PathBuf::from(&userprofile).join("Documents").join("My Games").join("Rocket League").join("TAGame").join("SaveDataEpic").join("DBE_Production");
+            target_dir = Some(p);
+        }
+    }
+
+    if target_dir.is_none() {
+        if let Ok(home) = std::env::var("HOME") {
+            let p = PathBuf::from(&home);
+            let wine_doc = p.join(".wine/drive_c/users/steamuser/Documents/My Games/Rocket League/TAGame/SaveDataEpic/DBE_Production");
+            let wine_root = p.join(".wine/drive_c/users/root/Documents/My Games/Rocket League/TAGame/SaveDataEpic/DBE_Production");
+            let normal_doc = p.join("Documents/My Games/Rocket League/TAGame/SaveDataEpic/DBE_Production");
+            if wine_doc.parent().map(|p| p.exists()).unwrap_or(false) {
+                target_dir = Some(wine_doc);
+            } else if wine_root.parent().map(|p| p.exists()).unwrap_or(false) {
+                target_dir = Some(wine_root);
+            } else {
+                target_dir = Some(normal_doc);
+            }
+        }
+    }
+
+    let dir = target_dir.ok_or_else(|| "Could not determine Documents path for Rocket League save".to_string())?;
+    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create save directory {}: {e}", dir.display()))?;
+
+    let save_file = dir.join("00000000000000000000000000000001.save");
+    let envelope = build_default_save_envelope();
+    save_envelope_to_file(&envelope, &save_file)?;
+
+    Ok(save_file)
+}
+
+pub fn get_save_online_products(save_path: &Path) -> Vec<(i32, i32)> {
+    let mut prods = Vec::new();
+    let Ok(envelope) = read_envelope(save_path) else { return prods; };
+    let Ok((_, val_pos, _, cur_count)) = find_online_products(&envelope.sd) else { return prods; };
+    for i in 0..cur_count as usize {
+        let entry_pos = val_pos + 4 + i * 4;
+        if entry_pos + 4 > envelope.sd.len() { break; }
+        let prod_idx = i32::from_le_bytes(envelope.sd[entry_pos..entry_pos + 4].try_into().unwrap());
+        if let Some(tbl_entry) = envelope.table.iter().find(|t| t.object_index == prod_idx as u32) {
+            if tbl_entry.type_name == "TAGame.OnlineProduct_TA" {
+                let obj_pos = tbl_entry.file_position as usize;
+                if obj_pos + 46 <= envelope.sd.len() {
+                    let pid = i32::from_le_bytes(envelope.sd[obj_pos + 42..obj_pos + 46].try_into().unwrap());
+                    if pid > 0 {
+                        prods.push((pid, 0));
+                    }
+                }
+            }
+        }
+    }
+    prods
+}
+
 pub fn default_base_product_for_slot(slot: usize) -> i32 {
     match slot {
         0 => 23,   // Body: Octane
@@ -799,6 +1028,34 @@ mod tests {
         let sample = b"Test 12345";
         let crc = save_crc32(sample, CRC_SEED);
         assert_eq!(crc, 0xd42bafdc);
+    }
+
+    #[test]
+    fn test_build_default_save_and_spawn() {
+        let tmp = PathBuf::from("/root/test_generated_unit.save");
+        let default_env = build_default_save_envelope();
+        save_envelope_to_file(&default_env, &tmp).expect("save default envelope");
+
+        // Spawn painted Fennec (product 4284, paint 12) equipped in Body (slot 0)
+        let record = spawn_item_native_ext(&tmp, 4284, 12, Some(0), Some(23)).expect("spawn succeeded");
+        assert_eq!(record.product_id, 4284);
+        assert_eq!(record.paint_id, 12);
+
+        // Verify envelope
+        let env = read_envelope(&tmp).expect("read envelope after spawn");
+        let (_, _, _, count) = find_online_products(&env.sd).expect("find online products");
+        assert_eq!(count, 1);
+
+        // Remove the spawned product
+        let removed = remove_spawn_native(&tmp, 4284).expect("remove succeeded");
+        assert!(removed);
+
+        let env2 = read_envelope(&tmp).expect("read envelope after remove");
+        let (_, _, _, count2) = find_online_products(&env2.sd).expect("find online products");
+        assert_eq!(count2, 0);
+
+        let _ = fs::remove_file(&tmp);
+        let _ = fs::remove_dir_all("/root/VelocityRL Backups");
     }
 
     #[test]
