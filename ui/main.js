@@ -1,3 +1,11 @@
+/*
+ * velocityrl
+ * Copyright (c) 2026 bits (https://github.com/bitsfdb/velocityrl)
+ * 
+ * Licensed under the GNU General Public License v3.0.
+ * unauthorized rebranding or stripping of this copyright notice is strictly prohibited.
+ */
+
 const invoke = (...args) => window.__TAURI__?.core?.invoke(...args);
 const openDialog = async (options) => {
     if (window.__TAURI__?.dialog?.open) {
@@ -730,7 +738,14 @@ async function init() {
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
             btn.classList.add('active');
             document.getElementById(btn.dataset.tab).classList.add('active');
-            if (btn.dataset.tab === 'swapper-tab') refreshSwapRlHint();
+            if (btn.dataset.tab === 'spawner-tab') {
+                initCatalogGrid();
+                renderCatalogGridPage();
+                refreshSwapRlHint();
+            }
+            if (btn.dataset.tab === 'avatars-tab') initAvatarTab();
+            if (btn.dataset.tab === 'decals-tab') initDecalsTab();
+            if (btn.dataset.tab === 'boost-tab') initBoostMeterTab();
             if (btn.dataset.tab === 'titles-tab') initTitlesTab();
             if (btn.dataset.tab === 'customization-tab' || btn.dataset.tab === 'names-tab') initCustomizationTab();
             if (btn.dataset.tab === 'ranks-tab') initRanksTab();
@@ -781,8 +796,9 @@ async function init() {
         };
     });
 
-    applyBtn.onclick = handleApply;
-    document.getElementById('restore-btn').onclick = handleRestore;
+    if (applyBtn) applyBtn.onclick = handleApply;
+    const restoreBtnEl = document.getElementById('restore-btn');
+    if (restoreBtnEl) restoreBtnEl.onclick = handleRestore;
     const settingsRedownloadBtn = document.getElementById('settings-redownload-assets-btn');
     if (settingsRedownloadBtn) settingsRedownloadBtn.onclick = handleRedownloadAssets;
     const devRedownloadBtn = document.getElementById('dev-redownload-assets-btn');
@@ -1072,6 +1088,8 @@ async function loadData() {
                 if (fetched) {
                     const raw = Array.isArray(fetched) ? fetched : (fetched.items || fetched.Items || []);
                     items = raw.filter(Boolean);
+                    renderCatalogGridPage();
+                    updateCatalogSelectionUi();
                 }
             });
         }
@@ -1119,11 +1137,9 @@ async function loadData() {
         await new Promise(r => setTimeout(r, 150));
         releaseAppLoading();
         wirePresetsUI();
-        if (typeof catalogInitialized !== 'undefined' && catalogInitialized) {
-            updateCatalogSelectionUi();
-            renderCatalogGridPage();
-        }
         initCatalogGrid();
+        renderCatalogGridPage();
+        updateCatalogSelectionUi();
     } catch (err) {
         releaseAppLoading();
         updateStatus('Init Failure', true);
@@ -2417,7 +2433,24 @@ async function refreshBackups() {
                 ? `<img src="${escHtml(src)}" class="backup-thumb" alt="${escHtml(title || '')}" onerror="this.style.display='none'" />`
                 : `<div class="backup-thumb backup-thumb-placeholder"></div>`;
 
-            div.innerHTML = `
+            const isSpawn = !file.swap_from || !file.swap_to || file.swap_from === file.swap_to;
+            const flowHtml = isSpawn ? `
+                <div class="backup-card-spawn">
+                    <div class="backup-col-thumb-wrap">
+                        ${renderThumb(targetImg, targetName)}
+                    </div>
+                    <div class="backup-spawn-info">
+                        <div class="backup-spawn-title-row">
+                            <span class="backup-col-name" style="text-align: left;" title="${escHtml(targetName)}">${escHtml(targetName)}</span>
+                            <span class="backup-spawn-badge">SPAWNED</span>
+                        </div>
+                        <div class="backup-spawn-meta-row">
+                            ${file.slot ? `<span class="backup-slot-badge">${escHtml(file.slot)}</span>` : ''}
+                            ${renderPaintBadgeHtml(paintName || file.paint_id || 0)}
+                        </div>
+                    </div>
+                </div>
+            ` : `
                 <div class="backup-card-flow">
                     <div class="backup-col">
                         <span class="backup-col-name" title="${escHtml(fromName)}">${escHtml(fromName)}</span>
@@ -2442,12 +2475,16 @@ async function refreshBackups() {
                         ${renderPaintBadgeHtml(paintName || file.paint_id || 0)}
                     </div>
                 </div>
-                <button type="button" class="restore-mini-btn" title="Restore this file">
+            `;
+
+            div.innerHTML = `
+                ${flowHtml}
+                <button type="button" class="restore-mini-btn" title="Despawn / restore this item">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="1 4 1 10 7 10"/>
                         <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
                     </svg>
-                    <span>Restore</span>
+                    <span>${isSpawn ? 'Despawn' : 'Restore'}</span>
                 </button>`;
 
             div.querySelector('.restore-mini-btn').onclick = (e) => {
@@ -6007,6 +6044,44 @@ function initAvatarTab() {
     if (avatarTabWired) return;
     avatarTabWired = true;
 
+    document.querySelectorAll('.avatar-color-chip').forEach(chip => {
+        chip.onclick = () => {
+            document.querySelectorAll('.avatar-color-chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            const team = chip.dataset.team;
+            const frame = document.getElementById('avatar-ingame-frame');
+            if (!frame) return;
+            frame.classList.remove('team-blue', 'team-orange', 'team-gold');
+            if (team === 'blue') {
+                frame.classList.add('team-blue');
+                frame.style.borderColor = '#0088ff';
+                frame.style.boxShadow = '0 0 24px rgba(0, 136, 255, 0.45), inset 0 0 8px rgba(0, 0, 0, 0.8)';
+            } else if (team === 'orange') {
+                frame.classList.add('team-orange');
+                frame.style.borderColor = '#ff5500';
+                frame.style.boxShadow = '0 0 24px rgba(255, 85, 0, 0.45), inset 0 0 8px rgba(0, 0, 0, 0.8)';
+            } else if (team === 'gold') {
+                frame.classList.add('team-gold');
+                frame.style.borderColor = '#ffd700';
+                frame.style.boxShadow = '0 0 24px rgba(255, 215, 0, 0.45), inset 0 0 8px rgba(0, 0, 0, 0.8)';
+            }
+        };
+    });
+
+    const customColorInput = document.getElementById('avatar-custom-color');
+    if (customColorInput) {
+        customColorInput.oninput = (e) => {
+            document.querySelectorAll('.avatar-color-chip').forEach(c => c.classList.remove('active'));
+            const col = e.target.value;
+            const frame = document.getElementById('avatar-ingame-frame');
+            if (frame) {
+                frame.classList.remove('team-blue', 'team-orange', 'team-gold');
+                frame.style.borderColor = col;
+                frame.style.boxShadow = `0 0 24px ${col}66, inset 0 0 8px rgba(0, 0, 0, 0.8)`;
+            }
+        };
+    }
+
     urlInput.addEventListener('input', () => {
         const val = urlInput.value.trim();
         if (val.startsWith('http://') || val.startsWith('https://')) {
@@ -8374,7 +8449,7 @@ async function initFeatures() {
             if (feat.flags.fake_ranks === false) {
                 const ranksTab = document.getElementById('ranks-tab');
                 if (ranksTab && ranksTab.classList.contains('active')) {
-                    document.querySelector('.nav-item[data-tab="swapper-tab"]')?.click();
+                    document.querySelector('.nav-item[data-tab="spawner-tab"]')?.click();
                 }
             }
 
@@ -8396,13 +8471,10 @@ async function initFeatures() {
                 trackerNav.style.display = feat.flags.live_tracker_overlay === false ? 'none' : '';
             }
 
-            // Item Spawner (permanently removed)
-            document.querySelectorAll('.nav-item[data-tab="spawner-tab"], #spawner-tab').forEach(el => el.remove());
-
-            // Item Swapper
-            const swapperNav = document.querySelector('.nav-item[data-tab="swapper-tab"]');
-            if (swapperNav) {
-                swapperNav.style.display = (feat.flags.item_swapper === false || feat.flags.swapper === false) ? 'none' : '';
+            // Item Spawner
+            const spawnerNav = document.querySelector('.nav-item[data-tab="spawner-tab"]');
+            if (spawnerNav) {
+                spawnerNav.style.display = '';
             }
 
             // Workshop upload

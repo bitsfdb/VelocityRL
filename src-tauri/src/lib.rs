@@ -25,6 +25,7 @@ pub mod features;
 pub mod savedata;
 pub mod udp_proxy;
 pub mod avatar;
+pub mod plugin_engine;
 
 
 #[allow(dead_code)]
@@ -3327,6 +3328,38 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     }
 }
 
+#[tauri::command]
+async fn apply_rlim_modifications(
+    app: tauri::AppHandle,
+    config: upk::RlimMasterConfig,
+) -> Result<upk::RlimEngineStatus, String> {
+    let main_cfg = get_config(app.clone()).await?;
+    if main_cfg.game_dir.is_empty() {
+        return Err("Game directory not set".to_string());
+    }
+    let game_path = PathBuf::from(&main_cfg.game_dir);
+    upk::apply_rlim_suite(&game_path, &config).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_rlim_config(app: tauri::AppHandle) -> Result<upk::RlimMasterConfig, String> {
+    let cfg_path = app.path().app_config_dir().map_err(|e| e.to_string())?.join("rlim_config.json");
+    if cfg_path.is_file() {
+        let content = fs::read_to_string(cfg_path).map_err(|e| e.to_string())?;
+        serde_json::from_str(&content).map_err(|e| e.to_string())
+    } else {
+        Ok(upk::RlimMasterConfig::default())
+    }
+}
+
+#[tauri::command]
+async fn save_rlim_config(app: tauri::AppHandle, config: upk::RlimMasterConfig) -> Result<(), String> {
+    let cfg_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    fs::create_dir_all(&cfg_dir).map_err(|e| e.to_string())?;
+    let content = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
+    fs::write(cfg_dir.join("rlim_config.json"), content).map_err(|e| e.to_string())
+}
+
 fn create_main_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let cfg = app
         .config()
@@ -3899,6 +3932,9 @@ pub fn run() {
             avatar::fetch_image_from_url,
             avatar::apply_custom_avatar_upk,
             avatar::restore_custom_avatar_upk,
+            apply_rlim_modifications,
+            get_rlim_config,
+            save_rlim_config,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

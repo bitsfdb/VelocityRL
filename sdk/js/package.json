@@ -1,0 +1,19 @@
+{
+  "name": "@velocityrl/rlim",
+  "version": "1.0.0",
+  "description": "VelocityRL RLIM JavaScript Plugin SDK powered by rquickjs",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "type": "module",
+  "keywords": [
+    "velocityrl",
+    "rlim",
+    "rocket-league",
+    "unreal-engine-3",
+    "upk",
+    "bytecode",
+    "quickjs"
+  ],
+  "author": "bitsfdb & VelocityRL Contributors",
+  "license": "GPL-3.0"
+}

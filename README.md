@@ -1,6 +1,6 @@
 # VelocityRL
 
-The all-in-one customization app for Rocket League. Swap items, show off ranks, play community maps, track your matches — all client-side, all in one clean app.
+The all-in-one customization app for Rocket League. Spawn items, show off ranks, play community maps, track your matches — all client-side, all in one clean app.
 
 ![Downloads](https://img.shields.io/github/downloads/bitsfdb/velocityrl/total?style=for-the-badge&color=5865F2&labelColor=111111)
 ![Release](https://img.shields.io/github/v/release/bitsfdb/velocityrl?style=for-the-badge&color=e0e0e0&labelColor=111111)
@@ -23,11 +23,11 @@ The all-in-one customization app for Rocket League. Swap items, show off ranks, 
 
 ## Features
 
-### Item Swapper
-Swap any item in the game with any other item — car bodies, wheels, boosts, decals, toppers, antennas, and goal explosions, even ones you don't own. Pick a paint color, hit swap, and it's in-game.
+### Item Spawner
+Spawn any item in Rocket League directly into your inventory without replacing existing assets — car bodies, wheels, boosts, decals, toppers, antennas, and goal explosions. Filter by category, series, or rarity, select from all 30 paint variants (including Titanium White, Gold, and Neon Glow editions), and batch-spawn entire pages with one click.
 
-- **Presets** — save your swaps as named loadouts and switch between them anytime. Roll a full random car with one button. Share presets with friends using a short code, or import theirs.
-- **Restore** — put any single item back to normal, or wipe everything at once. Game update broke your swaps? One click re-applies your whole setup. Every swap is logged, so you always know what changed.
+- **Presets** — save your setups as named loadouts and switch between them anytime. Share presets with friends using a short code, or import theirs.
+- **Restore** — put any asset back to vanilla, or restore everything at once with one click. Every modification is logged so you always know what changed.
 
 ### Name Spoofer
 Change your display name locally in menus, scoreboards, and nametags to any name you want without altering your external account.
