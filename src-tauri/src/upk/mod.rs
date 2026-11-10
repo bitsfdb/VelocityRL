@@ -13,10 +13,16 @@ pub mod legacy_swapper;
 pub mod swapper;
 pub mod palette;
 pub mod decal_compiler;
+pub mod rlim_engine;
 
 pub use swapper::{
     TagameSwapItem, TagameSwapperStatus, TagameSwapError, ensure_projectx_patched,
     TagameSwapItem as SwapItem, TagameSwapperStatus as SwapperStatus, TagameSwapError as SwapError,
+};
+pub use rlim_engine::{
+    RlimMasterConfig, RlimEngineStatus, RlimUnderglowConfig, RlimCamberConfig,
+    RlimLightingConfig, RlimHudConfig, RlimFreeplayConfig, RlimInstantConfig,
+    RlimWireConfig, RlimPrivacyConfig, ColorRgba, apply_rlim_suite,
 };
 pub use legacy_swapper::{swap_asset, restore_single, restore_all, SwapOptions};
 pub use palette::{PaletteStatus, PaletteError};
