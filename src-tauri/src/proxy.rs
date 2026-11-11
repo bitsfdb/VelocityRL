@@ -1939,18 +1939,24 @@ pub async fn start_ws_broker() -> Result<u16, String> {
         return Ok(existing);
     }
 
-    // Bind standard VelocityRL Keypad port 15759 first, fallback to RLIM port 7546 or ephemeral if occupied.
-    let listener = match tokio::net::TcpListener::bind("127.0.0.1:15759").await {
+    // Bind standard primary port 49320 first, fallback to 49325, 15759, 7546 or ephemeral if occupied.
+    let listener = match tokio::net::TcpListener::bind("127.0.0.1:49320").await {
         Ok(l) => l,
-        Err(_) => match tokio::net::TcpListener::bind("127.0.0.1:7546").await {
+        Err(_) => match tokio::net::TcpListener::bind("127.0.0.1:49325").await {
             Ok(l) => l,
-            Err(_) => match tokio::net::TcpListener::bind("127.0.0.1:0").await {
+            Err(_) => match tokio::net::TcpListener::bind("127.0.0.1:15759").await {
                 Ok(l) => l,
-                Err(e) => {
-                    let msg = format!("broker: Failed to bind 127.0.0.1: {e}");
-                    crate::applog::event(&msg);
-                    return Err(msg);
-                }
+                Err(_) => match tokio::net::TcpListener::bind("127.0.0.1:7546").await {
+                    Ok(l) => l,
+                    Err(_) => match tokio::net::TcpListener::bind("127.0.0.1:0").await {
+                        Ok(l) => l,
+                        Err(e) => {
+                            let msg = format!("broker: Failed to bind 127.0.0.1: {e}");
+                            crate::applog::event(&msg);
+                            return Err(msg);
+                        }
+                    },
+                },
             },
         },
     };
@@ -2020,43 +2026,46 @@ pub async fn start_ws_broker() -> Result<u16, String> {
         BROKER_PORT.store(0, Ordering::SeqCst);
     });
 
-    // Auxiliary listener on RLIM port 7546 (if primary is 15759) or 15759 (if primary is 7546)
-    let alt_port = if port == 15759 { 7546u16 } else { 15759u16 };
-    let client_aux = client.clone();
-    tokio::spawn(async move {
-        match tokio::net::TcpListener::bind(format!("127.0.0.1:{alt_port}")).await {
-            Ok(aux_listener) => {
-                crate::applog::event(&format!(
-                    "broker: auxiliary listener active on http://127.0.0.1:{alt_port}"
-                ));
-                loop {
-                    let Ok((stream, peer_addr)) = aux_listener.accept().await else { break };
-                    let c = client_aux.clone();
-                    tokio::spawn(async move {
-                        let io = TokioIo::new(stream);
-                        let service = service_fn(move |req: Request<Incoming>| {
-                            let c2 = c.clone();
-                            async move {
-                                handle_broker_request(req, c2).await
+    // Auxiliary listeners on remaining known ports (49320, 49325, 15759, 7546)
+    let aux_ports = [49320u16, 49325u16, 15759u16, 7546u16];
+    for &alt_port in &aux_ports {
+        if alt_port == port {
+            continue;
+        }
+        let client_aux = client.clone();
+        tokio::spawn(async move {
+            match tokio::net::TcpListener::bind(format!("127.0.0.1:{alt_port}")).await {
+                Ok(aux_listener) => {
+                    crate::applog::event(&format!(
+                        "broker: auxiliary listener active on http://127.0.0.1:{alt_port}"
+                    ));
+                    loop {
+                        let Ok((stream, peer_addr)) = aux_listener.accept().await else { break };
+                        let c = client_aux.clone();
+                        tokio::spawn(async move {
+                            let io = TokioIo::new(stream);
+                            let service = service_fn(move |req: Request<Incoming>| {
+                                let c2 = c.clone();
+                                async move {
+                                    handle_broker_request(req, c2).await
+                                }
+                            });
+                            if let Err(e) = hyper::server::conn::http1::Builder::new()
+                                .serve_connection(io, service)
+                                .with_upgrades()
+                                .await
+                            {
+                                log::debug!("aux broker connection error on port {alt_port} from {peer_addr}: {e}");
                             }
                         });
-                        if let Err(e) = hyper::server::conn::http1::Builder::new()
-                            .serve_connection(io, service)
-                            .with_upgrades()
-                            .await
-                        {
-                            log::debug!("aux broker connection error on port {alt_port} from {peer_addr}: {e}");
-                        }
-                    });
+                    }
+                }
+                Err(e) => {
+                    log::debug!("broker: auxiliary port {alt_port} skipped ({e}) — primary broker active on {port}");
                 }
             }
-            Err(e) => {
-                crate::applog::event(&format!(
-                    "broker: auxiliary port {alt_port} note ({e}) — primary broker active on {port}"
-                ));
-            }
-        }
-    });
+        });
+    }
 
     Ok(port)
 }
@@ -2102,32 +2111,49 @@ async fn handle_broker_request(
     }
 
     if path_str == "/s/title" || path_str.starts_with("/s/title?") {
-        let title = crate::psynet::load_active_spoof_from_disk()
+        let (title, glow) = crate::psynet::load_active_spoof_from_disk()
             .map(|c| {
-                if !c.equip_title_id.trim().is_empty() {
+                let t = if !c.equip_title_id.trim().is_empty() {
                     c.equip_title_id.trim().to_string()
+                } else if !c.custom_text.trim().is_empty() {
+                    c.custom_text.trim().to_string()
                 } else {
                     c.display_title_id.trim().to_string()
-                }
+                };
+                let g = c.title_color.map(|tc| tc.glow_color).unwrap_or_default();
+                (t, g)
             })
             .unwrap_or_default();
-        crate::applog::event(&format!("broker: /s/title queried -> responding '{title}'"));
+        let body_str = if !title.is_empty() || !glow.is_empty() {
+            format!("{title}|{glow}")
+        } else {
+            "|".to_string()
+        };
+        crate::applog::event(&format!("broker: /s/title queried -> responding '{body_str}'"));
         return Ok(Response::builder()
             .status(StatusCode::OK)
             .header("Content-Type", "text/plain; charset=utf-8")
-            .header("Content-Length", title.len().to_string())
+            .header("Content-Length", body_str.len().to_string())
             .header("Cache-Control", "no-cache, no-store")
-            .body(full_body(title.into_bytes()))
+            .body(full_body(body_str.into_bytes()))
             .unwrap());
     }
 
     if path_str == "/s/ping" || path_str.starts_with("/s/ping?") {
+        let ping_val = crate::psynet::load_active_spoof_from_disk()
+            .and_then(|c| c.ping_spoof)
+            .map(|ps| {
+                let val = (ps.min_ms + ps.max_ms) / 2;
+                val.to_string()
+            })
+            .unwrap_or_default();
+        crate::applog::event(&format!("broker: /s/ping queried -> responding '{ping_val}'"));
         return Ok(Response::builder()
             .status(StatusCode::OK)
             .header("Content-Type", "text/plain; charset=utf-8")
-            .header("Content-Length", "0")
+            .header("Content-Length", ping_val.len().to_string())
             .header("Cache-Control", "no-cache, no-store")
-            .body(full_body(Vec::new()))
+            .body(full_body(ping_val.into_bytes()))
             .unwrap());
     }
     if is_upgrade || path_str.starts_with("/ws") {
@@ -5171,9 +5197,34 @@ pub fn load_active_swap_rules(cfg: Option<&crate::psynet::SpoofPayload>) -> Vec<
     rules
 }
 
+static DYNAMIC_SPAWNED_ITEMS: std::sync::RwLock<Vec<(i32, i32)>> = std::sync::RwLock::new(Vec::new());
+
+pub fn register_spawned_items(items: &[(i32, i32)]) {
+    if let Ok(mut g) = DYNAMIC_SPAWNED_ITEMS.write() {
+        for &(id, paint) in items {
+            if !g.contains(&(id, paint)) {
+                g.push((id, paint));
+            }
+        }
+    }
+}
+
+pub fn clear_dynamic_spawned_items() {
+    if let Ok(mut g) = DYNAMIC_SPAWNED_ITEMS.write() {
+        g.clear();
+    }
+}
+
 pub fn load_active_spawned_items(cfg: Option<&crate::psynet::SpoofPayload>) -> Vec<(i32, i32)> {
     let mut items = Vec::new();
     let mut seen = std::collections::HashSet::new();
+    if let Ok(g) = DYNAMIC_SPAWNED_ITEMS.read() {
+        for &(pid, paint) in g.iter() {
+            if pid > 0 && seen.insert((pid, paint)) {
+                items.push((pid, paint));
+            }
+        }
+    }
     for r in load_active_swap_rules(cfg) {
         if r.wanted_id > 0 && seen.insert((r.wanted_id, r.paint_id)) {
             items.push((r.wanted_id, r.paint_id));
