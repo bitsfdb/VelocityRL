@@ -6505,16 +6505,16 @@ function initAvatarTab() {
         }
 
         applyBtn.disabled = true;
-        if (statusText) statusText.textContent = 'Patching game files (Chunk 1 & Chunk 6)...';
+        if (statusText) statusText.textContent = 'Activating custom profile picture in broker...';
 
         try {
             await invoke('apply_custom_avatar_upk', { avatarSource: source });
             localStorage.setItem('velocityrl_avatar_preview', source);
             renderAvatar(source, 'Active custom avatar', 'Active in Rocket League');
-            showToast('Custom profile picture successfully applied!', 'success');
-            flashButtonLabel(applyBtn, 'Applied!');
+            showToast('Custom profile picture successfully activated!', 'success');
+            flashButtonLabel(applyBtn, 'Activated!');
         } catch (err) {
-            if (statusText) statusText.textContent = 'Failed to apply profile picture';
+            if (statusText) statusText.textContent = 'Failed to activate profile picture';
             showToast(formatError(err), 'error');
         } finally {
             applyBtn.disabled = false;
@@ -6523,7 +6523,7 @@ function initAvatarTab() {
 
     restoreBtn.addEventListener('click', async () => {
         restoreBtn.disabled = true;
-        if (statusText) statusText.textContent = 'Restoring original game files...';
+        if (statusText) statusText.textContent = 'Restoring default profile picture...';
 
         try {
             await invoke('restore_custom_avatar_upk');
@@ -6531,7 +6531,7 @@ function initAvatarTab() {
             currentAvatarSource = '';
             if (urlInput) urlInput.value = '';
             renderEmpty();
-            showToast('Vanilla profile picture restored from backup.', 'success');
+            showToast('Vanilla profile picture restored.', 'success');
             flashButtonLabel(restoreBtn, 'Restored');
         } catch (err) {
             if (statusText) statusText.textContent = 'Failed to restore';
