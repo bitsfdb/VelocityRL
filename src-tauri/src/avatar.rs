@@ -302,51 +302,48 @@ pub async fn apply_custom_avatar_upk(app: tauri::AppHandle, avatar_source: Strin
         fs::read(path).map_err(|e| format!("Failed to read avatar file: {e}"))?
     };
 
-    let (bgra_bytes, processed_png) = process_avatar_image(&image_bytes)?;
-    // Persist downloaded/processed avatar to local disk cache
+    let (_, processed_png) = process_avatar_image(&image_bytes)?;
+    // Persist downloaded/processed avatar to local disk cache and /root/avatar.png
     let _ = save_cached_avatar(&app, &processed_png);
+    let _ = fs::write("/root/avatar.png", &processed_png);
     set_active_avatar_png(processed_png.clone());
 
-    // Locate TAGame.upk
-    let tagame_path = if let Some(game_dir) = get_game_dir(&app) {
-        crate::upk::swapper::resolve_cooked_dir(&game_dir)
-            .map(|p| p.join("TAGame.upk"))
-            .map_err(|e| e.to_string())?
-    } else {
-        // Fallback detect or check current directory
-        let default_tagame = Path::new("TAGame.upk");
-        if default_tagame.is_file() {
-            default_tagame.to_path_buf()
-        } else {
-            return Err("Rocket League game directory not configured in Settings".into());
+    // If a modified TAGame.upk exists from old direct UPK stomping, restore it to pristine backup
+    if let Some(game_dir) = get_game_dir(&app) {
+        if let Ok(cooked_dir) = crate::upk::swapper::resolve_cooked_dir(&game_dir) {
+            let tagame_path = cooked_dir.join("TAGame.upk");
+            let backup_path = cooked_dir.join(TAGAME_BACKUP_NAME);
+            if backup_path.is_file() {
+                let _ = fs::copy(&backup_path, &tagame_path);
+            }
         }
-    };
+    }
 
-    apply_custom_avatar_to_tagame(&tagame_path, &bgra_bytes)?;
-    Ok(format!("Custom avatar successfully applied in-engine to {}", tagame_path.display()))
+    crate::applog::event("avatar: custom avatar activated in broker pipeline (served via HTTP on 15759/7546/49320)");
+    Ok("Custom avatar active via broker HTTP pipeline".into())
 }
 
 #[tauri::command]
 pub fn restore_custom_avatar_upk(app: tauri::AppHandle) -> Result<String, String> {
-    let tagame_path = if let Some(game_dir) = get_game_dir(&app) {
-        crate::upk::swapper::resolve_cooked_dir(&game_dir)
-            .map(|p| p.join("TAGame.upk"))
-            .map_err(|e| e.to_string())?
-    } else {
-        return Err("Rocket League game directory not configured in Settings".into());
-    };
-
-    let backup_path = tagame_path.with_file_name(TAGAME_BACKUP_NAME);
-    if !backup_path.is_file() {
-        return Err("No TAGame.upk.bak backup found to restore".into());
+    clear_active_avatar_png();
+    let _ = fs::remove_file("/root/avatar.png");
+    if let Ok(dir) = app.path().app_config_dir() {
+        let _ = fs::remove_file(dir.join("custom_avatars").join("active_avatar.png"));
     }
 
-    fs::copy(&backup_path, &tagame_path)
-        .map_err(|e| format!("Failed to restore TAGame.upk from backup: {e}"))?;
+    // Ensure TAGame.upk is restored if a backup was previously created
+    if let Some(game_dir) = get_game_dir(&app) {
+        if let Ok(cooked_dir) = crate::upk::swapper::resolve_cooked_dir(&game_dir) {
+            let tagame_path = cooked_dir.join("TAGame.upk");
+            let backup_path = cooked_dir.join(TAGAME_BACKUP_NAME);
+            if backup_path.is_file() {
+                let _ = fs::copy(&backup_path, &tagame_path);
+            }
+        }
+    }
 
-    clear_active_avatar_png();
-
-    Ok("Vanilla avatar restored from pristine backup".into())
+    crate::applog::event("avatar: custom avatar cleared from broker pipeline");
+    Ok("Vanilla avatar restored".into())
 }
 
 pub fn apply_custom_avatar_to_tagame(tagame_path: &Path, raw_bgra: &[u8]) -> Result<(), String> {
