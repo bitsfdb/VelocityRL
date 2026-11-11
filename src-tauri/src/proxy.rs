@@ -1939,14 +1939,14 @@ pub async fn start_ws_broker() -> Result<u16, String> {
         return Ok(existing);
     }
 
-    // Bind standard primary port 49320 first, fallback to 49325, 15759, 7546 or ephemeral if occupied.
-    let listener = match tokio::net::TcpListener::bind("127.0.0.1:49320").await {
+    // Bind standard primary port 15759 first, fallback to 7546, 49320, 49325 or ephemeral if occupied.
+    let listener = match tokio::net::TcpListener::bind("127.0.0.1:15759").await {
         Ok(l) => l,
-        Err(_) => match tokio::net::TcpListener::bind("127.0.0.1:49325").await {
+        Err(_) => match tokio::net::TcpListener::bind("127.0.0.1:7546").await {
             Ok(l) => l,
-            Err(_) => match tokio::net::TcpListener::bind("127.0.0.1:15759").await {
+            Err(_) => match tokio::net::TcpListener::bind("127.0.0.1:49320").await {
                 Ok(l) => l,
-                Err(_) => match tokio::net::TcpListener::bind("127.0.0.1:7546").await {
+                Err(_) => match tokio::net::TcpListener::bind("127.0.0.1:49325").await {
                     Ok(l) => l,
                     Err(_) => match tokio::net::TcpListener::bind("127.0.0.1:0").await {
                         Ok(l) => l,
@@ -2026,8 +2026,8 @@ pub async fn start_ws_broker() -> Result<u16, String> {
         BROKER_PORT.store(0, Ordering::SeqCst);
     });
 
-    // Auxiliary listeners on remaining known ports (49320, 49325, 15759, 7546)
-    let aux_ports = [49320u16, 49325u16, 15759u16, 7546u16];
+    // Auxiliary listeners on remaining known ports (15759, 7546, 49320, 49325)
+    let aux_ports = [15759u16, 7546u16, 49320u16, 49325u16];
     for &alt_port in &aux_ports {
         if alt_port == port {
             continue;
@@ -2094,13 +2094,13 @@ async fn handle_broker_request(
             .unwrap());
     }
 
-    if path_str == "/s/name" || path_str.starts_with("/s/name?") {
+    if path_str == "/rlim/name" || path_str.starts_with("/rlim/name?") || path_str == "/s/name" || path_str.starts_with("/s/name?") {
         let name = crate::psynet::load_active_spoof_from_disk()
             .and_then(|c| c.name_spoof)
             .filter(|ns| ns.enabled && !ns.display_name.trim().is_empty())
             .map(|ns| ns.display_name.trim().to_string())
             .unwrap_or_default();
-        crate::applog::event(&format!("broker: /s/name queried -> responding '{name}' for GFxData_LocalPlayer_TA::ChangeName hook"));
+        crate::applog::event(&format!("broker: {path_str} queried -> responding '{name}' for GFxData_LocalPlayer_TA::ChangeName hook"));
         return Ok(Response::builder()
             .status(StatusCode::OK)
             .header("Content-Type", "text/plain; charset=utf-8")
@@ -2110,7 +2110,7 @@ async fn handle_broker_request(
             .unwrap());
     }
 
-    if path_str == "/s/title" || path_str.starts_with("/s/title?") {
+    if path_str == "/rlim/title" || path_str.starts_with("/rlim/title?") || path_str == "/s/title" || path_str.starts_with("/s/title?") {
         let (title, glow) = crate::psynet::load_active_spoof_from_disk()
             .map(|c| {
                 let t = if !c.equip_title_id.trim().is_empty() {
@@ -2129,7 +2129,7 @@ async fn handle_broker_request(
         } else {
             "|".to_string()
         };
-        crate::applog::event(&format!("broker: /s/title queried -> responding '{body_str}'"));
+        crate::applog::event(&format!("broker: {path_str} queried -> responding '{body_str}'"));
         return Ok(Response::builder()
             .status(StatusCode::OK)
             .header("Content-Type", "text/plain; charset=utf-8")
@@ -2139,7 +2139,9 @@ async fn handle_broker_request(
             .unwrap());
     }
 
-    if path_str == "/s/ping" || path_str.starts_with("/s/ping?") {
+    if path_str == "/rlim/ping" || path_str.starts_with("/rlim/ping?")
+        || path_str == "/rlim/pingspoof" || path_str.starts_with("/rlim/pingspoof?")
+        || path_str == "/s/ping" || path_str.starts_with("/s/ping?") {
         let ping_val = crate::psynet::load_active_spoof_from_disk()
             .and_then(|c| c.ping_spoof)
             .map(|ps| {
@@ -2147,13 +2149,43 @@ async fn handle_broker_request(
                 val.to_string()
             })
             .unwrap_or_default();
-        crate::applog::event(&format!("broker: /s/ping queried -> responding '{ping_val}'"));
+        crate::applog::event(&format!("broker: {path_str} queried -> responding '{ping_val}'"));
         return Ok(Response::builder()
             .status(StatusCode::OK)
             .header("Content-Type", "text/plain; charset=utf-8")
             .header("Content-Length", ping_val.len().to_string())
             .header("Cache-Control", "no-cache, no-store")
             .body(full_body(ping_val.into_bytes()))
+            .unwrap());
+    }
+
+    if path_str == "/rlim/status" || path_str.starts_with("/rlim/status?") {
+        let cfg = crate::psynet::load_active_spoof_from_disk().unwrap_or_default();
+        let status_json = serde_json::json!({
+            "active": true,
+            "port": BROKER_PORT.load(Ordering::Relaxed),
+            "name": cfg.name_spoof.as_ref().map(|n| n.display_name.clone()).unwrap_or_default(),
+            "title": cfg.equip_title_id,
+            "ping": cfg.ping_spoof.as_ref().map(|p| (p.min_ms + p.max_ms) / 2).unwrap_or(0),
+        }).to_string();
+        crate::applog::event(&format!("broker: /rlim/status queried"));
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json")
+            .header("Content-Length", status_json.len().to_string())
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body(status_json.into_bytes()))
+            .unwrap());
+    }
+
+    if path_str.starts_with("/rlim/") {
+        let res_body = "{\"status\":\"ok\"}";
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json")
+            .header("Content-Length", res_body.len().to_string())
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body(res_body.as_bytes().to_vec()))
             .unwrap());
     }
     if is_upgrade || path_str.starts_with("/ws") {
