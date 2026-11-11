@@ -2498,12 +2498,14 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
                     false
                 };
 
+                let target_url = b"http://127.0.0.1:15759/rpc\0";
                 let rpc_patched = if let Some(rpc_exp) = raw_exports.iter().find(|e| {
                     e.name == "GetPsyNetURL" && e.outer_idx > 0 && raw_exports.get(e.outer_idx as usize - 1).map(|o| o.name == "PsyNetConnection_X").unwrap_or(false)
                 }) {
                     let rpc_code_start = (rpc_exp.serial_offset - ch1.0) as usize + 48;
                     cur_decomp1.get(rpc_code_start) == Some(&opcodes::EX_RETURN)
                         && cur_decomp1.get(rpc_code_start + 1) == Some(&opcodes::EX_STRING_CONST)
+                        && cur_decomp1.get(rpc_code_start + 2..rpc_code_start + 2 + target_url.len()) == Some(target_url)
                 } else {
                     false
                 };
@@ -3182,7 +3184,9 @@ mod tests {
 
     #[test]
     fn test_ensure_projectx_patched() {
-        let src_px = if Path::new("/root/velrlapi/games/rocketleague/TAGame/CookedPCConsole/ProjectX.upk").is_file() {
+        let src_px = if Path::new("/root/ProjectX.upk").is_file() {
+            Path::new("/root/ProjectX.upk")
+        } else if Path::new("/root/velrlapi/games/rocketleague/TAGame/CookedPCConsole/ProjectX.upk").is_file() {
             Path::new("/root/velrlapi/games/rocketleague/TAGame/CookedPCConsole/ProjectX.upk")
         } else if Path::new("/tmp/test_ProjectX.upk").is_file() {
             Path::new("/tmp/test_ProjectX.upk")

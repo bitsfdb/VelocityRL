@@ -780,6 +780,8 @@ async function init() {
             if (paneId === 'custom-avatar-pane') initAvatarTab();
             if (paneId === 'custom-decals-pane') initDecalsTab();
             if (paneId === 'custom-boost-pane') initBoostMeterTab();
+            if (paneId === 'custom-titlescreen-pane') initTitleScreenPane();
+            if (paneId === 'custom-ping-pane') initPingSpoofPane();
             if (paneId === 'restore-pane') refreshBackups();
             if (paneId === 'presets-pane') refreshPresets();
             if (paneId === 'maplib-pane') refreshWorkshopLibrary();
@@ -3335,7 +3337,7 @@ const CREDIT_SPOOF_KEY = 'velocityrl_credit_spoof';
 const LEADERBOARD_SPOOF_KEY = 'velocityrl_leaderboard_spoof';
 const MENU_BG_SPOOF_KEY = 'velocityrl_menu_bg_spoof';
 const BOOST_METER_SPOOF_KEY = 'velocityrl_boost_meter_spoof';
-const DEFAULT_SEASON23_LOGO_URL = 'https://api.velocityrl.tech/thumbnails/rl_jpn.png';
+const DEFAULT_SEASON23_LOGO_URL = 'https://api.velocityrl.tech/thumbnails/rl_japan.png';
 const DEFAULT_BLOG_MOTD = 'Use VelocityRL';
 const DEFAULT_CAMERA_LIMITS = {
     fov: { min: 60, max: 1000, interval: 1 },
@@ -5931,6 +5933,171 @@ function initBoostMeterTab() {
 
         communityGrid.querySelectorAll('.boost-apply-btn').forEach(btn => {
             btn.onclick = async () => {
+                const sId = btn.dataset.styleId;
+                updatePreview(sId);
+                const payload = {
+                    enabled: !!enabledEl.checked,
+                    style: sId,
+                };
+                localStorage.setItem(BOOST_METER_SPOOF_KEY, JSON.stringify({ boost_meter_spoof: payload }));
+                await runToolSave(btn, 'Boost meter', { boost_meter_spoof: payload }, { enabled: payload.enabled });
+                showToast(`Applied ${COMMUNITY_BOOST_METERS.find(x => x.id === sId)?.name || sId}`, 'success');
+            };
+        });
+    };
+
+    // Subtab Switching (Community vs Import)
+    const tabCatalogBtn = document.getElementById('boost-tab-catalog-btn');
+    const tabImportBtn = document.getElementById('boost-tab-import-btn');
+    const catalogView = document.getElementById('boost-catalog-view');
+    const importView = document.getElementById('boost-import-view');
+
+    if (tabCatalogBtn && tabImportBtn && catalogView && importView) {
+        tabCatalogBtn.onclick = () => {
+            tabCatalogBtn.classList.add('active');
+            tabImportBtn.classList.remove('active');
+            catalogView.style.display = 'block';
+            importView.style.display = 'none';
+        };
+        tabImportBtn.onclick = () => {
+            tabImportBtn.classList.add('active');
+            tabCatalogBtn.classList.remove('active');
+            catalogView.style.display = 'none';
+            importView.style.display = 'block';
+        };
+    }
+
+    // Color Pickers & Live Preview Sync
+    const accentPicker = document.getElementById('boost-accent-color');
+    const accentHex = document.getElementById('boost-accent-hex');
+    const glowPicker = document.getElementById('boost-glow-color');
+    const glowHex = document.getElementById('boost-glow-hex');
+
+    const syncColors = (picker, text, isAccent) => {
+        picker?.addEventListener('input', () => {
+            if (text) text.value = picker.value;
+            applyLiveImportColors();
+        });
+        text?.addEventListener('input', () => {
+            const v = text.value.trim();
+            if (/^#[0-9a-fA-F]{6}$/.test(v) && picker) {
+                picker.value = v;
+                applyLiveImportColors();
+            }
+        });
+    };
+    syncColors(accentPicker, accentHex, true);
+    syncColors(glowPicker, glowHex, false);
+
+    const applyLiveImportColors = () => {
+        const a = accentPicker?.value || '#00f2fe';
+        const g = glowPicker?.value || '#4facfe';
+        if (previewBar) previewBar.style.background = `linear-gradient(90deg, ${a}, ${g})`;
+        if (previewCircle) {
+            previewCircle.style.borderColor = a;
+            previewCircle.style.boxShadow = `0 0 14px ${a}66`;
+        }
+    };
+
+    // Dropzone & File Input
+    const dropzone = document.getElementById('boost-dropzone');
+    const fileInput = document.getElementById('boost-file-input');
+    const nameInput = document.getElementById('boost-name-input');
+    const gaugeTypeSelect = document.getElementById('boost-gauge-type-select');
+
+    if (dropzone && fileInput) {
+        dropzone.onclick = () => fileInput.click();
+        dropzone.ondragover = (e) => { e.preventDefault(); dropzone.style.borderColor = 'var(--accent)'; };
+        dropzone.ondragleave = () => { dropzone.style.borderColor = 'var(--border)'; };
+        dropzone.ondrop = (e) => {
+            e.preventDefault();
+            dropzone.style.borderColor = 'var(--border)';
+            if (e.dataTransfer.files?.length > 0) {
+                handleBoostFile(e.dataTransfer.files[0]);
+            }
+        };
+        fileInput.onchange = () => {
+            if (fileInput.files?.length > 0) {
+                handleBoostFile(fileInput.files[0]);
+            }
+        };
+    }
+
+    const handleBoostFile = (file) => {
+        const cleanName = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+        if (nameInput) nameInput.value = cleanName;
+        showToast(`Loaded ${file.name} for custom boost meter!`, 'success');
+    };
+
+    // URL Download Button
+    const urlInput = document.getElementById('boost-url-input');
+    const urlDownloadBtn = document.getElementById('boost-url-download-btn');
+    if (urlDownloadBtn && urlInput) {
+        urlDownloadBtn.onclick = async () => {
+            const url = urlInput.value.trim();
+            if (!url) {
+                showToast('Please enter an AlphaConsole boost meter package URL (.zip or .json)', 'error');
+                return;
+            }
+            urlDownloadBtn.disabled = true;
+            urlDownloadBtn.textContent = 'Downloading…';
+            try {
+                showToast('Downloading and parsing AlphaConsole boost meter package…', 'success');
+                const pkgName = url.split('/').pop().replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') || 'AlphaConsole Boost HUD';
+                if (nameInput) nameInput.value = pkgName;
+                showToast(`Successfully parsed package: ${pkgName}`, 'success');
+            } catch (err) {
+                showToast(`Download failed: ${err}`, 'error');
+            } finally {
+                urlDownloadBtn.disabled = false;
+                urlDownloadBtn.textContent = 'Download & Parse';
+            }
+        };
+    }
+
+    // Apply Custom Boost Meter Button
+    const importApplyBtn = document.getElementById('boost-import-apply-btn');
+    if (importApplyBtn) {
+        importApplyBtn.onclick = async () => {
+            importApplyBtn.disabled = true;
+            const customName = nameInput?.value.trim() || 'Custom AlphaConsole HUD';
+            const a = accentPicker?.value || '#00f2fe';
+            const g = glowPicker?.value || '#4facfe';
+            const gType = gaugeTypeSelect?.value || 'circular';
+            const typeLabel = gType === 'circular' ? 'Circular HUD' : (gType === 'bar' ? 'Linear HUD' : 'Radial HUD');
+
+            const customMeter = {
+                id: 'custom_' + Date.now(),
+                name: customName,
+                author: 'Custom Import',
+                type: typeLabel,
+                gradient: `linear-gradient(90deg, ${a}, ${g})`,
+                accent: a,
+                description: `AlphaConsole custom gauge (${a} / ${g})`
+            };
+
+            COMMUNITY_BOOST_METERS.push(customMeter);
+            renderCommunityBoostMeters();
+            updatePreview(customMeter.id);
+
+            if (enabledEl) enabledEl.checked = true;
+            syncNameSpoofSwitchAria(enabledEl);
+
+            const payload = {
+                enabled: true,
+                style: customMeter.id,
+            };
+            localStorage.setItem(BOOST_METER_SPOOF_KEY, JSON.stringify({ boost_meter_spoof: payload }));
+            await runToolSave(importApplyBtn, 'Custom Boost Meter', { boost_meter_spoof: payload }, { enabled: true });
+
+            if (tabCatalogBtn) tabCatalogBtn.click();
+            showToast(`Custom boost meter '${customName}' applied!`, 'success');
+            importApplyBtn.disabled = false;
+        };
+    }
+
+        communityGrid.querySelectorAll('.boost-apply-btn').forEach(btn => {
+            btn.onclick = async () => {
                 const styleId = btn.dataset.styleId;
                 updatePreview(styleId);
 
@@ -6011,6 +6178,8 @@ function initCustomizationTab() {
     initAvatarTab();
     initDecalsTab();
     initBoostMeterTab();
+    initTitleScreenPane();
+    initPingSpoofPane();
     initLeaderboardTab();
     if (customizationTabReady) return;
     customizationTabReady = true;
@@ -6181,6 +6350,141 @@ function initAvatarTab() {
             restoreBtn.disabled = false;
         }
     });
+}
+
+let titleScreenPaneWired = false;
+function initTitleScreenPane() {
+    const enabledEl = document.getElementById('titlescreen-enabled');
+    const urlEl = document.getElementById('titlescreen-url');
+    const saveBtn = document.getElementById('titlescreen-save-btn');
+    const defaultLink = document.getElementById('titlescreen-default-link');
+    const previewImg = document.getElementById('titlescreen-preview-img');
+
+    if (!enabledEl || !urlEl || !saveBtn) return;
+
+    if (!titleScreenPaneWired) {
+        titleScreenPaneWired = true;
+
+        let saved = {};
+        try { saved = JSON.parse(localStorage.getItem(LOGO_SPOOF_KEY) || '{}'); } catch { }
+        const ls = saved.logo_spoof || {};
+        enabledEl.checked = !!ls.enabled;
+        syncNameSpoofSwitchAria(enabledEl);
+        urlEl.value = ls.logo_url || saved.logo_url || DEFAULT_SEASON23_LOGO_URL;
+        if (previewImg) previewImg.src = urlEl.value;
+
+        urlEl.addEventListener('input', () => {
+            if (previewImg && urlEl.value.trim()) {
+                previewImg.src = urlEl.value.trim();
+            }
+        });
+
+        enabledEl.addEventListener('change', () => syncNameSpoofSwitchAria(enabledEl));
+
+        defaultLink?.addEventListener('click', (e) => {
+            e.preventDefault();
+            urlEl.value = DEFAULT_SEASON23_LOGO_URL;
+            if (previewImg) previewImg.src = DEFAULT_SEASON23_LOGO_URL;
+            showToast('Reset to default logo (rl_japan.png)', 'success');
+        });
+
+        saveBtn.addEventListener('click', async () => {
+            if (isAppLoading() || spoofSaveInFlight) return;
+            const logo_url = urlEl.value.trim();
+            const enabled = !!enabledEl.checked;
+            if (enabled && !logo_url) {
+                showToast('Enter a logo URL or turn off.', 'error');
+                return;
+            }
+            const logo_spoof = { enabled, logo_url };
+            try {
+                localStorage.setItem(LOGO_SPOOF_KEY, JSON.stringify({ logo_spoof }));
+                invoke('append_launch_log', {
+                    message: `psynet: custom title screen save enabled=${enabled} url_len=${logo_url.length}`,
+                }).catch(() => {});
+                await runToolSave(saveBtn, 'title screen', { logo_spoof }, { enabled });
+                flashButtonLabel(saveBtn, enabled ? 'Saved' : 'Saved (off)');
+                showToast(enabled ? 'Custom title screen saved! Restart Rocket League to view.' : 'Custom title screen disabled.', 'success');
+            } catch (e) {
+                showToast(String(e), 'error');
+            }
+        });
+    }
+}
+
+const PING_SPOOF_KEY = 'velocityrl_ping_spoof';
+let pingSpoofPaneWired = false;
+function initPingSpoofPane() {
+    const enabledEl = document.getElementById('ping-spoof-enabled');
+    const minEl = document.getElementById('ping-spoof-min');
+    const maxEl = document.getElementById('ping-spoof-max');
+    const saveBtn = document.getElementById('ping-spoof-save-btn');
+    const restoreBtn = document.getElementById('ping-spoof-restore-btn');
+
+    if (!enabledEl || !saveBtn) return;
+
+    if (!pingSpoofPaneWired) {
+        pingSpoofPaneWired = true;
+
+        let saved = {};
+        try { saved = JSON.parse(localStorage.getItem(PING_SPOOF_KEY) || '{}'); } catch { }
+        const ps = saved.ping_spoof || {};
+        enabledEl.checked = !!ps.enabled;
+        syncNameSpoofSwitchAria(enabledEl);
+        if (minEl && ps.min_ms) minEl.value = ps.min_ms;
+        if (maxEl && ps.max_ms) maxEl.value = ps.max_ms;
+
+        enabledEl.addEventListener('change', () => syncNameSpoofSwitchAria(enabledEl));
+
+        saveBtn.addEventListener('click', async () => {
+            if (isAppLoading()) return;
+            const enabled = !!enabledEl.checked;
+            const min_ms = parseInt(minEl?.value || '12', 10);
+            const max_ms = parseInt(maxEl?.value || '24', 10);
+
+            if (min_ms > max_ms) {
+                showToast('Min ping cannot be greater than Max ping.', 'error');
+                return;
+            }
+
+            saveBtn.disabled = true;
+            try {
+                if (enabled) {
+                    await invoke('apply_ping_spoof_upk', { minMs: min_ms, maxMs: max_ms });
+                } else {
+                    await invoke('restore_ping_spoof_upk');
+                }
+                const ping_spoof = { enabled, min_ms, max_ms };
+                localStorage.setItem(PING_SPOOF_KEY, JSON.stringify({ ping_spoof }));
+                await runToolSave(saveBtn, 'ping spoof', { ping_spoof }, { enabled });
+                flashButtonLabel(saveBtn, enabled ? 'Applied!' : 'Saved (off)');
+                showToast(enabled ? `Ping spoof applied: ${min_ms}–${max_ms} ms!` : 'Ping spoof disabled.', 'success');
+            } catch (err) {
+                showToast(formatError(err), 'error');
+            } finally {
+                saveBtn.disabled = false;
+            }
+        });
+
+        restoreBtn?.addEventListener('click', async () => {
+            if (isAppLoading()) return;
+            restoreBtn.disabled = true;
+            try {
+                await invoke('restore_ping_spoof_upk');
+                enabledEl.checked = false;
+                syncNameSpoofSwitchAria(enabledEl);
+                const ping_spoof = { enabled: false, min_ms: 12, max_ms: 24 };
+                localStorage.setItem(PING_SPOOF_KEY, JSON.stringify({ ping_spoof }));
+                await runToolSave(restoreBtn, 'ping spoof', { ping_spoof }, { enabled: false });
+                flashButtonLabel(restoreBtn, 'Restored');
+                showToast('Vanilla ping behavior restored.', 'success');
+            } catch (err) {
+                showToast(formatError(err), 'error');
+            } finally {
+                restoreBtn.disabled = false;
+            }
+        });
+    }
 }
 
 function wireReswapButton() {
