@@ -2163,6 +2163,45 @@ async fn handle_broker_request(
         || path_str == "/s/avatar" || path_str.starts_with("/s/avatar?")
         || path_str == "/a.png" || path_str.starts_with("/a.png?")
         || path_str.contains("/avatars/") {
+        // 1. Check if a specific Steam ID is requested in path or query
+        let query_str = req.uri().query().unwrap_or_default();
+        let mut target_steam_id: Option<u64> = None;
+        for part in path_str.split(&['/', '.', '?', '&', '-'][..]) {
+            if part.len() == 17 && part.starts_with("7656119") {
+                if let Ok(id) = part.parse::<u64>() {
+                    target_steam_id = Some(id);
+                    break;
+                }
+            }
+        }
+        if target_steam_id.is_none() {
+            for q_part in query_str.split('&') {
+                if let Some((k, v)) = q_part.split_once('=') {
+                    if (k.eq_ignore_ascii_case("id") || k.eq_ignore_ascii_case("steamid") || k.eq_ignore_ascii_case("playerid"))
+                        && v.len() == 17 && v.starts_with("7656119") {
+                        if let Ok(id) = v.parse::<u64>() {
+                            target_steam_id = Some(id);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(steam_id) = target_steam_id {
+            if let Some(steam_png) = crate::avatar::fetch_steam_avatar_png(steam_id).await {
+                crate::applog::event(&format!("broker: {path_str} queried for Steam ID {steam_id} -> responding with Steam avatar ({} bytes)", steam_png.len()));
+                return Ok(Response::builder()
+                    .status(StatusCode::OK)
+                    .header("Content-Type", "image/png")
+                    .header("Content-Length", steam_png.len().to_string())
+                    .header("Cache-Control", "public, max-age=86400")
+                    .body(full_body(steam_png))
+                    .unwrap());
+            }
+        }
+
+        // 2. Fall back to active local player custom avatar
         if let Some(png_bytes) = crate::avatar::get_active_avatar_png() {
             crate::applog::event(&format!("broker: {path_str} queried -> responding with active avatar PNG ({} bytes)", png_bytes.len()));
             return Ok(Response::builder()

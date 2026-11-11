@@ -208,6 +208,51 @@ pub async fn fetch_image_from_url(app: tauri::AppHandle, url: String) -> Result<
     Ok(format!("data:image/png;base64,{b64}"))
 }
 
+pub async fn fetch_steam_avatar_png(steam_id: u64) -> Option<Vec<u8>> {
+    let cache_name = format!("steam_{steam_id}.png");
+    let cache_dir = PathBuf::from("/root/.config/com.velocityrl.app/custom_avatars");
+    let cache_file = cache_dir.join(&cache_name);
+    if cache_file.is_file() {
+        if let Ok(b) = fs::read(&cache_file) {
+            if b.len() > 32 {
+                return Some(b);
+            }
+        }
+    }
+
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .timeout(std::time::Duration::from_secs(6))
+        .build()
+        .ok()?;
+
+    let xml_url = format!("https://steamcommunity.com/profiles/{steam_id}/?xml=1");
+    let resp = client.get(&xml_url).send().await.ok()?;
+    let text = resp.text().await.ok()?;
+    let img_url = if let Some(pos) = text.find("<avatarFull><![CDATA[") {
+        let rest = &text[pos + 21..];
+        let end = rest.find("]]></avatarFull>")?;
+        rest[..end].to_string()
+    } else if let Some(pos) = text.find("<avatarFull>") {
+        let rest = &text[pos + 12..];
+        let end = rest.find("</avatarFull>")?;
+        rest[..end].to_string()
+    } else {
+        return None;
+    };
+
+    let img_resp = client.get(&img_url).send().await.ok()?;
+    let bytes = img_resp.bytes().await.ok()?;
+    let img = image::load_from_memory(&bytes).ok()?;
+    let mut png_bytes = Vec::new();
+    let mut cursor = Cursor::new(&mut png_bytes);
+    img.write_to(&mut cursor, image::ImageFormat::Png).ok()?;
+
+    let _ = fs::create_dir_all(&cache_dir);
+    let _ = fs::write(&cache_file, &png_bytes);
+    Some(png_bytes)
+}
+
 pub fn process_avatar_image(raw_bytes: &[u8]) -> Result<(Vec<u8>, Vec<u8>), String> {
     let img = image::load_from_memory(raw_bytes)
         .map_err(|e| format!("Failed to decode image: {e}"))?;
@@ -655,5 +700,15 @@ mod tests {
         set_active_avatar_png(fake_png.clone());
         assert_eq!(get_active_avatar_png(), Some(fake_png));
         clear_active_avatar_png();
+    }
+
+    #[tokio::test]
+    async fn test_fetch_steam_avatar_cached_or_live() {
+        // Steam ID 76561198000000000 has a public profile
+        let res = fetch_steam_avatar_png(76561198000000000).await;
+        if let Some(png) = res {
+            assert!(png.len() > 100);
+            assert_eq!(&png[1..4], b"PNG");
+        }
     }
 }
