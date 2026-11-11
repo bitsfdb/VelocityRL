@@ -161,24 +161,47 @@ pub async fn fetch_image_from_url(app: tauri::AppHandle, url: String) -> Result<
 
     let mut direct_image_url = clean_url.to_string();
 
-    // Support Steam profile links by scraping ?xml=1 if needed
+    // Support Steam profile links by querying Steam OpenAPI / miniprofile or fallback
     if clean_url.contains("steamcommunity.com") && !clean_url.ends_with(".png") && !clean_url.ends_with(".jpg") {
-        let xml_url = if clean_url.ends_with('/') {
-            format!("{clean_url}?xml=1")
-        } else {
-            format!("{clean_url}/?xml=1")
-        };
-        if let Ok(resp) = client.get(&xml_url).send().await {
-            if let Ok(text) = resp.text().await {
-                if let Some(pos) = text.find("<avatarFull><![CDATA[") {
-                    let rest = &text[pos + 21..];
-                    if let Some(end) = rest.find("]]></avatarFull>") {
-                        direct_image_url = rest[..end].to_string();
+        let mut resolved_via_openapi = false;
+        for part in clean_url.split('/') {
+            if let Some(sid) = parse_steam_id(part) {
+                let acc_id = (sid & 0xFFFF_FFFF) as u32;
+                let mini_url = format!("https://steamcommunity.com/miniprofile/{acc_id}/json");
+                    if let Ok(resp) = client.get(&mini_url).send().await {
+                        if resp.status().is_success() {
+                            if let Ok(profile) = resp.json::<SteamMiniProfileResponse>().await {
+                                if let Some(url) = profile.avatar_url {
+                                    if !url.trim().is_empty() {
+                                        direct_image_url = url;
+                                        resolved_via_openapi = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
                     }
-                } else if let Some(pos) = text.find("<avatarFull>") {
-                    let rest = &text[pos + 12..];
-                    if let Some(end) = rest.find("</avatarFull>") {
-                        direct_image_url = rest[..end].to_string();
+            }
+        }
+
+        if !resolved_via_openapi {
+            let xml_url = if clean_url.ends_with('/') {
+                format!("{clean_url}?xml=1")
+            } else {
+                format!("{clean_url}/?xml=1")
+            };
+            if let Ok(resp) = client.get(&xml_url).send().await {
+                if let Ok(text) = resp.text().await {
+                    if let Some(pos) = text.find("<avatarFull><![CDATA[") {
+                        let rest = &text[pos + 21..];
+                        if let Some(end) = rest.find("]]></avatarFull>") {
+                            direct_image_url = rest[..end].to_string();
+                        }
+                    } else if let Some(pos) = text.find("<avatarFull>") {
+                        let rest = &text[pos + 12..];
+                        if let Some(end) = rest.find("</avatarFull>") {
+                            direct_image_url = rest[..end].to_string();
+                        }
                     }
                 }
             }
@@ -208,14 +231,136 @@ pub async fn fetch_image_from_url(app: tauri::AppHandle, url: String) -> Result<
     Ok(format!("data:image/png;base64,{b64}"))
 }
 
+static STEAM_AVATAR_CACHE: std::sync::Mutex<Option<std::collections::HashMap<u64, Vec<u8>>>> =
+    std::sync::Mutex::new(None);
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct SteamMiniProfileResponse {
+    #[serde(default)]
+    pub avatar_url: Option<String>,
+    #[serde(default)]
+    pub persona_name: Option<String>,
+    #[serde(default)]
+    pub level: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct SteamWebApiEnvelope {
+    pub response: Option<SteamWebApiPlayerList>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct SteamWebApiPlayerList {
+    #[serde(default)]
+    pub players: Vec<SteamWebApiPlayerEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct SteamWebApiPlayerEntry {
+    #[serde(default)]
+    pub steamid: String,
+    #[serde(default)]
+    pub avatarfull: Option<String>,
+}
+
+pub const STEAMID64_INDIVIDUAL_BASE: u64 = 76561197960265728;
+
+fn percent_decode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(h) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                out.push(h as char);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    out
+}
+
+/// Parses raw numeric 64-bit SteamIDs, 32-bit Account IDs, Steam3 format ([U:1:Z]),
+/// or legacy Steam2 format (STEAM_0:X:Y / STEAM_1:X:Y) into a validated 64-bit Steam ID.
+pub fn parse_steam_id(raw: &str) -> Option<u64> {
+    let decoded = percent_decode(raw.trim());
+    let s = decoded.trim();
+    if s.is_empty() {
+        return None;
+    }
+
+    // 1. Raw numeric: 64-bit SteamID or 32-bit Account ID
+    if let Ok(num) = s.parse::<u64>() {
+        if num > STEAMID64_INDIVIDUAL_BASE && num <= STEAMID64_INDIVIDUAL_BASE + (u32::MAX as u64) {
+            return Some(num);
+        } else if num > 0 && num <= (u32::MAX as u64) {
+            return Some(STEAMID64_INDIVIDUAL_BASE + num);
+        }
+    }
+
+    // 2. Steam3 format: "[U:1:Z]" or "U:1:Z"
+    let trimmed_steam3 = s.strip_prefix('[').and_then(|t| t.strip_suffix(']')).unwrap_or(s);
+    if let Some(rest) = trimmed_steam3.strip_prefix("U:1:") {
+        if let Ok(acc_id) = rest.parse::<u64>() {
+            if acc_id > 0 && acc_id <= (u32::MAX as u64) {
+                return Some(STEAMID64_INDIVIDUAL_BASE + acc_id);
+            }
+        }
+    }
+
+    // 3. Legacy Steam2 format: "STEAM_0:B:C" or "STEAM_1:B:C"
+    if let Some(rest) = s.strip_prefix("STEAM_") {
+        let parts: Vec<&str> = rest.split(':').collect();
+        if parts.len() == 3 {
+            if let (Ok(b), Ok(c)) = (parts[1].parse::<u64>(), parts[2].parse::<u64>()) {
+                if b <= 1 {
+                    let acc_id = c.checked_mul(2)?.checked_add(b)?;
+                    if acc_id > 0 && acc_id <= (u32::MAX as u64) {
+                        return Some(STEAMID64_INDIVIDUAL_BASE + acc_id);
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
 pub async fn fetch_steam_avatar_png(steam_id: u64) -> Option<Vec<u8>> {
+    // 1. In-memory cache check
+    if let Ok(guard) = STEAM_AVATAR_CACHE.lock() {
+        if let Some(map) = guard.as_ref() {
+            if let Some(cached) = map.get(&steam_id) {
+                return Some(cached.clone());
+            }
+        }
+    }
+
+    // 2. Disk cache check
     let cache_name = format!("steam_{steam_id}.png");
-    let cache_dir = PathBuf::from("/root/.config/com.velocityrl.app/custom_avatars");
-    let cache_file = cache_dir.join(&cache_name);
-    if cache_file.is_file() {
-        if let Ok(b) = fs::read(&cache_file) {
-            if b.len() > 32 {
-                return Some(b);
+    let candidate_dirs = [
+        PathBuf::from("/root/.config/com.velocityrl.app/custom_avatars"),
+        PathBuf::from("custom_avatars"),
+    ];
+    for dir in &candidate_dirs {
+        let f = dir.join(&cache_name);
+        if f.is_file() {
+            if let Ok(b) = fs::read(&f) {
+                if b.len() > 32 {
+                    if let Ok(mut guard) = STEAM_AVATAR_CACHE.lock() {
+                        guard
+                            .get_or_insert_with(std::collections::HashMap::new)
+                            .insert(steam_id, b.clone());
+                    }
+                    return Some(b);
+                }
             }
         }
     }
@@ -226,20 +371,72 @@ pub async fn fetch_steam_avatar_png(steam_id: u64) -> Option<Vec<u8>> {
         .build()
         .ok()?;
 
-    let xml_url = format!("https://steamcommunity.com/profiles/{steam_id}/?xml=1");
-    let resp = client.get(&xml_url).send().await.ok()?;
-    let text = resp.text().await.ok()?;
-    let img_url = if let Some(pos) = text.find("<avatarFull><![CDATA[") {
-        let rest = &text[pos + 21..];
-        let end = rest.find("]]></avatarFull>")?;
-        rest[..end].to_string()
-    } else if let Some(pos) = text.find("<avatarFull>") {
-        let rest = &text[pos + 12..];
-        let end = rest.find("</avatarFull>")?;
-        rest[..end].to_string()
-    } else {
-        return None;
-    };
+    let mut direct_avatar_url: Option<String> = None;
+
+    // 3. Steam OpenAPI (Keyless miniprofile JSON endpoint)
+    // Steam account id is lower 32 bits of SteamID64 (e.g. 76561198000000000 -> 39734272)
+    let account_id = (steam_id & 0xFFFF_FFFF) as u32;
+    if account_id > 0 {
+        let miniprofile_url = format!("https://steamcommunity.com/miniprofile/{account_id}/json");
+        if let Ok(resp) = client.get(&miniprofile_url).send().await {
+            if resp.status().is_success() {
+                if let Ok(profile) = resp.json::<SteamMiniProfileResponse>().await {
+                    if let Some(url) = profile.avatar_url {
+                        if !url.trim().is_empty() {
+                            direct_avatar_url = Some(url);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. Steam Web API (if STEAM_API_KEY is configured in env or settings)
+    if direct_avatar_url.is_none() {
+        if let Ok(api_key) = std::env::var("STEAM_API_KEY") {
+            if !api_key.trim().is_empty() {
+                let api_url = format!(
+                    "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={}&steamids={steam_id}",
+                    api_key.trim()
+                );
+                if let Ok(resp) = client.get(&api_url).send().await {
+                    if let Ok(env) = resp.json::<SteamWebApiEnvelope>().await {
+                        if let Some(players) = env.response {
+                            if let Some(p) = players.players.into_iter().next() {
+                                if let Some(av) = p.avatarfull {
+                                    if !av.trim().is_empty() {
+                                        direct_avatar_url = Some(av);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 5. Fallback: Steam community XML scrape (only if OpenAPI and Web API failed)
+    if direct_avatar_url.is_none() {
+        let xml_url = format!("https://steamcommunity.com/profiles/{steam_id}/?xml=1");
+        if let Ok(resp) = client.get(&xml_url).send().await {
+            if let Ok(text) = resp.text().await {
+                if let Some(pos) = text.find("<avatarFull><![CDATA[") {
+                    let rest = &text[pos + 21..];
+                    if let Some(end) = rest.find("]]></avatarFull>") {
+                        direct_avatar_url = Some(rest[..end].to_string());
+                    }
+                } else if let Some(pos) = text.find("<avatarFull>") {
+                    let rest = &text[pos + 12..];
+                    if let Some(end) = rest.find("</avatarFull>") {
+                        direct_avatar_url = Some(rest[..end].to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    let img_url = direct_avatar_url?;
 
     let img_resp = client.get(&img_url).send().await.ok()?;
     let bytes = img_resp.bytes().await.ok()?;
@@ -248,8 +445,18 @@ pub async fn fetch_steam_avatar_png(steam_id: u64) -> Option<Vec<u8>> {
     let mut cursor = Cursor::new(&mut png_bytes);
     img.write_to(&mut cursor, image::ImageFormat::Png).ok()?;
 
-    let _ = fs::create_dir_all(&cache_dir);
-    let _ = fs::write(&cache_file, &png_bytes);
+    // Cache to disk
+    let primary_cache_dir = PathBuf::from("/root/.config/com.velocityrl.app/custom_avatars");
+    let _ = fs::create_dir_all(&primary_cache_dir);
+    let _ = fs::write(primary_cache_dir.join(&cache_name), &png_bytes);
+
+    // Cache in memory
+    if let Ok(mut guard) = STEAM_AVATAR_CACHE.lock() {
+        guard
+            .get_or_insert_with(std::collections::HashMap::new)
+            .insert(steam_id, png_bytes.clone());
+    }
+
     Some(png_bytes)
 }
 
@@ -710,5 +917,53 @@ mod tests {
             assert!(png.len() > 100);
             assert_eq!(&png[1..4], b"PNG");
         }
+    }
+
+    #[tokio::test]
+    async fn test_steam_openapi_avatar_resolution() {
+        // Steam ID 76561197960287930 (Gabe Newell)
+        let res = fetch_steam_avatar_png(76561197960287930).await;
+        assert!(res.is_some(), "Steam OpenAPI avatar should resolve");
+        let png = res.unwrap();
+        assert!(png.len() > 100);
+        assert_eq!(&png[1..4], b"PNG");
+    }
+
+    #[test]
+    fn test_parse_steam_id_formats_and_bounds() {
+        // Standard 64-bit Steam ID
+        assert_eq!(parse_steam_id("76561198000000000"), Some(76561198000000000));
+
+        // High-bound 64-bit Steam ID (7656120... range when account id is near u32::MAX)
+        let max_id64 = STEAMID64_INDIVIDUAL_BASE + (u32::MAX as u64);
+        assert_eq!(parse_steam_id(&max_id64.to_string()), Some(max_id64));
+
+        // Exceeds max 64-bit individual Steam ID range
+        assert_eq!(parse_steam_id(&(max_id64 + 1).to_string()), None);
+
+        // 32-bit Account ID
+        assert_eq!(parse_steam_id("39734272"), Some(76561198000000000));
+        assert_eq!(parse_steam_id("4294967295"), Some(max_id64));
+
+        // 32-bit Account ID out of range (> u32::MAX but < base)
+        assert_eq!(parse_steam_id("4294967296"), None);
+        assert_eq!(parse_steam_id("12345678901"), None);
+
+        // Steam3 format
+        assert_eq!(parse_steam_id("[U:1:39734272]"), Some(76561198000000000));
+        assert_eq!(parse_steam_id("U:1:39734272"), Some(76561198000000000));
+
+        // Steam2 legacy format
+        assert_eq!(parse_steam_id("STEAM_0:0:19867136"), Some(76561198000000000));
+        assert_eq!(parse_steam_id("STEAM_1:0:19867136"), Some(76561198000000000));
+
+        // Percent-encoded query parameters
+        assert_eq!(parse_steam_id("%5BU%3A1%3A39734272%5D"), Some(76561198000000000));
+        assert_eq!(parse_steam_id("STEAM_0%3A0%3A19867136"), Some(76561198000000000));
+
+        // Invalid inputs
+        assert_eq!(parse_steam_id(""), None);
+        assert_eq!(parse_steam_id("avatar"), None);
+        assert_eq!(parse_steam_id("rlim"), None);
     }
 }
