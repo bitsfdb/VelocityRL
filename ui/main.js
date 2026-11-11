@@ -6371,10 +6371,10 @@ function initCustomizationTab() {
 let avatarTabWired = false;
 let currentAvatarSource = '';
 
-const DEFAULT_AVATAR_SVG = `<svg class="avatar-default-svg" viewBox="0 0 61.8 61.8" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="30.9" cy="30.9" r="30.9" fill="rgba(255, 255, 255, 0.08)"/>
-  <circle cx="30.9" cy="22.5" r="9.5" fill="rgba(255, 255, 255, 0.45)"/>
-  <path d="M52.587 52.908a30.895 30.895 0 0 1-43.667-.291 9.206 9.206 0 0 1 4.037-4.832 19.799 19.799 0 0 1 4.075-2.322c-2.198-7.553 3.777-11.266 6.063-12.335 0 3.487 3.265 1.173 7.317 1.217 3.336.037 9.933 3.395 9.933-1.035 3.67 1.086 7.67 8.08 4.917 12.377a17.604 17.604 0 0 1 3.181 2.002 10.192 10.192 0 0 1 4.144 5.22z" fill="rgba(255, 255, 255, 0.45)"/>
+const DEFAULT_AVATAR_SVG = `<svg class="avatar-default-svg" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="32" cy="32" r="32" fill="rgba(255, 255, 255, 0.08)"/>
+  <circle cx="32" cy="24" r="11" fill="rgba(255, 255, 255, 0.5)"/>
+  <path d="M14 54C14 43.5 22 38 32 38C42 38 50 43.5 50 54C45 58.5 38.8 61 32 61C25.2 61 19 58.5 14 54Z" fill="rgba(255, 255, 255, 0.5)"/>
 </svg>`;
 
 function initAvatarTab() {
@@ -6397,7 +6397,14 @@ function initAvatarTab() {
     }
 
     function renderAvatar(src, label, status) {
-        previewDisplay.innerHTML = `<img src="${src}" alt="Avatar" onerror="this.parentElement.innerHTML = DEFAULT_AVATAR_SVG;">`;
+        previewDisplay.innerHTML = '';
+        const img = document.createElement('img');
+        img.src = src;
+        img.alt = 'Avatar';
+        img.onerror = () => {
+            renderEmpty();
+        };
+        previewDisplay.appendChild(img);
         if (uploadLabel && label) uploadLabel.textContent = label;
         if (statusText && status) statusText.textContent = status;
     }
