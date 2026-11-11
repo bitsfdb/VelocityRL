@@ -361,14 +361,36 @@ pub async fn workshop_install_map_from_url(
     let url = url.trim().trim_matches('"').to_string();
     if !url.starts_with("http://") && !url.starts_with("https://")
     {
-        return Err("Enter a direct http(s) link to a .upk file.".into());
+        return Err("Enter a direct http(s) link to a .upk or .zip file or VideoGameMods URL.".into());
     }
     if url.contains("steamcommunity.com") || url.contains("/workshop/filedetails") {
         return Err("That's a workshop page, not the file. Use the direct download URL (.upk).".into());
     }
 
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .timeout(std::time::Duration::from_secs(600))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    // Auto-resolve VideoGameMods map URLs to direct CDN package
+    let (resolved_url, inferred_name) = if let Some((vgm_url, vgm_file)) = crate::resolve_videogamemods_url(&client, &url).await {
+        crate::applog::event(&format!("workshop: auto-resolved VGM URL '{url}' -> '{vgm_url}'"));
+        let mod_name = name.clone().or_else(|| {
+            vgm_file.rsplit_once('.').map(|(s, _)| s.to_string()).or(Some(vgm_file))
+        });
+        (vgm_url, mod_name)
+    } else {
+        (url.clone(), name.clone())
+    };
+
+    if resolved_url.ends_with(".zip") || resolved_url.contains("/files/") {
+        let imported = workshop_import_bakkes_zip(app.clone(), resolved_url).await?;
+        return workshop_install_custom_map(app, imported.path, inferred_name).await;
+    }
+
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    std::hash::Hash::hash(&url, &mut hasher);
+    std::hash::Hash::hash(&resolved_url, &mut hasher);
     let cache_name = format!("url_{:016x}.upk", std::hash::Hasher::finish(&hasher));
     let cache_path = app
         .path()
@@ -378,12 +400,7 @@ pub async fn workshop_install_map_from_url(
         .join(&cache_name);
 
     if !cache_path.is_file() {
-        let client = reqwest::Client::builder()
-            .user_agent(crate::app_user_agent())
-            .timeout(std::time::Duration::from_secs(600))
-            .build()
-            .map_err(|e| e.to_string())?;
-        let resp = client.get(&url).send().await.map_err(|e| format!("download failed: {e}"))?;
+        let resp = client.get(&resolved_url).send().await.map_err(|e| format!("download failed: {e}"))?;
         if !resp.status().is_success() {
             return Err(format!("download failed: server {}", resp.status().as_u16()));
         }

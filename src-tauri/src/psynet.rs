@@ -409,7 +409,7 @@ fn normalize_win_path(path: PathBuf) -> PathBuf {
     path
 }
 
-fn find_proxy_dir() -> Result<PathBuf, String> {
+pub(crate) fn find_proxy_dir() -> Result<PathBuf, String> {
     if let Some(ov) = proxy_dir_override() {
         let canon = normalize_win_path(fs::canonicalize(&ov).unwrap_or_else(|_| ov.clone()));
         if canon.is_dir() {
@@ -721,7 +721,7 @@ fn resolve_swaps(payload: &SpoofPayload) -> Option<Vec<TitleSwapEntry>> {
     }])
 }
 
-fn write_spoof(dir: &Path, payload: &SpoofPayload) -> Result<PathBuf, String> {
+pub(crate) fn write_spoof(dir: &Path, payload: &SpoofPayload) -> Result<PathBuf, String> {
     let path = config_path(dir);
 
     let method = "raw";

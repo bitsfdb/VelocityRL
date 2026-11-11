@@ -1793,21 +1793,16 @@ async fn spawn_item(
     paint_id: Option<i32>,
 ) -> Result<String, String> {
     let wid: i32 = wanted_id.parse().unwrap_or(0);
+    let mut paint = paint_id.unwrap_or(0);
     if let Ok(all_items) = get_items(app.clone(), None).await {
         if let Some(wanted) = all_items.iter().find(|i| i.id == wid) {
-            let mut paint = paint_id.unwrap_or(0);
             if !(0..=29).contains(&paint) || !item_is_paintable(wanted) {
                 paint = 0;
             }
-
-            let save_path = savedata::ensure_or_create_savedata().ok();
-            if let Some(ref sp) = save_path {
-                let slot_idx = savedata::slot_name_to_index(&wanted.slot);
-                let base_pid = Some(wid);
-                let _ = savedata::spawn_item_native_ext(sp, wid, paint, slot_idx, base_pid);
-            }
         }
     }
+    // Register item in broker memory for live session injection (no disk save edits)
+    crate::proxy::register_spawned_items(&[(wid, paint)]);
 
     apply_swap(app, "0".to_string(), wanted_id, None, None, paint_id, None).await
 }
@@ -1839,10 +1834,10 @@ async fn spawn_items_batch(
     }
     let all_items = get_items(app.clone(), None).await
         .map_err(|e| format!("Failed to load items database: {}", e))?;
-    let save_path = savedata::ensure_or_create_savedata().ok();
 
     let mut swaps = load_swaps(&app);
     let mut spawned_entries = Vec::new();
+    let mut spawned_tuples = Vec::new();
     let mut count = 0;
 
     for entry in &items {
@@ -1852,11 +1847,7 @@ async fn spawn_items_batch(
             if !(0..=29).contains(&paint_id) || !item_is_paintable(wanted) {
                 paint_id = 0;
             }
-            if let Some(ref sp) = save_path {
-                let slot_idx = savedata::slot_name_to_index(&wanted.slot);
-                let base_pid = Some(wid);
-                let _ = savedata::spawn_item_native_ext(sp, wid, paint_id, slot_idx, base_pid);
-            }
+            spawned_tuples.push((wid, paint_id));
 
             swaps.retain(|s| !(s.wanted_id == wid && s.paint_id == paint_id));
             let new_entry = SwapEntry {
@@ -1878,6 +1869,29 @@ async fn spawn_items_batch(
         }
     }
 
+    // Register into broker memory so getplayerproducts / checkownership inject them live into session
+    crate::proxy::register_spawned_items(&spawned_tuples);
+
+    // Also update psynet_config.json inventory_spoof
+    let mut cfg = crate::psynet::load_active_spoof_from_disk().unwrap_or_default();
+    let mut inv = cfg.inventory_spoof.unwrap_or_default();
+    inv.enabled = true;
+    for &(wid, paint_id) in &spawned_tuples {
+        if !inv.items.iter().any(|it| it.product_id == wid && it.paint_id == paint_id) {
+            inv.items.push(crate::psynet::InventorySpoofItemPayload {
+                product_id: wid,
+                paint_id,
+                series_id: 1,
+                slot: String::new(),
+                dlc: false,
+            });
+        }
+    }
+    cfg.inventory_spoof = Some(inv);
+    if let Ok(dir) = crate::psynet::find_proxy_dir() {
+        let _ = crate::psynet::write_spoof(&dir, &cfg);
+    }
+
     save_swaps(&app, &swaps);
     if let Ok(config) = get_config(app.clone()).await {
         if !config.game_dir.is_empty() {
@@ -1889,11 +1903,7 @@ async fn spawn_items_batch(
     if !spawned_entries.is_empty() {
         record_swap_history(&app, "spawn", &spawned_entries, "batch spawn");
     }
-    if let Some(ref sp) = save_path {
-        applog::event(&format!("spawn_items_batch: successfully spawned {count} items into save {}", sp.display()));
-    } else {
-        applog::event(&format!("spawn_items_batch: successfully spawned {count} items into loadout state"));
-    }
+    applog::event(&format!("spawn_items_batch: successfully spawned {count} items into online inventory"));
     Ok(count)
 }
 
@@ -2610,6 +2620,95 @@ async fn upload_decal_package_bytes(
     Ok(parsed)
 }
 
+pub async fn resolve_videogamemods_url(client: &reqwest::Client, raw_url: &str) -> Option<(String, String)> {
+    let clean = raw_url.trim().trim_matches('"');
+    if clean.is_empty() {
+        return None;
+    }
+    let target_url = if clean.starts_with("http://") || clean.starts_with("https://") {
+        clean.to_string()
+    } else {
+        format!("https://videogamemods.com/vgm/rocketleague/mods/{clean}")
+    };
+
+    if !target_url.contains("videogamemods.com") || target_url.ends_with(".zip") {
+        return None;
+    }
+
+    let resp = client.get(&target_url)
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .timeout(std::time::Duration::from_secs(15))
+        .send().await.ok()?;
+
+    if !resp.status().is_success() {
+        return None;
+    }
+
+    let html = resp.text().await.ok()?;
+
+    if let Some(pos) = html.find("file_path") {
+        let snippet = &html[pos..std::cmp::min(pos + 400, html.len())];
+        let parts: Vec<&str> = snippet.split('"').collect();
+        for p in parts {
+            let p_clean = p.replace("\\/", "/").replace("\\\\", "").replace('\\', "");
+            if p_clean.contains("communities/") && (p_clean.ends_with(".zip") || p_clean.contains("/files/")) {
+                let filename = p_clean.rsplit('/').next().unwrap_or("mod.zip").to_string();
+                let dl_url = format!("https://uploads.videogamemods.com/{p_clean}");
+                return Some((dl_url, filename));
+            }
+        }
+    }
+    None
+}
+
+#[tauri::command]
+async fn fetch_vgm_mods(
+    page: Option<u32>,
+    category_ids: Option<String>,
+    search: Option<String>,
+    sort_by: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let p = page.unwrap_or(1);
+    let s_by = sort_by.unwrap_or_else(|| "downloads".to_string());
+    let mut url = format!(
+        "https://videogamemods.com/api/mods/browse?gameSlug=rocketleague&communitySlug=vgm&sortBy={s_by}&page={p}"
+    );
+
+    if let Some(ref cids) = category_ids {
+        let trimmed = cids.trim();
+        if !trimmed.is_empty() {
+            url.push_str(&format!("&categoryIds={trimmed}"));
+        }
+    }
+    if let Some(ref q) = search {
+        let trimmed = q.trim();
+        if !trimmed.is_empty() {
+            let encoded: String = trimmed
+                .chars()
+                .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' || c == '~' {
+                    c.to_string()
+                } else {
+                    format!("%{:02X}", c as u32)
+                })
+                .collect();
+            url.push_str(&format!("&search={encoded}"));
+        }
+    }
+
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("Failed to create client: {e}"))?;
+
+    let resp = client.get(&url).send().await.map_err(|e| format!("VGM API request failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("VGM API returned HTTP status {}", resp.status()));
+    }
+    let data: serde_json::Value = resp.json().await.map_err(|e| format!("VGM JSON decode error: {e}"))?;
+    Ok(data)
+}
+
 #[tauri::command]
 async fn download_decal_from_url(
     app: tauri::AppHandle,
@@ -2621,26 +2720,32 @@ async fn download_decal_from_url(
     }
 
     let client = reqwest::Client::builder()
-        .user_agent(crate::app_user_agent())
-        .timeout(std::time::Duration::from_secs(30))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .timeout(std::time::Duration::from_secs(45))
         .build()
         .map_err(|e| format!("Failed to create client: {e}"))?;
 
-    let resp = client.get(clean_url).send().await
+    let (download_url, filename) = if let Some((vgm_url, vgm_file)) = resolve_videogamemods_url(&client, clean_url).await {
+        applog::event(&format!("vgm: auto-resolved '{clean_url}' -> direct CDN '{vgm_url}'"));
+        (vgm_url, vgm_file)
+    } else {
+        let fn_part = clean_url
+            .split('/')
+            .last()
+            .unwrap_or("package.zip")
+            .split('?')
+            .next()
+            .unwrap_or("package.zip")
+            .to_string();
+        (clean_url.to_string(), fn_part)
+    };
+
+    let resp = client.get(&download_url).send().await
         .map_err(|e| format!("Download failed: {e}"))?;
 
     if !resp.status().is_success() {
         return Err(format!("Download failed with status: {}", resp.status()));
     }
-
-    let filename = clean_url
-        .split('/')
-        .last()
-        .unwrap_or("package.zip")
-        .split('?')
-        .next()
-        .unwrap_or("package.zip")
-        .to_string();
 
     let bytes = resp.bytes().await
         .map_err(|e| format!("Failed to read response body: {e}"))?;
@@ -3918,6 +4023,7 @@ pub fn run() {
             import_decal_zip_path,
             upload_decal_package_bytes,
             download_decal_from_url,
+            fetch_vgm_mods,
             swap_custom_decal_to_donor,
             apply_custom_decal,
             features::get_features,

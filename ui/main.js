@@ -2022,11 +2022,11 @@ function renderCatalogGridPage() {
         }
 
         card.innerHTML = `
-            <div class="catalog-card-check">✓</div>
+            <div class="catalog-card-check"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></div>
             <div class="catalog-card-thumb-wrap">
                 ${img
                 ? `<img src="${escHtml(img)}" class="catalog-card-thumb" alt="${escHtml(name)}" loading="lazy" onerror="this.style.opacity='0';" />`
-                : `<div style="font-size:24px;color:#444;">✦</div>`
+                : `<div style="display:flex;align-items:center;justify-content:center;height:100%;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#444" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>`
             }
                 ${paintBadgeHtml}
             </div>
@@ -5550,6 +5550,136 @@ function initDecalsTab() {
         }
     };
 
+    let vgmDecalPage = 1;
+    let vgmDecalQuery = '';
+
+    const loadVgmDecals = async (page = 1, query = '', carFilter = 'all') => {
+        vgmDecalPage = page;
+        vgmDecalQuery = query;
+        if (!catalogGrid) return;
+        catalogGrid.innerHTML = `
+            <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--text-secondary);">
+                <div class="spinner" style="width:28px;height:28px;margin:0 auto 12px;border:3px solid rgba(255,255,255,0.1);border-top-color:var(--accent-blue);border-radius:50%;animation:spin 1s linear infinite;"></div>
+                <div>Loading VideoGameMods Decals...</div>
+            </div>`;
+
+        try {
+            let searchParam = query.trim();
+            if (carFilter !== 'all') {
+                searchParam = searchParam ? `${searchParam} ${carFilter}` : carFilter;
+            }
+            const data = await invoke('fetch_vgm_mods', {
+                page,
+                categoryIds: 'b6adb156-e86f-497b-9cd7-5c5bf0af53e8', // VideoGameMods Decals UUID
+                search: searchParam || null,
+                sortBy: 'downloads',
+            });
+            const mods = data?.mods || [];
+            const prevBtn = document.getElementById('decal-catalog-prev-btn');
+            const nextBtn = document.getElementById('decal-catalog-next-btn');
+            const pageInfo = document.getElementById('decal-catalog-page-info');
+
+            if (pageInfo) pageInfo.textContent = `Page ${page}`;
+            if (prevBtn) prevBtn.disabled = page <= 1;
+            if (nextBtn) nextBtn.disabled = mods.length < 24;
+
+            if (mods.length === 0) {
+                catalogGrid.innerHTML = `
+                    <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--muted);">
+                        <p style="font-size: 14px;">No decals found on VideoGameMods matching your search.</p>
+                    </div>`;
+                return;
+            }
+
+            catalogGrid.innerHTML = mods.map(m => {
+                const thumb = m.thumbnail_url || m.images?.[0]?.url || '';
+                const author = m.user?.display_name || m.user?.username || 'Community';
+                const dlCount = m.download_count ?? 0;
+                return `
+                    <div class="card decal-card" style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; transition: border-color 0.2s;">
+                        <div style="height: 120px; width: 100%; background: rgba(0,0,0,0.5); position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+                            ${thumb ? `<img src="${thumb}" alt="${escHtml(m.title)}" style="height: 100%; width: 100%; object-fit: cover;" onerror="this.style.display='none';">` : `<div style="font-size: 13px; color: var(--muted); font-weight: 600;">Custom Decal</div>`}
+                            <span style="position: absolute; bottom: 6px; right: 8px; font-size: 10px; font-weight: 700; background: rgba(0,0,0,0.75); color: var(--accent); padding: 2px 6px; border-radius: 4px;">${dlCount} downloads</span>
+                        </div>
+                        <div style="padding: 12px; flex: 1; display: flex; flex-direction: column; justify-content: space-between;">
+                            <div>
+                                <strong style="display: block; font-size: 13px; color: var(--text);">${escHtml(m.title)}</strong>
+                                <span style="display: block; font-size: 11px; color: var(--muted); margin: 2px 0 8px;">by ${escHtml(author)}</span>
+                            </div>
+                            <button type="button" class="action-btn vgm-decal-install-btn" data-slug="${m.slug}" data-title="${escHtml(m.title)}" style="width: 100%; font-size: 12px; padding: 6px 10px;">
+                                1-Click Swap
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            catalogGrid.querySelectorAll('.vgm-decal-install-btn').forEach(btn => {
+                btn.onclick = async () => {
+                    const slug = btn.dataset.slug;
+                    const decalTitle = btn.dataset.title;
+                    let donorId = parseInt(catalogDonorSelect?.value || donorSelect?.value || '0', 10);
+                    if (!donorId && catalogDonorSelect && catalogDonorSelect.options.length > 0) {
+                        for (let i = 0; i < catalogDonorSelect.options.length; i++) {
+                            const optVal = parseInt(catalogDonorSelect.options[i].value, 10);
+                            if (optVal) {
+                                donorId = optVal;
+                                catalogDonorSelect.selectedIndex = i;
+                                break;
+                            }
+                        }
+                    }
+                    if (!donorId) {
+                        showToast('Please select a donor decal to swap over.', 'error');
+                        return;
+                    }
+
+                    btn.disabled = true;
+                    const originalText = btn.textContent;
+                    btn.textContent = 'Installing...';
+                    showProgress(true, 30);
+                    updateStatus(`Fetching ${decalTitle}...`, false);
+
+                    try {
+                        const url = `https://videogamemods.com/vgm/rocketleague/mods/${slug}`;
+                        showProgress(true, 60);
+                        const parsed = await invoke('download_decal_from_url', { url });
+                        showProgress(true, 85);
+                        await invoke('swap_custom_decal_to_donor', {
+                            donorItemId: donorId,
+                            decalName: parsed.decal_name || decalTitle,
+                            diffuseBase64: parsed.diffuse_base64 || null,
+                            skinBase64: parsed.skin_base64 || null,
+                            roughnessBase64: parsed.roughness_base64 || null,
+                            metallicBase64: parsed.metallic_base64 || null,
+                            normalBase64: null,
+                        });
+                        showProgress(true, 100);
+                        btn.textContent = 'Swapped';
+                        showToast(`Successfully installed "${decalTitle}" into Rocket League!`, 'success');
+                        refreshBackups();
+                        setTimeout(() => {
+                            btn.textContent = originalText;
+                            btn.disabled = false;
+                        }, 2500);
+                    } catch (err) {
+                        btn.textContent = originalText;
+                        btn.disabled = false;
+                        showToast('Install failed: ' + String(err), 'error');
+                    } finally {
+                        setTimeout(() => {
+                            showProgress(false);
+                            updateStatus('bitsfdb', false);
+                        }, 1000);
+                    }
+                };
+            });
+        } catch (e) {
+            console.warn('Failed to fetch VGM decals, using offline community list:', e);
+            renderCommunityDecals();
+        }
+    };
+
     const renderCommunityDecals = () => {
         if (!catalogGrid) return;
         const q = (catalogSearch?.value || '').toLowerCase().trim();
@@ -5590,84 +5720,27 @@ function initDecalsTab() {
                 </div>
             </div>
         `).join('');
-
-        // Wire 1-Click Swap buttons
-        catalogGrid.querySelectorAll('.community-swap-btn').forEach(btn => {
-            btn.onclick = async () => {
-                const decalName = btn.dataset.name;
-                const wantedId = btn.dataset.wantedId || btn.dataset.decalId;
-                let donorId = parseInt(catalogDonorSelect?.value || donorSelect?.value || '0', 10);
-
-                // Auto-pick the first donor decal option if none explicitly selected
-                if (!donorId && catalogDonorSelect && catalogDonorSelect.options.length > 0) {
-                    for (let i = 0; i < catalogDonorSelect.options.length; i++) {
-                        const optVal = parseInt(catalogDonorSelect.options[i].value, 10);
-                        if (optVal) {
-                            donorId = optVal;
-                            catalogDonorSelect.selectedIndex = i;
-                            break;
-                        }
-                    }
-                }
-
-                if (!donorId) {
-                    showToast('Please select a donor decal to swap over.', 'error');
-                    return;
-                }
-
-                btn.disabled = true;
-                const originalText = btn.textContent;
-                btn.textContent = 'Swapping…';
-                showProgress(true, 40);
-                updateStatus(`Swapping ${decalName}...`, false);
-
-                try {
-                    showProgress(true, 75);
-                    try {
-                        await invoke('apply_swap', {
-                            ownedId: String(donorId),
-                            wantedId: String(wantedId),
-                            ownedPaintId: 0,
-                            ownedCustomHex: null,
-                            paintId: 0,
-                            customPaintHex: null,
-                        });
-                    } catch (swapErr) {
-                        // Fallback to custom decal injection
-                        await invoke('swap_custom_decal_to_donor', {
-                            donorItemId: donorId,
-                            decalName,
-                            diffuseBase64: null,
-                            skinBase64: null,
-                            roughnessBase64: null,
-                            metallicBase64: null,
-                            normalBase64: null,
-                        });
-                    }
-                    showProgress(true, 100);
-                    btn.textContent = 'Swapped! ✓';
-                    showToast(`Successfully swapped "${decalName}" into Rocket League!`, 'success');
-                    refreshBackups();
-                    setTimeout(() => {
-                        btn.textContent = originalText;
-                        btn.disabled = false;
-                    }, 2500);
-                } catch (err) {
-                    btn.textContent = originalText;
-                    btn.disabled = false;
-                    showToast(String(err), 'error');
-                } finally {
-                    setTimeout(() => {
-                        showProgress(false);
-                        updateStatus('bitsfdb', false);
-                    }, 1000);
-                }
-            };
-        });
     };
 
-    catalogSearch?.addEventListener('input', renderCommunityDecals);
-    catalogCarFilter?.addEventListener('change', renderCommunityDecals);
+    let decalSearchTimer = null;
+    catalogSearch?.addEventListener('input', () => {
+        clearTimeout(decalSearchTimer);
+        decalSearchTimer = setTimeout(() => {
+            loadVgmDecals(1, catalogSearch.value, catalogCarFilter?.value || 'all');
+        }, 350);
+    });
+    catalogCarFilter?.addEventListener('change', () => {
+        loadVgmDecals(1, catalogSearch?.value || '', catalogCarFilter.value);
+    });
+
+    document.getElementById('decal-catalog-prev-btn')?.addEventListener('click', () => {
+        if (vgmDecalPage > 1) {
+            loadVgmDecals(vgmDecalPage - 1, catalogSearch?.value || '', catalogCarFilter?.value || 'all');
+        }
+    });
+    document.getElementById('decal-catalog-next-btn')?.addEventListener('click', () => {
+        loadVgmDecals(vgmDecalPage + 1, catalogSearch?.value || '', catalogCarFilter?.value || 'all');
+    });
 
     const refreshDetectedCar = async () => {
         try {
@@ -5702,7 +5775,7 @@ function initDecalsTab() {
 
     refreshDetectedCar();
     loadDecalConfig();
-    renderCommunityDecals();
+    loadVgmDecals(1);
 
     enabledEl.addEventListener('change', () => syncNameSpoofSwitchAria(enabledEl));
 
@@ -5901,10 +5974,100 @@ function initBoostMeterTab() {
                 card.style.borderColor = isSelected ? 'var(--accent)' : 'var(--border)';
                 const btn = card.querySelector('.boost-apply-btn');
                 if (btn) {
-                    btn.textContent = isSelected ? 'Active ✓' : 'Apply Meter';
+                    btn.textContent = isSelected ? 'Active' : 'Apply Meter';
                     btn.classList.toggle('action-btn-secondary', isSelected);
                 }
             });
+        }
+    };
+
+    let vgmBoostPage = 1;
+    let vgmBoostQuery = 'boost';
+
+    const loadVgmBoostMeters = async (page = 1, query = 'boost') => {
+        vgmBoostPage = page;
+        vgmBoostQuery = query;
+        if (!communityGrid) return;
+        communityGrid.innerHTML = `
+            <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--text-secondary);">
+                <div class="spinner" style="width:28px;height:28px;margin:0 auto 12px;border:3px solid rgba(255,255,255,0.1);border-top-color:var(--accent-blue);border-radius:50%;animation:spin 1s linear infinite;"></div>
+                <div>Loading VideoGameMods Boost Meters...</div>
+            </div>`;
+
+        try {
+            const data = await invoke('fetch_vgm_mods', {
+                page,
+                categoryIds: null,
+                search: query || 'boost',
+                sortBy: 'downloads',
+            });
+            const mods = data?.mods || [];
+            const prevBtn = document.getElementById('boost-catalog-prev-btn');
+            const nextBtn = document.getElementById('boost-catalog-next-btn');
+            const pageInfo = document.getElementById('boost-catalog-page-info');
+
+            if (pageInfo) pageInfo.textContent = `Page ${page}`;
+            if (prevBtn) prevBtn.disabled = page <= 1;
+            if (nextBtn) nextBtn.disabled = mods.length < 24;
+
+            if (mods.length === 0) {
+                renderCommunityBoostMeters();
+                return;
+            }
+
+            communityGrid.innerHTML = mods.map(m => {
+                const thumb = m.thumbnail_url || m.images?.[0]?.url || '';
+                const author = m.user?.display_name || m.user?.username || 'Community';
+                const dlCount = m.download_count ?? 0;
+                const isSelected = activeStyle === m.slug;
+                return `
+                    <div class="card boost-meter-card" data-style-id="${m.slug}" style="background: rgba(255,255,255,0.02); border: 1px solid ${isSelected ? 'var(--accent)' : 'var(--border)'}; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; transition: border-color 0.2s;">
+                        <div style="height: 110px; width: 100%; background: rgba(0,0,0,0.5); position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+                            ${thumb ? `<img src="${thumb}" alt="${escHtml(m.title)}" style="height: 100%; width: 100%; object-fit: cover;" onerror="this.style.display='none';">` : `<div style="font-size: 13px; color: var(--muted); font-weight: 600;">Custom Boost Gauge</div>`}
+                            <span style="position: absolute; bottom: 6px; right: 8px; font-size: 10px; font-weight: 700; background: rgba(0,0,0,0.75); color: var(--accent); padding: 2px 6px; border-radius: 4px;">${dlCount} downloads</span>
+                        </div>
+                        <div style="padding: 12px; flex: 1; display: flex; flex-direction: column; justify-content: space-between;">
+                            <div>
+                                <strong style="display: block; font-size: 13px; color: var(--text);">${escHtml(m.title)}</strong>
+                                <span style="display: block; font-size: 11px; color: var(--muted); margin: 2px 0 8px;">by ${escHtml(author)}</span>
+                            </div>
+                            <button type="button" class="action-btn vgm-boost-apply-btn ${isSelected ? 'action-btn-secondary' : ''}" data-slug="${m.slug}" data-title="${escHtml(m.title)}" style="width: 100%; font-size: 12px; padding: 6px 10px;">
+                                ${isSelected ? 'Active' : 'Apply Meter'}
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            communityGrid.querySelectorAll('.vgm-boost-apply-btn').forEach(btn => {
+                btn.onclick = async () => {
+                    const slug = btn.dataset.slug;
+                    const title = btn.dataset.title;
+                    btn.disabled = true;
+                    const orig = btn.textContent;
+                    btn.textContent = 'Applying...';
+                    try {
+                        const payload = {
+                            enabled: true,
+                            style: slug,
+                        };
+                        enabledEl.checked = true;
+                        syncNameSpoofSwitchAria(enabledEl);
+                        localStorage.setItem(BOOST_METER_SPOOF_KEY, JSON.stringify({ boost_meter_spoof: payload }));
+                        await runToolSave(btn, 'Boost meter style', { boost_meter_spoof: payload }, { enabled: true });
+                        updatePreview(slug);
+                        btn.textContent = 'Active';
+                        showToast(`Applied custom boost meter "${title}"!`, 'success');
+                    } catch (err) {
+                        btn.textContent = orig;
+                        btn.disabled = false;
+                        showToast(String(err), 'error');
+                    }
+                };
+            });
+        } catch (e) {
+            console.warn('Failed to load VGM boost meters, showing local presets:', e);
+            renderCommunityBoostMeters();
         }
     };
 
@@ -5925,7 +6088,7 @@ function initBoostMeterTab() {
                         <p style="font-size: 11.5px; color: var(--muted); margin: 6px 0 12px; line-height: 1.35;">${escHtml(m.description)}</p>
                     </div>
                     <button type="button" class="action-btn boost-apply-btn ${isSelected ? 'action-btn-secondary' : ''}" data-style-id="${m.id}" style="width: 100%; font-size: 12px; padding: 6px 10px;">
-                        ${isSelected ? 'Active ✓' : 'Apply Meter'}
+                        ${isSelected ? 'Active' : 'Apply Meter'}
                     </button>
                 </div>
             `;
@@ -5945,6 +6108,26 @@ function initBoostMeterTab() {
             };
         });
     };
+
+    let boostSearchTimer = null;
+    document.getElementById('boost-catalog-search')?.addEventListener('input', (e) => {
+        clearTimeout(boostSearchTimer);
+        boostSearchTimer = setTimeout(() => {
+            loadVgmBoostMeters(1, e.target.value.trim() || 'boost');
+        }, 350);
+    });
+    document.getElementById('boost-catalog-search-btn')?.addEventListener('click', () => {
+        const q = document.getElementById('boost-catalog-search')?.value.trim() || 'boost';
+        loadVgmBoostMeters(1, q);
+    });
+    document.getElementById('boost-catalog-prev-btn')?.addEventListener('click', () => {
+        if (vgmBoostPage > 1) {
+            loadVgmBoostMeters(vgmBoostPage - 1, vgmBoostQuery);
+        }
+    });
+    document.getElementById('boost-catalog-next-btn')?.addEventListener('click', () => {
+        loadVgmBoostMeters(vgmBoostPage + 1, vgmBoostQuery);
+    });
 
     // Subtab Switching (Community vs Import)
     const tabCatalogBtn = document.getElementById('boost-tab-catalog-btn');
@@ -6122,7 +6305,7 @@ function initBoostMeterTab() {
             if (testInterval) return;
             let current = 100;
             testBtn.disabled = true;
-            testBtn.textContent = 'Boosting… 🔥';
+            testBtn.textContent = 'Boosting...';
 
             testInterval = setInterval(() => {
                 current -= 8;
@@ -6141,7 +6324,7 @@ function initBoostMeterTab() {
                         if (previewPct) previewPct.textContent = '100%';
                         if (previewBar) previewBar.style.width = '100%';
                         testBtn.disabled = false;
-                        testBtn.textContent = 'Test Boost 🚀';
+                        testBtn.textContent = 'Test Boost';
                     }, 500);
                 }
             }, 50);
@@ -6159,7 +6342,7 @@ function initBoostMeterTab() {
     boostMeterTabReady = true;
 
     loadBoostConfig();
-    renderCommunityBoostMeters();
+    loadVgmBoostMeters(1, 'boost');
 
     enabledEl.addEventListener('change', async () => {
         syncNameSpoofSwitchAria(enabledEl);
@@ -7648,6 +7831,105 @@ async function loadWorkshopCatalog(page = 1, query = '') {
         </div>
     `;
 
+    const sourceSelect = document.getElementById('workshop-source-select');
+    const source = sourceSelect?.value || 'vgm';
+
+    if (source === 'vgm') {
+        try {
+            const catSelect = document.getElementById('workshop-vgm-category-select');
+            let cids = catSelect?.value;
+            if (!cids || cids === 'all') {
+                cids = '785ff8d2-c550-4684-8e06-154c431c2da3,e6104c96-d566-4c32-91ac-e9fe36edba54,30109edc-4431-4bd8-b762-dbcd7cf6a5d8,aaf38682-d622-491a-be6c-d103096b4ce2';
+            }
+
+            const data = await invoke('fetch_vgm_mods', {
+                page: workshopCatalogPage,
+                categoryIds: cids,
+                search: workshopCatalogQuery || null,
+                sortBy: 'downloads',
+            });
+            const mods = data?.mods || [];
+            workshopCatalogTotalPages = Math.max(1, Math.ceil((data?.total_count || 100) / 24));
+
+            if (pageInfo) pageInfo.textContent = `Page ${workshopCatalogPage}`;
+            if (prevBtn) prevBtn.disabled = workshopCatalogPage <= 1;
+            if (nextBtn) nextBtn.disabled = mods.length < 24;
+
+            if (mods.length === 0) {
+                grid.innerHTML = `
+                    <div style="grid-column: 1 / -1; text-align: center; padding: 48px 20px; color: var(--text-secondary);">
+                        <div style="font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 6px;">No maps found</div>
+                        <div style="font-size: 12px;">Try searching for different keywords on VideoGameMods</div>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = '';
+            mods.forEach(mod => {
+                const card = document.createElement('div');
+                card.className = 'map-catalog-card';
+                const banner = mod.thumbnail_url || mod.images?.[0]?.url || '';
+                const author = (mod.user && (mod.user.display_name || mod.user.username)) ? (mod.user.display_name || mod.user.username) : 'Community';
+                const catName = mod.categories?.[0]?.name || 'Map';
+                const dlCount = mod.download_count ?? 0;
+
+                card.innerHTML = `
+                    <div class="map-catalog-thumb">
+                        <span class="map-catalog-thumb-placeholder">MAP</span>
+                        ${banner ? `<img src="${escHtml(banner)}" alt="${escHtml(mod.title)}" onerror="this.style.opacity='0';">` : ''}
+                        <span class="map-catalog-size-badge">${dlCount} DLs</span>
+                    </div>
+                    <div class="map-catalog-content">
+                        <div class="map-catalog-title" title="${escHtml(mod.title)}">${escHtml(mod.title)}</div>
+                        <div class="map-catalog-author">by ${escHtml(author)} • ${escHtml(catName)}</div>
+                        <div class="map-catalog-desc">VideoGameMods community map package.</div>
+                        <button type="button" class="action-btn vgm-map-install-btn" data-slug="${mod.slug}" data-name="${escHtml(mod.title)}" style="margin-top:8px; width:100%; font-size:12px; padding:7px 0; font-weight:600;">Download & Install</button>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+
+            grid.querySelectorAll('.vgm-map-install-btn').forEach(btn => {
+                btn.onclick = async (e) => {
+                    e.preventDefault();
+                    const slug = btn.dataset.slug;
+                    const mapName = btn.dataset.name;
+                    btn.disabled = true;
+                    btn.textContent = 'Downloading…';
+                    showProgress(true, 30);
+                    updateStatus(`Downloading ${mapName}…`, false);
+
+                    try {
+                        const url = `https://videogamemods.com/vgm/rocketleague/mods/${slug}`;
+                        showProgress(true, 60);
+                        await invoke('workshop_install_map_from_url', {
+                            url,
+                            name: mapName,
+                        });
+                        showProgress(true, 100);
+                        btn.textContent = 'Installed';
+                        btn.style.background = '#1b5e20';
+                        showToast(`"${mapName}" installed! In Rocket League: select Underpass in Free Play to play.`, 'success');
+                        await refreshWorkshopInstalled();
+                    } catch (err) {
+                        showToast(`Download failed: ${err.message || err}`, 'error');
+                        btn.disabled = false;
+                        btn.textContent = 'Download & Install';
+                    } finally {
+                        setTimeout(() => {
+                            showProgress(false);
+                            updateStatus('bitsfdb', false);
+                        }, 1000);
+                    }
+                };
+            });
+            return;
+        } catch (e) {
+            console.warn('VGM maps error, fallback to Bakkes:', e);
+        }
+    }
+
     try {
         const timeoutPromise = new Promise((_, reject) =>
             setTimeout(() => reject(new Error('BakkesPlugins request timed out after 15s. Check internet connection.')), 15000)
@@ -7780,7 +8062,7 @@ async function loadWorkshopCatalog(page = 1, query = '') {
                     }
 
                     showToast(`"${mapName}" installed! In Rocket League: select Underpass in Free Play or Exhibition to play.`, 'success');
-                    btn.textContent = 'Installed ✓';
+                    btn.textContent = 'Installed';
                     btn.style.background = '#1b5e20';
                     await refreshWorkshopInstalled();
                 } catch (err) {
@@ -7817,6 +8099,22 @@ async function initWorkshopTab() {
         const searchBtn = document.getElementById('workshop-catalog-search-btn');
         const prevBtn = document.getElementById('workshop-catalog-prev-btn');
         const nextBtn = document.getElementById('workshop-catalog-next-btn');
+        const sourceSelect = document.getElementById('workshop-source-select');
+        const vgmCatSelect = document.getElementById('workshop-vgm-category-select');
+
+        if (sourceSelect) {
+            sourceSelect.onchange = () => {
+                if (vgmCatSelect) {
+                    vgmCatSelect.style.display = sourceSelect.value === 'vgm' ? 'inline-block' : 'none';
+                }
+                loadWorkshopCatalog(1, searchInput?.value || '');
+            };
+        }
+        if (vgmCatSelect) {
+            vgmCatSelect.onchange = () => {
+                loadWorkshopCatalog(1, searchInput?.value || '');
+            };
+        }
 
         if (searchBtn && searchInput) {
             const doSearch = () => loadWorkshopCatalog(1, searchInput.value);
@@ -8572,7 +8870,7 @@ function bindTrackerEvents() {
                         if (rewritten) {
                             showToast('Stats API files updated — restart Rocket League for changes to apply.', 'success');
                         } else {
-                            showToast('Stats API already configured ✓', 'info');
+                            showToast('Stats API already configured', 'info');
                         }
                     } else {
                         showToast('Set your Rocket League path in Settings so Stats API can be configured.', 'error');

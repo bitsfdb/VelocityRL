@@ -79,7 +79,7 @@
                                 <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                             </svg>
                             <input type="text" id="catalog-search-input" class="catalog-search-input" placeholder="Search items and series..." data-i18n-placeholder="swapper.search_target" autocomplete="off" spellcheck="false">
-                            <button type="button" id="catalog-search-clear" class="catalog-search-clear" style="display:none;" title="Clear search">✕</button>
+                            <button type="button" id="catalog-search-clear" class="catalog-search-clear" style="display:none;" title="Clear search">&times;</button>
                         </div>
 
                         <button type="button" id="catalog-spawn-btn" class="action-btn catalog-spawn-btn" disabled>
@@ -447,18 +447,18 @@
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 6px;">
                     <div>
                         <h2 class="section-title">Custom Car Decals</h2>
-                        <p class="section-desc" style="margin-bottom: 0;">Browse and swap community AlphaConsole decals, or import custom packages and textures.</p>
+                        <p class="section-desc" style="margin-bottom: 0;">Browse VideoGameMods AlphaConsole decals or download and swap custom textures.</p>
                     </div>
                     <div class="subtab-strip" style="margin-bottom: 0; padding-bottom: 0; border-bottom: none;">
-                        <button type="button" class="subtab-btn active" id="decal-tab-catalog-btn">Community Catalog</button>
-                        <button type="button" class="subtab-btn" id="decal-tab-import-btn">Import Package / URL</button>
+                        <button type="button" class="subtab-btn active" id="decal-tab-catalog-btn">Browse</button>
+                        <button type="button" class="subtab-btn" id="decal-tab-import-btn">Download / Install</button>
                     </div>
                 </div>
 
                 <div id="decal-catalog-view">
                     <div class="browser-toolbar" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: space-between; margin: 12px 0;">
                         <div style="display: flex; gap: 8px; align-items: center; flex: 1; min-width: 260px;">
-                            <input type="text" id="decal-catalog-search" placeholder="Search AlphaConsole decals (e.g. Ghost, Gold, Dragon, Carbon)..." style="flex: 1; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 12px;">
+                            <input type="text" id="decal-catalog-search" placeholder="Search VideoGameMods decals (e.g. Barcelona, Vitality, G2, Clean)..." style="flex: 1; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 12px;">
                             <select id="decal-catalog-car-filter" style="background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 12px;">
                                 <option value="all">All Cars</option>
                                 <option value="Octane">Octane</option>
@@ -472,6 +472,9 @@
                             <select id="decal-catalog-donor-select" style="background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 12px; min-width: 170px;">
                                 <option value="">Loading donor decals...</option>
                             </select>
+                            <button id="decal-catalog-prev-btn" class="action-btn action-btn-secondary" type="button" disabled style="padding: 6px 10px; font-size: 11px;">←</button>
+                            <span id="decal-catalog-page-info" style="font-size: 11px; color: var(--text-secondary); font-weight: 600;">Page 1</span>
+                            <button id="decal-catalog-next-btn" class="action-btn action-btn-secondary" type="button" style="padding: 6px 10px; font-size: 11px;">→</button>
                         </div>
                     </div>
 
@@ -532,7 +535,13 @@
                         <div class="settings-group">
                             <label>Decal Package (ZIP / JSON / Textures)</label>
                             <div id="decal-dropzone" style="border: 2px dashed var(--border); border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; background: rgba(255,255,255,0.02); transition: border-color 0.2s, background 0.2s;">
-                                <div style="font-size: 28px; margin-bottom: 8px;">🎨</div>
+                                <div style="display: flex; justify-content: center; margin-bottom: 8px;">
+                                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent);">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                        <polyline points="17 8 12 3 7 8"></polyline>
+                                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                                    </svg>
+                                </div>
                                 <strong style="display: block; font-size: 13px; color: var(--text);">Drag and drop AlphaConsole ZIP or JSON here</strong>
                                 <span style="font-size: 11px; color: var(--muted); display: block; margin-top: 4px;">or click anywhere in this box to browse local files</span>
                             </div>
@@ -569,8 +578,8 @@
                     </div>
                     <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                         <div class="subtab-strip" style="margin-bottom: 0; padding-bottom: 0; border-bottom: none;">
-                            <button type="button" class="subtab-btn active" id="boost-tab-catalog-btn">Community Catalog</button>
-                            <button type="button" class="subtab-btn" id="boost-tab-import-btn">Import Package / URL</button>
+                            <button type="button" class="subtab-btn active" id="boost-tab-catalog-btn">Browse</button>
+                            <button type="button" class="subtab-btn" id="boost-tab-import-btn">Download / Install</button>
                         </div>
                         <div class="settings-group" style="margin-bottom: 0;">
                             <label class="switch-row" for="boost-meter-enabled" style="margin-bottom: 0;">
@@ -611,11 +620,21 @@
                         </div>
                     </div>
 
-                    <button type="button" id="boost-test-btn" class="action-btn action-btn-secondary" style="padding: 6px 14px; font-size: 12px;">Test Boost 🚀</button>
+                    <button type="button" id="boost-test-btn" class="action-btn action-btn-secondary" style="padding: 6px 14px; font-size: 12px;">Test Boost</button>
                 </div>
 
                 <div id="boost-catalog-view">
-                    <h3 style="font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px;">Community Boost Meters (AlphaConsole)</h3>
+                    <div class="browser-toolbar" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: space-between; margin: 10px 0 14px;">
+                        <div style="display: flex; gap: 8px; align-items: center; flex: 1; min-width: 260px;">
+                            <input type="text" id="boost-catalog-search" value="boost" placeholder="Search VideoGameMods boost meters (e.g. boost, rank, meter)..." style="flex: 1; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 12px;">
+                            <button id="boost-catalog-search-btn" class="action-btn" type="button" style="padding: 7px 14px; font-size: 12px;">Search</button>
+                        </div>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <button id="boost-catalog-prev-btn" class="action-btn action-btn-secondary" type="button" disabled style="padding: 6px 10px; font-size: 11px;">←</button>
+                            <span id="boost-catalog-page-info" style="font-size: 11px; color: var(--text-secondary); font-weight: 600;">Page 1</span>
+                            <button id="boost-catalog-next-btn" class="action-btn action-btn-secondary" type="button" style="padding: 6px 10px; font-size: 11px;">→</button>
+                        </div>
+                    </div>
                     <div id="boost-community-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; max-height: calc(100vh - 360px); overflow-y: auto; padding-right: 6px;"></div>
                 </div>
 
@@ -941,9 +960,20 @@
                 </div>
 
                 <div id="browser-pane" class="subtab-pane active">
-                    <div class="browser-toolbar" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between;">
-                        <div style="display:flex;gap:8px;align-items:center;flex:1;min-width:260px;">
-                            <input type="text" id="workshop-catalog-search" data-i18n-placeholder="maps.search_placeholder" placeholder="Search BakkesPlugins maps (e.g. Rings, Dribble, Aerial)..." style="flex:1;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:12px;">
+                    <div class="browser-toolbar" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between;margin-bottom:12px;">
+                        <div style="display:flex;gap:8px;align-items:center;flex:1;min-width:280px;">
+                            <select id="workshop-source-select" style="background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:12px;">
+                                <option value="vgm" selected>VideoGameMods Maps</option>
+                                <option value="bakkes">BakkesPlugins Workshop</option>
+                            </select>
+                            <select id="workshop-vgm-category-select" style="background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:12px;">
+                                <option value="all">All Map Types</option>
+                                <option value="785ff8d2-c550-4684-8e06-154c431c2da3">Arena Maps</option>
+                                <option value="e6104c96-d566-4c32-91ac-e9fe36edba54">Training Maps</option>
+                                <option value="30109edc-4431-4bd8-b762-dbcd7cf6a5d8">Race Maps</option>
+                                <option value="aaf38682-d622-491a-be6c-d103096b4ce2">Other Maps</option>
+                            </select>
+                            <input type="text" id="workshop-catalog-search" data-i18n-placeholder="maps.search_placeholder" placeholder="Search maps (e.g. Rings, Dribble, Neon, Ball)..." style="flex:1;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:12px;">
                             <button id="workshop-catalog-search-btn" class="action-btn" type="button" data-i18n="maps.search_btn">Search</button>
                         </div>
                         <div style="display:flex;gap:8px;align-items:center;">
