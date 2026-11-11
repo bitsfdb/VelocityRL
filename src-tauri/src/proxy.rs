@@ -868,7 +868,7 @@ fn find_json_value(body: &[u8], key: &str) -> Option<String> {
 
 /// OS-assigned port for the plain-HTTP WS/RPC broker (`0` = not listening).
 /// Config MITM + AuthPlayer rewrites point Rocket League here so we never need
-/// a fixed port like 27505 (avoids conflicts / "broker already in use").
+/// a fixed port like 15759 (avoids conflicts / "broker already in use").
 static BROKER_PORT: AtomicU16 = AtomicU16::new(0);
 
 pub fn broker_port() -> Option<u16> {
@@ -1939,16 +1939,19 @@ pub async fn start_ws_broker() -> Result<u16, String> {
         return Ok(existing);
     }
 
-    // Try standard port 27505 first (matches Go proxy architecture), fallback to ephemeral if occupied.
-    let listener = match tokio::net::TcpListener::bind("127.0.0.1:27505").await {
+    // Bind standard VelocityRL Keypad port 15759 first, fallback to RLIM port 7546 or ephemeral if occupied.
+    let listener = match tokio::net::TcpListener::bind("127.0.0.1:15759").await {
         Ok(l) => l,
-        Err(_) => match tokio::net::TcpListener::bind("127.0.0.1:0").await {
+        Err(_) => match tokio::net::TcpListener::bind("127.0.0.1:7546").await {
             Ok(l) => l,
-            Err(e) => {
-                let msg = format!("broker: Failed to bind 127.0.0.1: {e}");
-                crate::applog::event(&msg);
-                return Err(msg);
-            }
+            Err(_) => match tokio::net::TcpListener::bind("127.0.0.1:0").await {
+                Ok(l) => l,
+                Err(e) => {
+                    let msg = format!("broker: Failed to bind 127.0.0.1: {e}");
+                    crate::applog::event(&msg);
+                    return Err(msg);
+                }
+            },
         },
     };
     let port = listener
@@ -2017,44 +2020,43 @@ pub async fn start_ws_broker() -> Result<u16, String> {
         BROKER_PORT.store(0, Ordering::SeqCst);
     });
 
-    // Auxiliary Shift legacy listeners (49320 for HTTP RPC, 49325 for WS)
-    for aux_port in [49320u16, 49325u16] {
-        let client_aux = client.clone();
-        tokio::spawn(async move {
-            match tokio::net::TcpListener::bind(format!("127.0.0.1:{aux_port}")).await {
-                Ok(aux_listener) => {
-                    crate::applog::event(&format!(
-                        "broker: auxiliary listener active on http://127.0.0.1:{aux_port}"
-                    ));
-                    loop {
-                        let Ok((stream, peer_addr)) = aux_listener.accept().await else { break };
-                        let c = client_aux.clone();
-                        tokio::spawn(async move {
-                            let io = TokioIo::new(stream);
-                            let service = service_fn(move |req: Request<Incoming>| {
-                                let c2 = c.clone();
-                                async move {
-                                    handle_broker_request(req, c2).await
-                                }
-                            });
-                            if let Err(e) = hyper::server::conn::http1::Builder::new()
-                                .serve_connection(io, service)
-                                .with_upgrades()
-                                .await
-                            {
-                                log::debug!("aux broker connection error on port {aux_port} from {peer_addr}: {e}");
+    // Auxiliary listener on RLIM port 7546 (if primary is 15759) or 15759 (if primary is 7546)
+    let alt_port = if port == 15759 { 7546u16 } else { 15759u16 };
+    let client_aux = client.clone();
+    tokio::spawn(async move {
+        match tokio::net::TcpListener::bind(format!("127.0.0.1:{alt_port}")).await {
+            Ok(aux_listener) => {
+                crate::applog::event(&format!(
+                    "broker: auxiliary listener active on http://127.0.0.1:{alt_port}"
+                ));
+                loop {
+                    let Ok((stream, peer_addr)) = aux_listener.accept().await else { break };
+                    let c = client_aux.clone();
+                    tokio::spawn(async move {
+                        let io = TokioIo::new(stream);
+                        let service = service_fn(move |req: Request<Incoming>| {
+                            let c2 = c.clone();
+                            async move {
+                                handle_broker_request(req, c2).await
                             }
                         });
-                    }
-                }
-                Err(e) => {
-                    crate::applog::event(&format!(
-                        "broker: auxiliary port {aux_port} note ({e}) — primary broker active on {port}"
-                    ));
+                        if let Err(e) = hyper::server::conn::http1::Builder::new()
+                            .serve_connection(io, service)
+                            .with_upgrades()
+                            .await
+                        {
+                            log::debug!("aux broker connection error on port {alt_port} from {peer_addr}: {e}");
+                        }
+                    });
                 }
             }
-        });
-    }
+            Err(e) => {
+                crate::applog::event(&format!(
+                    "broker: auxiliary port {alt_port} note ({e}) — primary broker active on {port}"
+                ));
+            }
+        }
+    });
 
     Ok(port)
 }
@@ -5884,12 +5886,12 @@ mod tests {
 
     #[test]
     fn test_patch_psynet_url_rewrites_to_broker() {
-        BROKER_PORT.store(27505, Ordering::SeqCst);
+        BROKER_PORT.store(15759, Ordering::SeqCst);
         let input = br#"{"PsyNetUrl":{"Class":"PsyNetUrl_X","URL":"https://api.rlpp.psynet.gg/Services","URLv2":"https://api.rlpp.psynet.gg/rpc"}}"#;
         let patched = patch_psynet_url(input).expect("should patch PsyNetUrl");
         let s = String::from_utf8(patched).unwrap();
-        assert!(s.contains("\"URL\":\"http://127.0.0.1:27505/Services\""));
-        assert!(s.contains("\"URLv2\":\"http://127.0.0.1:27505/rpc\""));
+        assert!(s.contains("\"URL\":\"http://127.0.0.1:15759/Services\""));
+        assert!(s.contains("\"URLv2\":\"http://127.0.0.1:15759/rpc\""));
     }
 
     #[test]

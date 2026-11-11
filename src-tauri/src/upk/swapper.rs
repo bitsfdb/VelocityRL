@@ -2515,13 +2515,13 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
         }
     }
 
-    // 0. Patch PsyNetConnection_X::GetPsyNetURL -> return "http://127.0.0.1:49320/rpc";
+    // 0. Patch PsyNetConnection_X::GetPsyNetURL -> return "http://127.0.0.1:15759/rpc";
     if let Some(rpc_exp) = raw_exports.iter().find(|e| {
         e.name == "GetPsyNetURL" && e.outer_idx > 0 && raw_exports.get(e.outer_idx as usize - 1).map(|o| o.name == "PsyNetConnection_X").unwrap_or(false)
     }) {
         let code_start = (rpc_exp.serial_offset - ch1.0) as usize + 48;
         let disk_sz = u32::from_le_bytes(decomp1[code_start - 4..code_start].try_into().unwrap()) as usize;
-        let target_url = b"http://127.0.0.1:49320/rpc\0";
+        let target_url = b"http://127.0.0.1:15759/rpc\0";
         if disk_sz >= target_url.len() + 2 {
             let mut patch = Vec::with_capacity(disk_sz);
             patch.push(opcodes::EX_RETURN);
@@ -2640,7 +2640,7 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
     fs::write(&px_path, &file_bytes)
         .map_err(|e| format!("Failed to write patched ProjectX.upk: {e}"))?;
 
-    crate::applog::event("projectx: PsyNet URL redirection and validation functions patched successfully (http://127.0.0.1:49320/rpc)");
+    crate::applog::event("projectx: PsyNet URL redirection and validation functions patched successfully (http://127.0.0.1:15759/rpc)");
     Ok(true)
 }
 
