@@ -2084,6 +2084,52 @@ async fn handle_broker_request(
             .body(full_body(CA_CRL_DER.to_vec()))
             .unwrap());
     }
+
+    if path_str == "/s/name" || path_str.starts_with("/s/name?") {
+        let name = crate::psynet::load_active_spoof_from_disk()
+            .and_then(|c| c.name_spoof)
+            .filter(|ns| ns.enabled && !ns.display_name.trim().is_empty())
+            .map(|ns| ns.display_name.trim().to_string())
+            .unwrap_or_default();
+        crate::applog::event(&format!("broker: /s/name queried -> responding '{name}' for GFxData_LocalPlayer_TA::ChangeName hook"));
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "text/plain; charset=utf-8")
+            .header("Content-Length", name.len().to_string())
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body(name.into_bytes()))
+            .unwrap());
+    }
+
+    if path_str == "/s/title" || path_str.starts_with("/s/title?") {
+        let title = crate::psynet::load_active_spoof_from_disk()
+            .map(|c| {
+                if !c.equip_title_id.trim().is_empty() {
+                    c.equip_title_id.trim().to_string()
+                } else {
+                    c.display_title_id.trim().to_string()
+                }
+            })
+            .unwrap_or_default();
+        crate::applog::event(&format!("broker: /s/title queried -> responding '{title}'"));
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "text/plain; charset=utf-8")
+            .header("Content-Length", title.len().to_string())
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body(title.into_bytes()))
+            .unwrap());
+    }
+
+    if path_str == "/s/ping" || path_str.starts_with("/s/ping?") {
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "text/plain; charset=utf-8")
+            .header("Content-Length", "0")
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body(Vec::new()))
+            .unwrap());
+    }
     if is_upgrade || path_str.starts_with("/ws") {
         return handle_websocket(req).await;
     }
