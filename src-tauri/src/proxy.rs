@@ -2159,14 +2159,41 @@ async fn handle_broker_request(
             .unwrap());
     }
 
+    if path_str == "/rlim/avatar" || path_str.starts_with("/rlim/avatar?")
+        || path_str == "/s/avatar" || path_str.starts_with("/s/avatar?")
+        || path_str == "/a.png" || path_str.starts_with("/a.png?")
+        || path_str.contains("/avatars/") {
+        if let Some(png_bytes) = crate::avatar::get_active_avatar_png() {
+            crate::applog::event(&format!("broker: {path_str} queried -> responding with active avatar PNG ({} bytes)", png_bytes.len()));
+            return Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "image/png")
+                .header("Content-Length", png_bytes.len().to_string())
+                .header("Cache-Control", "no-cache, no-store")
+                .body(full_body(png_bytes))
+                .unwrap());
+        } else {
+            crate::applog::event(&format!("broker: {path_str} queried -> no active custom avatar"));
+            return Ok(Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .header("Content-Type", "text/plain")
+                .header("Content-Length", "0")
+                .header("Cache-Control", "no-cache, no-store")
+                .body(full_body(Vec::new()))
+                .unwrap());
+        }
+    }
+
     if path_str == "/rlim/status" || path_str.starts_with("/rlim/status?") {
         let cfg = crate::psynet::load_active_spoof_from_disk().unwrap_or_default();
+        let has_avatar = crate::avatar::get_active_avatar_png().is_some();
         let status_json = serde_json::json!({
             "active": true,
             "port": BROKER_PORT.load(Ordering::Relaxed),
             "name": cfg.name_spoof.as_ref().map(|n| n.display_name.clone()).unwrap_or_default(),
             "title": cfg.equip_title_id,
             "ping": cfg.ping_spoof.as_ref().map(|p| (p.min_ms + p.max_ms) / 2).unwrap_or(0),
+            "has_avatar": has_avatar,
         }).to_string();
         crate::applog::event(&format!("broker: /rlim/status queried"));
         return Ok(Response::builder()
