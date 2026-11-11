@@ -2166,20 +2166,22 @@ async fn handle_broker_request(
         // 1. Check if a specific Steam ID is requested in path or query
         let query_str = req.uri().query().unwrap_or_default();
         let mut target_steam_id: Option<u64> = None;
-        for part in path_str.split(&['/', '.', '?', '&', '-'][..]) {
-            if part.len() == 17 && part.starts_with("7656119") {
-                if let Ok(id) = part.parse::<u64>() {
-                    target_steam_id = Some(id);
-                    break;
-                }
+        for part in path_str.split(&['/', '?', '&'][..]) {
+            let candidate = part.strip_suffix(".png").or_else(|| part.strip_suffix(".jpg")).unwrap_or(part);
+            if let Some(id) = crate::avatar::parse_steam_id(candidate) {
+                target_steam_id = Some(id);
+                break;
             }
         }
         if target_steam_id.is_none() {
             for q_part in query_str.split('&') {
                 if let Some((k, v)) = q_part.split_once('=') {
-                    if (k.eq_ignore_ascii_case("id") || k.eq_ignore_ascii_case("steamid") || k.eq_ignore_ascii_case("playerid"))
-                        && v.len() == 17 && v.starts_with("7656119") {
-                        if let Ok(id) = v.parse::<u64>() {
+                    if k.eq_ignore_ascii_case("id")
+                        || k.eq_ignore_ascii_case("steamid")
+                        || k.eq_ignore_ascii_case("playerid")
+                        || k.eq_ignore_ascii_case("accountid")
+                    {
+                        if let Some(id) = crate::avatar::parse_steam_id(v) {
                             target_steam_id = Some(id);
                             break;
                         }
