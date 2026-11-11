@@ -97,6 +97,42 @@ pub fn get_profile_catalog(_app: tauri::AppHandle) -> Result<serde_json::Value, 
     Err("profile_catalog.json not found".into())
 }
 
+static ACTIVE_AVATAR_PNG: std::sync::Mutex<Option<Vec<u8>>> = std::sync::Mutex::new(None);
+
+pub fn set_active_avatar_png(bytes: Vec<u8>) {
+    if let Ok(mut lock) = ACTIVE_AVATAR_PNG.lock() {
+        *lock = Some(bytes);
+    }
+}
+
+pub fn clear_active_avatar_png() {
+    if let Ok(mut lock) = ACTIVE_AVATAR_PNG.lock() {
+        *lock = None;
+    }
+}
+
+pub fn get_active_avatar_png() -> Option<Vec<u8>> {
+    if let Ok(guard) = ACTIVE_AVATAR_PNG.lock() {
+        if let Some(ref bytes) = *guard {
+            return Some(bytes.clone());
+        }
+    }
+    let candidates = [
+        "/root/avatar.png",
+        "custom_avatars/active_avatar.png",
+        "/root/.config/com.velocityrl.app/custom_avatars/active_avatar.png",
+    ];
+    for c in &candidates {
+        let p = Path::new(c);
+        if p.is_file() {
+            if let Ok(b) = fs::read(p) {
+                return Some(b);
+            }
+        }
+    }
+    None
+}
+
 pub fn save_cached_avatar(app: &tauri::AppHandle, png_bytes: &[u8]) -> Option<PathBuf> {
     if let Ok(dir) = app.path().app_config_dir() {
         let avatar_dir = dir.join("custom_avatars");
@@ -269,6 +305,7 @@ pub async fn apply_custom_avatar_upk(app: tauri::AppHandle, avatar_source: Strin
     let (bgra_bytes, processed_png) = process_avatar_image(&image_bytes)?;
     // Persist downloaded/processed avatar to local disk cache
     let _ = save_cached_avatar(&app, &processed_png);
+    set_active_avatar_png(processed_png.clone());
 
     // Locate TAGame.upk
     let tagame_path = if let Some(game_dir) = get_game_dir(&app) {
@@ -306,6 +343,8 @@ pub fn restore_custom_avatar_upk(app: tauri::AppHandle) -> Result<String, String
 
     fs::copy(&backup_path, &tagame_path)
         .map_err(|e| format!("Failed to restore TAGame.upk from backup: {e}"))?;
+
+    clear_active_avatar_png();
 
     Ok("Vanilla avatar restored from pristine backup".into())
 }
@@ -610,5 +649,14 @@ mod tests {
         assert!(res.is_ok(), "apply_custom_avatar_to_tagame failed: {:?}", res.err());
 
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_active_avatar_in_memory_state() {
+        clear_active_avatar_png();
+        let fake_png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+        set_active_avatar_png(fake_png.clone());
+        assert_eq!(get_active_avatar_png(), Some(fake_png));
+        clear_active_avatar_png();
     }
 }
