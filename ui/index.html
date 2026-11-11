@@ -15,7 +15,6 @@
 
         <nav class="nav-links">
             <div class="nav-item active" data-tab="spawner-tab" data-i18n="nav.spawner">Spawner</div>
-            <div class="nav-item" data-tab="avatars-tab" data-i18n="nav.avatars">Custom Avatars</div>
             <div class="nav-item" data-tab="decals-tab" data-i18n="nav.decals">Custom Decals</div>
             <div class="nav-item" data-tab="boost-tab" data-i18n="nav.boost">Boost Meters <span style="font-size: 13px;">🚀</span></div>
             <div class="nav-item" data-tab="titles-tab" data-i18n="nav.titles">Titles</div>
@@ -219,60 +218,6 @@
                 </div>
             </div>
 
-            <div id="avatars-tab" class="tab-content">
-                <h2 class="section-title">Custom Avatars</h2>
-                <p class="section-desc">Inject a custom profile picture directly into Rocket League in-game scoreboards, menus, and match HUD.</p>
-
-                <div class="avatar-view-container">
-                    <div class="avatar-preview-showcase">
-                        <span class="avatar-preview-title">In-Game Avatar Preview</span>
-                        <div id="avatar-ingame-frame" class="avatar-ingame-frame team-blue">
-                            <div id="avatar-preview-display" class="avatar-ingame-inner">
-                                <span class="avatar-ingame-placeholder">👤</span>
-                            </div>
-                        </div>
-
-                        <div class="avatar-color-controls">
-                            <button type="button" class="avatar-color-chip active" data-team="blue" title="Blue Team Frame">Blue Team</button>
-                            <button type="button" class="avatar-color-chip" data-team="orange" title="Orange Team Frame">Orange Team</button>
-                            <button type="button" class="avatar-color-chip" data-team="gold" title="Tournament Gold Border">Gold</button>
-                            <div class="avatar-color-custom-wrap">
-                                <input type="color" id="avatar-custom-color" class="avatar-color-picker-input" value="#4a9eff" title="Custom Frame Glow Color">
-                            </div>
-                        </div>
-
-                        <span id="avatar-status-text" class="avatar-status-subtext">No image selected yet</span>
-                    </div>
-
-                    <div class="card spoof-card avatar-controls-card" style="flex: 1; max-width: 580px;">
-                        <div class="settings-group">
-                            <label for="avatar-url-input">Avatar Image (PNG, JPG, WebP)</label>
-                            <div style="display: flex; gap: 8px;">
-                                <input type="text" id="avatar-url-input" placeholder="https://example.com/avatar.png or select local file..." autocomplete="off" spellcheck="false" style="flex: 1;">
-                                <button type="button" id="avatar-file-browse-btn" class="action-btn action-btn-secondary" style="white-space: nowrap; padding: 6px 14px;">Browse File</button>
-                            </div>
-                            <input type="file" id="avatar-file-hidden" accept="image/png,image/jpeg,image/webp" style="display: none;">
-                            <span class="field-hint">Supports high-res PNG, JPEG, and WebP. Automatically square cropped and converted to 256×256 BGRA in-engine.</span>
-                        </div>
-
-                        <div class="settings-group" style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-top: 14px;">
-                            <div style="display: flex; align-items: center; justify-content: space-between;">
-                                <span style="font-size: 12px; color: var(--text-secondary); font-weight: 500;">Scaleform Injection Chunk</span>
-                                <span style="font-size: 11px; font-weight: 700; color: var(--accent); background: rgba(74, 158, 255, 0.12); padding: 2px 8px; border-radius: 4px;">Chunk 6 (PlaceholderAnthem)</span>
-                            </div>
-                            <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px;">
-                                <span style="font-size: 12px; color: var(--text-secondary); font-weight: 500;">Bytecode Hooks</span>
-                                <span style="font-size: 11px; font-weight: 700; color: #10b981; background: rgba(16, 185, 129, 0.12); padding: 2px 8px; border-radius: 4px;">Chunk 1 Persona / LocalPlayer</span>
-                            </div>
-                        </div>
-
-                        <div class="swapper-controls" style="display: flex; gap: 12px; margin-top: 18px;">
-                            <button id="avatar-apply-btn" class="action-btn" type="button">Apply Profile Picture</button>
-                            <button id="avatar-restore-btn" class="action-btn action-btn-secondary" type="button">Restore Default</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
 
             <div id="decals-tab" class="tab-content">
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 6px;">
@@ -593,6 +538,7 @@
             <div id="customization-tab" class="tab-content">
                 <div class="subtab-strip" role="tablist">
                     <button type="button" class="subtab-btn active" data-subtab="custom-names-pane" data-i18n="custom.subtab_names">Names</button>
+                    <button type="button" class="subtab-btn" data-subtab="custom-avatar-pane" data-i18n="custom.subtab_avatar">Avatar</button>
                     <button type="button" class="subtab-btn" data-subtab="custom-credits-pane" data-i18n="custom.subtab_credits">Credits</button>
                 </div>
 
@@ -639,6 +585,39 @@
 
                         <div class="swapper-controls">
                             <button id="name-spoof-save-btn" class="action-btn" type="button" data-i18n="custom.save_name">Save name</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="custom-avatar-pane" class="subtab-pane">
+                    <h2 class="section-title" data-i18n="custom.avatar_title">Custom Avatar</h2>
+                    <p class="section-desc" data-i18n="custom.avatar_desc">Inject a custom profile picture directly into Rocket League in-game scoreboards, menus, and match HUD.</p>
+
+                    <div class="card spoof-card avatar-clean-card">
+                        <div class="avatar-upload-dropzone" id="avatar-dropzone" title="Click to browse image">
+                            <div id="avatar-preview-display" class="avatar-clean-preview">
+                                <svg class="avatar-default-svg" viewBox="0 0 61.8 61.8" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <circle cx="30.9" cy="30.9" r="30.9" fill="rgba(255, 255, 255, 0.08)"/>
+                                    <circle cx="30.9" cy="22.5" r="9.5" fill="rgba(255, 255, 255, 0.45)"/>
+                                    <path d="M52.587 52.908a30.895 30.895 0 0 1-43.667-.291 9.206 9.206 0 0 1 4.037-4.832 19.799 19.799 0 0 1 4.075-2.322c-2.198-7.553 3.777-11.266 6.063-12.335 0 3.487 3.265 1.173 7.317 1.217 3.336.037 9.933 3.395 9.933-1.035 3.67 1.086 7.67 8.08 4.917 12.377a17.604 17.604 0 0 1 3.181 2.002 10.192 10.192 0 0 1 4.144 5.22z" fill="rgba(255, 255, 255, 0.45)"/>
+                                </svg>
+                            </div>
+                            <span class="avatar-upload-label" id="avatar-upload-label">Upload a custom avatar</span>
+                            <span id="avatar-status-text" class="avatar-status-subtext">Click or drag & drop (PNG, JPG, WebP)</span>
+                        </div>
+
+                        <div class="settings-group" style="margin-top: 16px;">
+                            <label for="avatar-url-input">Image URL or Local File</label>
+                            <div style="display: flex; gap: 8px;">
+                                <input type="text" id="avatar-url-input" placeholder="https://example.com/avatar.png or select local file..." autocomplete="off" spellcheck="false" style="flex: 1;">
+                                <button type="button" id="avatar-file-browse-btn" class="action-btn action-btn-secondary" style="white-space: nowrap; padding: 6px 14px;">Browse File</button>
+                            </div>
+                            <input type="file" id="avatar-file-hidden" accept="image/png,image/jpeg,image/webp" style="display: none;">
+                        </div>
+
+                        <div class="swapper-controls" style="display: flex; gap: 12px; margin-top: 18px;">
+                            <button id="avatar-apply-btn" class="action-btn" type="button" data-i18n="custom.apply_avatar">Apply Custom Profile Picture</button>
+                            <button id="avatar-restore-btn" class="action-btn action-btn-secondary" type="button" data-i18n="custom.restore_avatar">Restore Default</button>
                         </div>
                     </div>
                 </div>

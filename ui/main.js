@@ -6019,6 +6019,12 @@ function initCustomizationTab() {
 let avatarTabWired = false;
 let currentAvatarSource = '';
 
+const DEFAULT_AVATAR_SVG = `<svg class="avatar-default-svg" viewBox="0 0 61.8 61.8" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="30.9" cy="30.9" r="30.9" fill="rgba(255, 255, 255, 0.08)"/>
+  <circle cx="30.9" cy="22.5" r="9.5" fill="rgba(255, 255, 255, 0.45)"/>
+  <path d="M52.587 52.908a30.895 30.895 0 0 1-43.667-.291 9.206 9.206 0 0 1 4.037-4.832 19.799 19.799 0 0 1 4.075-2.322c-2.198-7.553 3.777-11.266 6.063-12.335 0 3.487 3.265 1.173 7.317 1.217 3.336.037 9.933 3.395 9.933-1.035 3.67 1.086 7.67 8.08 4.917 12.377a17.604 17.604 0 0 1 3.181 2.002 10.192 10.192 0 0 1 4.144 5.22z" fill="rgba(255, 255, 255, 0.45)"/>
+</svg>`;
+
 function initAvatarTab() {
     const urlInput = document.getElementById('avatar-url-input');
     const browseBtn = document.getElementById('avatar-file-browse-btn');
@@ -6026,78 +6032,95 @@ function initAvatarTab() {
     const applyBtn = document.getElementById('avatar-apply-btn');
     const restoreBtn = document.getElementById('avatar-restore-btn');
     const previewDisplay = document.getElementById('avatar-preview-display');
+    const uploadLabel = document.getElementById('avatar-upload-label');
     const statusText = document.getElementById('avatar-status-text');
+    const dropzone = document.getElementById('avatar-dropzone');
 
-    if (!applyBtn || !urlInput) return;
+    if (!applyBtn || !previewDisplay) return;
+
+    function renderEmpty() {
+        previewDisplay.innerHTML = DEFAULT_AVATAR_SVG;
+        if (uploadLabel) uploadLabel.textContent = 'Upload a custom avatar';
+        if (statusText) statusText.textContent = 'Click or drag & drop (PNG, JPG, WebP)';
+    }
+
+    function renderAvatar(src, label, status) {
+        previewDisplay.innerHTML = `<img src="${src}" alt="Avatar" onerror="this.parentElement.innerHTML = DEFAULT_AVATAR_SVG;">`;
+        if (uploadLabel && label) uploadLabel.textContent = label;
+        if (statusText && status) statusText.textContent = status;
+    }
 
     // Load saved avatar preview from localStorage if available
     const saved = localStorage.getItem('velocityrl_avatar_preview');
     if (saved && !currentAvatarSource) {
         currentAvatarSource = saved;
         if (saved.startsWith('data:image/')) {
-            previewDisplay.innerHTML = `<img src="${saved}" style="width:100%;height:100%;object-fit:cover;">`;
-            statusText.textContent = 'Active profile picture (cached in game)';
+            renderAvatar(saved, 'Active custom avatar', 'Cached in game files');
         } else {
-            urlInput.value = saved;
-            previewDisplay.innerHTML = `<img src="${saved}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML='👤'">`;
-            statusText.textContent = 'Active profile picture URL';
+            if (urlInput) urlInput.value = saved;
+            renderAvatar(saved, 'Active custom avatar', 'Loaded from image URL');
         }
+    } else if (!currentAvatarSource) {
+        renderEmpty();
     }
 
     if (avatarTabWired) return;
     avatarTabWired = true;
 
-    document.querySelectorAll('.avatar-color-chip').forEach(chip => {
-        chip.onclick = () => {
-            document.querySelectorAll('.avatar-color-chip').forEach(c => c.classList.remove('active'));
-            chip.classList.add('active');
-            const team = chip.dataset.team;
-            const frame = document.getElementById('avatar-ingame-frame');
-            if (!frame) return;
-            frame.classList.remove('team-blue', 'team-orange', 'team-gold');
-            if (team === 'blue') {
-                frame.classList.add('team-blue');
-                frame.style.borderColor = '#0088ff';
-                frame.style.boxShadow = '0 0 24px rgba(0, 136, 255, 0.45), inset 0 0 8px rgba(0, 0, 0, 0.8)';
-            } else if (team === 'orange') {
-                frame.classList.add('team-orange');
-                frame.style.borderColor = '#ff5500';
-                frame.style.boxShadow = '0 0 24px rgba(255, 85, 0, 0.45), inset 0 0 8px rgba(0, 0, 0, 0.8)';
-            } else if (team === 'gold') {
-                frame.classList.add('team-gold');
-                frame.style.borderColor = '#ffd700';
-                frame.style.boxShadow = '0 0 24px rgba(255, 215, 0, 0.45), inset 0 0 8px rgba(0, 0, 0, 0.8)';
-            }
-        };
-    });
-
-    const customColorInput = document.getElementById('avatar-custom-color');
-    if (customColorInput) {
-        customColorInput.oninput = (e) => {
-            document.querySelectorAll('.avatar-color-chip').forEach(c => c.classList.remove('active'));
-            const col = e.target.value;
-            const frame = document.getElementById('avatar-ingame-frame');
-            if (frame) {
-                frame.classList.remove('team-blue', 'team-orange', 'team-gold');
-                frame.style.borderColor = col;
-                frame.style.boxShadow = `0 0 24px ${col}66, inset 0 0 8px rgba(0, 0, 0, 0.8)`;
-            }
-        };
-    }
-
-    urlInput.addEventListener('input', () => {
-        const val = urlInput.value.trim();
-        if (val.startsWith('http://') || val.startsWith('https://')) {
-            currentAvatarSource = val;
-            previewDisplay.innerHTML = `<img src="${val}" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML='👤'">`;
-            statusText.textContent = 'Ready to apply from URL';
-        } else if (!val && !currentAvatarSource.startsWith('data:')) {
-            previewDisplay.innerHTML = '👤';
-            statusText.textContent = 'No image selected yet';
+    // Dropzone click -> file input
+    dropzone?.addEventListener('click', (e) => {
+        if (e.target !== browseBtn && e.target !== urlInput) {
+            fileInput?.click();
         }
     });
 
-    browseBtn?.addEventListener('click', () => {
+    // Drag & drop support
+    if (dropzone) {
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropzone.classList.add('dragover');
+            });
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropzone.classList.remove('dragover');
+            });
+        });
+
+        dropzone.addEventListener('drop', (e) => {
+            const files = e.dataTransfer && e.dataTransfer.files;
+            if (files && files.length > 0) {
+                const file = files[0];
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const dataUrl = event.target.result;
+                    currentAvatarSource = dataUrl;
+                    if (urlInput) urlInput.value = file.name;
+                    renderAvatar(dataUrl, 'Avatar ready to apply', `${file.name} (${Math.round(file.size / 1024)} KB)`);
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+    }
+
+    urlInput?.addEventListener('input', () => {
+        const val = urlInput.value.trim();
+        if (val.startsWith('http://') || val.startsWith('https://')) {
+            currentAvatarSource = val;
+            renderAvatar(val, 'Avatar URL ready', 'Click Apply to inject into game');
+        } else if (!val && !currentAvatarSource.startsWith('data:')) {
+            currentAvatarSource = '';
+            renderEmpty();
+        }
+    });
+
+    browseBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
         fileInput?.click();
     });
 
@@ -6109,31 +6132,30 @@ function initAvatarTab() {
         reader.onload = (event) => {
             const dataUrl = event.target.result;
             currentAvatarSource = dataUrl;
-            urlInput.value = file.name;
-            previewDisplay.innerHTML = `<img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover;">`;
-            statusText.textContent = `Selected: ${file.name} (${Math.round(file.size / 1024)} KB)`;
+            if (urlInput) urlInput.value = file.name;
+            renderAvatar(dataUrl, 'Avatar ready to apply', `${file.name} (${Math.round(file.size / 1024)} KB)`);
         };
         reader.readAsDataURL(file);
     });
 
     applyBtn.addEventListener('click', async () => {
-        const source = currentAvatarSource || urlInput.value.trim();
+        const source = currentAvatarSource || urlInput?.value.trim();
         if (!source) {
             showToast('Please select an image file or enter an image URL first.', 'error');
             return;
         }
 
         applyBtn.disabled = true;
-        statusText.textContent = 'Patching game files (Chunk 1 & Chunk 6)...';
+        if (statusText) statusText.textContent = 'Patching game files (Chunk 1 & Chunk 6)...';
 
         try {
             await invoke('apply_custom_avatar_upk', { avatarSource: source });
             localStorage.setItem('velocityrl_avatar_preview', source);
-            statusText.textContent = 'Active in Rocket League (In-Engine Scaleform)';
+            renderAvatar(source, 'Active custom avatar', 'Active in Rocket League');
             showToast('Custom profile picture successfully applied!', 'success');
             flashButtonLabel(applyBtn, 'Applied!');
         } catch (err) {
-            statusText.textContent = 'Failed to apply profile picture';
+            if (statusText) statusText.textContent = 'Failed to apply profile picture';
             showToast(formatError(err), 'error');
         } finally {
             applyBtn.disabled = false;
@@ -6142,19 +6164,18 @@ function initAvatarTab() {
 
     restoreBtn.addEventListener('click', async () => {
         restoreBtn.disabled = true;
-        statusText.textContent = 'Restoring original game files...';
+        if (statusText) statusText.textContent = 'Restoring original game files...';
 
         try {
             await invoke('restore_custom_avatar_upk');
             localStorage.removeItem('velocityrl_avatar_preview');
             currentAvatarSource = '';
-            urlInput.value = '';
-            previewDisplay.innerHTML = '👤';
-            statusText.textContent = 'Restored vanilla game avatar';
+            if (urlInput) urlInput.value = '';
+            renderEmpty();
             showToast('Vanilla profile picture restored from backup.', 'success');
             flashButtonLabel(restoreBtn, 'Restored');
         } catch (err) {
-            statusText.textContent = 'Failed to restore';
+            if (statusText) statusText.textContent = 'Failed to restore';
             showToast(formatError(err), 'error');
         } finally {
             restoreBtn.disabled = false;
