@@ -6458,28 +6458,6 @@ function initAvatarTab() {
 
     checkSteamAuth();
 
-    const steamApiKeyInput = document.getElementById('steam-api-key-input');
-    const steamApiKeySaveBtn = document.getElementById('steam-api-key-save-btn');
-    if (steamApiKeyInput) {
-        invoke('get_steam_api_key_command').then(key => {
-            if (key) steamApiKeyInput.value = key;
-        }).catch(() => {});
-        steamApiKeySaveBtn?.addEventListener('click', async () => {
-            const val = steamApiKeyInput.value.trim();
-            try {
-                await invoke('set_steam_api_key_command', { key: val });
-                try {
-                    const cfg = await invoke('get_profile_card_config');
-                    cfg.steam_api_key = val ? val : null;
-                    await invoke('save_profile_card_config', { config: cfg });
-                } catch (_) {}
-                showToast(val ? 'Steam Web API key saved!' : 'Steam API key cleared.', 'success');
-            } catch (err) {
-                showToast(`Failed to save Steam API key: ${err}`, 'error');
-            }
-        });
-    }
-
     const steamLoginBtn = document.getElementById('steam-login-btn');
     steamLoginBtn?.addEventListener('click', async () => {
         try {

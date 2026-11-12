@@ -22,7 +22,7 @@ pub use swapper::{
 pub use rlim_engine::{
     RlimMasterConfig, RlimEngineStatus, RlimUnderglowConfig, RlimCamberConfig,
     RlimLightingConfig, RlimHudConfig, RlimFreeplayConfig, RlimInstantConfig,
-    RlimWireConfig, RlimPrivacyConfig, ColorRgba, apply_rlim_suite,
+    RlimWireConfig, RlimPrivacyConfig, RlimBridgeTimerConfig, ColorRgba, apply_rlim_suite,
 };
 pub use legacy_swapper::{swap_asset, restore_single, restore_all, SwapOptions};
 pub use palette::{PaletteStatus, PaletteError};

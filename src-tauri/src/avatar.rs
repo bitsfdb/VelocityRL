@@ -27,8 +27,6 @@ pub struct CustomProfileConfig {
     pub avatar_url: String,
     #[serde(default)]
     pub xp_level: Option<i32>,
-    #[serde(default)]
-    pub steam_api_key: Option<String>,
 }
 
 impl Default for CustomProfileConfig {
@@ -44,7 +42,6 @@ impl Default for CustomProfileConfig {
             border_url: "assets/borders/flames.png".into(),
             avatar_url: "https://rlstats.net/images/epic.png".into(),
             xp_level: None,
-            steam_api_key: None,
         }
     }
 }
@@ -59,11 +56,6 @@ pub fn get_profile_card_config(app: tauri::AppHandle) -> Result<CustomProfileCon
         if path.is_file() {
             if let Ok(content) = fs::read_to_string(&path) {
                 if let Ok(cfg) = serde_json::from_str::<CustomProfileConfig>(&content) {
-                    if let Some(ref k) = cfg.steam_api_key {
-                        if get_steam_api_key().is_none() && !k.trim().is_empty() {
-                            set_steam_api_key(k.clone());
-                        }
-                    }
                     return Ok(cfg);
                 }
             }
@@ -74,9 +66,6 @@ pub fn get_profile_card_config(app: tauri::AppHandle) -> Result<CustomProfileCon
 
 #[tauri::command]
 pub fn save_profile_card_config(app: tauri::AppHandle, config: CustomProfileConfig) -> Result<(), String> {
-    if let Some(ref k) = config.steam_api_key {
-        set_steam_api_key(k.clone());
-    }
     let path = profile_card_config_path(&app)
         .ok_or_else(|| "Failed to resolve app config directory".to_string())?;
     if let Some(parent) = path.parent() {
@@ -251,64 +240,6 @@ pub struct SteamAuthenticatedUser {
 }
 
 static AUTHENTICATED_STEAM_USER: std::sync::Mutex<Option<SteamAuthenticatedUser>> = std::sync::Mutex::new(None);
-static CUSTOM_STEAM_API_KEY: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
-
-pub fn set_steam_api_key(key: String) {
-    if let Ok(mut lock) = CUSTOM_STEAM_API_KEY.lock() {
-        let trimmed = key.trim().to_string();
-        if trimmed.is_empty() {
-            *lock = None;
-        } else {
-            *lock = Some(trimmed);
-        }
-    }
-}
-
-pub fn get_steam_api_key() -> Option<String> {
-    if let Ok(lock) = CUSTOM_STEAM_API_KEY.lock() {
-        if let Some(ref k) = *lock {
-            if !k.is_empty() {
-                return Some(k.clone());
-            }
-        }
-    }
-    if let Ok(k) = std::env::var("STEAM_API_KEY") {
-        let trimmed = k.trim().to_string();
-        if !trimmed.is_empty() {
-            return Some(trimmed);
-        }
-    }
-    // Check local profile config file
-    let candidate_paths = [
-        PathBuf::from("/root/.config/com.velocityrl.app/profile_card.json"),
-    ];
-    for p in &candidate_paths {
-        if p.is_file() {
-            if let Ok(content) = fs::read_to_string(p) {
-                if let Ok(cfg) = serde_json::from_str::<CustomProfileConfig>(&content) {
-                    if let Some(ref key) = cfg.steam_api_key {
-                        let trimmed = key.trim().to_string();
-                        if !trimmed.is_empty() {
-                            return Some(trimmed);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
-#[tauri::command]
-pub fn set_steam_api_key_command(key: String) -> Result<(), String> {
-    set_steam_api_key(key);
-    Ok(())
-}
-
-#[tauri::command]
-pub fn get_steam_api_key_command() -> Option<String> {
-    get_steam_api_key()
-}
 
 pub fn set_authenticated_steam_user(user: SteamAuthenticatedUser) {
     if let Ok(mut lock) = AUTHENTICATED_STEAM_USER.lock() {
@@ -439,31 +370,7 @@ pub async fn fetch_verified_steam_profile(steam_id: u64) -> Result<(String, Stri
         .build()
         .map_err(|e| e.to_string())?;
 
-    // 1. Try local Steam Web API if STEAM_API_KEY is configured (authoritative, real-time persona & full-res avatar)
-    if let Some(api_key) = get_steam_api_key() {
-        let api_url = format!(
-            "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={}&steamids={steam_id}",
-            api_key.trim()
-        );
-        if let Ok(resp) = client.get(&api_url).send().await {
-            if let Ok(env) = resp.json::<SteamWebApiEnvelope>().await {
-                if let Some(players) = env.response {
-                    if let Some(p) = players.players.into_iter().next() {
-                        let persona = p.personaname
-                            .filter(|s| !s.trim().is_empty())
-                            .unwrap_or(p.steamid);
-                        if let Some(av) = p.avatarfull {
-                            if !av.trim().is_empty() {
-                                return Ok((persona, av));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // 2. Try VelocityRL API backend proxy (server-side Steam key and cache)
+    // 1. Primary: VelocityRL domain API (centralized server-side Steam key and cache)
     let backend_url = format!("https://api.velocityrl.tech/v1/steam/user/{steam_id}");
     if let Ok(resp) = client.get(&backend_url).send().await {
         if resp.status().is_success() {
@@ -477,7 +384,7 @@ pub async fn fetch_verified_steam_profile(steam_id: u64) -> Result<(String, Stri
         }
     }
 
-    // 3. Try Steam Community XML (fallback)
+    // 2. Backup: Steam Community XML
     let xml_url = format!("https://steamcommunity.com/profiles/{steam_id}/?xml=1");
     if let Ok(resp) = client.get(&xml_url).send().await {
         if let Ok(text) = resp.text().await {
@@ -516,7 +423,7 @@ pub async fn fetch_verified_steam_profile(steam_id: u64) -> Result<(String, Stri
         }
     }
 
-    // 3. Try miniprofile as fallback for avatar
+    // 3. Fallback: Steam miniprofile JSON
     let account_id = (steam_id & 0xFFFF_FFFF) as u32;
     if account_id > 0 {
         let mini_url = format!("https://steamcommunity.com/miniprofile/{account_id}/json");
@@ -549,30 +456,6 @@ struct SteamMiniProfileResponse {
     pub persona_name: Option<String>,
     #[serde(default)]
     pub level: Option<u32>,
-}
-
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-struct SteamWebApiEnvelope {
-    pub response: Option<SteamWebApiPlayerList>,
-}
-
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-struct SteamWebApiPlayerList {
-    #[serde(default)]
-    pub players: Vec<SteamWebApiPlayerEntry>,
-}
-
-#[derive(Debug, Deserialize)]
-#[allow(dead_code)]
-struct SteamWebApiPlayerEntry {
-    #[serde(default)]
-    pub steamid: String,
-    #[serde(default)]
-    pub personaname: Option<String>,
-    #[serde(default)]
-    pub avatarfull: Option<String>,
 }
 
 pub const STEAMID64_INDIVIDUAL_BASE: u64 = 76561197960265728;
@@ -681,64 +564,21 @@ pub async fn fetch_steam_avatar_png(steam_id: u64) -> Option<Vec<u8>> {
 
     let mut direct_avatar_url: Option<String> = None;
 
-    // 3. Steam Web API (if STEAM_API_KEY is configured in env or settings)
-    if let Some(api_key) = get_steam_api_key() {
-        let api_url = format!(
-            "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={}&steamids={steam_id}",
-            api_key.trim()
-        );
-        if let Ok(resp) = client.get(&api_url).send().await {
-            if let Ok(env) = resp.json::<SteamWebApiEnvelope>().await {
-                if let Some(players) = env.response {
-                    if let Some(p) = players.players.into_iter().next() {
-                        if let Some(av) = p.avatarfull {
-                            if !av.trim().is_empty() {
-                                direct_avatar_url = Some(av);
-                            }
-                        }
+    // 3. Primary: VelocityRL domain API proxy (centralized server-side resolution)
+    let backend_url = format!("https://api.velocityrl.tech/v1/steam/user/{steam_id}");
+    if let Ok(resp) = client.get(&backend_url).send().await {
+        if resp.status().is_success() {
+            if let Ok(prof) = resp.json::<VelocitySteamProfile>().await {
+                if let Some(url) = prof.avatar_url {
+                    if !url.trim().is_empty() {
+                        direct_avatar_url = Some(url);
                     }
                 }
             }
         }
     }
 
-    // 4. Try VelocityRL API backend proxy (server-side Steam key and cache)
-    if direct_avatar_url.is_none() {
-        let backend_url = format!("https://api.velocityrl.tech/v1/steam/user/{steam_id}");
-        if let Ok(resp) = client.get(&backend_url).send().await {
-            if resp.status().is_success() {
-                if let Ok(prof) = resp.json::<VelocitySteamProfile>().await {
-                    if let Some(url) = prof.avatar_url {
-                        if !url.trim().is_empty() {
-                            direct_avatar_url = Some(url);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // 5. Steam OpenAPI (Keyless miniprofile JSON endpoint fallback)
-    if direct_avatar_url.is_none() {
-        // Steam account id is lower 32 bits of SteamID64 (e.g. 76561198000000000 -> 39734272)
-        let account_id = (steam_id & 0xFFFF_FFFF) as u32;
-        if account_id > 0 {
-            let miniprofile_url = format!("https://steamcommunity.com/miniprofile/{account_id}/json");
-            if let Ok(resp) = client.get(&miniprofile_url).send().await {
-                if resp.status().is_success() {
-                    if let Ok(profile) = resp.json::<SteamMiniProfileResponse>().await {
-                        if let Some(url) = profile.avatar_url {
-                            if !url.trim().is_empty() {
-                                direct_avatar_url = Some(url);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // 6. Fallback: Steam community XML scrape (only if OpenAPI and Web API failed)
+    // 4. Backup: Steam Community XML scrape
     if direct_avatar_url.is_none() {
         let xml_url = format!("https://steamcommunity.com/profiles/{steam_id}/?xml=1");
         if let Ok(resp) = client.get(&xml_url).send().await {
@@ -752,6 +592,25 @@ pub async fn fetch_steam_avatar_png(steam_id: u64) -> Option<Vec<u8>> {
                     let rest = &text[pos + 12..];
                     if let Some(end) = rest.find("</avatarFull>") {
                         direct_avatar_url = Some(rest[..end].to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // 5. Fallback: Steam miniprofile JSON
+    if direct_avatar_url.is_none() {
+        let account_id = (steam_id & 0xFFFF_FFFF) as u32;
+        if account_id > 0 {
+            let miniprofile_url = format!("https://steamcommunity.com/miniprofile/{account_id}/json");
+            if let Ok(resp) = client.get(&miniprofile_url).send().await {
+                if resp.status().is_success() {
+                    if let Ok(profile) = resp.json::<SteamMiniProfileResponse>().await {
+                        if let Some(url) = profile.avatar_url {
+                            if !url.trim().is_empty() {
+                                direct_avatar_url = Some(url);
+                            }
+                        }
                     }
                 }
             }

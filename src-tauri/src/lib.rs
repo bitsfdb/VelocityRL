@@ -4039,8 +4039,6 @@ pub fn run() {
             avatar::get_steam_login_url,
             avatar::get_authenticated_steam_user,
             avatar::clear_authenticated_steam_user,
-            avatar::set_steam_api_key_command,
-            avatar::get_steam_api_key_command,
             apply_rlim_modifications,
             get_rlim_config,
             save_rlim_config,
