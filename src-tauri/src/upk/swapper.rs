@@ -2463,6 +2463,28 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
         return Err("ProjectX Chunk 1 out of bounds".into());
     }
 
+    if ch1_start + 16 <= file_bytes.len() {
+        let cur_c_sz = u32::from_le_bytes(file_bytes[ch1_start + 8..ch1_start + 12].try_into().unwrap());
+        let cur_u_sz = u32::from_le_bytes(file_bytes[ch1_start + 12..ch1_start + 16].try_into().unwrap());
+        let num_b = (cur_u_sz + 131072 - 1) / 131072;
+        if (num_b + 1) * 8 + cur_c_sz > ch1.3 as u32 {
+            let mut bp = ch1_start + 16;
+            let mut sum_b = 0i32;
+            for _ in 0..num_b {
+                if bp + 8 > file_bytes.len() { break; }
+                let c = i32::from_le_bytes(file_bytes[bp..bp + 4].try_into().unwrap());
+                sum_b = sum_b.saturating_add(c);
+                bp += 8;
+            }
+            if (num_b + 1) * 8 + sum_b as u32 <= ch1.3 as u32 {
+                file_bytes[ch1_start + 8..ch1_start + 12].copy_from_slice(&sum_b.to_le_bytes());
+                if bak_path.is_file() {
+                    let _ = fs::write(&bak_path, &file_bytes);
+                }
+            }
+        }
+    }
+
     let mut decomp1 = crate::upk::compression::decompress_chunk(&file_bytes[ch1_start..ch1_end])
         .map_err(|e| format!("decompress ProjectX Chunk 1: {e}"))?;
 
@@ -2470,6 +2492,12 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
     if let Ok(cur_px_bytes) = fs::read(&px_path) {
         if cur_px_bytes.len() >= ch1_end {
             if let Ok(cur_decomp1) = crate::upk::compression::decompress_chunk(&cur_px_bytes[ch1_start..ch1_end]) {
+                let cur_ch1_comp_sz = u32::from_le_bytes(cur_px_bytes[ch1_start + 8..ch1_start + 12].try_into().unwrap());
+                let cur_ch1_uncomp_sz = u32::from_le_bytes(cur_px_bytes[ch1_start + 12..ch1_start + 16].try_into().unwrap());
+                let num_b = (cur_ch1_uncomp_sz + 131072 - 1) / 131072;
+                let ue3_calc = (num_b + 1) * 8 + cur_ch1_comp_sz;
+                let compression_valid = ue3_calc <= ch1.3 as u32;
+
                 let val_patched = if let Some(val_exp) = raw_exports.iter().find(|e| {
                     e.name == "ValidateURL" && e.outer_idx > 0 && raw_exports.get(e.outer_idx as usize - 1).map(|o| o.name == "PsyNetUrl_X").unwrap_or(false)
                 }) {
@@ -2511,7 +2539,26 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
                 };
 
                 if val_patched && chk_patched && rank_patched && rpc_patched {
-                    return Ok(false); // Already patched correctly
+                    if compression_valid {
+                        return Ok(false);
+                    }
+                    let mut fixed = cur_px_bytes.clone();
+                    let mut bp = ch1_start + 16;
+                    let mut sum_b = 0i32;
+                    for _ in 0..num_b {
+                        if bp + 8 > fixed.len() { break; }
+                        let c = i32::from_le_bytes(fixed[bp..bp + 4].try_into().unwrap());
+                        sum_b = sum_b.saturating_add(c);
+                        bp += 8;
+                    }
+                    if (num_b + 1) * 8 + sum_b as u32 <= ch1.3 as u32 {
+                        fixed[ch1_start + 8..ch1_start + 12].copy_from_slice(&sum_b.to_le_bytes());
+                        let _ = fs::write(&px_path, &fixed);
+                        if bak_path.is_file() {
+                            let _ = fs::write(&bak_path, &fixed);
+                        }
+                        return Ok(false);
+                    }
                 }
             }
         }

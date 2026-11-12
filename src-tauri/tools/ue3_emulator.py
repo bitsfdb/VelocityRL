@@ -326,6 +326,20 @@ def run_emulator_test_suite(upk_path):
 def run_projectx_emulator_test_suite(upk_path):
     print(f"\n[*] Starting ProjectX Validation VM Bytecode Emulator on {upk_path}...")
     pkg = ue3_decompiler.PackageReader(upk_path)
+
+    # Verify UE3 package chunk compression bounds to prevent [undershoot] crash
+    with open(upk_path, 'rb') as f:
+        for c_idx, c in enumerate(pkg.chunks):
+            c_off = c['comp_offset']
+            c_sz = c['comp_size']
+            f.seek(c_off)
+            tag, blk_sz, h_comp, h_uncomp = struct.unpack('<IIII', f.read(16))
+            num_b = (h_uncomp + blk_sz - 1) // blk_sz
+            ue3_calc = (num_b + 1) * 8 + h_comp
+            if ue3_calc > c_sz:
+                print(f" [!] FAIL: Chunk {c_idx} undershoot violation: (num_b+1)*8 + h_comp ({ue3_calc}) > chunk_table.comp_sz ({c_sz})")
+                return False
+    print(" [+] PASS: UE3 package chunk compression bounds verified (no undershoot)")
     
     # URL validation function tests
     tests = [
