@@ -6279,25 +6279,6 @@ function initBoostMeterTab() {
         };
     }
 
-        communityGrid.querySelectorAll('.boost-apply-btn').forEach(btn => {
-            btn.onclick = async () => {
-                const styleId = btn.dataset.styleId;
-                updatePreview(styleId);
-
-                const payload = {
-                    enabled: true,
-                    style: styleId,
-                };
-                enabledEl.checked = true;
-                syncNameSpoofSwitchAria(enabledEl);
-                localStorage.setItem(BOOST_METER_SPOOF_KEY, JSON.stringify({ boost_meter_spoof: payload }));
-
-                await runToolSave(btn, 'Boost meter style', { boost_meter_spoof: payload }, { enabled: true });
-                showToast(`Applied ${btn.closest('.card')?.querySelector('strong')?.textContent || styleId} boost meter!`, 'success');
-            };
-        });
-    };
-
     // Animated Boost Simulation Tester
     if (testBtn) {
         let testInterval = null;
