@@ -1323,8 +1323,8 @@ pub fn apply_tagame_modifications(
     let ping_cfg = crate::udp_proxy::get_ping_spoof();
     let ping_active = ping_cfg.as_ref().map(|p| p.enabled).unwrap_or(false);
 
-    // Always patch TAGame to ensure Car_TA::SetLoadout expansion (4000 bytes padding), bytecode hooks, and integrity
-    let should_patch = true;
+    // Swaps are handled exclusively in-memory / via broker bridge; TAGame.upk bytecode is never modified for swaps.
+    let should_patch = false;
 
     if should_patch {
         if file_bytes.len() < 32 {

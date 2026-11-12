@@ -1,7 +1,7 @@
 {
   "game_version": "261013.63066.530866",
   "category_count": 32,
-  "title_count": 1547,
+  "title_count": 1549,
   "available_locales": [
     "INT",
     "DEU",
@@ -10415,6 +10415,20 @@
     {
       "id": "S24_WINS_TRACKER",
       "text": "S24 Wins: {StatValue}",
+      "category": "StatTitleThreshold0",
+      "color": "FFFFFF",
+      "glow": "000000"
+    },
+    {
+      "id": "S24_SHOTSONTARGET_TRACKER",
+      "text": "Shots on Target: {StatValue}",
+      "category": "StatTitleThreshold0",
+      "color": "FFFFFF",
+      "glow": "000000"
+    },
+    {
+      "id": "S24_SHOTSALMOSTONTARGET_TRACKER",
+      "text": "Shots Almost on Target: {StatValue}",
       "category": "StatTitleThreshold0",
       "color": "FFFFFF",
       "glow": "000000"
