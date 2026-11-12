@@ -3689,13 +3689,9 @@ pub fn run() {
                 if let Ok(config) = get_config(boot_app.clone()).await {
                     if !config.game_dir.is_empty() {
                         if let Ok(cooked) = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                            // On startup, patch ProjectX and sync active swaps with auto-backup of updated files
+                            // On startup, patch ProjectX and ensure game packages are clean
                             let _ = upk::ensure_projectx_patched(&cooked);
-                            let swaps = load_swaps(&boot_app);
-                            if !swaps.is_empty() {
-                                applog::event(&format!("startup: auto-applying {} active swap(s) to game files", swaps.len()));
-                                let _ = sync_all_swaps_to_tagame(&boot_app, &cooked, &swaps).await;
-                            }
+                            let _ = sync_all_swaps_to_tagame(&boot_app, &cooked, &[]).await;
                         }
                     }
                 }
@@ -3720,16 +3716,7 @@ pub fn run() {
                                     applog::event("periodic_check: TAGame.upk missing, attempting automatic download...");
                                     let _ = upk::swapper::download_official_tagame_upk(&tagame, |_, _| {}).await;
                                 } else {
-                                    let keys_txt = include_str!("../resources/keys.txt");
-                                    let keys_map_json = include_str!("../resources/keys_map.json");
-                                    if upk::palette::is_vanilla_stock_file(&tagame, keys_txt, keys_map_json) {
-                                        let swaps = load_swaps(&ttl_app);
-                                        if !swaps.is_empty() {
-                                            applog::event("periodic_check: game update detected (TAGame.upk is vanilla), auto-healing active swaps...");
-                                            let _ = upk::ensure_projectx_patched(&cooked);
-                                            let _ = sync_all_swaps_to_tagame(&ttl_app, &cooked, &swaps).await;
-                                        }
-                                    }
+                                    // TAGame.upk exists; no periodic file rewrite needed
                                 }
                             }
                         }
