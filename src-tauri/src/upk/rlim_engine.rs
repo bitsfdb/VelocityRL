@@ -59,6 +59,8 @@ pub mod keys {
     pub const CFG_SPOOF_NAME: &str           = "RLIM-Spoof-v1-Name";
     pub const CFG_PRIVACY_NO_TELEMETRY: &str = "RLIM-Privacy-v1-TelemetryKill";
     pub const CFG_PRIVACY_EULA_SKIP: &str    = "RLIM-Privacy-v1-EulaSkip";
+    pub const CFG_BRIDGE_TIMER_RATE: &str    = "RLIM-Bridge-v1-TimerRate";
+    pub const CFG_BRIDGE_TIMER_FUNC: &str    = "RLIM-Bridge-v1-TimerFunc";
 }
 
 
@@ -153,6 +155,28 @@ pub struct RlimPrivacyConfig {
     pub skip_eula: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RlimBridgeTimerConfig {
+    pub enabled: bool,
+    #[serde(default = "default_bridge_timer_rate")]
+    pub rate: f32,
+    #[serde(default = "default_bridge_timer_func")]
+    pub function_name: String,
+}
+
+fn default_bridge_timer_rate() -> f32 { 0.25 }
+fn default_bridge_timer_func() -> String { "CheckBridge".to_string() }
+
+impl Default for RlimBridgeTimerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            rate: 0.25,
+            function_name: "CheckBridge".into(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RlimMasterConfig {
     pub spawner_enabled: bool,
@@ -165,6 +189,8 @@ pub struct RlimMasterConfig {
     pub wire: RlimWireConfig,
     pub privacy: RlimPrivacyConfig,
     pub ping_spoof: Option<(u32, u32)>,
+    #[serde(default)]
+    pub bridge_timer: RlimBridgeTimerConfig,
 }
 
 
@@ -338,6 +364,41 @@ pub fn emit_rlim_wire_packet_bytecode(
     (payload, script_size)
 }
 
+/// Emits SetTimer(rate, true) bytecode for Actor to replace per-frame PlayerTick polling
+pub fn emit_rlim_settimer_bytecode(
+    rate: f32,
+    orig_disk_sz: usize,
+) -> (Vec<u8>, u32) {
+    let mut payload = Vec::with_capacity(orig_disk_sz);
+    payload.push(opcodes::EX_NOTHING);
+
+    // Call Actor.SetTimer(rate, true) via native token 280
+    payload.push(opcodes::EX_FINAL_FUNCTION);
+    payload.extend_from_slice(&280i32.to_le_bytes()); // Native Actor.SetTimer (280)
+
+    // Arg 1: InRate (float)
+    payload.push(opcodes::EX_FLOAT_CONST);
+    payload.extend_from_slice(&rate.to_le_bytes());
+
+    // Arg 2: inbLoop (true)
+    payload.push(opcodes::EX_TRUE_CONST);
+
+    // End function arguments
+    payload.push(opcodes::EX_END_FUNCTION_PARMS);
+
+    // EX_RETURN void
+    payload.push(opcodes::EX_RETURN);
+    payload.push(opcodes::EX_NOTHING);
+
+    while payload.len() + 1 < orig_disk_sz {
+        payload.push(opcodes::EX_NOTHING);
+    }
+    payload.push(opcodes::EX_END_OF_SCRIPT);
+
+    let script_size = payload.len() as u32;
+    (payload, script_size)
+}
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RlimEngineStatus {
@@ -421,6 +482,9 @@ pub fn apply_rlim_suite(
         patched_fns.push("Eula_TA::RequiresAcceptance".into());
         patched_fns.push("Eula_TA::OnShowEula".into());
     }
+    if config.bridge_timer.enabled {
+        patched_fns.push(format!("Actor::SetTimer (Rate: {}s, Func: {})", config.bridge_timer.rate, config.bridge_timer.function_name));
+    }
 
     crate::applog::event(&format!(
         "apply_rlim_suite: Applied {} engine patches for VelocityRL RLIM suite",
@@ -432,4 +496,34 @@ pub fn apply_rlim_suite(
         message: format!("RLIM suite applied successfully with {} engine patches", patched_fns.len()),
         patched_functions: patched_fns,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rlim_settimer_bytecode_structure() {
+        let (bc, sz) = emit_rlim_settimer_bytecode(0.25, 48);
+        assert_eq!(sz, 48);
+        assert_eq!(bc[0], opcodes::EX_NOTHING);
+        assert_eq!(bc[1], opcodes::EX_FINAL_FUNCTION);
+        let token = i32::from_le_bytes(bc[2..6].try_into().unwrap());
+        assert_eq!(token, 280); // Actor.SetTimer
+        assert_eq!(bc[6], opcodes::EX_FLOAT_CONST);
+        let rate = f32::from_le_bytes(bc[7..11].try_into().unwrap());
+        assert_eq!(rate, 0.25);
+        assert_eq!(bc[11], opcodes::EX_TRUE_CONST);
+        assert_eq!(bc[12], opcodes::EX_END_FUNCTION_PARMS);
+        assert_eq!(bc[13], opcodes::EX_RETURN);
+        assert_eq!(bc[47], opcodes::EX_END_OF_SCRIPT);
+    }
+
+    #[test]
+    fn test_rlim_bridge_timer_config_defaults() {
+        let cfg = RlimBridgeTimerConfig::default();
+        assert!(cfg.enabled);
+        assert_eq!(cfg.rate, 0.25);
+        assert_eq!(cfg.function_name, "CheckBridge");
+    }
 }
