@@ -2094,7 +2094,7 @@ async fn handle_broker_request(
             .unwrap());
     }
 
-    if path_str == "/rlim/name" || path_str.starts_with("/rlim/name?") || path_str == "/s/name" || path_str.starts_with("/s/name?") {
+    if path_str == "/rlim/name" || path_str.starts_with("/rlim/name?") {
         let name = crate::psynet::load_active_spoof_from_disk()
             .and_then(|c| c.name_spoof)
             .filter(|ns| ns.enabled && !ns.display_name.trim().is_empty())
@@ -2110,7 +2110,7 @@ async fn handle_broker_request(
             .unwrap());
     }
 
-    if path_str == "/rlim/title" || path_str.starts_with("/rlim/title?") || path_str == "/s/title" || path_str.starts_with("/s/title?") {
+    if path_str == "/rlim/title" || path_str.starts_with("/rlim/title?") {
         let (title, glow) = crate::psynet::load_active_spoof_from_disk()
             .map(|c| {
                 let t = if !c.equip_title_id.trim().is_empty() {
@@ -2140,8 +2140,7 @@ async fn handle_broker_request(
     }
 
     if path_str == "/rlim/ping" || path_str.starts_with("/rlim/ping?")
-        || path_str == "/rlim/pingspoof" || path_str.starts_with("/rlim/pingspoof?")
-        || path_str == "/s/ping" || path_str.starts_with("/s/ping?") {
+        || path_str == "/rlim/pingspoof" || path_str.starts_with("/rlim/pingspoof?") {
         let ping_val = crate::psynet::load_active_spoof_from_disk()
             .and_then(|c| c.ping_spoof)
             .map(|ps| {
@@ -2159,8 +2158,46 @@ async fn handle_broker_request(
             .unwrap());
     }
 
+    if path_str == "/rlim/loadout" || path_str.starts_with("/rlim/loadout?") {
+        let rules = load_active_swap_rules(None);
+        let loadout_json = serde_json::to_string(&rules).unwrap_or_else(|_| "[]".to_string());
+        crate::applog::event(&format!("broker: {path_str} queried -> responding with {} active swap rule(s)", rules.len()));
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json; charset=utf-8")
+            .header("Content-Length", loadout_json.len().to_string())
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body(loadout_json.into_bytes()))
+            .unwrap());
+    }
+
+    if path_str == "/rlim/sp" || path_str.starts_with("/rlim/sp?") {
+        let rules = load_active_swap_rules(None);
+        let sp_ids: Vec<String> = rules.iter().map(|r| r.wanted_id.to_string()).collect();
+        let sp_body = sp_ids.join(",");
+        crate::applog::event(&format!("broker: {path_str} queried -> responding '{sp_body}'"));
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "text/plain; charset=utf-8")
+            .header("Content-Length", sp_body.len().to_string())
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body(sp_body.into_bytes()))
+            .unwrap());
+    }
+
+    if path_str == "/rlim/pk" || path_str.starts_with("/rlim/pk?")
+        || path_str == "/rlim/lo" || path_str.starts_with("/rlim/lo?") {
+        crate::applog::event(&format!("broker: {path_str} queried"));
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "text/plain")
+            .header("Content-Length", "0")
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body(Vec::new()))
+            .unwrap());
+    }
+
     if path_str == "/rlim/avatar" || path_str.starts_with("/rlim/avatar?")
-        || path_str == "/s/avatar" || path_str.starts_with("/s/avatar?")
         || path_str == "/a.png" || path_str.starts_with("/a.png?")
         || path_str.contains("/avatars/") {
         // 1. Check if a specific Steam ID is requested in path or query
@@ -5187,7 +5224,7 @@ fn upsert_class_property_override(
     (patched, true)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ActiveSwapRule {
     pub owned_id: i32,
     pub wanted_id: i32,
