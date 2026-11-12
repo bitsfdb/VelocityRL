@@ -5178,7 +5178,7 @@
     },
     {
       "ID": 165,
-      "Product": "C\u00f4te d'Ivoire",
+      "Product": "Côte d'Ivoire",
       "Slot": "Antenna",
       "Quality": "Common",
       "UnlockMethod": "UnlockMethod_Default",
@@ -7548,7 +7548,7 @@
     },
     {
       "ID": 241,
-      "Product": "Br\u00fcnnehilde",
+      "Product": "Brünnehilde",
       "Slot": "Topper",
       "Quality": "Uncommon",
       "UnlockMethod": "UnlockMethod_Online",
@@ -12512,7 +12512,7 @@
     },
     {
       "ID": 400,
-      "Product": "Pi\u00f1ata",
+      "Product": "Piñata",
       "Slot": "Antenna",
       "Quality": "Uncommon",
       "UnlockMethod": "UnlockMethod_Online",
@@ -16982,7 +16982,7 @@
     },
     {
       "ID": 566,
-      "Product": "R\u00e9union",
+      "Product": "Réunion",
       "Slot": "Antenna",
       "Quality": "Common",
       "UnlockMethod": "UnlockMethod_Default",
@@ -23622,7 +23622,7 @@
     },
     {
       "ID": 840,
-      "Product": "Cura\u00e7ao",
+      "Product": "Curaçao",
       "Slot": "Antenna",
       "Quality": "Common",
       "UnlockMethod": "UnlockMethod_Default",
@@ -43326,7 +43326,7 @@
     },
     {
       "ID": 1856,
-      "Product": "J\u00e4ger 619",
+      "Product": "Jäger 619",
       "Slot": "Body",
       "Quality": "Import",
       "UnlockMethod": "UnlockMethod_Online",
@@ -43571,7 +43571,7 @@
     },
     {
       "ID": 1869,
-      "Product": "J\u00e4ger 619",
+      "Product": "Jäger 619",
       "Slot": "Engine Audio",
       "Quality": "Common",
       "UnlockMethod": "UnlockMethod_Default",
@@ -51846,7 +51846,7 @@
       "Paintable": false,
       "AssetPackage": "skin_sourdough_stripes",
       "AssetPath": "skin_sourdough_stripes.skin_sourdough_stripes",
-      "LongLabel": "J\u00e4ger 619: Stripes",
+      "LongLabel": "Jäger 619: Stripes",
       "asset_package": "skin_sourdough_stripes",
       "asset_path": "skin_sourdough_stripes.skin_sourdough_stripes",
       "object_name": "skin_sourdough_stripes",
@@ -51859,8 +51859,8 @@
       "PackageItemCount": 1,
       "compatible_body_id": 1856,
       "CompatibleBodyId": 1856,
-      "compatible_body_name": "J\u00e4ger 619",
-      "CompatibleBodyName": "J\u00e4ger 619"
+      "compatible_body_name": "Jäger 619",
+      "CompatibleBodyName": "Jäger 619"
     },
     {
       "ID": 2083,
@@ -51944,7 +51944,7 @@
       "Paintable": false,
       "AssetPackage": "skin_sourdough_meteor",
       "AssetPath": "skin_sourdough_meteor.skin_sourdough_meteor",
-      "LongLabel": "J\u00e4ger 619: The Summit",
+      "LongLabel": "Jäger 619: The Summit",
       "asset_package": "skin_sourdough_meteor",
       "asset_path": "skin_sourdough_meteor.skin_sourdough_meteor",
       "object_name": "skin_sourdough_meteor",
@@ -51957,8 +51957,8 @@
       "PackageItemCount": 1,
       "compatible_body_id": 1856,
       "CompatibleBodyId": 1856,
-      "compatible_body_name": "J\u00e4ger 619",
-      "CompatibleBodyName": "J\u00e4ger 619"
+      "compatible_body_name": "Jäger 619",
+      "CompatibleBodyName": "Jäger 619"
     },
     {
       "ID": 2154,
@@ -51993,7 +51993,7 @@
       "Paintable": false,
       "AssetPackage": "skin_sourdough_squid",
       "AssetPath": "skin_sourdough_squid.skin_sourdough_squid",
-      "LongLabel": "J\u00e4ger 619: Kraken",
+      "LongLabel": "Jäger 619: Kraken",
       "asset_package": "skin_sourdough_squid",
       "asset_path": "skin_sourdough_squid.skin_sourdough_squid",
       "object_name": "skin_sourdough_squid",
@@ -52006,8 +52006,8 @@
       "PackageItemCount": 1,
       "compatible_body_id": 1856,
       "CompatibleBodyId": 1856,
-      "compatible_body_name": "J\u00e4ger 619",
-      "CompatibleBodyName": "J\u00e4ger 619"
+      "compatible_body_name": "Jäger 619",
+      "CompatibleBodyName": "Jäger 619"
     },
     {
       "ID": 2223,
@@ -52886,7 +52886,7 @@
       "Paintable": false,
       "AssetPackage": "skin_sourdough_storm",
       "AssetPath": "skin_sourdough_storm.skin_sourdough_storm",
-      "LongLabel": "J\u00e4ger 619: Storm Warning",
+      "LongLabel": "Jäger 619: Storm Warning",
       "asset_package": "skin_sourdough_storm",
       "asset_path": "skin_sourdough_storm.skin_sourdough_storm",
       "object_name": "skin_sourdough_storm",
@@ -52899,8 +52899,8 @@
       "PackageItemCount": 1,
       "compatible_body_id": 1856,
       "CompatibleBodyId": 1856,
-      "compatible_body_name": "J\u00e4ger 619",
-      "CompatibleBodyName": "J\u00e4ger 619"
+      "compatible_body_name": "Jäger 619",
+      "CompatibleBodyName": "Jäger 619"
     },
     {
       "ID": 2278,
@@ -52911,7 +52911,7 @@
       "Paintable": false,
       "AssetPackage": "skin_sourdough_tri",
       "AssetPath": "skin_sourdough_tri.skin_sourdough_tri",
-      "LongLabel": "J\u00e4ger 619: Euphoria",
+      "LongLabel": "Jäger 619: Euphoria",
       "asset_package": "skin_sourdough_tri",
       "asset_path": "skin_sourdough_tri.skin_sourdough_tri",
       "object_name": "skin_sourdough_tri",
@@ -52924,8 +52924,8 @@
       "PackageItemCount": 1,
       "compatible_body_id": 1856,
       "CompatibleBodyId": 1856,
-      "compatible_body_name": "J\u00e4ger 619",
-      "CompatibleBodyName": "J\u00e4ger 619"
+      "compatible_body_name": "Jäger 619",
+      "CompatibleBodyName": "Jäger 619"
     },
     {
       "ID": 2279,
@@ -56185,7 +56185,7 @@
       "Paintable": false,
       "AssetPackage": "skin_sourdough_livery",
       "AssetPath": "skin_sourdough_livery.skin_sourdough_livery",
-      "LongLabel": "J\u00e4ger 619: Circuit Pro",
+      "LongLabel": "Jäger 619: Circuit Pro",
       "asset_package": "skin_sourdough_livery",
       "asset_path": "skin_sourdough_livery.skin_sourdough_livery",
       "object_name": "skin_sourdough_livery",
@@ -56198,8 +56198,8 @@
       "PackageItemCount": 1,
       "compatible_body_id": 1856,
       "CompatibleBodyId": 1856,
-      "compatible_body_name": "J\u00e4ger 619",
-      "CompatibleBodyName": "J\u00e4ger 619"
+      "compatible_body_name": "Jäger 619",
+      "CompatibleBodyName": "Jäger 619"
     },
     {
       "ID": 2383,
@@ -56285,7 +56285,7 @@
       "Paintable": false,
       "AssetPackage": "body_sourdough_premium_skins",
       "AssetPath": "body_sourdough_premium_skins.skin_sourdough_edgestatic",
-      "LongLabel": "J\u00e4ger 619: Distortion",
+      "LongLabel": "Jäger 619: Distortion",
       "asset_package": "body_sourdough_premium_skins",
       "asset_path": "body_sourdough_premium_skins.skin_sourdough_edgestatic",
       "object_name": "skin_sourdough_edgestatic",
@@ -56298,8 +56298,8 @@
       "PackageItemCount": 3,
       "compatible_body_id": 1856,
       "CompatibleBodyId": 1856,
-      "compatible_body_name": "J\u00e4ger 619",
-      "CompatibleBodyName": "J\u00e4ger 619"
+      "compatible_body_name": "Jäger 619",
+      "CompatibleBodyName": "Jäger 619"
     },
     {
       "ID": 2392,
@@ -56310,7 +56310,7 @@
       "Paintable": false,
       "AssetPackage": "body_sourdough_premium_skins",
       "AssetPath": "body_sourdough_premium_skins.skin_Sourdough_Snakeskin",
-      "LongLabel": "J\u00e4ger 619: Snakeskin",
+      "LongLabel": "Jäger 619: Snakeskin",
       "asset_package": "body_sourdough_premium_skins",
       "asset_path": "body_sourdough_premium_skins.skin_Sourdough_Snakeskin",
       "object_name": "skin_Sourdough_Snakeskin",
@@ -56323,8 +56323,8 @@
       "PackageItemCount": 3,
       "compatible_body_id": 1856,
       "CompatibleBodyId": 1856,
-      "compatible_body_name": "J\u00e4ger 619",
-      "CompatibleBodyName": "J\u00e4ger 619"
+      "compatible_body_name": "Jäger 619",
+      "CompatibleBodyName": "Jäger 619"
     },
     {
       "ID": 2393,
@@ -56335,7 +56335,7 @@
       "Paintable": true,
       "AssetPackage": "body_sourdough_premium_skins",
       "AssetPath": "body_sourdough_premium_skins.skin_sourdough_techarrows",
-      "LongLabel": "J\u00e4ger 619: Vector",
+      "LongLabel": "Jäger 619: Vector",
       "Paints": [
         {
           "id": 1,
@@ -56422,8 +56422,8 @@
       "PackageItemCount": 3,
       "compatible_body_id": 1856,
       "CompatibleBodyId": 1856,
-      "compatible_body_name": "J\u00e4ger 619",
-      "CompatibleBodyName": "J\u00e4ger 619"
+      "compatible_body_name": "Jäger 619",
+      "CompatibleBodyName": "Jäger 619"
     },
     {
       "ID": 2394,
@@ -61981,7 +61981,7 @@
       "Paintable": true,
       "AssetPackage": "skin_sourdough_boltspitter",
       "AssetPath": "skin_sourdough_boltspitter.skin_sourdough_boltspitter",
-      "LongLabel": "J\u00e4ger 619: Mister Monsoon",
+      "LongLabel": "Jäger 619: Mister Monsoon",
       "Paints": [
         {
           "id": 1,
@@ -62068,8 +62068,8 @@
       "PackageItemCount": 1,
       "compatible_body_id": 1856,
       "CompatibleBodyId": 1856,
-      "compatible_body_name": "J\u00e4ger 619",
-      "CompatibleBodyName": "J\u00e4ger 619"
+      "compatible_body_name": "Jäger 619",
+      "CompatibleBodyName": "Jäger 619"
     },
     {
       "ID": 2549,
@@ -62080,7 +62080,7 @@
       "Paintable": true,
       "AssetPackage": "skin_sourdough_divinestyler",
       "AssetPath": "skin_sourdough_divinestyler.skin_sourdough_divinestyler",
-      "LongLabel": "J\u00e4ger 619: Shark Tooth",
+      "LongLabel": "Jäger 619: Shark Tooth",
       "Paints": [
         {
           "id": 1,
@@ -62167,8 +62167,8 @@
       "PackageItemCount": 1,
       "compatible_body_id": 1856,
       "CompatibleBodyId": 1856,
-      "compatible_body_name": "J\u00e4ger 619",
-      "CompatibleBodyName": "J\u00e4ger 619"
+      "compatible_body_name": "Jäger 619",
+      "CompatibleBodyName": "Jäger 619"
     },
     {
       "ID": 2550,
@@ -62179,7 +62179,7 @@
       "Paintable": true,
       "AssetPackage": "skin_sourdough_rabbitjack",
       "AssetPath": "skin_sourdough_rabbitjack.skin_sourdough_rabbitjack",
-      "LongLabel": "J\u00e4ger 619: Hip-Hop",
+      "LongLabel": "Jäger 619: Hip-Hop",
       "Paints": [
         {
           "id": 1,
@@ -62266,8 +62266,8 @@
       "PackageItemCount": 1,
       "compatible_body_id": 1856,
       "CompatibleBodyId": 1856,
-      "compatible_body_name": "J\u00e4ger 619",
-      "CompatibleBodyName": "J\u00e4ger 619"
+      "compatible_body_name": "Jäger 619",
+      "CompatibleBodyName": "Jäger 619"
     },
     {
       "ID": 2551,
@@ -62278,7 +62278,7 @@
       "Paintable": true,
       "AssetPackage": "skin_sourdough_starlighter",
       "AssetPath": "skin_sourdough_starlighter.skin_sourdough_starlighter",
-      "LongLabel": "J\u00e4ger 619: StarLighter",
+      "LongLabel": "Jäger 619: StarLighter",
       "Paints": [
         {
           "id": 1,
@@ -62365,8 +62365,8 @@
       "PackageItemCount": 1,
       "compatible_body_id": 1856,
       "CompatibleBodyId": 1856,
-      "compatible_body_name": "J\u00e4ger 619",
-      "CompatibleBodyName": "J\u00e4ger 619"
+      "compatible_body_name": "Jäger 619",
+      "CompatibleBodyName": "Jäger 619"
     },
     {
       "ID": 2552,
@@ -63255,7 +63255,7 @@
       "Paintable": true,
       "AssetPackage": "skin_sourdough_sixteen",
       "AssetPath": "skin_sourdough_sixteen.skin_sourdough_sixteen",
-      "LongLabel": "J\u00e4ger 619: XVI",
+      "LongLabel": "Jäger 619: XVI",
       "Paints": [
         {
           "id": 11,
@@ -63274,8 +63274,8 @@
       "PackageItemCount": 1,
       "compatible_body_id": 1856,
       "CompatibleBodyId": 1856,
-      "compatible_body_name": "J\u00e4ger 619",
-      "CompatibleBodyName": "J\u00e4ger 619"
+      "compatible_body_name": "Jäger 619",
+      "CompatibleBodyName": "Jäger 619"
     },
     {
       "ID": 2583,
@@ -64074,7 +64074,7 @@
       "Paintable": true,
       "AssetPackage": "skin_sourdough_jawbone",
       "AssetPath": "skin_sourdough_jawbone.skin_sourdough_jawbone",
-      "LongLabel": "J\u00e4ger 619: Camazotz",
+      "LongLabel": "Jäger 619: Camazotz",
       "Paints": [
         {
           "id": 1,
@@ -64161,8 +64161,8 @@
       "PackageItemCount": 1,
       "compatible_body_id": 1856,
       "CompatibleBodyId": 1856,
-      "compatible_body_name": "J\u00e4ger 619",
-      "CompatibleBodyName": "J\u00e4ger 619"
+      "compatible_body_name": "Jäger 619",
+      "CompatibleBodyName": "Jäger 619"
     },
     {
       "ID": 2601,
@@ -69816,7 +69816,7 @@
     },
     {
       "ID": 2729,
-      "Product": "Balla-Carr\u00e0",
+      "Product": "Balla-Carrà",
       "Slot": "Wheels",
       "Quality": "Exotic",
       "UnlockMethod": "UnlockMethod_Online",
@@ -74691,7 +74691,7 @@
     },
     {
       "ID": 2919,
-      "Product": "Jurassic Jeep\u00ae Wrangler",
+      "Product": "Jurassic Jeep® Wrangler",
       "Slot": "Body",
       "Quality": "Exotic",
       "UnlockMethod": "UnlockMethod_Online",
@@ -74915,7 +74915,7 @@
     },
     {
       "ID": 2927,
-      "Product": "Jurassic Jeep\u00ae Wrangler",
+      "Product": "Jurassic Jeep® Wrangler",
       "Slot": "Engine Audio",
       "Quality": "Common",
       "UnlockMethod": "UnlockMethod_Default",
@@ -75750,7 +75750,7 @@
     },
     {
       "ID": 2955,
-      "Product": "Jurassic Jeep\u00ae Wrangler",
+      "Product": "Jurassic Jeep® Wrangler",
       "Slot": "Wheels",
       "Quality": "Common",
       "UnlockMethod": "UnlockMethod_Default",
@@ -94771,14 +94771,14 @@
     },
     {
       "ID": 3608,
-      "Product": "Pi\u00f1ata Monster",
+      "Product": "Piñata Monster",
       "Slot": "Decal",
       "Quality": "Rare",
       "UnlockMethod": "UnlockMethod_Online",
       "Paintable": true,
       "AssetPackage": "skin_octane_pinatamonster",
       "AssetPath": "skin_octane_pinatamonster.skin_octane_pinatamonster",
-      "LongLabel": "Octane: Pi\u00f1ata Monster",
+      "LongLabel": "Octane: Piñata Monster",
       "Paints": [
         {
           "id": 1,
@@ -163240,7 +163240,7 @@
     },
     {
       "ID": 5442,
-      "Product": "J\u00e4ger 619",
+      "Product": "Jäger 619",
       "Slot": "ShopItem",
       "Quality": "Common",
       "UnlockMethod": "UnlockMethod_Online",
@@ -170161,14 +170161,14 @@
     },
     {
       "ID": 5617,
-      "Product": "Pel\u00e9",
+      "Product": "Pelé",
       "Slot": "Decal",
       "Quality": "Import",
       "UnlockMethod": "UnlockMethod_Online",
       "Paintable": false,
       "AssetPackage": "skin_octane_elp",
       "AssetPath": "skin_octane_elp.skin_octane_elp",
-      "LongLabel": "Octane: Pel\u00e9",
+      "LongLabel": "Octane: Pelé",
       "asset_package": "skin_octane_elp",
       "asset_path": "skin_octane_elp.skin_octane_elp",
       "object_name": "skin_octane_elp",
@@ -170482,7 +170482,7 @@
     },
     {
       "ID": 5621,
-      "Product": "Pel\u00e9",
+      "Product": "Pelé",
       "Slot": "Player Banner",
       "Quality": "Rare",
       "UnlockMethod": "UnlockMethod_Online",
@@ -170506,7 +170506,7 @@
     },
     {
       "ID": 5622,
-      "Product": "Pel\u00e9",
+      "Product": "Pelé",
       "Slot": "Wheels",
       "Quality": "VeryRare",
       "UnlockMethod": "UnlockMethod_Online",
@@ -178721,7 +178721,7 @@
     },
     {
       "ID": 5853,
-      "Product": "Pel\u00e9",
+      "Product": "Pelé",
       "Slot": "Antenna",
       "Quality": "Rare",
       "UnlockMethod": "UnlockMethod_Online",
@@ -184427,7 +184427,7 @@
     },
     {
       "ID": 5964,
-      "Product": "Lamborghini Hurac\u00e1n STO",
+      "Product": "Lamborghini Huracán STO",
       "Slot": "Body",
       "Quality": "Exotic",
       "UnlockMethod": "UnlockMethod_Online",
@@ -185310,7 +185310,7 @@
     },
     {
       "ID": 5980,
-      "Product": "Lamborghini Hurac\u00e1n STO",
+      "Product": "Lamborghini Huracán STO",
       "Slot": "Engine Audio",
       "Quality": "Common",
       "UnlockMethod": "UnlockMethod_Default",
@@ -185358,7 +185358,7 @@
     },
     {
       "ID": 5982,
-      "Product": "Lamborghini Hurac\u00e1n STO v1",
+      "Product": "Lamborghini Huracán STO v1",
       "Slot": "Wheels",
       "Quality": "Import",
       "UnlockMethod": "UnlockMethod_Online",
@@ -185770,7 +185770,7 @@
     },
     {
       "ID": 6003,
-      "Product": "Lamborghini Hurac\u00e1n STO v2",
+      "Product": "Lamborghini Huracán STO v2",
       "Slot": "Wheels",
       "Quality": "Exotic",
       "UnlockMethod": "UnlockMethod_Online",
@@ -185794,14 +185794,14 @@
     },
     {
       "ID": 6004,
-      "Product": "Lamborghini Hurac\u00e1n STO",
+      "Product": "Lamborghini Huracán STO",
       "Slot": "Decal",
       "Quality": "Import",
       "UnlockMethod": "UnlockMethod_Online",
       "Paintable": false,
       "AssetPackage": "skin_oblongb",
       "AssetPath": "skin_oblongb.skin_oblongb",
-      "LongLabel": "Lamborghini Hurac\u00e1n STO: Lamborghini Hurac\u00e1n STO",
+      "LongLabel": "Lamborghini Huracán STO: Lamborghini Huracán STO",
       "asset_package": "skin_oblongb",
       "asset_path": "skin_oblongb.skin_oblongb",
       "object_name": "skin_oblongb",
@@ -185814,12 +185814,12 @@
       "PackageItemCount": 1,
       "compatible_body_id": 5964,
       "CompatibleBodyId": 5964,
-      "compatible_body_name": "Lamborghini Hurac\u00e1n STO",
-      "CompatibleBodyName": "Lamborghini Hurac\u00e1n STO"
+      "compatible_body_name": "Lamborghini Huracán STO",
+      "CompatibleBodyName": "Lamborghini Huracán STO"
     },
     {
       "ID": 6006,
-      "Product": "Lamborghini Hurac\u00e1n STO",
+      "Product": "Lamborghini Huracán STO",
       "Slot": "Antenna",
       "Quality": "VeryRare",
       "UnlockMethod": "UnlockMethod_Online",
@@ -186579,7 +186579,7 @@
     },
     {
       "ID": 6027,
-      "Product": "Lamborghini Hurac\u00e1n STO",
+      "Product": "Lamborghini Huracán STO",
       "Slot": "Player Banner",
       "Quality": "VeryRare",
       "UnlockMethod": "UnlockMethod_Online",
@@ -192034,7 +192034,7 @@
     },
     {
       "ID": 6207,
-      "Product": "Jurassic Jeep\u00ae Wrangler",
+      "Product": "Jurassic Jeep® Wrangler",
       "Slot": "Wheels",
       "Quality": "Import",
       "UnlockMethod": "UnlockMethod_Online",
@@ -221064,7 +221064,7 @@
     },
     {
       "ID": 7376,
-      "Product": "Painted Pi\u00f1ata",
+      "Product": "Painted Piñata",
       "Slot": "Antenna",
       "Quality": "VeryRare",
       "UnlockMethod": "UnlockMethod_Online",
@@ -221162,7 +221162,7 @@
     },
     {
       "ID": 7377,
-      "Product": "F\u00fatbol",
+      "Product": "Fútbol",
       "Slot": "Antenna",
       "Quality": "VeryRare",
       "UnlockMethod": "UnlockMethod_Online",
@@ -238649,14 +238649,14 @@
     },
     {
       "ID": 7814,
-      "Product": "Nike Air Zoom Mercurial \u2013 Yellow",
+      "Product": "Nike Air Zoom Mercurial – Yellow",
       "Slot": "Decal",
       "Quality": "Import",
       "UnlockMethod": "UnlockMethod_Online",
       "Paintable": false,
       "AssetPackage": "skin_octane_ngu",
       "AssetPath": "skin_octane_ngu.skin_octane_ngu",
-      "LongLabel": "Octane: Nike Air Zoom Mercurial \u2013 Yellow",
+      "LongLabel": "Octane: Nike Air Zoom Mercurial – Yellow",
       "asset_package": "skin_octane_ngu",
       "asset_path": "skin_octane_ngu.skin_octane_ngu",
       "object_name": "skin_octane_ngu",
@@ -244566,14 +244566,14 @@
     },
     {
       "ID": 7951,
-      "Product": "S\u00edganme los Buenos",
+      "Product": "Síganme los Buenos",
       "Slot": "Decal",
       "Quality": "VeryRare",
       "UnlockMethod": "UnlockMethod_Online",
       "Paintable": false,
       "AssetPackage": "skin_octane_elin",
       "AssetPath": "skin_octane_elin.skin_octane_elin",
-      "LongLabel": "Octane: S\u00edganme los Buenos",
+      "LongLabel": "Octane: Síganme los Buenos",
       "asset_package": "skin_octane_elin",
       "asset_path": "skin_octane_elin.skin_octane_elin",
       "object_name": "skin_octane_elin",
@@ -245843,7 +245843,7 @@
     },
     {
       "ID": 7991,
-      "Product": "M\u00e1s R\u00e1pido que una Tortuga",
+      "Product": "Más Rápido que una Tortuga",
       "Slot": "Wheels",
       "Quality": "VeryRare",
       "UnlockMethod": "UnlockMethod_Online",
@@ -247300,7 +247300,7 @@
     },
     {
       "ID": 8044,
-      "Product": "H\u00e9roe Colorado",
+      "Product": "Héroe Colorado",
       "Slot": "Player Banner",
       "Quality": "VeryRare",
       "UnlockMethod": "UnlockMethod_Online",
@@ -252089,7 +252089,7 @@
     },
     {
       "ID": 8262,
-      "Product": "Chipote Chill\u00f3n",
+      "Product": "Chipote Chillón",
       "Slot": "Goal Explosion",
       "Quality": "Exotic",
       "UnlockMethod": "UnlockMethod_Online",
@@ -272235,7 +272235,7 @@
     },
     {
       "ID": 8833,
-      "Product": "AC Milan (PUMA x KOCH\u00c9)",
+      "Product": "AC Milan (PUMA x KOCHÉ)",
       "Slot": "Wheels",
       "Quality": "Import",
       "UnlockMethod": "UnlockMethod_Online",
@@ -273041,14 +273041,14 @@
     },
     {
       "ID": 8849,
-      "Product": "AC Milan (PUMA x KOCH\u00c9)",
+      "Product": "AC Milan (PUMA x KOCHÉ)",
       "Slot": "Decal",
       "Quality": "Import",
       "UnlockMethod": "UnlockMethod_Online",
       "Paintable": false,
       "AssetPackage": "skin_octane_fcacm",
       "AssetPath": "skin_octane_fcacm.skin_octane_fcacm",
-      "LongLabel": "Octane: AC Milan (PUMA x KOCH\u00c9)",
+      "LongLabel": "Octane: AC Milan (PUMA x KOCHÉ)",
       "asset_package": "skin_octane_fcacm",
       "asset_path": "skin_octane_fcacm.skin_octane_fcacm",
       "object_name": "skin_octane_fcacm",
@@ -273286,14 +273286,14 @@
     },
     {
       "ID": 8853,
-      "Product": "AC Milan (PUMA x KOCH\u00c9)",
+      "Product": "AC Milan (PUMA x KOCHÉ)",
       "Slot": "Decal",
       "Quality": "Import",
       "UnlockMethod": "UnlockMethod_Online",
       "Paintable": true,
       "AssetPackage": "skin_musclecar_fcacm",
       "AssetPath": "skin_musclecar_fcacm.skin_musclecar_fcacm",
-      "LongLabel": "Dominus: AC Milan (PUMA x KOCH\u00c9)",
+      "LongLabel": "Dominus: AC Milan (PUMA x KOCHÉ)",
       "Paints": [
         {
           "id": 1,
@@ -276118,7 +276118,7 @@
       "Paintable": false,
       "AssetPackage": "skin_sourdough_viral",
       "AssetPath": "skin_sourdough_viral.skin_sourdough_viral",
-      "LongLabel": "J\u00e4ger 619: Neo-Viral",
+      "LongLabel": "Jäger 619: Neo-Viral",
       "asset_package": "skin_sourdough_viral",
       "asset_path": "skin_sourdough_viral.skin_sourdough_viral",
       "object_name": "skin_sourdough_viral",
@@ -276131,8 +276131,8 @@
       "PackageItemCount": 1,
       "compatible_body_id": 1856,
       "CompatibleBodyId": 1856,
-      "compatible_body_name": "J\u00e4ger 619",
-      "CompatibleBodyName": "J\u00e4ger 619"
+      "compatible_body_name": "Jäger 619",
+      "CompatibleBodyName": "Jäger 619"
     },
     {
       "ID": 8942,
@@ -283446,7 +283446,7 @@
     },
     {
       "ID": 9152,
-      "Product": "Pi\u00f1ata",
+      "Product": "Piñata",
       "Slot": "Wheels",
       "Quality": "Limited",
       "UnlockMethod": "UnlockMethod_Online",
@@ -287112,7 +287112,7 @@
     },
     {
       "ID": 9270,
-      "Product": "N\u00e3o Sei Parar",
+      "Product": "Não Sei Parar",
       "Slot": "Player Anthem",
       "Quality": "Import",
       "UnlockMethod": "UnlockMethod_Online",
@@ -288700,7 +288700,7 @@
     },
     {
       "ID": 9296,
-      "Product": "FC Bayern M\u00fcnchen",
+      "Product": "FC Bayern München",
       "Slot": "Player Banner",
       "Quality": "VeryRare",
       "UnlockMethod": "UnlockMethod_Online",
@@ -291411,14 +291411,14 @@
     },
     {
       "ID": 9391,
-      "Product": "FC Bayern M\u00fcnchen",
+      "Product": "FC Bayern München",
       "Slot": "Decal",
       "Quality": "Import",
       "UnlockMethod": "UnlockMethod_Online",
       "Paintable": false,
       "AssetPackage": "skin_grain_ba_mu",
       "AssetPath": "skin_grain_ba_mu.skin_grain_ba_mu",
-      "LongLabel": "Fennec: FC Bayern M\u00fcnchen",
+      "LongLabel": "Fennec: FC Bayern München",
       "asset_package": "skin_grain_ba_mu",
       "asset_path": "skin_grain_ba_mu.skin_grain_ba_mu",
       "object_name": "skin_grain_ba_mu",
@@ -293829,7 +293829,7 @@
     },
     {
       "ID": 9452,
-      "Product": "\u00d6wnboss",
+      "Product": "Öwnboss",
       "Slot": "Antenna",
       "Quality": "Common",
       "UnlockMethod": "UnlockMethod_Default",
@@ -307171,7 +307171,7 @@
     },
     {
       "ID": 9858,
-      "Product": "KR\u00dc 2024",
+      "Product": "KRÜ 2024",
       "Slot": "Player Banner",
       "Quality": "Rare",
       "UnlockMethod": "UnlockMethod_Online",
@@ -311913,14 +311913,14 @@
     },
     {
       "ID": 10059,
-      "Product": "KR\u00dc 2024",
+      "Product": "KRÜ 2024",
       "Slot": "Decal",
       "Quality": "VeryRare",
       "UnlockMethod": "UnlockMethod_Online",
       "Paintable": false,
       "AssetPackage": "skin_musclecar_kru_024",
       "AssetPath": "skin_musclecar_kru_024.skin_musclecar_kru_024",
-      "LongLabel": "Dominus: KR\u00dc 2024",
+      "LongLabel": "Dominus: KRÜ 2024",
       "asset_package": "skin_musclecar_kru_024",
       "asset_path": "skin_musclecar_kru_024.skin_musclecar_kru_024",
       "object_name": "skin_musclecar_kru_024",
@@ -312038,14 +312038,14 @@
     },
     {
       "ID": 10064,
-      "Product": "KR\u00dc 2024",
+      "Product": "KRÜ 2024",
       "Slot": "Decal",
       "Quality": "VeryRare",
       "UnlockMethod": "UnlockMethod_Online",
       "Paintable": false,
       "AssetPackage": "skin_octane_kru_024",
       "AssetPath": "skin_octane_kru_024.skin_octane_kru_024",
-      "LongLabel": "Octane: KR\u00dc 2024",
+      "LongLabel": "Octane: KRÜ 2024",
       "asset_package": "skin_octane_kru_024",
       "asset_path": "skin_octane_kru_024.skin_octane_kru_024",
       "object_name": "skin_octane_kru_024",
@@ -312388,14 +312388,14 @@
     },
     {
       "ID": 10078,
-      "Product": "KR\u00dc 2024",
+      "Product": "KRÜ 2024",
       "Slot": "Decal",
       "Quality": "VeryRare",
       "UnlockMethod": "UnlockMethod_Online",
       "Paintable": false,
       "AssetPackage": "skin_grain_kru_024",
       "AssetPath": "skin_grain_kru_024.skin_grain_kru_024",
-      "LongLabel": "Fennec: KR\u00dc 2024",
+      "LongLabel": "Fennec: KRÜ 2024",
       "asset_package": "skin_grain_kru_024",
       "asset_path": "skin_grain_kru_024.skin_grain_kru_024",
       "object_name": "skin_grain_kru_024",
@@ -315983,7 +315983,7 @@
     },
     {
       "ID": 10196,
-      "Product": "KR\u00dc 2024",
+      "Product": "KRÜ 2024",
       "Slot": "ESportsTeam",
       "Quality": "Common",
       "UnlockMethod": "UnlockMethod_Online",
@@ -329305,7 +329305,7 @@
       "Paintable": false,
       "AssetPackage": "skin_sourdough_aw",
       "AssetPath": "skin_sourdough_aw.skin_sourdough_aw",
-      "LongLabel": "J\u00e4ger 619: Walker World",
+      "LongLabel": "Jäger 619: Walker World",
       "asset_package": "skin_sourdough_aw",
       "asset_path": "skin_sourdough_aw.skin_sourdough_aw",
       "object_name": "skin_sourdough_aw",
@@ -329318,8 +329318,8 @@
       "PackageItemCount": 1,
       "compatible_body_id": 1856,
       "CompatibleBodyId": 1856,
-      "compatible_body_name": "J\u00e4ger 619",
-      "CompatibleBodyName": "J\u00e4ger 619"
+      "compatible_body_name": "Jäger 619",
+      "CompatibleBodyName": "Jäger 619"
     },
     {
       "ID": 10631,
@@ -330084,7 +330084,7 @@
       "Paintable": false,
       "AssetPackage": "skin_oblong_flames",
       "AssetPath": "skin_oblong_flames.skin_oblong_flames",
-      "LongLabel": "Lamborghini Hurac\u00e1n STO: Flames",
+      "LongLabel": "Lamborghini Huracán STO: Flames",
       "asset_package": "skin_oblong_flames",
       "asset_path": "skin_oblong_flames.skin_oblong_flames",
       "object_name": "skin_oblong_flames",
@@ -330097,8 +330097,8 @@
       "PackageItemCount": 1,
       "compatible_body_id": 5964,
       "CompatibleBodyId": 5964,
-      "compatible_body_name": "Lamborghini Hurac\u00e1n STO",
-      "CompatibleBodyName": "Lamborghini Hurac\u00e1n STO"
+      "compatible_body_name": "Lamborghini Huracán STO",
+      "CompatibleBodyName": "Lamborghini Huracán STO"
     },
     {
       "ID": 10658,
@@ -330109,7 +330109,7 @@
       "Paintable": false,
       "AssetPackage": "skin_oblong_lightning",
       "AssetPath": "skin_oblong_lightning.skin_oblong_lightning",
-      "LongLabel": "Lamborghini Hurac\u00e1n STO: Lightning",
+      "LongLabel": "Lamborghini Huracán STO: Lightning",
       "asset_package": "skin_oblong_lightning",
       "asset_path": "skin_oblong_lightning.skin_oblong_lightning",
       "object_name": "skin_oblong_lightning",
@@ -330122,8 +330122,8 @@
       "PackageItemCount": 1,
       "compatible_body_id": 5964,
       "CompatibleBodyId": 5964,
-      "compatible_body_name": "Lamborghini Hurac\u00e1n STO",
-      "CompatibleBodyName": "Lamborghini Hurac\u00e1n STO"
+      "compatible_body_name": "Lamborghini Huracán STO",
+      "CompatibleBodyName": "Lamborghini Huracán STO"
     },
     {
       "ID": 10659,
@@ -330134,7 +330134,7 @@
       "Paintable": false,
       "AssetPackage": "skin_oblong_stripes",
       "AssetPath": "skin_oblong_stripes.skin_oblong_stripes",
-      "LongLabel": "Lamborghini Hurac\u00e1n STO: Stripes",
+      "LongLabel": "Lamborghini Huracán STO: Stripes",
       "asset_package": "skin_oblong_stripes",
       "asset_path": "skin_oblong_stripes.skin_oblong_stripes",
       "object_name": "skin_oblong_stripes",
@@ -330147,8 +330147,8 @@
       "PackageItemCount": 1,
       "compatible_body_id": 5964,
       "CompatibleBodyId": 5964,
-      "compatible_body_name": "Lamborghini Hurac\u00e1n STO",
-      "CompatibleBodyName": "Lamborghini Hurac\u00e1n STO"
+      "compatible_body_name": "Lamborghini Huracán STO",
+      "CompatibleBodyName": "Lamborghini Huracán STO"
     },
     {
       "ID": 10660,
@@ -330159,7 +330159,7 @@
       "Paintable": false,
       "AssetPackage": "skin_oblong_wings",
       "AssetPath": "skin_oblong_wings.skin_oblong_wings",
-      "LongLabel": "Lamborghini Hurac\u00e1n STO: Wings",
+      "LongLabel": "Lamborghini Huracán STO: Wings",
       "asset_package": "skin_oblong_wings",
       "asset_path": "skin_oblong_wings.skin_oblong_wings",
       "object_name": "skin_oblong_wings",
@@ -330172,8 +330172,8 @@
       "PackageItemCount": 1,
       "compatible_body_id": 5964,
       "CompatibleBodyId": 5964,
-      "compatible_body_name": "Lamborghini Hurac\u00e1n STO",
-      "CompatibleBodyName": "Lamborghini Hurac\u00e1n STO"
+      "compatible_body_name": "Lamborghini Huracán STO",
+      "CompatibleBodyName": "Lamborghini Huracán STO"
     },
     {
       "ID": 10661,
@@ -330209,7 +330209,7 @@
       "Paintable": false,
       "AssetPackage": "skin_sourdough_heavy",
       "AssetPath": "skin_sourdough_heavy.skin_sourdough_heavy",
-      "LongLabel": "J\u00e4ger 619: Puppetmaster",
+      "LongLabel": "Jäger 619: Puppetmaster",
       "asset_package": "skin_sourdough_heavy",
       "asset_path": "skin_sourdough_heavy.skin_sourdough_heavy",
       "object_name": "skin_sourdough_heavy",
@@ -330222,8 +330222,8 @@
       "PackageItemCount": 1,
       "compatible_body_id": 1856,
       "CompatibleBodyId": 1856,
-      "compatible_body_name": "J\u00e4ger 619",
-      "CompatibleBodyName": "J\u00e4ger 619"
+      "compatible_body_name": "Jäger 619",
+      "CompatibleBodyName": "Jäger 619"
     },
     {
       "ID": 10663,
@@ -330854,7 +330854,7 @@
       "Paintable": false,
       "AssetPackage": "skin_sourdough_thunder",
       "AssetPath": "skin_sourdough_thunder.skin_sourdough_thunder",
-      "LongLabel": "J\u00e4ger 619: adidas - F50",
+      "LongLabel": "Jäger 619: adidas - F50",
       "asset_package": "skin_sourdough_thunder",
       "asset_path": "skin_sourdough_thunder.skin_sourdough_thunder",
       "object_name": "skin_sourdough_thunder",
@@ -330867,8 +330867,8 @@
       "PackageItemCount": 1,
       "compatible_body_id": 1856,
       "CompatibleBodyId": 1856,
-      "compatible_body_name": "J\u00e4ger 619",
-      "CompatibleBodyName": "J\u00e4ger 619"
+      "compatible_body_name": "Jäger 619",
+      "CompatibleBodyName": "Jäger 619"
     },
     {
       "ID": 10687,
@@ -355899,7 +355899,7 @@
     },
     {
       "ID": 11588,
-      "Product": "\u00c6ON:MODE",
+      "Product": "ÆON:MODE",
       "Slot": "Antenna",
       "Quality": "Common",
       "UnlockMethod": "UnlockMethod_Default",
@@ -368811,7 +368811,7 @@
     },
     {
       "ID": 12033,
-      "Product": "\u00c9toile",
+      "Product": "Étoile",
       "Slot": "Wheels",
       "Quality": "Limited",
       "UnlockMethod": "UnlockMethod_Online",
@@ -370955,7 +370955,7 @@
       "Paintable": false,
       "AssetPackage": "skin_oblong_curioustuna01",
       "AssetPath": "skin_oblong_curioustuna01.skin_oblong_curioustuna01",
-      "LongLabel": "Lamborghini Hurac\u00e1n STO: Throne of Thorns",
+      "LongLabel": "Lamborghini Huracán STO: Throne of Thorns",
       "asset_package": "skin_oblong_curioustuna01",
       "asset_path": "skin_oblong_curioustuna01.skin_oblong_curioustuna01",
       "object_name": "skin_oblong_curioustuna01",
@@ -370968,8 +370968,8 @@
       "PackageItemCount": 1,
       "compatible_body_id": 5964,
       "CompatibleBodyId": 5964,
-      "compatible_body_name": "Lamborghini Hurac\u00e1n STO",
-      "CompatibleBodyName": "Lamborghini Hurac\u00e1n STO"
+      "compatible_body_name": "Lamborghini Huracán STO",
+      "CompatibleBodyName": "Lamborghini Huracán STO"
     },
     {
       "ID": 12110,
@@ -371198,7 +371198,7 @@
       "Paintable": false,
       "AssetPackage": "skin_oblong_curioustuna02",
       "AssetPath": "skin_oblong_curioustuna02.skin_oblong_curioustuna02",
-      "LongLabel": "Lamborghini Hurac\u00e1n STO: Doja Driver",
+      "LongLabel": "Lamborghini Huracán STO: Doja Driver",
       "asset_package": "skin_oblong_curioustuna02",
       "asset_path": "skin_oblong_curioustuna02.skin_oblong_curioustuna02",
       "object_name": "skin_oblong_curioustuna02",
@@ -371211,8 +371211,8 @@
       "PackageItemCount": 1,
       "compatible_body_id": 5964,
       "CompatibleBodyId": 5964,
-      "compatible_body_name": "Lamborghini Hurac\u00e1n STO",
-      "CompatibleBodyName": "Lamborghini Hurac\u00e1n STO"
+      "compatible_body_name": "Lamborghini Huracán STO",
+      "CompatibleBodyName": "Lamborghini Huracán STO"
     },
     {
       "ID": 12117,
@@ -373131,14 +373131,14 @@
     },
     {
       "ID": 12197,
-      "Product": "Lumi\u00e8re",
+      "Product": "Lumière",
       "Slot": "Decal",
       "Quality": "Limited",
       "UnlockMethod": "UnlockMethod_Online",
       "Paintable": false,
       "AssetPackage": "skin_force_renoir",
       "AssetPath": "skin_force_renoir.skin_force_renoir",
-      "LongLabel": "Breakout: Lumi\u00e8re",
+      "LongLabel": "Breakout: Lumière",
       "asset_package": "skin_force_renoir",
       "asset_path": "skin_force_renoir.skin_force_renoir",
       "object_name": "skin_force_renoir",
@@ -376421,14 +376421,14 @@
     },
     {
       "ID": 12289,
-      "Product": "Quel Arr\u00eat",
+      "Product": "Quel Arrêt",
       "Slot": "Decal",
       "Quality": "Limited",
       "UnlockMethod": "UnlockMethod_Online",
       "Paintable": false,
       "AssetPackage": "skin_jekyll_livery02",
       "AssetPath": "skin_jekyll_livery02.skin_jekyll_livery02",
-      "LongLabel": "Corlay: Quel Arr\u00eat",
+      "LongLabel": "Corlay: Quel Arrêt",
       "asset_package": "skin_jekyll_livery02",
       "asset_path": "skin_jekyll_livery02.skin_jekyll_livery02",
       "object_name": "skin_jekyll_livery02",
@@ -376826,14 +376826,14 @@
     },
     {
       "ID": 12302,
-      "Product": "Quel Arr\u00eat",
+      "Product": "Quel Arrêt",
       "Slot": "Decal",
       "Quality": "Limited",
       "UnlockMethod": "UnlockMethod_Online",
       "Paintable": false,
       "AssetPackage": "skin_hydet1_livery02",
       "AssetPath": "skin_hydet1_livery02.skin_hydet1_livery02",
-      "LongLabel": "Magnifique: Quel Arr\u00eat",
+      "LongLabel": "Magnifique: Quel Arrêt",
       "asset_package": "skin_hydet1_livery02",
       "asset_path": "skin_hydet1_livery02.skin_hydet1_livery02",
       "object_name": "skin_hydet1_livery02",
@@ -377781,14 +377781,14 @@
     },
     {
       "ID": 12333,
-      "Product": "Quel Arr\u00eat",
+      "Product": "Quel Arrêt",
       "Slot": "Decal",
       "Quality": "Limited",
       "UnlockMethod": "UnlockMethod_Online",
       "Paintable": false,
       "AssetPackage": "skin_hydet2_livery02",
       "AssetPath": "skin_hydet2_livery02.skin_hydet2_livery02",
-      "LongLabel": "Magnifique GXT: Quel Arr\u00eat",
+      "LongLabel": "Magnifique GXT: Quel Arrêt",
       "asset_package": "skin_hydet2_livery02",
       "asset_path": "skin_hydet2_livery02.skin_hydet2_livery02",
       "object_name": "skin_hydet2_livery02",
@@ -390806,14 +390806,14 @@
     },
     {
       "ID": 12792,
-      "Product": "Cura\u00e7ao",
+      "Product": "Curaçao",
       "Slot": "Decal",
       "Quality": "Limited",
       "UnlockMethod": "UnlockMethod_Online",
       "Paintable": false,
       "AssetPackage": "skin_octane_spheregulp18",
       "AssetPath": "skin_octane_spheregulp18.skin_octane_spheregulp18",
-      "LongLabel": "Octane: Cura\u00e7ao",
+      "LongLabel": "Octane: Curaçao",
       "asset_package": "skin_octane_spheregulp18",
       "asset_path": "skin_octane_spheregulp18.skin_octane_spheregulp18",
       "object_name": "skin_octane_spheregulp18",
@@ -391912,7 +391912,7 @@
     },
     {
       "ID": 12822,
-      "Product": "Ars\u00e8ne",
+      "Product": "Arsène",
       "Slot": "Goal Explosion",
       "Quality": "BlackMarket",
       "UnlockMethod": "UnlockMethod_Online",
@@ -393020,14 +393020,14 @@
     },
     {
       "ID": 12872,
-      "Product": "T\u00fcrkiye",
+      "Product": "Türkiye",
       "Slot": "Decal",
       "Quality": "Limited",
       "UnlockMethod": "UnlockMethod_Online",
       "Paintable": false,
       "AssetPackage": "skin_octane_spheregulp16",
       "AssetPath": "skin_octane_spheregulp16.skin_octane_spheregulp16",
-      "LongLabel": "Octane: T\u00fcrkiye",
+      "LongLabel": "Octane: Türkiye",
       "asset_package": "skin_octane_spheregulp16",
       "asset_path": "skin_octane_spheregulp16.skin_octane_spheregulp16",
       "object_name": "skin_octane_spheregulp16",
@@ -393070,7 +393070,7 @@
     },
     {
       "ID": 12874,
-      "Product": "Jynxzi\u2019s OG Chair",
+      "Product": "Jynxzi’s OG Chair",
       "Slot": "Topper",
       "Quality": "Limited",
       "UnlockMethod": "UnlockMethod_Online",
@@ -393735,14 +393735,14 @@
     },
     {
       "ID": 12902,
-      "Product": "C\u00f4te d'Ivoire",
+      "Product": "Côte d'Ivoire",
       "Slot": "Decal",
       "Quality": "Limited",
       "UnlockMethod": "UnlockMethod_Online",
       "Paintable": false,
       "AssetPackage": "skin_octane_spheregulp19",
       "AssetPath": "skin_octane_spheregulp19.skin_octane_spheregulp19",
-      "LongLabel": "Octane: C\u00f4te d'Ivoire",
+      "LongLabel": "Octane: Côte d'Ivoire",
       "asset_package": "skin_octane_spheregulp19",
       "asset_path": "skin_octane_spheregulp19.skin_octane_spheregulp19",
       "object_name": "skin_octane_spheregulp19",
@@ -395105,7 +395105,7 @@
     },
     {
       "ID": 12968,
-      "Product": "The Boost",
+      "Product": "Dev Boost",
       "Slot": "Rocket Boost",
       "Quality": "Limited",
       "UnlockMethod": "UnlockMethod_Online",
@@ -395125,7 +395125,8 @@
       "compatible_body_id": null,
       "CompatibleBodyId": null,
       "compatible_body_name": null,
-      "CompatibleBodyName": null
+      "CompatibleBodyName": null,
+      "LongLabel": "Dev Boost (Alpha Dev Reward)"
     },
     {
       "ID": 12970,
