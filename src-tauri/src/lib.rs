@@ -1634,50 +1634,27 @@ async fn get_swaps(app: tauri::AppHandle) -> Result<Vec<SwapEntry>, String> {
 }
 
 pub(crate) async fn sync_all_swaps_to_tagame(
-    app: &tauri::AppHandle,
+    _app: &tauri::AppHandle,
     cooked: &Path,
-    swaps: &[SwapEntry],
+    _swaps: &[SwapEntry],
 ) -> Result<(), String> {
     // Ensure ProjectX.upk has ValidateURL & IsAllowedURL patched to allow URLs
     let _ = upk::ensure_projectx_patched(cooked);
 
-    let state = load_integrity(app);
-    let all_swaps = if swaps.is_empty() {
-        load_swaps(app)
-    } else {
-        swaps.to_vec()
-    };
+    // Ensure TAGame.upk is restored to pristine vanilla from backup if present
+    let tagame_path = cooked.join("TAGame.upk");
+    let backup_path = cooked.join("TAGame.upk.bak");
+    if backup_path.is_file() {
+        let _ = std::fs::copy(&backup_path, &tagame_path);
+    }
 
-    let keys_txt = include_str!("../resources/keys.txt");
-    let keys_map_json = include_str!("../resources/keys_map.json");
-
-    let tagame_items: Vec<upk::TagameSwapItem> = all_swaps
-        .iter()
-        .map(|s| upk::TagameSwapItem {
-            slot: s.slot.clone().unwrap_or_else(|| "Body".to_string()),
-            slot_index: None,
-            owned_id: Some(s.owned_id),
-            product_id: s.wanted_id,
-            paint_id: if s.paint_id > 0 { Some(s.paint_id) } else { None },
-            custom_paint_hex: s.custom_paint_hex.clone(),
-            package_name: if s.asset_package.is_empty() { None } else { Some(s.asset_package.clone()) },
-        })
-        .collect();
-
-    upk::swapper::apply_tagame_modifications(
-        cooked,
-        &tagame_items,
-        keys_txt,
-        keys_map_json,
-        Some(state.palette_active),
-    ).map_err(|e| format!("Failed to apply modifications to TAGame.upk: {e}"))?;
-
+    // Restore any other UPKs from backups to keep game packages clean and stock
     if let Ok(entries) = std::fs::read_dir(cooked) {
         for entry in entries.flatten() {
             let path = entry.path();
             if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
                 let lower = file_name.to_lowercase();
-                if lower.ends_with(".upk.bak") && !lower.starts_with("tagame") {
+                if lower.ends_with(".upk.bak") {
                     let live_name = file_name.trim_end_matches(".bak");
                     let live_path = cooked.join(live_name);
                     let _ = std::fs::copy(&path, &live_path);
