@@ -107,6 +107,7 @@ ui/fonts/*.ttf
 .signing/
 
 tools/fonts/*.ttf
+tools/fonts/
 latest.json
 
 # Name-spoof implementation kept local-only (removed from repo)

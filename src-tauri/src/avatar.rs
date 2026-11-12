@@ -27,6 +27,8 @@ pub struct CustomProfileConfig {
     pub avatar_url: String,
     #[serde(default)]
     pub xp_level: Option<i32>,
+    #[serde(default)]
+    pub steam_api_key: Option<String>,
 }
 
 impl Default for CustomProfileConfig {
@@ -42,6 +44,7 @@ impl Default for CustomProfileConfig {
             border_url: "assets/borders/flames.png".into(),
             avatar_url: "https://rlstats.net/images/epic.png".into(),
             xp_level: None,
+            steam_api_key: None,
         }
     }
 }
@@ -56,6 +59,11 @@ pub fn get_profile_card_config(app: tauri::AppHandle) -> Result<CustomProfileCon
         if path.is_file() {
             if let Ok(content) = fs::read_to_string(&path) {
                 if let Ok(cfg) = serde_json::from_str::<CustomProfileConfig>(&content) {
+                    if let Some(ref k) = cfg.steam_api_key {
+                        if get_steam_api_key().is_none() && !k.trim().is_empty() {
+                            set_steam_api_key(k.clone());
+                        }
+                    }
                     return Ok(cfg);
                 }
             }
@@ -66,6 +74,9 @@ pub fn get_profile_card_config(app: tauri::AppHandle) -> Result<CustomProfileCon
 
 #[tauri::command]
 pub fn save_profile_card_config(app: tauri::AppHandle, config: CustomProfileConfig) -> Result<(), String> {
+    if let Some(ref k) = config.steam_api_key {
+        set_steam_api_key(k.clone());
+    }
     let path = profile_card_config_path(&app)
         .ok_or_else(|| "Failed to resolve app config directory".to_string())?;
     if let Some(parent) = path.parent() {
@@ -231,6 +242,301 @@ pub async fn fetch_image_from_url(app: tauri::AppHandle, url: String) -> Result<
     Ok(format!("data:image/png;base64,{b64}"))
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SteamAuthenticatedUser {
+    pub steam_id: String,
+    pub persona_name: String,
+    pub avatar_url: String,
+    pub avatar_data_url: String,
+}
+
+static AUTHENTICATED_STEAM_USER: std::sync::Mutex<Option<SteamAuthenticatedUser>> = std::sync::Mutex::new(None);
+static CUSTOM_STEAM_API_KEY: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+pub fn set_steam_api_key(key: String) {
+    if let Ok(mut lock) = CUSTOM_STEAM_API_KEY.lock() {
+        let trimmed = key.trim().to_string();
+        if trimmed.is_empty() {
+            *lock = None;
+        } else {
+            *lock = Some(trimmed);
+        }
+    }
+}
+
+pub fn get_steam_api_key() -> Option<String> {
+    if let Ok(lock) = CUSTOM_STEAM_API_KEY.lock() {
+        if let Some(ref k) = *lock {
+            if !k.is_empty() {
+                return Some(k.clone());
+            }
+        }
+    }
+    if let Ok(k) = std::env::var("STEAM_API_KEY") {
+        let trimmed = k.trim().to_string();
+        if !trimmed.is_empty() {
+            return Some(trimmed);
+        }
+    }
+    // Check local profile config file
+    let candidate_paths = [
+        PathBuf::from("/root/.config/com.velocityrl.app/profile_card.json"),
+    ];
+    for p in &candidate_paths {
+        if p.is_file() {
+            if let Ok(content) = fs::read_to_string(p) {
+                if let Ok(cfg) = serde_json::from_str::<CustomProfileConfig>(&content) {
+                    if let Some(ref key) = cfg.steam_api_key {
+                        let trimmed = key.trim().to_string();
+                        if !trimmed.is_empty() {
+                            return Some(trimmed);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+#[tauri::command]
+pub fn set_steam_api_key_command(key: String) -> Result<(), String> {
+    set_steam_api_key(key);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_steam_api_key_command() -> Option<String> {
+    get_steam_api_key()
+}
+
+pub fn set_authenticated_steam_user(user: SteamAuthenticatedUser) {
+    if let Ok(mut lock) = AUTHENTICATED_STEAM_USER.lock() {
+        *lock = Some(user);
+    }
+}
+
+pub fn get_authenticated_steam_user_internal() -> Option<SteamAuthenticatedUser> {
+    AUTHENTICATED_STEAM_USER.lock().ok().and_then(|g| g.clone())
+}
+
+pub fn clear_authenticated_steam_user_internal() {
+    if let Ok(mut lock) = AUTHENTICATED_STEAM_USER.lock() {
+        *lock = None;
+    }
+}
+
+#[tauri::command]
+pub fn get_authenticated_steam_user() -> Option<SteamAuthenticatedUser> {
+    get_authenticated_steam_user_internal()
+}
+
+#[tauri::command]
+pub fn clear_authenticated_steam_user(app: tauri::AppHandle) -> Result<(), String> {
+    clear_authenticated_steam_user_internal();
+    let _ = restore_custom_avatar_upk(app);
+    Ok(())
+}
+
+fn url_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 3);
+    for b in s.bytes() {
+        match b {
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+            b' ' => out.push('+'),
+            _ => {
+                out.push('%');
+                out.push_str(&format!("{b:02X}"));
+            }
+        }
+    }
+    out
+}
+
+#[tauri::command]
+pub fn get_steam_login_url() -> String {
+    let port = crate::proxy::broker_port().unwrap_or(15759);
+    format!(
+        "https://steamcommunity.com/openid/login?\
+        openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0&\
+        openid.mode=checkid_setup&\
+        openid.return_to=http%3A%2F%2F127.0.0.1%3A{port}%2Frlim%2Fsteam_callback&\
+        openid.realm=http%3A%2F%2F127.0.0.1%3A{port}%2F&\
+        openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&\
+        openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select"
+    )
+}
+
+pub async fn verify_steam_openid_assertion(query: &str) -> Result<u64, String> {
+    let mut params: Vec<(String, String)> = Vec::new();
+    let mut claimed_id: Option<String> = None;
+
+    for part in query.split('&') {
+        if let Some((k, v)) = part.split_once('=') {
+            let key = percent_decode(k);
+            let val = percent_decode(v);
+            if key == "openid.claimed_id" {
+                claimed_id = Some(val.clone());
+            }
+            if key == "openid.mode" {
+                params.push(("openid.mode".into(), "check_authentication".into()));
+            } else {
+                params.push((key, val));
+            }
+        }
+    }
+
+    let claimed = claimed_id.ok_or_else(|| "Missing openid.claimed_id in callback".to_string())?;
+    let raw_steam_id = claimed
+        .strip_prefix("https://steamcommunity.com/openid/id/")
+        .or_else(|| claimed.strip_prefix("http://steamcommunity.com/openid/id/"))
+        .ok_or_else(|| format!("Invalid claimed_id format: {claimed}"))?;
+
+    let steam_id = raw_steam_id
+        .trim()
+        .parse::<u64>()
+        .map_err(|e| format!("Invalid steam_id integer: {e}"))?;
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let form_body = params
+        .iter()
+        .map(|(k, v)| format!("{}={}", url_encode(k), url_encode(v)))
+        .collect::<Vec<_>>()
+        .join("&");
+
+    let resp = client
+        .post("https://steamcommunity.com/openid/login")
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .body(form_body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to verify assertion with Steam: {e}"))?;
+
+    let text = resp.text().await.map_err(|e| e.to_string())?;
+    if !text.contains("is_valid:true") {
+        return Err("Steam OpenID assertion verification failed: response was not is_valid:true".into());
+    }
+
+    Ok(steam_id)
+}
+
+#[derive(Debug, Deserialize)]
+struct VelocitySteamProfile {
+    #[serde(alias = "personaName", alias = "personaname")]
+    persona_name: Option<String>,
+    #[serde(alias = "avatarUrl", alias = "avatar_url", alias = "avatarfull")]
+    avatar_url: Option<String>,
+}
+
+pub async fn fetch_verified_steam_profile(steam_id: u64) -> Result<(String, String), String> {
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    // 1. Try local Steam Web API if STEAM_API_KEY is configured (authoritative, real-time persona & full-res avatar)
+    if let Some(api_key) = get_steam_api_key() {
+        let api_url = format!(
+            "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={}&steamids={steam_id}",
+            api_key.trim()
+        );
+        if let Ok(resp) = client.get(&api_url).send().await {
+            if let Ok(env) = resp.json::<SteamWebApiEnvelope>().await {
+                if let Some(players) = env.response {
+                    if let Some(p) = players.players.into_iter().next() {
+                        let persona = p.personaname
+                            .filter(|s| !s.trim().is_empty())
+                            .unwrap_or(p.steamid);
+                        if let Some(av) = p.avatarfull {
+                            if !av.trim().is_empty() {
+                                return Ok((persona, av));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Try VelocityRL API backend proxy (server-side Steam key and cache)
+    let backend_url = format!("https://api.velocityrl.tech/v1/steam/user/{steam_id}");
+    if let Ok(resp) = client.get(&backend_url).send().await {
+        if resp.status().is_success() {
+            if let Ok(prof) = resp.json::<VelocitySteamProfile>().await {
+                if let (Some(p), Some(a)) = (prof.persona_name, prof.avatar_url) {
+                    if !p.trim().is_empty() && !a.trim().is_empty() {
+                        return Ok((p, a));
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Try Steam Community XML (fallback)
+    let xml_url = format!("https://steamcommunity.com/profiles/{steam_id}/?xml=1");
+    if let Ok(resp) = client.get(&xml_url).send().await {
+        if let Ok(text) = resp.text().await {
+            let mut persona: Option<String> = None;
+            let mut avatar: Option<String> = None;
+
+            if let Some(pos) = text.find("<steamID><![CDATA[") {
+                let rest = &text[pos + 18..];
+                if let Some(end) = rest.find("]]></steamID>") {
+                    persona = Some(rest[..end].to_string());
+                }
+            } else if let Some(pos) = text.find("<steamID>") {
+                let rest = &text[pos + 9..];
+                if let Some(end) = rest.find("</steamID>") {
+                    persona = Some(rest[..end].to_string());
+                }
+            }
+
+            if let Some(pos) = text.find("<avatarFull><![CDATA[") {
+                let rest = &text[pos + 21..];
+                if let Some(end) = rest.find("]]></avatarFull>") {
+                    avatar = Some(rest[..end].to_string());
+                }
+            } else if let Some(pos) = text.find("<avatarFull>") {
+                let rest = &text[pos + 12..];
+                if let Some(end) = rest.find("</avatarFull>") {
+                    avatar = Some(rest[..end].to_string());
+                }
+            }
+
+            if let (Some(p), Some(a)) = (persona, avatar) {
+                if !p.is_empty() && !a.is_empty() {
+                    return Ok((p, a));
+                }
+            }
+        }
+    }
+
+    // 3. Try miniprofile as fallback for avatar
+    let account_id = (steam_id & 0xFFFF_FFFF) as u32;
+    if account_id > 0 {
+        let mini_url = format!("https://steamcommunity.com/miniprofile/{account_id}/json");
+        if let Ok(resp) = client.get(&mini_url).send().await {
+            if resp.status().is_success() {
+                if let Ok(profile) = resp.json::<SteamMiniProfileResponse>().await {
+                    let persona = profile.persona_name.unwrap_or_else(|| steam_id.to_string());
+                    if let Some(av) = profile.avatar_url {
+                        if !av.trim().is_empty() {
+                            return Ok((persona, av));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Err(format!("Could not resolve Steam profile for ID {steam_id}"))
+}
+
 static STEAM_AVATAR_CACHE: std::sync::Mutex<Option<std::collections::HashMap<u64, Vec<u8>>>> =
     std::sync::Mutex::new(None);
 
@@ -263,6 +569,8 @@ struct SteamWebApiPlayerList {
 struct SteamWebApiPlayerEntry {
     #[serde(default)]
     pub steamid: String,
+    #[serde(default)]
+    pub personaname: Option<String>,
     #[serde(default)]
     pub avatarfull: Option<String>,
 }
@@ -373,15 +681,34 @@ pub async fn fetch_steam_avatar_png(steam_id: u64) -> Option<Vec<u8>> {
 
     let mut direct_avatar_url: Option<String> = None;
 
-    // 3. Steam OpenAPI (Keyless miniprofile JSON endpoint)
-    // Steam account id is lower 32 bits of SteamID64 (e.g. 76561198000000000 -> 39734272)
-    let account_id = (steam_id & 0xFFFF_FFFF) as u32;
-    if account_id > 0 {
-        let miniprofile_url = format!("https://steamcommunity.com/miniprofile/{account_id}/json");
-        if let Ok(resp) = client.get(&miniprofile_url).send().await {
+    // 3. Steam Web API (if STEAM_API_KEY is configured in env or settings)
+    if let Some(api_key) = get_steam_api_key() {
+        let api_url = format!(
+            "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={}&steamids={steam_id}",
+            api_key.trim()
+        );
+        if let Ok(resp) = client.get(&api_url).send().await {
+            if let Ok(env) = resp.json::<SteamWebApiEnvelope>().await {
+                if let Some(players) = env.response {
+                    if let Some(p) = players.players.into_iter().next() {
+                        if let Some(av) = p.avatarfull {
+                            if !av.trim().is_empty() {
+                                direct_avatar_url = Some(av);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. Try VelocityRL API backend proxy (server-side Steam key and cache)
+    if direct_avatar_url.is_none() {
+        let backend_url = format!("https://api.velocityrl.tech/v1/steam/user/{steam_id}");
+        if let Ok(resp) = client.get(&backend_url).send().await {
             if resp.status().is_success() {
-                if let Ok(profile) = resp.json::<SteamMiniProfileResponse>().await {
-                    if let Some(url) = profile.avatar_url {
+                if let Ok(prof) = resp.json::<VelocitySteamProfile>().await {
+                    if let Some(url) = prof.avatar_url {
                         if !url.trim().is_empty() {
                             direct_avatar_url = Some(url);
                         }
@@ -391,23 +718,18 @@ pub async fn fetch_steam_avatar_png(steam_id: u64) -> Option<Vec<u8>> {
         }
     }
 
-    // 4. Steam Web API (if STEAM_API_KEY is configured in env or settings)
+    // 5. Steam OpenAPI (Keyless miniprofile JSON endpoint fallback)
     if direct_avatar_url.is_none() {
-        if let Ok(api_key) = std::env::var("STEAM_API_KEY") {
-            if !api_key.trim().is_empty() {
-                let api_url = format!(
-                    "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key={}&steamids={steam_id}",
-                    api_key.trim()
-                );
-                if let Ok(resp) = client.get(&api_url).send().await {
-                    if let Ok(env) = resp.json::<SteamWebApiEnvelope>().await {
-                        if let Some(players) = env.response {
-                            if let Some(p) = players.players.into_iter().next() {
-                                if let Some(av) = p.avatarfull {
-                                    if !av.trim().is_empty() {
-                                        direct_avatar_url = Some(av);
-                                    }
-                                }
+        // Steam account id is lower 32 bits of SteamID64 (e.g. 76561198000000000 -> 39734272)
+        let account_id = (steam_id & 0xFFFF_FFFF) as u32;
+        if account_id > 0 {
+            let miniprofile_url = format!("https://steamcommunity.com/miniprofile/{account_id}/json");
+            if let Ok(resp) = client.get(&miniprofile_url).send().await {
+                if resp.status().is_success() {
+                    if let Ok(profile) = resp.json::<SteamMiniProfileResponse>().await {
+                        if let Some(url) = profile.avatar_url {
+                            if !url.trim().is_empty() {
+                                direct_avatar_url = Some(url);
                             }
                         }
                     }
@@ -416,7 +738,7 @@ pub async fn fetch_steam_avatar_png(steam_id: u64) -> Option<Vec<u8>> {
         }
     }
 
-    // 5. Fallback: Steam community XML scrape (only if OpenAPI and Web API failed)
+    // 6. Fallback: Steam community XML scrape (only if OpenAPI and Web API failed)
     if direct_avatar_url.is_none() {
         let xml_url = format!("https://steamcommunity.com/profiles/{steam_id}/?xml=1");
         if let Ok(resp) = client.get(&xml_url).send().await {
@@ -965,5 +1287,39 @@ mod tests {
         assert_eq!(parse_steam_id(""), None);
         assert_eq!(parse_steam_id("avatar"), None);
         assert_eq!(parse_steam_id("rlim"), None);
+    }
+
+    #[test]
+    fn test_get_steam_login_url_structure() {
+        let url = get_steam_login_url();
+        assert!(url.starts_with("https://steamcommunity.com/openid/login"));
+        assert!(url.contains("openid.mode=checkid_setup"));
+        assert!(url.contains("rlim%2Fsteam_callback"));
+    }
+
+    #[test]
+    fn test_authenticated_steam_user_state() {
+        clear_authenticated_steam_user_internal();
+        assert!(get_authenticated_steam_user_internal().is_none());
+
+        let u = SteamAuthenticatedUser {
+            steam_id: "76561198000000000".into(),
+            persona_name: "!".into(),
+            avatar_url: "https://example.com/avatar.jpg".into(),
+            avatar_data_url: "data:image/png;base64,abc".into(),
+        };
+        set_authenticated_steam_user(u.clone());
+        let fetched = get_authenticated_steam_user_internal();
+        assert!(fetched.is_some());
+        assert_eq!(fetched.unwrap().persona_name, "!");
+
+        clear_authenticated_steam_user_internal();
+        assert!(get_authenticated_steam_user_internal().is_none());
+    }
+
+    #[test]
+    fn test_url_encode() {
+        assert_eq!(url_encode("hello world"), "hello+world");
+        assert_eq!(url_encode("a=1&b=2"), "a%3D1%26b%3D2");
     }
 }

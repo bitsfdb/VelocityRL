@@ -2646,6 +2646,7 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
     Ok(true)
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3227,3 +3228,4 @@ mod tests {
         let _ = fs::remove_dir_all(&temp_dir);
     }
 }
+

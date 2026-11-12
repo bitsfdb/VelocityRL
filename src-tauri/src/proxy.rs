@@ -2197,6 +2197,130 @@ async fn handle_broker_request(
             .unwrap());
     }
 
+    if path_str == "/rlim/steam_callback" || path_str.starts_with("/rlim/steam_callback?")
+        || path_str == "/steam/callback" || path_str.starts_with("/steam/callback?") {
+        let query_str = req.uri().query().unwrap_or_default().to_string();
+        crate::applog::event("broker: handling Steam OpenID callback");
+
+        match crate::avatar::verify_steam_openid_assertion(&query_str).await {
+            Ok(steam_id) => {
+                crate::applog::event(&format!("broker: Steam OpenID verified successfully for SteamID {steam_id}"));
+
+                let (persona, avatar_url) = crate::avatar::fetch_verified_steam_profile(steam_id)
+                    .await
+                    .unwrap_or_else(|_| (format!("Player_{}", steam_id % 10000), "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb_full.jpg".to_string()));
+
+                // Download and process avatar
+                let mut avatar_b64 = String::new();
+                if let Ok(img_resp) = client.get(&avatar_url).send().await {
+                    if let Ok(bytes) = img_resp.bytes().await {
+                        if let Ok((_bgra, png_bytes)) = crate::avatar::process_avatar_image(&bytes) {
+                            crate::avatar::set_active_avatar_png(png_bytes.clone());
+                            let _ = std::fs::write("/root/avatar.png", &png_bytes);
+                            let cache_dir = std::path::PathBuf::from("/root/.config/com.velocityrl.app/custom_avatars");
+                            let _ = std::fs::create_dir_all(&cache_dir);
+                            let _ = std::fs::write(cache_dir.join("active_avatar.png"), &png_bytes);
+                            let _ = std::fs::write(cache_dir.join(format!("steam_{steam_id}.png")), &png_bytes);
+
+                            let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &png_bytes);
+                            avatar_b64 = format!("data:image/png;base64,{b64}");
+                        }
+                    }
+                }
+
+                let auth_user = crate::avatar::SteamAuthenticatedUser {
+                    steam_id: steam_id.to_string(),
+                    persona_name: persona.clone(),
+                    avatar_url: avatar_url.clone(),
+                    avatar_data_url: avatar_b64.clone(),
+                };
+                crate::avatar::set_authenticated_steam_user(auth_user);
+
+                let html_body = format!(r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>VelocityRL — Steam Linked</title>
+    <style>
+        body {{
+            margin: 0; padding: 0; background: #121212; color: #e8e8e8;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            display: flex; align-items: center; justify-content: center; min-height: 100vh;
+        }}
+        .card {{
+            background: #1a1a1a; border: 1px solid #333333; border-radius: 12px;
+            padding: 36px 32px; text-align: center; max-width: 420px;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+        }}
+        .avatar-img {{
+            width: 96px; height: 96px; border-radius: 50%; border: 3px solid #4a9eff;
+            margin-bottom: 20px; object-fit: cover; box-shadow: 0 0 20px rgba(74, 158, 255, 0.35);
+        }}
+        h1 {{ font-size: 20px; font-weight: 700; margin: 0 0 8px; color: #4a9eff; }}
+        p {{ color: #a0a0a0; font-size: 13.5px; line-height: 1.5; margin: 6px 0; }}
+        .badge {{
+            display: inline-block; margin-top: 14px; padding: 6px 14px;
+            background: rgba(74, 158, 255, 0.12); color: #4a9eff;
+            border: 1px solid rgba(74, 158, 255, 0.3); border-radius: 20px;
+            font-size: 12px; font-weight: 600;
+        }}
+        .hint {{ margin-top: 24px; font-size: 12px; color: #666; }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <img class="avatar-img" src="{avatar_b64}" alt="Avatar">
+        <h1>Steam Account Linked</h1>
+        <p>Authenticated as <b>{persona}</b></p>
+        <p>Your custom Steam avatar is now active in Rocket League.</p>
+        <div class="badge">Verified via Steam OpenID</div>
+        <div class="hint">You can safely close this browser window and return to VelocityRL.</div>
+    </div>
+    <script>
+        setTimeout(() => {{ try {{ window.close(); }} catch(e){{}} }}, 3500);
+    </script>
+</body>
+</html>"#);
+
+                return Ok(Response::builder()
+                    .status(StatusCode::OK)
+                    .header("Content-Type", "text/html; charset=utf-8")
+                    .header("Content-Length", html_body.len().to_string())
+                    .body(full_body(html_body.into_bytes()))
+                    .unwrap());
+            }
+            Err(e) => {
+                crate::applog::event(&format!("broker: Steam OpenID verification failed: {e}"));
+                let err_html = format!(r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>VelocityRL — Authentication Failed</title>
+    <style>
+        body {{ margin: 0; background: #121212; color: #e8e8e8; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; }}
+        .card {{ background: #1a1a1a; border: 1px solid #e74c3c; border-radius: 12px; padding: 32px; text-align: center; max-width: 400px; }}
+        h1 {{ color: #e74c3c; font-size: 20px; margin-bottom: 12px; }}
+        p {{ color: #a0a0a0; font-size: 13.5px; }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Authentication Failed</h1>
+        <p>{e}</p>
+        <p style="margin-top: 20px; font-size: 12px; color: #666;">You can close this tab and try again.</p>
+    </div>
+</body>
+</html>"#);
+                return Ok(Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .header("Content-Type", "text/html; charset=utf-8")
+                    .header("Content-Length", err_html.len().to_string())
+                    .body(full_body(err_html.into_bytes()))
+                    .unwrap());
+            }
+        }
+    }
+
     if path_str == "/rlim/avatar" || path_str.starts_with("/rlim/avatar?")
         || path_str == "/a.png" || path_str.starts_with("/a.png?")
         || path_str.contains("/avatars/") {

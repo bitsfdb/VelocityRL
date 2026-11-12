@@ -94,6 +94,23 @@ function escHtml(str) {
 let ownedItem = null;
 let wantedItem = null;
 let items = [];
+function normalizeItems(rawList) {
+    if (!Array.isArray(rawList)) return [];
+    return rawList.filter(Boolean).map(it => {
+        const id = it.ID !== undefined ? it.ID : it.id;
+        const pkg = it.AssetPackage || it.asset_package || '';
+        if (id === 12968 || pkg === 'boost_alphadevreward') {
+            return {
+                ...it,
+                Product: 'FDev Boost (The Boost)',
+                product: 'FDev Boost (The Boost)',
+                LongLabel: 'FDev Boost (Alpha Dev Reward)',
+                long_label: 'FDev Boost (Alpha Dev Reward)'
+            };
+        }
+        return it;
+    });
+}
 let currentCategory = 'All';
 
 let ownedSearch, wantedSearch, ownedResults, wantedResults, applyBtn, statusText, progressBarContainer, progressFill, backupContainer;
@@ -468,51 +485,80 @@ const PAINT_TEXT_COLORS = {
     29: '#ca8a04',
 };
 
-function getPaintTextColor(paint) {
-    if (paint === null || paint === undefined) return '#09090b';
+function getPaintBgColor(paint) {
+    if (paint === null || paint === undefined) return '#3f3f46';
     if (typeof paint === 'number') {
-        return PAINT_TEXT_COLORS[paint] || '#09090b';
+        return PAINT_SWATCH_COLORS[paint] || '#3f3f46';
     }
     const str = String(paint).trim();
+    if (str.startsWith('#') || str.startsWith('rgb') || str.startsWith('linear-gradient')) {
+        return str;
+    }
     if (!isNaN(Number(str))) {
-        return PAINT_TEXT_COLORS[Number(str)] || '#09090b';
+        return PAINT_SWATCH_COLORS[Number(str)] || '#3f3f46';
     }
     for (const [id, name] of Object.entries(PAINT_NAMES)) {
         if (name.toLowerCase() === str.toLowerCase()) {
-            return PAINT_TEXT_COLORS[Number(id)] || '#09090b';
+            return PAINT_SWATCH_COLORS[Number(id)] || '#3f3f46';
         }
     }
-    return '#09090b';
+    return '#3f3f46';
+}
+
+function getPaintBadgeTextColor(bg) {
+    if (!bg) return '#ffffff';
+    if (bg.startsWith('linear-gradient')) return '#ffffff';
+    let hex = bg.trim();
+    if (hex.startsWith('#')) {
+        hex = hex.slice(1);
+        if (hex.length === 3) {
+            hex = hex.split('').map(c => c + c).join('');
+        }
+        if (hex.length === 6) {
+            const r = parseInt(hex.substring(0, 2), 16);
+            const g = parseInt(hex.substring(2, 4), 16);
+            const b = parseInt(hex.substring(4, 6), 16);
+            const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+            return lum > 0.65 ? '#09090b' : '#ffffff';
+        }
+    }
+    return '#ffffff';
+}
+
+function getPaintTextColor(paint) {
+    const bg = getPaintBgColor(paint);
+    return getPaintBadgeTextColor(bg);
 }
 
 function renderPaintBadgeHtml(paintIdOrName) {
     const raw = paintIdOrName;
     let label = 'None';
-    let color = '#09090b';
+    let bg = '#3f3f46';
     if (typeof raw === 'number') {
         label = raw === 0 ? 'None' : paintLabel(raw);
-        color = getPaintTextColor(raw);
+        bg = getPaintBgColor(raw);
     } else if (raw) {
         const str = String(raw).trim();
         if (str.toLowerCase() === 'all variants' || str.toLowerCase() === 'all paints') {
-            return `<span class="paint-white-pill" style="background:linear-gradient(135deg, #ec4899, #3b82f6); color:#ffffff; font-weight:800; border:none; box-shadow:0 1px 6px rgba(59, 130, 246, 0.4);">All Variants</span>`;
+            return `<span class="paint-badge-pill paint-white-pill" style="background:linear-gradient(135deg, #ec4899, #3b82f6); color:#ffffff; font-weight:800; border:none; box-shadow:0 1px 6px rgba(59, 130, 246, 0.4);">All Variants</span>`;
         }
         if (str.startsWith('#')) {
             label = str.toUpperCase();
-            color = str;
+            bg = str;
         } else if (!isNaN(Number(str))) {
             const num = Number(str);
             label = num === 0 ? 'None' : paintLabel(num);
-            color = getPaintTextColor(num);
+            bg = getPaintBgColor(num);
         } else if (str.toLowerCase() === 'default' || str.toLowerCase() === 'none') {
             label = 'None';
-            color = '#09090b';
+            bg = getPaintBgColor(0);
         } else {
             label = str;
-            color = getPaintTextColor(str);
+            bg = getPaintBgColor(str);
         }
     }
-    return `<span class="paint-white-pill" style="background:#ffffff; color:${color}; font-weight:700;">${escHtml(label)}</span>`;
+    const fg = getPaintBadgeTextColor(bg);
+    return `<span class="paint-badge-pill paint-white-pill" style="background:${bg}; color:${fg}; font-weight:700;">${escHtml(label)}</span>`;
 }
 
 function paintLabel(id) {
@@ -583,20 +629,24 @@ function renderSelectedItem(container, item, onClear) {
     const paintChipsHtml = isPaintable ? `
         <div class="card-paint-chips-wrap">
             <div class="card-paint-chips-scroll">
-                ${displayPaints.map(p => `
+                ${displayPaints.map(p => {
+                    const bg = getPaintBgColor(p.id);
+                    const fg = getPaintBadgeTextColor(bg);
+                    return `
                     <button type="button" 
                             class="paint-chip-pill ${p.id === currentPaintId && !isCustomActive ? 'is-active' : ''}" 
                             data-paint="${p.id}"
                             title="${escHtml(p.name)}"
-                            style="color:${getPaintTextColor(p.id)};">
+                            style="background:${bg}; color:${fg};">
                         ${escHtml(p.name)}
                     </button>
-                `).join('')}
+                    `;
+                }).join('')}
                 <button type="button" 
                         class="paint-chip-pill paint-chip-custom ${isCustomActive ? 'is-active' : ''}" 
                         data-custom="true"
                         title="Custom Color Picker"
-                        style="color:${currentCustomHex || '#8b5cf6'}; position:relative;">
+                        style="background:${currentCustomHex || 'rgba(139, 92, 246, 0.2)'}; color:${currentCustomHex ? getPaintBadgeTextColor(currentCustomHex) : '#c4b5fd'}; position:relative;">
                     <span class="custom-color-dot" style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${currentCustomHex || '#8b5cf6'}; margin-right:4px;"></span>
                     ${currentCustomHex ? escHtml(currentCustomHex.toUpperCase()) : 'Custom'}
                     <input type="color" class="paint-color-picker-input" value="${currentCustomHex || '#ff007f'}" style="opacity:0; position:absolute; left:0; top:0; width:100%; height:100%; cursor:pointer;">
@@ -675,7 +725,8 @@ function renderSelectedItem(container, item, onClear) {
                 });
                 customBtn?.classList.add('is-active');
                 if (customBtn) {
-                    customBtn.style.color = hex;
+                    customBtn.style.background = hex;
+                    customBtn.style.color = getPaintBadgeTextColor(hex);
                     const dot = customBtn.querySelector('.custom-color-dot');
                     if (dot) dot.style.background = hex;
                 }
@@ -763,12 +814,13 @@ async function init() {
         btn.onclick = () => {
             if (isAppLoading()) return;
             const paneId = btn.dataset.subtab;
+            if (!paneId) return;
             const parentTab = btn.closest('.tab-content');
             if (parentTab) {
-                parentTab.querySelectorAll('.subtab-btn').forEach(b => b.classList.remove('active'));
+                parentTab.querySelectorAll('.subtab-strip > .subtab-btn[data-subtab]').forEach(b => b.classList.remove('active'));
                 parentTab.querySelectorAll('.subtab-pane').forEach(p => p.classList.remove('active'));
             } else {
-                document.querySelectorAll('.subtab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.subtab-strip > .subtab-btn[data-subtab]').forEach(b => b.classList.remove('active'));
                 document.querySelectorAll('.subtab-pane').forEach(p => p.classList.remove('active'));
             }
             btn.classList.add('active');
@@ -778,6 +830,7 @@ async function init() {
                 renderCatalogGridPage();
             }
             if (paneId === 'custom-avatar-pane') initAvatarTab();
+            if (paneId === 'custom-palette-pane') initMiscTab();
             if (paneId === 'custom-decals-pane') initDecalsTab();
             if (paneId === 'custom-boost-pane') initBoostMeterTab();
             if (paneId === 'custom-titlescreen-pane') initTitleScreenPane();
@@ -870,7 +923,7 @@ async function init() {
         invoke('get_items', { lang: newLang }).then(fetched => {
             if (fetched) {
                 const raw = Array.isArray(fetched) ? fetched : (fetched.items || fetched.Items || []);
-                items = raw.filter(Boolean);
+                items = normalizeItems(raw);
             }
         }).catch(() => {});
         const toastMsg = newLang === 'es' ? 'Idioma cambiado a Español' :
@@ -1087,12 +1140,12 @@ async function loadData() {
 
         if (itemsResult) {
             const raw = Array.isArray(itemsResult) ? itemsResult : (itemsResult.items || itemsResult.Items || []);
-            items = raw.filter(Boolean);
+            items = normalizeItems(raw);
         } else {
             invoke('get_items').catch(() => {}).then(fetched => {
                 if (fetched) {
                     const raw = Array.isArray(fetched) ? fetched : (fetched.items || fetched.Items || []);
-                    items = raw.filter(Boolean);
+                    items = normalizeItems(raw);
                     renderCatalogGridPage();
                     updateCatalogSelectionUi();
                 }
@@ -1944,7 +1997,15 @@ function getFilteredCatalogItems() {
         list = list.filter(i => {
             const name = (i?.product || i?.Product || '').toLowerCase();
             const slot = (i?.slot || i?.Slot || '').toLowerCase();
-            return name.includes(q) || slot.includes(q);
+            const label = (i?.LongLabel || i?.long_label || '').toLowerCase();
+            const pkg = (i?.asset_package || i?.AssetPackage || '').toLowerCase();
+            const path = (i?.asset_path || i?.AssetPath || '').toLowerCase();
+            const id = String(i?.id !== undefined ? i?.id : (i?.ID !== undefined ? i?.ID : ''));
+            const isFDev = (id === '12968' || pkg === 'boost_alphadevreward');
+            if (isFDev && (q.includes('fdev') || 'fdev'.includes(q) || q.includes('alpha dev') || q.includes('the boost'))) {
+                return true;
+            }
+            return name.includes(q) || slot.includes(q) || label.includes(q) || pkg.includes(q) || path.includes(q) || id === q;
         });
     }
 
@@ -2560,7 +2621,10 @@ function setupSearch(input, resultsDiv, selectionHandler) {
             if (invalidTypes.includes(normSlot(pSlot))) return false;
 
             const pLong = (item.LongLabel || item.long_label || '').toLowerCase();
-            const matchesTerm = term.length < 2 || pName.includes(term) || pAsset.includes(term) || pLong.includes(term) || (term.trim() === 'ai' && (pName.includes('bot') || pAsset.includes('bot')));
+            const idStr = String(item.id !== undefined ? item.id : (item.ID !== undefined ? item.ID : ''));
+            const isFDev = (idStr === '12968' || pAsset === 'boost_alphadevreward');
+            const matchesFDev = isFDev && (term.includes('fdev') || 'fdev'.includes(term) || term.includes('alpha dev') || term.includes('the boost'));
+            const matchesTerm = term.length < 2 || matchesFDev || pName.includes(term) || pAsset.includes(term) || pLong.includes(term) || (term.trim() === 'ai' && (pName.includes('bot') || pAsset.includes('bot')));
             const matchesCat = lockCategory === 'All' || normSlot(pSlot) === normSlot(lockCategory);
             return matchesTerm && matchesCat;
         }).slice(0, 50);
@@ -6109,17 +6173,6 @@ function initBoostMeterTab() {
         });
     };
 
-    let boostSearchTimer = null;
-    document.getElementById('boost-catalog-search')?.addEventListener('input', (e) => {
-        clearTimeout(boostSearchTimer);
-        boostSearchTimer = setTimeout(() => {
-            loadVgmBoostMeters(1, e.target.value.trim() || 'boost');
-        }, 350);
-    });
-    document.getElementById('boost-catalog-search-btn')?.addEventListener('click', () => {
-        const q = document.getElementById('boost-catalog-search')?.value.trim() || 'boost';
-        loadVgmBoostMeters(1, q);
-    });
     document.getElementById('boost-catalog-prev-btn')?.addEventListener('click', () => {
         if (vgmBoostPage > 1) {
             loadVgmBoostMeters(vgmBoostPage - 1, vgmBoostQuery);
@@ -6129,7 +6182,7 @@ function initBoostMeterTab() {
         loadVgmBoostMeters(vgmBoostPage + 1, vgmBoostQuery);
     });
 
-    // Subtab Switching (Community vs Import)
+    // Subtab Switching (Library vs Import from external sources)
     const tabCatalogBtn = document.getElementById('boost-tab-catalog-btn');
     const tabImportBtn = document.getElementById('boost-tab-import-btn');
     const catalogView = document.getElementById('boost-catalog-view');
@@ -6149,38 +6202,6 @@ function initBoostMeterTab() {
             importView.style.display = 'block';
         };
     }
-
-    // Color Pickers & Live Preview Sync
-    const accentPicker = document.getElementById('boost-accent-color');
-    const accentHex = document.getElementById('boost-accent-hex');
-    const glowPicker = document.getElementById('boost-glow-color');
-    const glowHex = document.getElementById('boost-glow-hex');
-
-    const syncColors = (picker, text, isAccent) => {
-        picker?.addEventListener('input', () => {
-            if (text) text.value = picker.value;
-            applyLiveImportColors();
-        });
-        text?.addEventListener('input', () => {
-            const v = text.value.trim();
-            if (/^#[0-9a-fA-F]{6}$/.test(v) && picker) {
-                picker.value = v;
-                applyLiveImportColors();
-            }
-        });
-    };
-    syncColors(accentPicker, accentHex, true);
-    syncColors(glowPicker, glowHex, false);
-
-    const applyLiveImportColors = () => {
-        const a = accentPicker?.value || '#00f2fe';
-        const g = glowPicker?.value || '#4facfe';
-        if (previewBar) previewBar.style.background = `linear-gradient(90deg, ${a}, ${g})`;
-        if (previewCircle) {
-            previewCircle.style.borderColor = a;
-            previewCircle.style.boxShadow = `0 0 14px ${a}66`;
-        }
-    };
 
     // Dropzone & File Input
     const dropzone = document.getElementById('boost-dropzone');
@@ -6244,8 +6265,8 @@ function initBoostMeterTab() {
         importApplyBtn.onclick = async () => {
             importApplyBtn.disabled = true;
             const customName = nameInput?.value.trim() || 'Custom AlphaConsole HUD';
-            const a = accentPicker?.value || '#00f2fe';
-            const g = glowPicker?.value || '#4facfe';
+            const a = '#00f2fe';
+            const g = '#4facfe';
             const gType = gaugeTypeSelect?.value || 'circular';
             const typeLabel = gType === 'circular' ? 'Circular HUD' : (gType === 'bar' ? 'Linear HUD' : 'Radial HUD');
 
@@ -6256,7 +6277,7 @@ function initBoostMeterTab() {
                 type: typeLabel,
                 gradient: `linear-gradient(90deg, ${a}, ${g})`,
                 accent: a,
-                description: `AlphaConsole custom gauge (${a} / ${g})`
+                description: `AlphaConsole custom gauge`
             };
 
             COMMUNITY_BOOST_METERS.push(customMeter);
@@ -6340,6 +6361,7 @@ function initCustomizationTab() {
     initNamesTab();
     initCreditsTab();
     initAvatarTab();
+    initMiscTab();
     initDecalsTab();
     initBoostMeterTab();
     initTitleScreenPane();
@@ -6406,6 +6428,100 @@ function initAvatarTab() {
 
     if (avatarTabWired) return;
     avatarTabWired = true;
+
+    async function checkSteamAuth() {
+        try {
+            const user = await invoke('get_authenticated_steam_user');
+            const loginBtn = document.getElementById('steam-login-btn');
+            const unlinkBtn = document.getElementById('steam-unlink-btn');
+            const statusEl = document.getElementById('steam-auth-status');
+            if (user && user.steam_id) {
+                if (loginBtn) loginBtn.style.display = 'none';
+                if (unlinkBtn) unlinkBtn.style.display = 'inline-block';
+                if (statusEl) {
+                    statusEl.innerHTML = `Linked: <strong style="color:var(--accent);">${escHtml(user.persona_name)}</strong> (${user.steam_id})`;
+                }
+                if (user.avatar_url && !currentAvatarSource) {
+                    currentAvatarSource = user.avatar_url;
+                    renderAvatar(user.avatar_url, `Steam: ${user.persona_name}`, 'Authenticated via Steam');
+                    if (urlInput) urlInput.value = user.avatar_url;
+                }
+            } else {
+                if (loginBtn) loginBtn.style.display = 'inline-block';
+                if (unlinkBtn) unlinkBtn.style.display = 'none';
+                if (statusEl) statusEl.textContent = 'Not linked';
+            }
+        } catch (e) {
+            console.warn('Failed to query steam auth status:', e);
+        }
+    }
+
+    checkSteamAuth();
+
+    const steamApiKeyInput = document.getElementById('steam-api-key-input');
+    const steamApiKeySaveBtn = document.getElementById('steam-api-key-save-btn');
+    if (steamApiKeyInput) {
+        invoke('get_steam_api_key_command').then(key => {
+            if (key) steamApiKeyInput.value = key;
+        }).catch(() => {});
+        steamApiKeySaveBtn?.addEventListener('click', async () => {
+            const val = steamApiKeyInput.value.trim();
+            try {
+                await invoke('set_steam_api_key_command', { key: val });
+                try {
+                    const cfg = await invoke('get_profile_card_config');
+                    cfg.steam_api_key = val ? val : null;
+                    await invoke('save_profile_card_config', { config: cfg });
+                } catch (_) {}
+                showToast(val ? 'Steam Web API key saved!' : 'Steam API key cleared.', 'success');
+            } catch (err) {
+                showToast(`Failed to save Steam API key: ${err}`, 'error');
+            }
+        });
+    }
+
+    const steamLoginBtn = document.getElementById('steam-login-btn');
+    steamLoginBtn?.addEventListener('click', async () => {
+        try {
+            const url = await invoke('get_steam_login_url');
+            if (window.__TAURI__?.shell?.open) {
+                await window.__TAURI__.shell.open(url);
+            } else {
+                window.open(url, '_blank');
+            }
+            showToast('Steam login opened in your browser. Complete authentication to link.', 'info');
+            let pollCount = 0;
+            const pollInterval = setInterval(async () => {
+                pollCount++;
+                const user = await invoke('get_authenticated_steam_user');
+                if (user && user.steam_id) {
+                    clearInterval(pollInterval);
+                    checkSteamAuth();
+                    if (user.avatar_url) {
+                        currentAvatarSource = user.avatar_url;
+                        renderAvatar(user.avatar_url, `Steam: ${user.persona_name}`, 'Authenticated via Steam');
+                        if (urlInput) urlInput.value = user.avatar_url;
+                    }
+                    showToast(`Linked Steam account: ${user.persona_name}`, 'success');
+                } else if (pollCount > 60) {
+                    clearInterval(pollInterval);
+                }
+            }, 2000);
+        } catch (err) {
+            showToast(`Failed to launch Steam login: ${err}`, 'error');
+        }
+    });
+
+    const steamUnlinkBtn = document.getElementById('steam-unlink-btn');
+    steamUnlinkBtn?.addEventListener('click', async () => {
+        try {
+            await invoke('clear_authenticated_steam_user');
+            showToast('Unlinked Steam account.', 'info');
+            checkSteamAuth();
+        } catch (err) {
+            showToast(String(err), 'error');
+        }
+    });
 
     // Dropzone click -> file input
     dropzone?.addEventListener('click', (e) => {
@@ -6954,62 +7070,66 @@ function initMiscTab() {
         syncNameSpoofSwitchAria(enabledEl);
         urlEl.value = ls.logo_url || saved.logo_url || DEFAULT_SEASON23_LOGO_URL;
 
+        enabledEl.addEventListener('change', () => syncNameSpoofSwitchAria(enabledEl));
+        defaultLink?.addEventListener('click', (e) => {
+            e.preventDefault();
+            urlEl.value = DEFAULT_SEASON23_LOGO_URL;
+            showToast('Default logo set.', 'success');
+        });
+
+        saveBtn.addEventListener('click', async () => {
+            if (isAppLoading() || spoofSaveInFlight) return;
+            const logo_url = urlEl.value.trim();
+            const enabled = !!enabledEl.checked;
+            if (enabled && !logo_url) {
+                showToast('Enter a logo URL or turn off.', 'error');
+                return;
+            }
+            const logo_spoof = { enabled, logo_url };
+            try {
+                localStorage.setItem(LOGO_SPOOF_KEY, JSON.stringify({ logo_spoof }));
+                invoke('append_launch_log', {
+                    message: `psynet: season logo save enabled=${enabled} url_len=${logo_url.length}`,
+                }).catch(() => {});
+                await runToolSave(saveBtn, 'season logo', { logo_spoof }, { enabled });
+                flashButtonLabel(saveBtn, enabled ? 'Saved' : 'Saved (off)');
+                if (!enabled) showToast('Season logo off.', 'success');
+            } catch (e) {
+                showToast(String(e), 'error');
+            }
+        });
+    }
+
+    if (blogEnabledEl || blogMotdEl || blogSaveBtn) {
         let blogSaved = {};
         try { blogSaved = JSON.parse(localStorage.getItem(BLOG_SPOOF_KEY) || '{}'); } catch { }
         const bs = blogSaved.blog_spoof || {};
         if (blogEnabledEl) {
             blogEnabledEl.checked = !!bs.enabled;
             syncNameSpoofSwitchAria(blogEnabledEl);
+            blogEnabledEl.addEventListener('change', () => syncNameSpoofSwitchAria(blogEnabledEl));
         }
         if (blogMotdEl) blogMotdEl.value = bs.motd || blogSaved.motd || DEFAULT_BLOG_MOTD;
 
-        enabledEl.addEventListener('change', () => syncNameSpoofSwitchAria(enabledEl));
-        blogEnabledEl?.addEventListener('change', () => syncNameSpoofSwitchAria(blogEnabledEl));
-        defaultLink?.addEventListener('click', (e) => {
-            e.preventDefault();
-            urlEl.value = DEFAULT_SEASON23_LOGO_URL;
-            showToast('Default logo set.', 'success');
+        blogSaveBtn?.addEventListener('click', async () => {
+            if (isAppLoading() || spoofSaveInFlight) return;
+            const motd = (blogMotdEl?.value || '').trim();
+            const enabled = !!(blogEnabledEl && blogEnabledEl.checked);
+            if (enabled && !motd) {
+                showToast('Enter text or turn off.', 'error');
+                return;
+            }
+            const blog_spoof = { enabled, motd };
+            try {
+                localStorage.setItem(BLOG_SPOOF_KEY, JSON.stringify({ blog_spoof }));
+                await runToolSave(blogSaveBtn, 'MotD', { blog_spoof }, { enabled });
+                flashButtonLabel(blogSaveBtn, enabled ? 'Saved' : 'Saved (off)');
+                if (!enabled) showToast('Main-menu MotD off.', 'success');
+            } catch (e) {
+                showToast(String(e), 'error');
+            }
         });
     }
-    saveBtn.addEventListener('click', async () => {
-        if (isAppLoading() || spoofSaveInFlight) return;
-        const logo_url = urlEl.value.trim();
-        const enabled = !!enabledEl.checked;
-        if (enabled && !logo_url) {
-            showToast('Enter a logo URL or turn off.', 'error');
-            return;
-        }
-        const logo_spoof = { enabled, logo_url };
-        try {
-            localStorage.setItem(LOGO_SPOOF_KEY, JSON.stringify({ logo_spoof }));
-            invoke('append_launch_log', {
-                message: `psynet: season logo save enabled=${enabled} url_len=${logo_url.length}`,
-            }).catch(() => {});
-            await runToolSave(saveBtn, 'season logo', { logo_spoof }, { enabled });
-            flashButtonLabel(saveBtn, enabled ? 'Saved' : 'Saved (off)');
-            if (!enabled) showToast('Season logo off.', 'success');
-        } catch (e) {
-            showToast(String(e), 'error');
-        }
-    });
-    blogSaveBtn?.addEventListener('click', async () => {
-        if (isAppLoading() || spoofSaveInFlight) return;
-        const motd = (blogMotdEl?.value || '').trim();
-        const enabled = !!(blogEnabledEl && blogEnabledEl.checked);
-        if (enabled && !motd) {
-            showToast('Enter text or turn off.', 'error');
-            return;
-        }
-        const blog_spoof = { enabled, motd };
-        try {
-            localStorage.setItem(BLOG_SPOOF_KEY, JSON.stringify({ blog_spoof }));
-            await runToolSave(blogSaveBtn, 'MotD', { blog_spoof }, { enabled });
-            flashButtonLabel(blogSaveBtn, enabled ? 'Saved' : 'Saved (off)');
-            if (!enabled) showToast('Main-menu MotD off.', 'success');
-        } catch (e) {
-            showToast(String(e), 'error');
-        }
-    });
 }
 
 let setGlobalPaint = (id) => {};
