@@ -7935,8 +7935,6 @@ async function loadWorkshopCatalog(page = 1, query = '') {
         </div>
     `;
 
-    }
-
     try {
         const timeoutPromise = new Promise((_, reject) =>
             setTimeout(() => reject(new Error('BakkesPlugins request timed out after 15s. Check internet connection.')), 15000)
