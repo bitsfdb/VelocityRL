@@ -5321,8 +5321,9 @@ pub fn patch_products_config(body: &[u8]) -> (Vec<u8>, bool) {
         ("LoadoutValidation_TA", "bValidateDLC", "False"),
         ("LoadoutValidation_TA", "bEnableStrictLoadoutValidation", "False"),
         ("SaveGameManager_TA", "bEnableSaving", "True"),
-        ("SaveGameManager_TA", "bDisableSaveOSS", "False"),
-        ("OnlineStorageConfig_TA", "SaveDisabledClasses", "()"),
+        ("SaveGameManager_TA", "bDisableSaveOSS", "True"),
+        ("OnlineStorageConfig_TA", "SaveDisabledClasses", "(\"SaveData_TA\",\"ProfileLoadoutSave_TA\",\"ProductsSave_TA\",\"ProductsArchiveSave_TA\",\"ProductsFavoriteSave_TA\")"),
+        ("OnlineStorageConfig_TA", "MinSecondsBetweenCloudUploads", "2147483647"),
     ];
 
     for (cls, prop, val) in overrides {
@@ -5402,12 +5403,55 @@ pub fn patch_products_config(body: &[u8]) -> (Vec<u8>, bool) {
         }
     } else {
         if let Some(close_idx) = out.iter().rposition(|&c| c == b'}') {
-            let block = ",\"ProductsConfig\":{\"Class\":\"ProductsConfig_X\",\"bUseSaveDataCacheProducts\":true,\"MaxSecondsBetweenFullProductSyncs\":2147483647,\"bClearSyncTimestampOnMissingProduct\":false,\"bEnableOfflineItemsDuplicationPrevention\":false}";
+            let block = ",\"ProductsConfig\":{\"Class\":\"ProductsConfig_TA\",\"bUseSaveDataCacheProducts\":true,\"MaxSecondsBetweenFullProductSyncs\":2147483647,\"bClearSyncTimestampOnMissingProduct\":false,\"bEnableOfflineItemsDuplicationPrevention\":false}";
             let mut res = Vec::with_capacity(out.len() + block.len());
             res.extend_from_slice(&out[..close_idx]);
             res.extend_from_slice(block.as_bytes());
             res.extend_from_slice(&out[close_idx..]);
             out = res;
+            any_changed = true;
+        }
+    }
+
+    if let Some((start, end)) = find_named_object(&out, "OnlineStorageConfig")
+        .or_else(|| find_named_object(&out, "OnlineStorageConfig_TA"))
+    {
+        let obj = &out[start..end];
+        let mut obj_str = String::from_utf8_lossy(obj).into_owned();
+        let mut obj_changed = false;
+
+        if let Some(pos) = obj_str.find("\"MinSecondsBetweenCloudUploads\"") {
+            if let Some(col) = obj_str[pos..].find(':') {
+                let num_start = pos + col + 1;
+                let trimmed = obj_str[num_start..].trim_start();
+                let skip = obj_str[num_start..].len() - trimmed.len();
+                let actual_num_start = num_start + skip;
+                let num_end = actual_num_start + obj_str[actual_num_start..]
+                    .find(|c: char| !c.is_ascii_digit())
+                    .unwrap_or(obj_str.len() - actual_num_start);
+                if &obj_str[actual_num_start..num_end] != "2147483647" {
+                    obj_str.replace_range(actual_num_start..num_end, "2147483647");
+                    obj_changed = true;
+                }
+            }
+        } else if let Some(last_brace) = obj_str.rfind('}') {
+            obj_str.insert_str(last_brace, ",\"MinSecondsBetweenCloudUploads\":2147483647");
+            obj_changed = true;
+        }
+
+        if !obj_str.contains("\"SaveDisabledClasses\"") {
+            if let Some(last_brace) = obj_str.rfind('}') {
+                obj_str.insert_str(last_brace, ",\"SaveDisabledClasses\":[\"SaveData_TA\",\"ProfileLoadoutSave_TA\",\"ProductsSave_TA\",\"ProductsArchiveSave_TA\",\"ProductsFavoriteSave_TA\"]");
+                obj_changed = true;
+            }
+        }
+
+        if obj_changed {
+            let mut next = Vec::with_capacity(out.len() + 128);
+            next.extend_from_slice(&out[..start]);
+            next.extend_from_slice(obj_str.as_bytes());
+            next.extend_from_slice(&out[end..]);
+            out = next;
             any_changed = true;
         }
     }
@@ -7064,7 +7108,7 @@ mod tests {
 
     #[test]
     fn test_patch_products_config_and_overrides() {
-        let body = br#"{"Config":{},"ClassPropertyConfig":{"Class":"ClassPropertyConfig_X","Overrides":[]}}"#;
+        let body = br#"{"Config":{},"ClassPropertyConfig":{"Class":"ClassPropertyConfig_X","Overrides":[]},"OnlineStorageConfig":{"Class":"OnlineStorageConfig_TA","MinSecondsBetweenCloudUploads":30}}"#;
         let (patched, changed) = patch_products_config(body);
         assert!(changed);
         let s = String::from_utf8(patched).unwrap();
@@ -7072,6 +7116,9 @@ mod tests {
         assert!(s.contains("\"MaxSecondsBetweenFullProductSyncs\",\"Value\":\"2147483647\""));
         assert!(s.contains("\"bClearSyncTimestampOnMissingProduct\",\"Value\":\"False\""));
         assert!(s.contains("\"bEnableOfflineItemsDuplicationPrevention\",\"Value\":\"False\""));
+        assert!(s.contains("\"bDisableSaveOSS\",\"Value\":\"True\""));
+        assert!(s.contains("\"MinSecondsBetweenCloudUploads\":2147483647"));
+        assert!(s.contains("\"SaveDisabledClasses\""));
         assert!(s.contains("\"ProductsConfig\":{"));
     }
 
