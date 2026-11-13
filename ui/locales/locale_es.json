@@ -141,7 +141,16 @@
     "leaderboard_rank": "Posición personalizada",
     "leaderboard_mmr": "MMR de clasificación personalizado",
     "save_leaderboard": "Guardar clasificación",
-    "subtab_avatar": "Custom Profile Pictures (PFP)"
+    "subtab_avatar": "Custom Profile Pictures (PFP)",
+    "steam_auth_label": "Autenticación de cuenta de Steam",
+    "steam_auth_desc": "Inicia sesión con Steam OpenID para vincular tu avatar y nombre de Steam directamente.",
+    "steam_signin_btn": "Iniciar sesión con Steam",
+    "steam_unlink_btn": "Desvincular Steam",
+    "steam_not_linked": "No vinculado",
+    "why_steam_auth_title": "¿Por qué iniciar sesión con Steam?",
+    "why_steam_auth_simple": "Steam limita las consultas de fotos de perfil anónimas. Iniciar sesión permite que Rocket League cargue tu foto real de Steam siempre sin esperas ni fallos. Tu contraseña permanece 100% segura en Steam.",
+    "boost_hud_restore_orig": "Restaurar original",
+    "boost_hud_test": "Probar turbo"
   },
   "ranks": {
     "title": "Rangos falsos",

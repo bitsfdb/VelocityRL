@@ -128,7 +128,16 @@
     "item_shop_credits": "Créditos da Loja",
     "tournament_credits": "Créditos de Torneio",
     "save_credits": "Salvar créditos",
-    "subtab_avatar": "Custom Profile Pictures (PFP)"
+    "subtab_avatar": "Custom Profile Pictures (PFP)",
+    "steam_auth_label": "Autenticação da conta Steam",
+    "steam_auth_desc": "Entre com o Steam OpenID para vincular seu avatar e nome Steam diretamente.",
+    "steam_signin_btn": "Entrar com o Steam",
+    "steam_unlink_btn": "Desvincular Steam",
+    "steam_not_linked": "Não vinculado",
+    "why_steam_auth_title": "Por que entrar com o Steam?",
+    "why_steam_auth_simple": "A Steam limita a busca de fotos de perfil não autenticadas. Entrar permite que o Rocket League carregue sua foto real sempre, sem travamentos. Sua senha permanece 100% privada na Steam.",
+    "boost_hud_restore_orig": "Restaurar original",
+    "boost_hud_test": "Testar turbo"
   },
   "ranks": {
     "title": "Ranks Falsos",

@@ -152,7 +152,16 @@
     "avatar_preview": "Aperçu de la photo de profil",
     "avatar_status_ready": "Prêt à appliquer la photo de profil",
     "apply_avatar": "Appliquer la photo de profil personnalisée",
-    "restore_avatar": "Restaurer les valeurs par défaut"
+    "restore_avatar": "Restaurer les valeurs par défaut",
+    "steam_auth_label": "Authentification du compte Steam",
+    "steam_auth_desc": "Connectez-vous avec Steam OpenID pour lier directement votre avatar et votre pseudo Steam.",
+    "steam_signin_btn": "Se connecter avec Steam",
+    "steam_unlink_btn": "Dissocier Steam",
+    "steam_not_linked": "Non lié",
+    "why_steam_auth_title": "Pourquoi se connecter avec Steam ?",
+    "why_steam_auth_simple": "Steam limite le nombre de vérifications d'avatar sans connexion. Se connecter permet à Rocket League de charger votre vraie photo Steam sans délai ni icône manquante. Votre mot de passe reste 100% privé sur Steam.",
+    "boost_hud_restore_orig": "Restaurer l'original",
+    "boost_hud_test": "Tester le boost"
   },
   "ranks": {
     "title": "Faux Ranks",

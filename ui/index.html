@@ -437,25 +437,23 @@
                         </div>
 
                         <div class="settings-group" style="margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border);">
-                            <label style="color: var(--text); font-weight: 600;">Steam Account Authentication</label>
-                            <span class="field-hint" style="margin-bottom: 10px;">Sign in via official Steam OpenID to link your authenticated Steam avatar and display name directly.</span>
+                            <label style="color: var(--text); font-weight: 600;" data-i18n="custom.steam_auth_label">Steam Account Authentication</label>
+                            <span class="field-hint" style="margin-bottom: 10px;" data-i18n="custom.steam_auth_desc">Sign in via Steam OpenID to link your authenticated Steam avatar and display name directly.</span>
                             <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                                 <button type="button" id="steam-login-btn" class="action-btn" style="background: linear-gradient(135deg, #1b2838 0%, #2a475e 100%); border: 1px solid #66c0f4; color: #ffffff; padding: 8px 18px; font-weight: 600; box-shadow: 0 2px 8px rgba(102, 192, 244, 0.25); display: inline-flex; align-items: center; gap: 8px;">
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.811c0 .052.005.105.005.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 14.819C1.875 20.046 6.492 24 12 24c6.627 0 12-5.373 12-12S18.605 0 11.979 0zM7.54 18.212c-.261-.26-.423-.62-.423-1.018 0-.795.644-1.44 1.44-1.44.398 0 .758.163 1.019.424l-.454.453c-.145-.145-.345-.235-.565-.235-.441 0-.8.359-.8.8 0 .22.09.42.235.565l-.452.451zm8.4-9.302c-1.744 0-3.158 1.414-3.158 3.158 0 1.745 1.414 3.159 3.158 3.159 1.745 0 3.16-1.414 3.16-3.159 0-1.744-1.415-3.158-3.16-3.158zm0 1.019c1.182 0 2.14 0.958 2.14 2.139 0 1.182-.958 2.14-2.14 2.14-1.18 0-2.139-.958-2.139-2.14 0-1.181.959-2.139 2.139-2.139z"/></svg>
-                                    Sign in with Steam
+                                    <span data-i18n="custom.steam_signin_btn">Sign in with Steam</span>
                                 </button>
-                                <button type="button" id="steam-unlink-btn" class="action-btn action-btn-secondary" style="display: none; padding: 7px 14px;">
+                                <button type="button" id="steam-unlink-btn" class="action-btn action-btn-secondary" style="display: none; padding: 7px 14px;" data-i18n="custom.steam_unlink_btn">
                                     Unlink Steam
                                 </button>
-                                <span id="steam-auth-status" style="font-size: 12px; color: var(--muted);">Not linked</span>
+                                <span id="steam-auth-status" style="font-size: 12px; color: var(--muted);" data-i18n="custom.steam_not_linked">Not linked</span>
                             </div>
 
                             <details style="margin-top: 12px; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; font-size: 12.5px; color: var(--text-secondary);">
-                                <summary style="cursor: pointer; font-weight: 600; color: var(--accent);">Why do we need this?</summary>
-                                <div style="margin-top: 8px; line-height: 1.6; color: var(--text-secondary);">
-                                    <p style="margin: 0 0 8px 0;"><strong style="color: var(--text);">Zero Rate Limiting &amp; 100% Up-To-Date Profile:</strong> Steam strictly blocks and throttles scraping, IP lookups, and unauthenticated web requests. Rate-limiting leads to missing profile pictures, 429 Too Many Requests errors, and delays in-game.</p>
-                                    <p style="margin: 0 0 8px 0;"><strong style="color: var(--text);">Why OpenID is infinitely better:</strong> When you authenticate directly with Steam OpenID, Steam cryptographically verifies your identity with zero third-party reliance. The local VelocityRL proxy serves your authentic high-definition avatar directly to Rocket League in real time without ever encountering IP rate-limits or temporary CDN blocks.</p>
-                                    <p style="margin: 0;"><strong style="color: var(--text);">Security:</strong> We never see or store your Steam password. Authentication happens entirely on Valve's official <code>steamcommunity.com</code> servers.</p>
+                                <summary style="cursor: pointer; font-weight: 600; color: var(--accent);" data-i18n="custom.why_steam_auth_title">Why sign in with Steam?</summary>
+                                <div style="margin-top: 8px; line-height: 1.6; color: var(--text-secondary);" data-i18n="custom.why_steam_auth_simple">
+                                    Steam limits how many times anyone can check profile pictures without signing in. Signing in lets Rocket League load your real Steam picture every time without delays or missing icons. Your password stays 100% private on Steam.
                                 </div>
                             </details>
                         </div>
@@ -666,8 +664,8 @@
                     </div>
 
                     <div style="display: flex; gap: 8px; align-items: center;">
-                        <button type="button" id="boost-restore-btn" class="action-btn action-btn-secondary" style="padding: 6px 14px; font-size: 12px;">Restore original</button>
-                        <button type="button" id="boost-test-btn" class="action-btn action-btn-secondary" style="padding: 6px 14px; font-size: 12px;">Test Boost</button>
+                        <button type="button" id="boost-restore-btn" class="action-btn action-btn-secondary" style="padding: 6px 14px; font-size: 12px;" data-i18n="custom.boost_hud_restore_orig">Restore original</button>
+                        <button type="button" id="boost-test-btn" class="action-btn action-btn-secondary" style="padding: 6px 14px; font-size: 12px;" data-i18n="custom.boost_hud_test">Test Boost</button>
                     </div>
                 </div>
 

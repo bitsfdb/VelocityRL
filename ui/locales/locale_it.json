@@ -128,7 +128,16 @@
     "item_shop_credits": "Crediti Negozio",
     "tournament_credits": "Crediti Torneo",
     "save_credits": "Salva crediti",
-    "subtab_avatar": "Custom Profile Pictures (PFP)"
+    "subtab_avatar": "Custom Profile Pictures (PFP)",
+    "steam_auth_label": "Autenticazione account Steam",
+    "steam_auth_desc": "Accedi tramite Steam OpenID per collegare direttamente il tuo avatar e nome di Steam.",
+    "steam_signin_btn": "Accedi con Steam",
+    "steam_unlink_btn": "Scollega Steam",
+    "steam_not_linked": "Non collegato",
+    "why_steam_auth_title": "Perché accedere con Steam?",
+    "why_steam_auth_simple": "Steam limita le richieste di immagini del profilo senza accesso. L'accesso consente a Rocket League di mostrare sempre la tua vera foto di Steam senza ritardi. La tua password rimane al 100% privata su Steam.",
+    "boost_hud_restore_orig": "Ripristina originale",
+    "boost_hud_test": "Testa turbo"
   },
   "ranks": {
     "title": "Gradi Falsi",
