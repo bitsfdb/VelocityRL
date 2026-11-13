@@ -440,7 +440,8 @@
                             <label style="color: var(--text); font-weight: 600;">Steam Account Authentication</label>
                             <span class="field-hint" style="margin-bottom: 10px;">Sign in via official Steam OpenID to link your authenticated Steam avatar and display name directly.</span>
                             <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                                <button type="button" id="steam-login-btn" class="action-btn" style="background: #171a21; border: 1px solid #3d4450; padding: 7px 16px; font-weight: 600;">
+                                <button type="button" id="steam-login-btn" class="action-btn" style="background: linear-gradient(135deg, #1b2838 0%, #2a475e 100%); border: 1px solid #66c0f4; color: #ffffff; padding: 8px 18px; font-weight: 600; box-shadow: 0 2px 8px rgba(102, 192, 244, 0.25); display: inline-flex; align-items: center; gap: 8px;">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.811c0 .052.005.105.005.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 14.819C1.875 20.046 6.492 24 12 24c6.627 0 12-5.373 12-12S18.605 0 11.979 0zM7.54 18.212c-.261-.26-.423-.62-.423-1.018 0-.795.644-1.44 1.44-1.44.398 0 .758.163 1.019.424l-.454.453c-.145-.145-.345-.235-.565-.235-.441 0-.8.359-.8.8 0 .22.09.42.235.565l-.452.451zm8.4-9.302c-1.744 0-3.158 1.414-3.158 3.158 0 1.745 1.414 3.159 3.158 3.159 1.745 0 3.16-1.414 3.16-3.159 0-1.744-1.415-3.158-3.16-3.158zm0 1.019c1.182 0 2.14 0.958 2.14 2.139 0 1.182-.958 2.14-2.14 2.14-1.18 0-2.139-.958-2.139-2.14 0-1.181.959-2.139 2.139-2.139z"/></svg>
                                     Sign in with Steam
                                 </button>
                                 <button type="button" id="steam-unlink-btn" class="action-btn action-btn-secondary" style="display: none; padding: 7px 14px;">
@@ -448,6 +449,15 @@
                                 </button>
                                 <span id="steam-auth-status" style="font-size: 12px; color: var(--muted);">Not linked</span>
                             </div>
+
+                            <details style="margin-top: 12px; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; font-size: 12.5px; color: var(--text-secondary);">
+                                <summary style="cursor: pointer; font-weight: 600; color: var(--accent);">Why do we need this?</summary>
+                                <div style="margin-top: 8px; line-height: 1.6; color: var(--text-secondary);">
+                                    <p style="margin: 0 0 8px 0;"><strong style="color: var(--text);">Zero Rate Limiting &amp; 100% Up-To-Date Profile:</strong> Steam strictly blocks and throttles scraping, IP lookups, and unauthenticated web requests. Rate-limiting leads to missing profile pictures, 429 Too Many Requests errors, and delays in-game.</p>
+                                    <p style="margin: 0 0 8px 0;"><strong style="color: var(--text);">Why OpenID is infinitely better:</strong> When you authenticate directly with Steam OpenID, Steam cryptographically verifies your identity with zero third-party reliance. The local VelocityRL proxy serves your authentic high-definition avatar directly to Rocket League in real time without ever encountering IP rate-limits or temporary CDN blocks.</p>
+                                    <p style="margin: 0;"><strong style="color: var(--text);">Security:</strong> We never see or store your Steam password. Authentication happens entirely on Valve's official <code>steamcommunity.com</code> servers.</p>
+                                </div>
+                            </details>
                         </div>
 
                         <div class="swapper-controls" style="display: flex; gap: 12px; margin-top: 18px;">
@@ -634,14 +644,14 @@
                     </div>
                 </div>
 
-                <div class="card spoof-card" style="margin: 0 0 16px; padding: 14px 18px; display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
+                <div class="card spoof-card" style="margin: 0 0 16px; padding: 14px 18px; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; justify-content: space-between;">
                     <div style="display: flex; align-items: center; gap: 14px;">
                         <div id="boost-preview-circle" style="width: 52px; height: 52px; border-radius: 50%; border: 3px solid var(--accent); display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 800; font-family: monospace; color: var(--text); box-shadow: 0 0 12px rgba(74, 158, 255, 0.35); transition: border-color 0.3s, box-shadow 0.3s;">
                             100
                         </div>
                         <div>
-                            <span id="boost-preview-name" style="display: block; font-size: 13.5px; font-weight: 700; color: var(--text);">Default Psyonix HUD</span>
-                            <span id="boost-meter-desc-text" style="display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px;">Vanilla Rocket League boost meter layout.</span>
+                            <span id="boost-preview-name" style="display: block; font-size: 13.5px; font-weight: 700; color: var(--text);">Default Rocket League HUD</span>
+                            <span id="boost-meter-desc-text" style="display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px;">Vanilla in-game boost gauge layout.</span>
                         </div>
                     </div>
 
@@ -655,7 +665,10 @@
                         </div>
                     </div>
 
-                    <button type="button" id="boost-test-btn" class="action-btn action-btn-secondary" style="padding: 6px 14px; font-size: 12px;">Test Boost</button>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <button type="button" id="boost-restore-btn" class="action-btn action-btn-secondary" style="padding: 6px 14px; font-size: 12px;">Restore original</button>
+                        <button type="button" id="boost-test-btn" class="action-btn action-btn-secondary" style="padding: 6px 14px; font-size: 12px;">Test Boost</button>
+                    </div>
                 </div>
 
                 <div id="boost-catalog-view">
@@ -693,15 +706,6 @@
                             <div class="settings-group" style="flex: 1;">
                                 <label for="boost-name-input">Boost Meter Name</label>
                                 <input type="text" id="boost-name-input" placeholder="Custom Boost Meter" autocomplete="off" spellcheck="false">
-                            </div>
-                            <div class="settings-group" style="flex: 1;">
-                                <label for="boost-gauge-type-select">Gauge Geometry</label>
-                                <select id="boost-gauge-type-select">
-                                    <option value="circular">Circular Ring HUD</option>
-                                    <option value="bar">Linear Bar HUD</option>
-                                    <option value="arc">Curved Radial Arc</option>
-                                    <option value="digital">Digital Tachometer</option>
-                                </select>
                             </div>
                         </div>
 
@@ -996,18 +1000,7 @@
                 <div id="browser-pane" class="subtab-pane active">
                     <div class="browser-toolbar" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between;margin-bottom:12px;">
                         <div style="display:flex;gap:8px;align-items:center;flex:1;min-width:280px;">
-                            <select id="workshop-source-select" style="background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:12px;">
-                                <option value="vgm" selected>VideoGameMods Maps</option>
-                                <option value="bakkes">BakkesPlugins Workshop</option>
-                            </select>
-                            <select id="workshop-vgm-category-select" style="background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:12px;">
-                                <option value="all">All Map Types</option>
-                                <option value="785ff8d2-c550-4684-8e06-154c431c2da3">Arena Maps</option>
-                                <option value="e6104c96-d566-4c32-91ac-e9fe36edba54">Training Maps</option>
-                                <option value="30109edc-4431-4bd8-b762-dbcd7cf6a5d8">Race Maps</option>
-                                <option value="aaf38682-d622-491a-be6c-d103096b4ce2">Other Maps</option>
-                            </select>
-                            <input type="text" id="workshop-catalog-search" data-i18n-placeholder="maps.search_placeholder" placeholder="Search maps (e.g. Rings, Dribble, Neon, Ball)..." style="flex:1;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:12px;">
+                            <input type="text" id="workshop-catalog-search" data-i18n-placeholder="maps.search_placeholder" placeholder="Search Workshop maps (e.g. Rings, Dribble, Neon, Speedjump)..." style="flex:1;background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:12px;">
                             <button id="workshop-catalog-search-btn" class="action-btn" type="button" data-i18n="maps.search_btn">Search</button>
                         </div>
                         <div style="display:flex;gap:8px;align-items:center;">

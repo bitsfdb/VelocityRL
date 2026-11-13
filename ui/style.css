@@ -3540,8 +3540,8 @@ select option {
     border-radius: 6px;
     padding: 0 12px;
     height: 34px;
-    flex: 1 1 200px;
-    min-width: 140px;
+    flex: 1 1 360px;
+    min-width: 260px;
     transition: border-color 0.15s ease;
 }
 

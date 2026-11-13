@@ -5450,7 +5450,7 @@ const COMMUNITY_ALPHACONSOLE_DECALS = [
 const COMMUNITY_BOOST_METERS = [
     {
         id: 'default',
-        name: 'Default Psyonix HUD',
+        name: 'Default Rocket League HUD',
         author: 'Psyonix',
         type: 'Stock HUD',
         gradient: 'linear-gradient(90deg, #ff9800, #ff5722)',
@@ -6330,6 +6330,24 @@ function initBoostMeterTab() {
                     }, 500);
                 }
             }, 50);
+        };
+    }
+
+    // Restore original HUD button
+    const restoreBtn = document.getElementById('boost-restore-btn');
+    if (restoreBtn) {
+        restoreBtn.onclick = async () => {
+            updatePreview('default');
+            if (enabledEl) enabledEl.checked = false;
+            syncNameSpoofSwitchAria(enabledEl);
+            const payload = {
+                enabled: false,
+                style: 'default',
+            };
+            localStorage.setItem(BOOST_METER_SPOOF_KEY, JSON.stringify({ boost_meter_spoof: payload }));
+            await runToolSave(restoreBtn, 'Restore original boost HUD', { boost_meter_spoof: payload }, { enabled: false });
+            flashButtonLabel(restoreBtn, 'Restored');
+            showToast('Restored default Rocket League HUD.', 'success');
         };
     }
 
@@ -7917,103 +7935,6 @@ async function loadWorkshopCatalog(page = 1, query = '') {
         </div>
     `;
 
-    const sourceSelect = document.getElementById('workshop-source-select');
-    const source = sourceSelect?.value || 'vgm';
-
-    if (source === 'vgm') {
-        try {
-            const catSelect = document.getElementById('workshop-vgm-category-select');
-            let cids = catSelect?.value;
-            if (!cids || cids === 'all') {
-                cids = '785ff8d2-c550-4684-8e06-154c431c2da3,e6104c96-d566-4c32-91ac-e9fe36edba54,30109edc-4431-4bd8-b762-dbcd7cf6a5d8,aaf38682-d622-491a-be6c-d103096b4ce2';
-            }
-
-            const data = await invoke('fetch_vgm_mods', {
-                page: workshopCatalogPage,
-                categoryIds: cids,
-                search: workshopCatalogQuery || null,
-                sortBy: 'downloads',
-            });
-            const mods = data?.mods || [];
-            workshopCatalogTotalPages = Math.max(1, Math.ceil((data?.total_count || 100) / 24));
-
-            if (pageInfo) pageInfo.textContent = `Page ${workshopCatalogPage}`;
-            if (prevBtn) prevBtn.disabled = workshopCatalogPage <= 1;
-            if (nextBtn) nextBtn.disabled = mods.length < 24;
-
-            if (mods.length === 0) {
-                grid.innerHTML = `
-                    <div style="grid-column: 1 / -1; text-align: center; padding: 48px 20px; color: var(--text-secondary);">
-                        <div style="font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 6px;">No maps found</div>
-                        <div style="font-size: 12px;">Try searching for different keywords on VideoGameMods</div>
-                    </div>
-                `;
-                return;
-            }
-
-            grid.innerHTML = '';
-            mods.forEach(mod => {
-                const card = document.createElement('div');
-                card.className = 'map-catalog-card';
-                const banner = mod.thumbnail_url || mod.images?.[0]?.url || '';
-                const author = (mod.user && (mod.user.display_name || mod.user.username)) ? (mod.user.display_name || mod.user.username) : 'Community';
-                const catName = mod.categories?.[0]?.name || 'Map';
-                const dlCount = mod.download_count ?? 0;
-
-                card.innerHTML = `
-                    <div class="map-catalog-thumb">
-                        <span class="map-catalog-thumb-placeholder">MAP</span>
-                        ${banner ? `<img src="${escHtml(banner)}" alt="${escHtml(mod.title)}" onerror="this.style.opacity='0';">` : ''}
-                        <span class="map-catalog-size-badge">${dlCount} DLs</span>
-                    </div>
-                    <div class="map-catalog-content">
-                        <div class="map-catalog-title" title="${escHtml(mod.title)}">${escHtml(mod.title)}</div>
-                        <div class="map-catalog-author">by ${escHtml(author)} • ${escHtml(catName)}</div>
-                        <div class="map-catalog-desc">VideoGameMods community map package.</div>
-                        <button type="button" class="action-btn vgm-map-install-btn" data-slug="${mod.slug}" data-name="${escHtml(mod.title)}" style="margin-top:8px; width:100%; font-size:12px; padding:7px 0; font-weight:600;">Download & Install</button>
-                    </div>
-                `;
-                grid.appendChild(card);
-            });
-
-            grid.querySelectorAll('.vgm-map-install-btn').forEach(btn => {
-                btn.onclick = async (e) => {
-                    e.preventDefault();
-                    const slug = btn.dataset.slug;
-                    const mapName = btn.dataset.name;
-                    btn.disabled = true;
-                    btn.textContent = 'Downloading…';
-                    showProgress(true, 30);
-                    updateStatus(`Downloading ${mapName}…`, false);
-
-                    try {
-                        const url = `https://videogamemods.com/vgm/rocketleague/mods/${slug}`;
-                        showProgress(true, 60);
-                        await invoke('workshop_install_map_from_url', {
-                            url,
-                            name: mapName,
-                        });
-                        showProgress(true, 100);
-                        btn.textContent = 'Installed';
-                        btn.style.background = '#1b5e20';
-                        showToast(`"${mapName}" installed! In Rocket League: select Underpass in Free Play to play.`, 'success');
-                        await refreshWorkshopInstalled();
-                    } catch (err) {
-                        showToast(`Download failed: ${err.message || err}`, 'error');
-                        btn.disabled = false;
-                        btn.textContent = 'Download & Install';
-                    } finally {
-                        setTimeout(() => {
-                            showProgress(false);
-                            updateStatus('bitsfdb', false);
-                        }, 1000);
-                    }
-                };
-            });
-            return;
-        } catch (e) {
-            console.warn('VGM maps error, fallback to Bakkes:', e);
-        }
     }
 
     try {
@@ -8185,22 +8106,6 @@ async function initWorkshopTab() {
         const searchBtn = document.getElementById('workshop-catalog-search-btn');
         const prevBtn = document.getElementById('workshop-catalog-prev-btn');
         const nextBtn = document.getElementById('workshop-catalog-next-btn');
-        const sourceSelect = document.getElementById('workshop-source-select');
-        const vgmCatSelect = document.getElementById('workshop-vgm-category-select');
-
-        if (sourceSelect) {
-            sourceSelect.onchange = () => {
-                if (vgmCatSelect) {
-                    vgmCatSelect.style.display = sourceSelect.value === 'vgm' ? 'inline-block' : 'none';
-                }
-                loadWorkshopCatalog(1, searchInput?.value || '');
-            };
-        }
-        if (vgmCatSelect) {
-            vgmCatSelect.onchange = () => {
-                loadWorkshopCatalog(1, searchInput?.value || '');
-            };
-        }
 
         if (searchBtn && searchInput) {
             const doSearch = () => loadWorkshopCatalog(1, searchInput.value);

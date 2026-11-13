@@ -65,7 +65,7 @@
   },
   "plugins": {
     "shell": {
-      "open": "^https://(discord\\.gg|github\\.com|velocityrl\\.tech)"
+      "open": "^https?://(discord\\.gg|github\\.com|velocityrl\\.tech|steamcommunity\\.com|api\\.steampowered\\.com|127\\.0\\.0\\.1|localhost)"
     },
     "updater": {
       "endpoints": [
