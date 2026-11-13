@@ -2705,6 +2705,22 @@ async fn handle_broker_request(
                     }
                 }
             }
+
+            let is_skill_rpc = path_lower.contains("getplayerskill")
+                || path_lower.contains("skills")
+                || find_bytes(&out_body, b"\"Skills\"").is_some();
+            if is_skill_rpc {
+                extract_and_save_real_skills(&out_body);
+                if let Some(fr) = cfg.fake_ranks.as_ref() {
+                    if fr.enabled {
+                        let (new_body, did_patch) = patch_get_player_skill_json(&out_body, fr);
+                        if did_patch {
+                            out_body = new_body;
+                            patched = true;
+                        }
+                    }
+                }
+            }
         }
     }
 
