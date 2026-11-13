@@ -2531,7 +2531,10 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
                     e.name == "GetPsyNetURL" && e.outer_idx > 0 && raw_exports.get(e.outer_idx as usize - 1).map(|o| o.name == "PsyNetConnection_X").unwrap_or(false)
                 }) {
                     let rpc_code_start = (rpc_exp.serial_offset - ch1.0) as usize + 48;
-                    cur_decomp1.get(rpc_code_start) == Some(&opcodes::EX_RETURN)
+                    let mem_sz = u32::from_le_bytes(cur_decomp1[rpc_code_start - 8..rpc_code_start - 4].try_into().unwrap());
+                    let disk_sz = u32::from_le_bytes(cur_decomp1[rpc_code_start - 4..rpc_code_start].try_into().unwrap());
+                    mem_sz == disk_sz
+                        && cur_decomp1.get(rpc_code_start) == Some(&opcodes::EX_RETURN)
                         && cur_decomp1.get(rpc_code_start + 1) == Some(&opcodes::EX_STRING_CONST)
                         && cur_decomp1.get(rpc_code_start + 2..rpc_code_start + 2 + target_url.len()) == Some(target_url)
                 } else {
@@ -2580,6 +2583,8 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
             patch.push(opcodes::EX_END_OF_SCRIPT);
             if patch.len() == disk_sz {
                 decomp1[code_start..code_start + disk_sz].copy_from_slice(&patch);
+                // Synchronize mem_sz = disk_sz to prevent UE3 bytecode deserializer overshoot (Bad expr token 00)
+                decomp1[code_start - 8..code_start - 4].copy_from_slice(&(disk_sz as u32).to_le_bytes());
             }
         }
     }
@@ -2601,6 +2606,10 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
         val_patch.push(opcodes::EX_END_OF_SCRIPT);
         if val_patch.len() == val_disk_sz {
             decomp1[val_code_start..val_code_start + val_disk_sz].copy_from_slice(&val_patch);
+            // In 64-bit UE3, EX_INSTANCE_VARIABLE resolves to an 8-byte pointer in memory (+4 bytes).
+            // Synchronize mem_sz = val_disk_sz + 4 to match exact deserialization size.
+            let target_mem_sz = (val_disk_sz + 4) as u32;
+            decomp1[val_code_start - 8..val_code_start - 4].copy_from_slice(&target_mem_sz.to_le_bytes());
         }
     }
 
@@ -2629,7 +2638,6 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
         ("URLValidator_X", "IsCharUrlSafe"),
         ("URLValidator_X", "IsQueryValid"),
         ("URLValidator_X", "AreCharsUrlSafe"),
-        ("OnlineGame_X", "ValidateUserOnlineAccount"),
         ("OnlineGameDLC_X", "DoesPlayerOwnDLC"),
     ];
 
@@ -2645,6 +2653,8 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
                 patch.push(opcodes::EX_END_OF_SCRIPT);
                 if patch.len() == disk_sz {
                     decomp1[code_start..code_start + disk_sz].copy_from_slice(&patch);
+                    // Synchronize mem_sz = disk_sz because the no-op patch contains 0 property references
+                    decomp1[code_start - 8..code_start - 4].copy_from_slice(&(disk_sz as u32).to_le_bytes());
                 }
             }
         }
@@ -2669,6 +2679,8 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
                 patch.push(opcodes::EX_END_OF_SCRIPT);
                 if patch.len() == disk_sz {
                     decomp1[code_start..code_start + disk_sz].copy_from_slice(&patch);
+                    // Synchronize mem_sz = disk_sz because the no-op patch contains 0 property references
+                    decomp1[code_start - 8..code_start - 4].copy_from_slice(&(disk_sz as u32).to_le_bytes());
                 }
             }
         }
