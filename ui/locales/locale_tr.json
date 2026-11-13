@@ -159,7 +159,7 @@
     "steam_unlink_btn": "Steam Bağlantısını Kes",
     "steam_not_linked": "Bağlı değil",
     "why_steam_auth_title": "Neden Steam ile giriş yapmalısınız?",
-    "why_steam_auth_simple": "Steam, giriş yapmadan yapılan profil resmi isteklerini sınırlandırır. Giriş yapmak, Rocket League'in gerçek Steam resminizi gecikme olmadan her zaman yüklemesini sağlar. Şifreniz tamamen Steam sunucularında güvendedir.",
+    "why_steam_auth_simple": "Steam, giriş yapmadan profil resimlerinin kaç kez kontrol edilebileceğini sınırlar. Giriş yapmak, Rocket League'in gerçek Steam resminizi gecikme olmadan her zaman yüklemesini sağlar. VelocityRL, bu giriş yöntemini kullanarak oyunlarınıza erişemez, şifrenizi değiştiremez veya hesabınızla hiçbir işlem yapamaz.",
     "boost_hud_restore_orig": "Orijinali geri yükle",
     "boost_hud_test": "Boostu test et"
   },

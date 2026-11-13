@@ -159,7 +159,7 @@
     "steam_unlink_btn": "Dissocier Steam",
     "steam_not_linked": "Non lié",
     "why_steam_auth_title": "Pourquoi se connecter avec Steam ?",
-    "why_steam_auth_simple": "Steam limite le nombre de vérifications d'avatar sans connexion. Se connecter permet à Rocket League de charger votre vraie photo Steam sans délai ni icône manquante. Votre mot de passe reste 100% privé sur Steam.",
+    "why_steam_auth_simple": "Steam limite le nombre de vérifications d'avatar sans connexion. Se connecter permet à Rocket League de charger votre vraie photo Steam sans délai ni icône manquante. VelocityRL ne peut pas accéder à vos jeux, modifier votre mot de passe ou effectuer la moindre action sur votre compte avec cette méthode de connexion.",
     "boost_hud_restore_orig": "Restaurer l'original",
     "boost_hud_test": "Tester le boost"
   },

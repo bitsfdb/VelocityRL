@@ -135,7 +135,7 @@
     "steam_unlink_btn": "Desvincular Steam",
     "steam_not_linked": "Não vinculado",
     "why_steam_auth_title": "Por que entrar com o Steam?",
-    "why_steam_auth_simple": "A Steam limita a busca de fotos de perfil não autenticadas. Entrar permite que o Rocket League carregue sua foto real sempre, sem travamentos. Sua senha permanece 100% privada na Steam.",
+    "why_steam_auth_simple": "A Steam limita quantas vezes qualquer pessoa pode verificar fotos de perfil sem fazer login. Fazer login permite que o Rocket League carregue sua foto real da Steam sempre sem atrasos. O VelocityRL não pode acessar seus jogos, alterar sua senha nem fazer nada com sua conta usando este método de login.",
     "boost_hud_restore_orig": "Restaurar original",
     "boost_hud_test": "Testar turbo"
   },
