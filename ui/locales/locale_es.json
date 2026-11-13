@@ -148,7 +148,7 @@
     "steam_unlink_btn": "Desvincular Steam",
     "steam_not_linked": "No vinculado",
     "why_steam_auth_title": "¿Por qué iniciar sesión con Steam?",
-    "why_steam_auth_simple": "Steam limita las consultas de fotos de perfil anónimas. Iniciar sesión permite que Rocket League cargue tu foto real de Steam siempre sin esperas ni fallos. Tu contraseña permanece 100% segura en Steam.",
+    "why_steam_auth_simple": "Steam limita cuántas veces se pueden consultar fotos de perfil sin iniciar sesión. Iniciar sesión permite que Rocket League cargue tu foto real de Steam siempre sin esperas ni fallos. VelocityRL no puede acceder a tus juegos, cambiar tu contraseña ni hacer nada con tu cuenta mediante este método de inicio de sesión.",
     "boost_hud_restore_orig": "Restaurar original",
     "boost_hud_test": "Probar turbo"
   },

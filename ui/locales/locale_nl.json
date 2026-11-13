@@ -135,7 +135,7 @@
     "steam_unlink_btn": "Steam ontkoppelen",
     "steam_not_linked": "Niet gekoppeld",
     "why_steam_auth_title": "Waarom aanmelden via Steam?",
-    "why_steam_auth_simple": "Steam beperkt anonieme verzoeken voor profielfoto's. Door in te loggen laadt Rocket League je echte Steam-foto direct zonder vertraging. Je wachtwoord blijft 100% privé op Steam.",
+    "why_steam_auth_simple": "Steam beperkt hoe vaak iemand profielfoto's kan bekijken zonder in te loggen. Door in te loggen kan Rocket League je echte Steam-foto altijd zonder vertraging laden. VelocityRL heeft via deze inlogmethode geen toegang tot je games, kan je wachtwoord niet wijzigen en kan niets met je account doen.",
     "boost_hud_restore_orig": "Origineel herstellen",
     "boost_hud_test": "Boost testen"
   },

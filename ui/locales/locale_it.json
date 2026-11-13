@@ -135,7 +135,7 @@
     "steam_unlink_btn": "Scollega Steam",
     "steam_not_linked": "Non collegato",
     "why_steam_auth_title": "Perché accedere con Steam?",
-    "why_steam_auth_simple": "Steam limita le richieste di immagini del profilo senza accesso. L'accesso consente a Rocket League di mostrare sempre la tua vera foto di Steam senza ritardi. La tua password rimane al 100% privata su Steam.",
+    "why_steam_auth_simple": "Steam limita quante volte è possibile controllare le immagini del profilo senza effettuare l'accesso. L'accesso consente a Rocket League di caricare la tua vera foto di Steam ogni volta senza ritardi. VelocityRL non può accedere ai tuoi giochi, modificare la tua password o fare nulla con il tuo account utilizzando questo metodo di accesso.",
     "boost_hud_restore_orig": "Ripristina originale",
     "boost_hud_test": "Testa turbo"
   },

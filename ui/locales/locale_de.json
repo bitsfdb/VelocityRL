@@ -147,7 +147,7 @@
     "steam_unlink_btn": "Steam trennen",
     "steam_not_linked": "Nicht verknüpft",
     "why_steam_auth_title": "Warum mit Steam anmelden?",
-    "why_steam_auth_simple": "Steam begrenzt Abfragen für Profilbilder ohne Anmeldung. Durch die Anmeldung lädt Rocket League dein echtes Steam-Bild jederzeit ohne Verzögerung. Dein Passwort bleibt 100% privat bei Steam.",
+    "why_steam_auth_simple": "Steam begrenzt, wie oft Profilbilder ohne Anmeldung abgerufen werden können. Durch die Anmeldung lädt Rocket League dein echtes Steam-Bild jederzeit ohne Verzögerung. VelocityRL kann über diese Anmeldemethode weder auf deine Spiele zugreifen, noch dein Passwort ändern oder irgendetwas mit deinem Konto tun.",
     "boost_hud_restore_orig": "Original wiederherstellen",
     "boost_hud_test": "Boost testen"
   },

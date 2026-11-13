@@ -170,7 +170,7 @@
     "steam_unlink_btn": "Unlink Steam",
     "steam_not_linked": "Not linked",
     "why_steam_auth_title": "Why sign in with Steam?",
-    "why_steam_auth_simple": "Steam limits how many times anyone can check profile pictures without signing in. Signing in lets Rocket League load your real Steam picture every time without delays or missing icons. Your password stays 100% private on Steam.",
+    "why_steam_auth_simple": "Steam limits how many times anyone can check profile pictures without signing in. Signing in lets Rocket League load your real Steam picture every time without delays or missing icons. VelocityRL cannot access your games, change your password, or do anything with your account using this sign in method.",
     "boost_hud_restore_orig": "Restore original",
     "boost_hud_test": "Test Boost"
   },
