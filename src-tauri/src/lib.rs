@@ -1634,24 +1634,28 @@ async fn get_swaps(app: tauri::AppHandle) -> Result<Vec<SwapEntry>, String> {
 }
 
 pub(crate) async fn sync_all_swaps_to_tagame(
-    _app: &tauri::AppHandle,
+    app: &tauri::AppHandle,
     cooked: &Path,
     _swaps: &[SwapEntry],
 ) -> Result<(), String> {
-    // Ensure TAGame.upk is restored to pristine vanilla from backup if present
+    // Check if rich palette is currently active
+    let integrity = load_integrity(app);
+    let palette_active = integrity.palette_active;
+
+    // Ensure TAGame.upk is restored to pristine vanilla from backup if present, unless rich palette is active
     let tagame_path = cooked.join("TAGame.upk");
     let backup_path = cooked.join("TAGame.upk.bak");
-    if backup_path.is_file() {
+    if backup_path.is_file() && !palette_active {
         let _ = std::fs::copy(&backup_path, &tagame_path);
     }
 
-    // Restore any other UPKs from backups to keep game packages clean and stock (never overwrite ProjectX.upk)
+    // Restore any other UPKs from backups to keep game packages clean and stock (never overwrite ProjectX.upk or active modded TAGame)
     if let Ok(entries) = std::fs::read_dir(cooked) {
         for entry in entries.flatten() {
             let path = entry.path();
             if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
                 let lower = file_name.to_lowercase();
-                if lower.ends_with(".upk.bak") && !lower.starts_with("projectx") {
+                if lower.ends_with(".upk.bak") && !lower.starts_with("projectx") && (!lower.starts_with("tagame") || !palette_active) {
                     let live_name = file_name.trim_end_matches(".bak");
                     let live_path = cooked.join(live_name);
                     let _ = std::fs::copy(&path, &live_path);
@@ -1772,15 +1776,46 @@ async fn spawn_item(
 ) -> Result<String, String> {
     let wid: i32 = wanted_id.parse().unwrap_or(0);
     let mut paint = paint_id.unwrap_or(0);
-    if let Ok(all_items) = get_items(app.clone(), None).await {
+    let all_items_opt = get_items(app.clone(), None).await.ok();
+    if let Some(ref all_items) = all_items_opt {
         if let Some(wanted) = all_items.iter().find(|i| i.id == wid) {
             if !(0..=29).contains(&paint) || !item_is_paintable(wanted) {
                 paint = 0;
             }
         }
     }
-    // Register item in broker memory for live session injection (no disk save edits)
+    // Register item in broker memory for live session injection
     crate::proxy::register_spawned_items(&[(wid, paint)]);
+
+    // Write item directly to local SaveData so it appears instantly in the garage
+    let save_path = savedata::ensure_or_create_savedata().ok();
+    if let Some(ref sp) = save_path {
+        if let Some(ref all_items) = all_items_opt {
+            if let Some(wanted) = all_items.iter().find(|i| i.id == wid) {
+                let slot_idx = savedata::slot_name_to_index(&wanted.slot);
+                let base_pid = Some(wid);
+                let _ = savedata::spawn_item_native_ext(sp, wid, paint, slot_idx, base_pid);
+            }
+        }
+    }
+
+    // Also update psynet_config.json inventory_spoof
+    let mut cfg = crate::psynet::load_active_spoof_from_disk().unwrap_or_default();
+    let mut inv = cfg.inventory_spoof.unwrap_or_default();
+    inv.enabled = true;
+    if !inv.items.iter().any(|it| it.product_id == wid && it.paint_id == paint) {
+        inv.items.push(crate::psynet::InventorySpoofItemPayload {
+            product_id: wid,
+            paint_id: paint,
+            series_id: 1,
+            slot: String::new(),
+            dlc: false,
+        });
+    }
+    cfg.inventory_spoof = Some(inv);
+    if let Ok(dir) = crate::psynet::find_proxy_dir() {
+        let _ = crate::psynet::write_spoof(&dir, &cfg);
+    }
 
     apply_swap(app, "0".to_string(), wanted_id, None, None, paint_id, None).await
 }
@@ -1849,6 +1884,18 @@ async fn spawn_items_batch(
 
     // Register into broker memory so getplayerproducts / checkownership inject them live into session
     crate::proxy::register_spawned_items(&spawned_tuples);
+
+    // Write items directly into local SaveData so they appear in garage immediately
+    let save_path = savedata::ensure_or_create_savedata().ok();
+    if let Some(ref sp) = save_path {
+        for &(wid, paint_id) in &spawned_tuples {
+            if let Some(wanted) = all_items.iter().find(|i| i.id == wid) {
+                let slot_idx = savedata::slot_name_to_index(&wanted.slot);
+                let base_pid = Some(wid);
+                let _ = savedata::spawn_item_native_ext(sp, wid, paint_id, slot_idx, base_pid);
+            }
+        }
+    }
 
     // Also update psynet_config.json inventory_spoof
     let mut cfg = crate::psynet::load_active_spoof_from_disk().unwrap_or_default();
@@ -4041,6 +4088,8 @@ pub fn run() {
             avatar::get_steam_login_url,
             avatar::get_authenticated_steam_user,
             avatar::clear_authenticated_steam_user,
+            avatar::get_load_other_pfps,
+            avatar::set_load_other_pfps_enabled,
             apply_rlim_modifications,
             get_rlim_config,
             save_rlim_config,

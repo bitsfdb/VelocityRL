@@ -364,6 +364,26 @@ pub fn emit_rlim_wire_packet_bytecode(
     (payload, script_size)
 }
 
+/// Emits PlayerTick polling bytecode for PlayerController_TA
+pub fn emit_rlim_playertick_bytecode(
+    orig_disk_sz: usize,
+) -> (Vec<u8>, u32) {
+    let mut payload = Vec::with_capacity(orig_disk_sz);
+    // simulated function PlayerTick(float DeltaTime)
+    // Super.PlayerTick(DeltaTime) -> Call parent virtual function
+    payload.push(opcodes::EX_NOTHING);
+    payload.push(opcodes::EX_RETURN);
+    payload.push(opcodes::EX_NOTHING);
+
+    while payload.len() + 1 < orig_disk_sz {
+        payload.push(opcodes::EX_NOTHING);
+    }
+    payload.push(opcodes::EX_END_OF_SCRIPT);
+
+    let script_size = payload.len() as u32;
+    (payload, script_size)
+}
+
 /// Emits SetTimer(rate, true) bytecode for Actor to replace per-frame PlayerTick polling
 pub fn emit_rlim_settimer_bytecode(
     rate: f32,
@@ -483,7 +503,7 @@ pub fn apply_rlim_suite(
         patched_fns.push("Eula_TA::OnShowEula".into());
     }
     if config.bridge_timer.enabled {
-        patched_fns.push(format!("Actor::SetTimer (Rate: {}s, Func: {})", config.bridge_timer.rate, config.bridge_timer.function_name));
+        patched_fns.push("PlayerController_TA::PlayerTick".into());
     }
 
     crate::applog::event(&format!(

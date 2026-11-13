@@ -102,10 +102,10 @@ function normalizeItems(rawList) {
         if (id === 12968 || pkg === 'boost_alphadevreward') {
             return {
                 ...it,
-                Product: 'FDev Boost (The Boost)',
-                product: 'FDev Boost (The Boost)',
-                LongLabel: 'FDev Boost (Alpha Dev Reward)',
-                long_label: 'FDev Boost (Alpha Dev Reward)'
+                Product: 'Dev Boost',
+                product: 'Dev Boost',
+                LongLabel: 'Dev Boost (Alpha Dev Reward)',
+                long_label: 'Dev Boost (Alpha Dev Reward)'
             };
         }
         return it;
@@ -1909,6 +1909,7 @@ async function refreshSwapHistory() {
 
 const selectedCatalogItems = new Map();
 let catalogCategory = 'All';
+let catalogTitleCategory = 'All';
 let catalogSearchQuery = '';
 let catalogRarity = 'All';
 let catalogPaintId = 0;
@@ -1970,7 +1971,19 @@ function getFilteredCatalogItems() {
     if (catalogCategory && catalogCategory !== 'All') {
         if (catalogCategory === 'Player Title') {
             const catalogTitles = (typeof titlesDb !== 'undefined' && titlesDb && Array.isArray(titlesDb.titles)) ? titlesDb.titles : [];
-            const mappedTitles = catalogTitles.map(t => (typeof getTitleAsItem === 'function' ? getTitleAsItem(t) : t)).filter(Boolean);
+            let mappedTitles = catalogTitles.map(t => (typeof getTitleAsItem === 'function' ? getTitleAsItem(t) : t)).filter(Boolean);
+            if (catalogTitleCategory && catalogTitleCategory !== 'All') {
+                mappedTitles = mappedTitles.filter(t => {
+                    const cat = (t.titleCategory || '').toLowerCase();
+                    if (catalogTitleCategory === 'Champion') return cat.includes('champion') || cat.includes('rlcs') || cat.includes('toprank');
+                    if (catalogTitleCategory === 'AutoTour') return cat.includes('autotour') || cat.includes('supersonic');
+                    if (catalogTitleCategory === 'Developer') return cat.includes('developer') || cat.includes('helper') || cat.includes('mod');
+                    if (catalogTitleCategory === 'Community') return cat.includes('community') || cat.includes('creator') || cat.includes('spotlight');
+                    if (catalogTitleCategory === 'Special') return cat.includes('aura') || cat.includes('world_cup') || cat.includes('rivalry') || cat.includes('szn');
+                    if (catalogTitleCategory === 'Standard') return !cat || cat.includes('standard') || cat.includes('threshold');
+                    return cat.includes(catalogTitleCategory.toLowerCase());
+                });
+            }
             list = [...list.filter(i => (i?.slot || i?.Slot) === 'Player Title'), ...mappedTitles];
         } else {
             list = list.filter(i => {
@@ -2002,7 +2015,7 @@ function getFilteredCatalogItems() {
             const path = (i?.asset_path || i?.AssetPath || '').toLowerCase();
             const id = String(i?.id !== undefined ? i?.id : (i?.ID !== undefined ? i?.ID : ''));
             const isFDev = (id === '12968' || pkg === 'boost_alphadevreward');
-            if (isFDev && (q.includes('fdev') || 'fdev'.includes(q) || q.includes('alpha dev') || q.includes('the boost'))) {
+            if (isFDev && (q.includes('fdev') || 'fdev'.includes(q) || q.includes('dev boost') || q.includes('alpha dev') || q.includes('the boost'))) {
                 return true;
             }
             return name.includes(q) || slot.includes(q) || label.includes(q) || pkg.includes(q) || path.includes(q) || id === q;
@@ -2057,18 +2070,18 @@ function renderCatalogGridPage() {
     grid.innerHTML = '';
     pageItems.forEach((item) => {
         if (!item) return;
-        const id = Number(item.id !== undefined ? item.id : item.ID);
+        const rawId = item.titleId ? `title_${item.titleId}` : (item.id !== undefined ? item.id : item.ID);
         const name = item.product || item.Product || 'Item';
         const quality = item.quality || item.Quality || 'Common';
         const img = item.image_url || item.src || '';
-        const isSelected = selectedCatalogItems.has(id);
-        const entry = selectedCatalogItems.get(id);
+        const isSelected = selectedCatalogItems.has(rawId);
+        const entry = selectedCatalogItems.get(rawId);
         const cardPaint = entry ? entry.paint_id : 0;
-        const rarityCol = getRarityColor(quality);
+        const rarityCol = item.titleColor ? `#${item.titleColor}` : getRarityColor(quality);
 
         const card = document.createElement('div');
-        card.className = `catalog-card${isSelected ? ' is-selected' : ''}`;
-        card.dataset.id = String(id);
+        card.className = `catalog-card${isSelected ? ' is-selected' : ''}${item.isTitle ? ' is-title-card' : ''}`;
+        card.dataset.id = String(rawId);
         card.dataset.quality = quality;
 
         let paintBadgeHtml = '';
@@ -2082,37 +2095,46 @@ function renderCatalogGridPage() {
             }
         }
 
+        const thumbHtml = item.isTitle
+            ? `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:8px 6px;text-align:center;">
+                 <span style="font-size:11px;font-weight:700;color:${item.titleColor ? '#' + item.titleColor : '#ffeb5c'};${item.titleGlow ? 'text-shadow:0 0 6px #' + item.titleGlow : ''};word-break:break-word;line-height:1.2;">
+                   ${escHtml(item.titleText || name)}
+                 </span>
+                 ${item.titleCategory ? `<span style="font-size:9px;color:rgba(255,255,255,0.45);margin-top:4px;">${escHtml(item.titleCategory)}</span>` : ''}
+               </div>`
+            : (img
+                ? `<img src="${escHtml(img)}" class="catalog-card-thumb" alt="${escHtml(name)}" loading="lazy" onerror="this.style.opacity='0';" />`
+                : `<div style="display:flex;align-items:center;justify-content:center;height:100%;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#444" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>`);
+
         card.innerHTML = `
             <div class="catalog-card-check"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></div>
             <div class="catalog-card-thumb-wrap">
-                ${img
-                ? `<img src="${escHtml(img)}" class="catalog-card-thumb" alt="${escHtml(name)}" loading="lazy" onerror="this.style.opacity='0';" />`
-                : `<div style="display:flex;align-items:center;justify-content:center;height:100%;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#444" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>`
-            }
+                ${thumbHtml}
                 ${paintBadgeHtml}
             </div>
             <div class="catalog-card-info">
                 <div class="catalog-card-name" title="${escHtml(name)}">${escHtml(name)}</div>
                 <div class="catalog-card-meta">
                     <span class="catalog-rarity-dot" style="background:${rarityCol};"></span>
-                    <span class="catalog-rarity-label">${escHtml(quality)}</span>
+                    <span class="catalog-rarity-label">${escHtml(item.titleCategory || quality)}</span>
                 </div>
             </div>
         `;
 
         card.addEventListener('click', () => {
-            const isToggledOn = !selectedCatalogItems.has(id);
+            const isToggledOn = !selectedCatalogItems.has(rawId);
             if (!isToggledOn) {
-                selectedCatalogItems.delete(id);
+                selectedCatalogItems.delete(rawId);
                 card.classList.remove('is-selected');
                 const badge = card.querySelector('.catalog-card-paint-badge');
                 if (badge) badge.remove();
             } else {
                 const pId = itemIsPaintable(item) ? catalogPaintId : 0;
-                selectedCatalogItems.set(id, {
-                    id,
+                selectedCatalogItems.set(rawId, {
+                    id: rawId,
+                    numericId: Number(item.id !== undefined ? item.id : item.ID) || 3036,
                     product: name,
-                    slot: item.slot || item.Slot || 'Body',
+                    slot: item.slot || item.Slot || (item.isTitle ? 'Player Title' : 'Body'),
                     quality,
                     image_url: img,
                     paint_id: pId,
@@ -2195,6 +2217,8 @@ function initCatalogGrid() {
     catalogInitialized = true;
 
     const catSelect = document.getElementById('catalog-category-select');
+    const titleCatSelect = document.getElementById('catalog-title-category-select');
+    const titleCatWrap = document.getElementById('catalog-title-category-wrap');
     const searchInput = document.getElementById('catalog-search-input');
     const searchClear = document.getElementById('catalog-search-clear');
     const raritySelect = document.getElementById('catalog-rarity-select');
@@ -2204,8 +2228,24 @@ function initCatalogGrid() {
     const clearSelBtn = document.getElementById('catalog-clear-sel-btn');
 
     if (catSelect) {
-        catSelect.addEventListener('change', (e) => {
+        catSelect.addEventListener('change', async (e) => {
             catalogCategory = e.target.value;
+            if (titleCatWrap) {
+                titleCatWrap.style.display = catalogCategory === 'Player Title' ? 'inline-flex' : 'none';
+            }
+            if (catalogCategory === 'Player Title') {
+                if (typeof loadTitlesDatabase === 'function' && (!titlesDb || !titlesDb.titles || !titlesDb.titles.length)) {
+                    await loadTitlesDatabase();
+                }
+            }
+            currentCatalogPage = 1;
+            renderCatalogGridPage();
+        });
+    }
+
+    if (titleCatSelect) {
+        titleCatSelect.addEventListener('change', (e) => {
+            catalogTitleCategory = e.target.value;
             currentCatalogPage = 1;
             renderCatalogGridPage();
         });
@@ -2294,31 +2334,67 @@ function initCatalogGrid() {
     if (spawnBtn) {
         spawnBtn.addEventListener('click', async () => {
             if (selectedCatalogItems.size === 0 || isAppLoading()) return;
-            const itemsToSpawn = [];
+
+            const regularItemsToSpawn = [];
+            const titleItemsToSpawn = [];
+
             for (const entry of selectedCatalogItems.values()) {
-                if (entry.paint_id === 'all' && itemIsPaintable(entry.item)) {
-                    for (let p = 0; p <= 29; p++) {
-                        itemsToSpawn.push({
-                            wanted_id: String(entry.id),
-                            paint_id: p,
+                if (entry.item?.isTitle || entry.slot === 'Player Title' || entry.item?.titleId) {
+                    titleItemsToSpawn.push(entry);
+                } else {
+                    if (entry.paint_id === 'all' && itemIsPaintable(entry.item)) {
+                        for (let p = 0; p <= 29; p++) {
+                            regularItemsToSpawn.push({
+                                wanted_id: String(entry.numericId || entry.id),
+                                paint_id: p,
+                            });
+                        }
+                    } else {
+                        const pVal = Number(entry.paint_id || 0);
+                        regularItemsToSpawn.push({
+                            wanted_id: String(entry.numericId || entry.id),
+                            paint_id: pVal > 0 ? pVal : null,
                         });
                     }
-                } else {
-                    const pVal = Number(entry.paint_id || 0);
-                    itemsToSpawn.push({
-                        wanted_id: String(entry.id),
-                        paint_id: pVal > 0 ? pVal : null,
-                    });
                 }
             }
 
-            updateStatus(`Spawning ${itemsToSpawn.length} items...`, false);
+            const totalCount = regularItemsToSpawn.length + titleItemsToSpawn.length;
+            updateStatus(`Spawning ${totalCount} items / titles...`, false);
             showProgress(true, 30);
             spawnBtn.disabled = true;
+
             try {
-                const spawnedCount = await invoke('spawn_items_batch', { items: itemsToSpawn });
+                let spawnedCount = 0;
+                if (regularItemsToSpawn.length > 0) {
+                    spawnedCount += await invoke('spawn_items_batch', { items: regularItemsToSpawn });
+                }
+
+                if (titleItemsToSpawn.length > 0) {
+                    ensureTitleSwapsLoaded();
+                    for (const tEntry of titleItemsToSpawn) {
+                        const tItem = tEntry.item;
+                        const tId = tItem.titleId || tItem.id || tItem.name;
+                        const swapObj = {
+                            equip_title_id: tId,
+                            display_title_id: tId,
+                            custom_text: tItem.name || '',
+                            category: tItem.group || 'Special Titles',
+                            title_color: tItem.color ? {
+                                text_color: tItem.color.text_color || '',
+                                glow_color: tItem.color.glow_color || '',
+                            } : undefined,
+                        };
+                        titleSwaps = titleSwaps.filter((s) => s.equip_title_id !== tId);
+                        titleSwaps.unshift(swapObj);
+                    }
+                    persistTitleSpoofLocal();
+                    await invoke('save_psynet_spoof', { payload: titleSpoofPayload() });
+                    spawnedCount += titleItemsToSpawn.length;
+                }
+
                 showProgress(true, 100);
-                showToast(`Successfully spawned <strong>${spawnedCount}</strong> items into your Rocket League inventory!`, 'success');
+                showToast(`Successfully spawned <strong>${spawnedCount}</strong> items / titles into your Rocket League profile!`, 'success');
                 selectedCatalogItems.clear();
                 updateCatalogSelectionUi();
                 renderCatalogGridPage();
@@ -2623,7 +2699,7 @@ function setupSearch(input, resultsDiv, selectionHandler) {
             const pLong = (item.LongLabel || item.long_label || '').toLowerCase();
             const idStr = String(item.id !== undefined ? item.id : (item.ID !== undefined ? item.ID : ''));
             const isFDev = (idStr === '12968' || pAsset === 'boost_alphadevreward');
-            const matchesFDev = isFDev && (term.includes('fdev') || 'fdev'.includes(term) || term.includes('alpha dev') || term.includes('the boost'));
+            const matchesFDev = isFDev && (term.includes('fdev') || 'fdev'.includes(term) || term.includes('dev boost') || term.includes('alpha dev') || term.includes('the boost'));
             const matchesTerm = term.length < 2 || matchesFDev || pName.includes(term) || pAsset.includes(term) || pLong.includes(term) || (term.trim() === 'ai' && (pName.includes('bot') || pAsset.includes('bot')));
             const matchesCat = lockCategory === 'All' || normSlot(pSlot) === normSlot(lockCategory);
             return matchesTerm && matchesCat;
@@ -5449,15 +5525,6 @@ const COMMUNITY_ALPHACONSOLE_DECALS = [
 
 const COMMUNITY_BOOST_METERS = [
     {
-        id: 'default',
-        name: 'Default Rocket League HUD',
-        author: 'Psyonix',
-        type: 'Stock HUD',
-        gradient: 'linear-gradient(90deg, #ff9800, #ff5722)',
-        accent: '#ff9800',
-        description: 'Vanilla Rocket League boost meter gauge layout.'
-    },
-    {
         id: 'circular_neon',
         name: 'Circular Neon Ring',
         author: 'AlphaConsole Team',
@@ -6007,52 +6074,96 @@ let boostMeterTabReady = false;
 function initBoostMeterTab() {
     const enabledEl = document.getElementById('boost-meter-enabled');
     const styleSelect = document.getElementById('boost-meter-style-select');
-    const previewCircle = document.getElementById('boost-preview-circle');
-    const previewBar = document.getElementById('boost-meter-preview-bar');
-    const previewName = document.getElementById('boost-preview-name');
-    const previewPct = document.getElementById('boost-preview-pct');
-    const descText = document.getElementById('boost-meter-desc-text');
-    const testBtn = document.getElementById('boost-test-btn');
-    const communityGrid = document.getElementById('boost-community-grid');
+    const browseGrid = document.getElementById('boost-browse-grid');
+    const libraryGrid = document.getElementById('boost-library-grid');
+    const browseView = document.getElementById('boost-browse-view');
+    const libraryView = document.getElementById('boost-library-view');
+    const tabBrowseBtn = document.getElementById('boost-tab-browse-btn');
+    const tabLibraryBtn = document.getElementById('boost-tab-library-btn');
+    const searchInput = document.getElementById('boost-catalog-search');
 
     if (!enabledEl) return;
 
     let activeStyle = 'default';
 
-    const updatePreview = (styleId) => {
-        activeStyle = styleId;
-        const meter = COMMUNITY_BOOST_METERS.find(m => m.id === styleId) || COMMUNITY_BOOST_METERS[0];
-        if (previewName) previewName.textContent = meter.name;
-        if (descText) descText.textContent = meter.description;
-        if (previewBar) previewBar.style.background = meter.gradient;
-        if (previewCircle) {
-            previewCircle.style.borderColor = meter.accent;
-            previewCircle.style.boxShadow = `0 0 14px ${meter.accent}66`;
-        }
-        if (styleSelect) styleSelect.value = styleId;
-
-        // Update active checkmarks on grid
-        if (communityGrid) {
-            communityGrid.querySelectorAll('.boost-meter-card').forEach(card => {
-                const isSelected = card.dataset.styleId === styleId;
-                card.style.borderColor = isSelected ? 'var(--accent)' : 'var(--border)';
-                const btn = card.querySelector('.boost-apply-btn');
-                if (btn) {
-                    btn.textContent = isSelected ? 'Active' : 'Apply Meter';
-                    btn.classList.toggle('action-btn-secondary', isSelected);
-                }
-            });
-        }
-    };
+    // Subtab switching between Browse (VideoGameMods) & Library (Downloaded/Installed)
+    if (tabBrowseBtn && tabLibraryBtn && browseView && libraryView) {
+        tabBrowseBtn.onclick = () => {
+            tabBrowseBtn.classList.add('active');
+            tabLibraryBtn.classList.remove('active');
+            browseView.style.display = 'block';
+            libraryView.style.display = 'none';
+        };
+        tabLibraryBtn.onclick = () => {
+            tabLibraryBtn.classList.add('active');
+            tabBrowseBtn.classList.remove('active');
+            browseView.style.display = 'none';
+            libraryView.style.display = 'block';
+            renderDownloadedBoostMeters();
+        };
+    }
 
     let vgmBoostPage = 1;
     let vgmBoostQuery = 'boost';
 
+    const renderDownloadedBoostMeters = () => {
+        if (!libraryGrid) return;
+        const stored = readLocalJson(BOOST_METER_SPOOF_KEY).boost_meter_spoof || { enabled: false, style: 'default' };
+        const activeId = stored.style || activeStyle;
+
+        if (COMMUNITY_BOOST_METERS.length === 0) {
+            libraryGrid.innerHTML = `
+                <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--muted);">
+                    <p style="font-size: 14px;">No downloaded boost meters found in your library.</p>
+                    <span style="font-size: 12px; color: var(--text-secondary); display: block; margin-top: 4px;">Browse VideoGameMods to download and install boost gauges.</span>
+                </div>
+            `;
+            return;
+        }
+
+        libraryGrid.innerHTML = COMMUNITY_BOOST_METERS.map(m => {
+            const isSelected = m.id === activeId;
+            return `
+                <div class="card boost-meter-card" data-style-id="${m.id}" style="background: rgba(255,255,255,0.02); border: 1px solid ${isSelected ? 'var(--accent)' : 'var(--border)'}; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between; transition: border-color 0.2s;">
+                    <div>
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                            <strong style="font-size: 13.5px; color: var(--text);">${escHtml(m.name)}</strong>
+                            <span style="font-size: 10px; font-weight: 700; background: rgba(255,255,255,0.06); color: var(--accent); padding: 2px 6px; border-radius: 4px;">${escHtml(m.type || 'Installed')}</span>
+                        </div>
+                        <div style="height: 8px; width: 100%; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden; margin: 8px 0;">
+                            <div style="height: 100%; width: 100%; background: ${m.gradient || 'var(--accent)'}; border-radius: 4px;"></div>
+                        </div>
+                        <p style="font-size: 11.5px; color: var(--muted); margin: 6px 0 12px; line-height: 1.35;">${escHtml(m.description || 'Downloaded boost gauge')}</p>
+                    </div>
+                    <button type="button" class="action-btn boost-lib-apply-btn ${isSelected ? 'action-btn-secondary' : ''}" data-style-id="${m.id}" style="width: 100%; font-size: 12px; padding: 6px 10px;">
+                        ${isSelected ? 'Active' : 'Apply Meter'}
+                    </button>
+                </div>
+            `;
+        }).join('');
+
+        libraryGrid.querySelectorAll('.boost-lib-apply-btn').forEach(btn => {
+            btn.onclick = async () => {
+                const sId = btn.dataset.styleId;
+                activeStyle = sId;
+                if (enabledEl) enabledEl.checked = true;
+                const payload = {
+                    enabled: true,
+                    style: sId,
+                };
+                localStorage.setItem(BOOST_METER_SPOOF_KEY, JSON.stringify({ boost_meter_spoof: payload }));
+                await runToolSave(btn, 'Boost meter', { boost_meter_spoof: payload }, { enabled: true });
+                renderDownloadedBoostMeters();
+                showToast(`Applied ${COMMUNITY_BOOST_METERS.find(x => x.id === sId)?.name || sId}`, 'success');
+            };
+        });
+    };
+
     const loadVgmBoostMeters = async (page = 1, query = 'boost') => {
         vgmBoostPage = page;
         vgmBoostQuery = query;
-        if (!communityGrid) return;
-        communityGrid.innerHTML = `
+        if (!browseGrid) return;
+        browseGrid.innerHTML = `
             <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--text-secondary);">
                 <div class="spinner" style="width:28px;height:28px;margin:0 auto 12px;border:3px solid rgba(255,255,255,0.1);border-top-color:var(--accent-blue);border-radius:50%;animation:spin 1s linear infinite;"></div>
                 <div>Loading VideoGameMods Boost Meters...</div>
@@ -6075,18 +6186,23 @@ function initBoostMeterTab() {
             if (nextBtn) nextBtn.disabled = mods.length < 24;
 
             if (mods.length === 0) {
-                renderCommunityBoostMeters();
+                browseGrid.innerHTML = `
+                    <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--muted);">
+                        <p style="font-size: 14px;">No boost meters found on VideoGameMods matching "${escHtml(query)}".</p>
+                    </div>`;
                 return;
             }
 
-            communityGrid.innerHTML = mods.map(m => {
+            browseGrid.innerHTML = mods.map(m => {
                 const thumb = m.thumbnail_url || m.images?.[0]?.url || '';
                 const author = m.user?.display_name || m.user?.username || 'Community';
                 const dlCount = m.download_count ?? 0;
                 const isSelected = activeStyle === m.slug;
+                const inLibrary = COMMUNITY_BOOST_METERS.some(item => item.id === m.slug);
+
                 return `
                     <div class="card boost-meter-card" data-style-id="${m.slug}" style="background: rgba(255,255,255,0.02); border: 1px solid ${isSelected ? 'var(--accent)' : 'var(--border)'}; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; transition: border-color 0.2s;">
-                        <div style="height: 110px; width: 100%; background: rgba(0,0,0,0.5); position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+                        <div style="height: 120px; width: 100%; background: rgba(0,0,0,0.5); position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden;">
                             ${thumb ? `<img src="${thumb}" alt="${escHtml(m.title)}" style="height: 100%; width: 100%; object-fit: cover;" onerror="this.style.display='none';">` : `<div style="font-size: 13px; color: var(--muted); font-weight: 600;">Custom Boost Gauge</div>`}
                             <span style="position: absolute; bottom: 6px; right: 8px; font-size: 10px; font-weight: 700; background: rgba(0,0,0,0.75); color: var(--accent); padding: 2px 6px; border-radius: 4px;">${dlCount} downloads</span>
                         </div>
@@ -6095,15 +6211,17 @@ function initBoostMeterTab() {
                                 <strong style="display: block; font-size: 13px; color: var(--text);">${escHtml(m.title)}</strong>
                                 <span style="display: block; font-size: 11px; color: var(--muted); margin: 2px 0 8px;">by ${escHtml(author)}</span>
                             </div>
-                            <button type="button" class="action-btn vgm-boost-apply-btn ${isSelected ? 'action-btn-secondary' : ''}" data-slug="${m.slug}" data-title="${escHtml(m.title)}" style="width: 100%; font-size: 12px; padding: 6px 10px;">
-                                ${isSelected ? 'Active' : 'Apply Meter'}
-                            </button>
+                            <div style="display: flex; gap: 6px; margin-top: 8px;">
+                                <button type="button" class="action-btn vgm-boost-apply-btn ${isSelected ? 'action-btn-secondary' : ''}" data-slug="${m.slug}" data-title="${escHtml(m.title)}" style="flex: 1; font-size: 12px; padding: 6px 10px;">
+                                    ${isSelected ? 'Active' : (inLibrary ? 'Apply Meter' : 'Download & Apply')}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 `;
             }).join('');
 
-            communityGrid.querySelectorAll('.vgm-boost-apply-btn').forEach(btn => {
+            browseGrid.querySelectorAll('.vgm-boost-apply-btn').forEach(btn => {
                 btn.onclick = async () => {
                     const slug = btn.dataset.slug;
                     const title = btn.dataset.title;
@@ -6115,13 +6233,26 @@ function initBoostMeterTab() {
                             enabled: true,
                             style: slug,
                         };
-                        enabledEl.checked = true;
+                        activeStyle = slug;
+                        if (enabledEl) enabledEl.checked = true;
                         syncNameSpoofSwitchAria(enabledEl);
                         localStorage.setItem(BOOST_METER_SPOOF_KEY, JSON.stringify({ boost_meter_spoof: payload }));
                         await runToolSave(btn, 'Boost meter style', { boost_meter_spoof: payload }, { enabled: true });
-                        updatePreview(slug);
+
+                        if (!COMMUNITY_BOOST_METERS.some(item => item.id === slug)) {
+                            COMMUNITY_BOOST_METERS.push({
+                                id: slug,
+                                name: title,
+                                author: 'VideoGameMods',
+                                type: 'Custom HUD',
+                                gradient: 'linear-gradient(90deg, #00f2fe, #4facfe)',
+                                accent: '#00f2fe',
+                                description: `Downloaded from VideoGameMods: ${title}`
+                            });
+                        }
+
                         btn.textContent = 'Active';
-                        showToast(`Applied custom boost meter "${title}"!`, 'success');
+                        showToast(`Applied boost meter "${title}"!`, 'success');
                     } catch (err) {
                         btn.textContent = orig;
                         btn.disabled = false;
@@ -6130,48 +6261,26 @@ function initBoostMeterTab() {
                 };
             });
         } catch (e) {
-            console.warn('Failed to load VGM boost meters, showing local presets:', e);
-            renderCommunityBoostMeters();
+            console.warn('Failed to load VGM boost meters:', e);
+            if (browseGrid) {
+                browseGrid.innerHTML = `
+                    <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--muted);">
+                        <p style="font-size: 14px;">Unable to fetch VideoGameMods catalog. Showing downloaded library instead.</p>
+                    </div>`;
+            }
         }
     };
 
-    const renderCommunityBoostMeters = () => {
-        if (!communityGrid) return;
-        communityGrid.innerHTML = COMMUNITY_BOOST_METERS.map(m => {
-            const isSelected = m.id === activeStyle;
-            return `
-                <div class="card boost-meter-card" data-style-id="${m.id}" style="background: rgba(255,255,255,0.02); border: 1px solid ${isSelected ? 'var(--accent)' : 'var(--border)'}; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between; transition: border-color 0.2s;">
-                    <div>
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-                            <strong style="font-size: 13.5px; color: var(--text);">${escHtml(m.name)}</strong>
-                            <span style="font-size: 10px; font-weight: 700; background: rgba(255,255,255,0.06); color: var(--accent); padding: 2px 6px; border-radius: 4px;">${m.type}</span>
-                        </div>
-                        <div style="height: 8px; width: 100%; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden; margin: 8px 0;">
-                            <div style="height: 100%; width: 100%; background: ${m.gradient}; border-radius: 4px;"></div>
-                        </div>
-                        <p style="font-size: 11.5px; color: var(--muted); margin: 6px 0 12px; line-height: 1.35;">${escHtml(m.description)}</p>
-                    </div>
-                    <button type="button" class="action-btn boost-apply-btn ${isSelected ? 'action-btn-secondary' : ''}" data-style-id="${m.id}" style="width: 100%; font-size: 12px; padding: 6px 10px;">
-                        ${isSelected ? 'Active' : 'Apply Meter'}
-                    </button>
-                </div>
-            `;
-        }).join('');
-
-        communityGrid.querySelectorAll('.boost-apply-btn').forEach(btn => {
-            btn.onclick = async () => {
-                const sId = btn.dataset.styleId;
-                updatePreview(sId);
-                const payload = {
-                    enabled: !!enabledEl.checked,
-                    style: sId,
-                };
-                localStorage.setItem(BOOST_METER_SPOOF_KEY, JSON.stringify({ boost_meter_spoof: payload }));
-                await runToolSave(btn, 'Boost meter', { boost_meter_spoof: payload }, { enabled: payload.enabled });
-                showToast(`Applied ${COMMUNITY_BOOST_METERS.find(x => x.id === sId)?.name || sId}`, 'success');
-            };
+    let searchTimer = null;
+    if (searchInput) {
+        searchInput.addEventListener('input', () => {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => {
+                const q = searchInput.value.trim() || 'boost';
+                loadVgmBoostMeters(1, q);
+            }, 400);
         });
-    };
+    }
 
     document.getElementById('boost-catalog-prev-btn')?.addEventListener('click', () => {
         if (vgmBoostPage > 1) {
@@ -6182,180 +6291,11 @@ function initBoostMeterTab() {
         loadVgmBoostMeters(vgmBoostPage + 1, vgmBoostQuery);
     });
 
-    // Subtab Switching (Library vs Import from external sources)
-    const tabCatalogBtn = document.getElementById('boost-tab-catalog-btn');
-    const tabImportBtn = document.getElementById('boost-tab-import-btn');
-    const catalogView = document.getElementById('boost-catalog-view');
-    const importView = document.getElementById('boost-import-view');
-
-    if (tabCatalogBtn && tabImportBtn && catalogView && importView) {
-        tabCatalogBtn.onclick = () => {
-            tabCatalogBtn.classList.add('active');
-            tabImportBtn.classList.remove('active');
-            catalogView.style.display = 'block';
-            importView.style.display = 'none';
-        };
-        tabImportBtn.onclick = () => {
-            tabImportBtn.classList.add('active');
-            tabCatalogBtn.classList.remove('active');
-            catalogView.style.display = 'none';
-            importView.style.display = 'block';
-        };
-    }
-
-    // Dropzone & File Input
-    const dropzone = document.getElementById('boost-dropzone');
-    const fileInput = document.getElementById('boost-file-input');
-    const nameInput = document.getElementById('boost-name-input');
-    const gaugeTypeSelect = document.getElementById('boost-gauge-type-select');
-
-    if (dropzone && fileInput) {
-        dropzone.onclick = () => fileInput.click();
-        dropzone.ondragover = (e) => { e.preventDefault(); dropzone.style.borderColor = 'var(--accent)'; };
-        dropzone.ondragleave = () => { dropzone.style.borderColor = 'var(--border)'; };
-        dropzone.ondrop = (e) => {
-            e.preventDefault();
-            dropzone.style.borderColor = 'var(--border)';
-            if (e.dataTransfer.files?.length > 0) {
-                handleBoostFile(e.dataTransfer.files[0]);
-            }
-        };
-        fileInput.onchange = () => {
-            if (fileInput.files?.length > 0) {
-                handleBoostFile(fileInput.files[0]);
-            }
-        };
-    }
-
-    const handleBoostFile = (file) => {
-        const cleanName = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
-        if (nameInput) nameInput.value = cleanName;
-        showToast(`Loaded ${file.name} for custom boost meter!`, 'success');
-    };
-
-    // URL Download Button
-    const urlInput = document.getElementById('boost-url-input');
-    const urlDownloadBtn = document.getElementById('boost-url-download-btn');
-    if (urlDownloadBtn && urlInput) {
-        urlDownloadBtn.onclick = async () => {
-            const url = urlInput.value.trim();
-            if (!url) {
-                showToast('Please enter an AlphaConsole boost meter package URL (.zip or .json)', 'error');
-                return;
-            }
-            urlDownloadBtn.disabled = true;
-            urlDownloadBtn.textContent = 'Downloading…';
-            try {
-                showToast('Downloading and parsing AlphaConsole boost meter package…', 'success');
-                const pkgName = url.split('/').pop().replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ') || 'AlphaConsole Boost HUD';
-                if (nameInput) nameInput.value = pkgName;
-                showToast(`Successfully parsed package: ${pkgName}`, 'success');
-            } catch (err) {
-                showToast(`Download failed: ${err}`, 'error');
-            } finally {
-                urlDownloadBtn.disabled = false;
-                urlDownloadBtn.textContent = 'Download & Parse';
-            }
-        };
-    }
-
-    // Apply Custom Boost Meter Button
-    const importApplyBtn = document.getElementById('boost-import-apply-btn');
-    if (importApplyBtn) {
-        importApplyBtn.onclick = async () => {
-            importApplyBtn.disabled = true;
-            const customName = nameInput?.value.trim() || 'Custom AlphaConsole HUD';
-            const a = '#00f2fe';
-            const g = '#4facfe';
-            const gType = gaugeTypeSelect?.value || 'circular';
-            const typeLabel = gType === 'circular' ? 'Circular HUD' : (gType === 'bar' ? 'Linear HUD' : 'Radial HUD');
-
-            const customMeter = {
-                id: 'custom_' + Date.now(),
-                name: customName,
-                author: 'Custom Import',
-                type: typeLabel,
-                gradient: `linear-gradient(90deg, ${a}, ${g})`,
-                accent: a,
-                description: `AlphaConsole custom gauge`
-            };
-
-            COMMUNITY_BOOST_METERS.push(customMeter);
-            renderCommunityBoostMeters();
-            updatePreview(customMeter.id);
-
-            if (enabledEl) enabledEl.checked = true;
-            syncNameSpoofSwitchAria(enabledEl);
-
-            const payload = {
-                enabled: true,
-                style: customMeter.id,
-            };
-            localStorage.setItem(BOOST_METER_SPOOF_KEY, JSON.stringify({ boost_meter_spoof: payload }));
-            await runToolSave(importApplyBtn, 'Custom Boost Meter', { boost_meter_spoof: payload }, { enabled: true });
-
-            if (tabCatalogBtn) tabCatalogBtn.click();
-            showToast(`Custom boost meter '${customName}' applied!`, 'success');
-            importApplyBtn.disabled = false;
-        };
-    }
-
-    // Animated Boost Simulation Tester
-    if (testBtn) {
-        let testInterval = null;
-        testBtn.onclick = () => {
-            if (testInterval) return;
-            let current = 100;
-            testBtn.disabled = true;
-            testBtn.textContent = 'Boosting...';
-
-            testInterval = setInterval(() => {
-                current -= 8;
-                if (current < 0) current = 0;
-                if (previewCircle) previewCircle.textContent = String(current);
-                if (previewPct) previewPct.textContent = `${current}%`;
-                if (previewBar) previewBar.style.width = `${current}%`;
-
-                if (current <= 0) {
-                    clearInterval(testInterval);
-                    testInterval = null;
-                    setTimeout(() => {
-                        // Recharge
-                        current = 100;
-                        if (previewCircle) previewCircle.textContent = '100';
-                        if (previewPct) previewPct.textContent = '100%';
-                        if (previewBar) previewBar.style.width = '100%';
-                        testBtn.disabled = false;
-                        testBtn.textContent = 'Test Boost';
-                    }, 500);
-                }
-            }, 50);
-        };
-    }
-
-    // Restore original HUD button
-    const restoreBtn = document.getElementById('boost-restore-btn');
-    if (restoreBtn) {
-        restoreBtn.onclick = async () => {
-            updatePreview('default');
-            if (enabledEl) enabledEl.checked = false;
-            syncNameSpoofSwitchAria(enabledEl);
-            const payload = {
-                enabled: false,
-                style: 'default',
-            };
-            localStorage.setItem(BOOST_METER_SPOOF_KEY, JSON.stringify({ boost_meter_spoof: payload }));
-            await runToolSave(restoreBtn, 'Restore original boost HUD', { boost_meter_spoof: payload }, { enabled: false });
-            flashButtonLabel(restoreBtn, 'Restored');
-            showToast('Restored default Rocket League HUD.', 'success');
-        };
-    }
-
     const loadBoostConfig = () => {
         const stored = readLocalJson(BOOST_METER_SPOOF_KEY).boost_meter_spoof || { enabled: false, style: 'default' };
-        enabledEl.checked = !!stored.enabled;
-        syncNameSpoofSwitchAria(enabledEl);
-        updatePreview(stored.style || 'default');
+        if (enabledEl) enabledEl.checked = !!stored.enabled;
+        activeStyle = stored.style || 'default';
+        if (styleSelect) styleSelect.value = activeStyle;
     };
 
     if (boostMeterTabReady) return;
@@ -6363,16 +6303,6 @@ function initBoostMeterTab() {
 
     loadBoostConfig();
     loadVgmBoostMeters(1, 'boost');
-
-    enabledEl.addEventListener('change', async () => {
-        syncNameSpoofSwitchAria(enabledEl);
-        const payload = {
-            enabled: enabledEl.checked,
-            style: activeStyle || 'default',
-        };
-        localStorage.setItem(BOOST_METER_SPOOF_KEY, JSON.stringify({ boost_meter_spoof: payload }));
-        await runToolSave(null, 'Boost meter toggle', { boost_meter_spoof: payload }, { enabled: payload.enabled });
-    });
 }
 
 function initCustomizationTab() {
@@ -6447,17 +6377,24 @@ function initAvatarTab() {
     if (avatarTabWired) return;
     avatarTabWired = true;
 
+    const loadOtherPfpsToggle = document.getElementById('load-other-pfps-toggle');
+
     async function checkSteamAuth() {
         try {
             const user = await invoke('get_authenticated_steam_user');
             const loginBtn = document.getElementById('steam-login-btn');
             const unlinkBtn = document.getElementById('steam-unlink-btn');
             const statusEl = document.getElementById('steam-auth-status');
+            const otherPfpsEnabled = await invoke('get_load_other_pfps').catch(() => false);
+
             if (user && user.steam_id) {
                 if (loginBtn) loginBtn.style.display = 'none';
                 if (unlinkBtn) unlinkBtn.style.display = 'inline-block';
                 if (statusEl) {
-                    statusEl.innerHTML = `Linked: <strong style="color:var(--accent);">${escHtml(user.persona_name)}</strong> (${user.steam_id})`;
+                    statusEl.innerHTML = `Linked: <strong style="color:var(--accent);">${escHtml(user.persona_name)}</strong>`;
+                }
+                if (loadOtherPfpsToggle) {
+                    loadOtherPfpsToggle.checked = !!otherPfpsEnabled;
                 }
                 if (user.avatar_url && !currentAvatarSource) {
                     currentAvatarSource = user.avatar_url;
@@ -6467,7 +6404,10 @@ function initAvatarTab() {
             } else {
                 if (loginBtn) loginBtn.style.display = 'inline-block';
                 if (unlinkBtn) unlinkBtn.style.display = 'none';
-                if (statusEl) statusEl.textContent = t('custom.steam_not_linked', 'Not linked');
+                if (statusEl) statusEl.textContent = 'Not linked';
+                if (loadOtherPfpsToggle) {
+                    loadOtherPfpsToggle.checked = false;
+                }
             }
         } catch (e) {
             console.warn('Failed to query steam auth status:', e);
@@ -6475,6 +6415,24 @@ function initAvatarTab() {
     }
 
     checkSteamAuth();
+
+    loadOtherPfpsToggle?.addEventListener('change', async (e) => {
+        const user = await invoke('get_authenticated_steam_user').catch(() => null);
+        if (loadOtherPfpsToggle.checked && (!user || !user.steam_id)) {
+            loadOtherPfpsToggle.checked = false;
+            showToast('Sign in with Steam first to enable loading other players\' profile pictures.', 'warning');
+            const loginBtn = document.getElementById('steam-login-btn');
+            loginBtn?.click();
+            return;
+        }
+        try {
+            await invoke('set_load_other_pfps_enabled', { enabled: loadOtherPfpsToggle.checked });
+            showToast(loadOtherPfpsToggle.checked ? 'Load other pfps enabled.' : 'Load other pfps disabled.', 'info');
+        } catch (err) {
+            loadOtherPfpsToggle.checked = !loadOtherPfpsToggle.checked;
+            showToast(String(err), 'error');
+        }
+    });
 
     const steamLoginBtn = document.getElementById('steam-login-btn');
     steamLoginBtn?.addEventListener('click', async () => {
@@ -6512,6 +6470,9 @@ function initAvatarTab() {
     steamUnlinkBtn?.addEventListener('click', async () => {
         try {
             await invoke('clear_authenticated_steam_user');
+            if (loadOtherPfpsToggle) {
+                loadOtherPfpsToggle.checked = false;
+            }
             showToast('Unlinked Steam account.', 'info');
             checkSteamAuth();
         } catch (err) {
