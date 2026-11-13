@@ -5312,6 +5312,13 @@ pub fn patch_products_config(body: &[u8]) -> (Vec<u8>, bool) {
     let mut out = body.to_vec();
     let mut any_changed = false;
 
+    // We do NOT disable save syncing (SaveGameManager_TA / OnlineStorageConfig_TA).
+    // The user's save files sync normally to cloud/OSS.
+    // Instead, we stop item/product synchronization and duplication/stripping:
+    // - ProductsConfig_TA: MaxSecondsBetweenFullProductSyncs = 2147483647 (stops periodic full product re-syncs from PsyNet)
+    // - ProductsConfig_TA: bUseSaveDataCacheProducts = True (forces local cached products to remain available)
+    // - ProductsConfig_TA: bEnableOfflineItemsDuplicationPrevention = False (prevents deleting duplicate/offline products)
+    // - SaveData_TA: bClearSyncTimestampOnMissingProduct = False (prevents clearing timestamps or triggering sync on missing items)
     let overrides = [
         ("ProductsConfig_TA", "bUseSaveDataCacheProducts", "True"),
         ("SaveData_TA", "bClearSyncTimestampOnMissingProduct", "False"),
@@ -5321,9 +5328,7 @@ pub fn patch_products_config(body: &[u8]) -> (Vec<u8>, bool) {
         ("LoadoutValidation_TA", "bValidateDLC", "False"),
         ("LoadoutValidation_TA", "bEnableStrictLoadoutValidation", "False"),
         ("SaveGameManager_TA", "bEnableSaving", "True"),
-        ("SaveGameManager_TA", "bDisableSaveOSS", "True"),
-        ("OnlineStorageConfig_TA", "SaveDisabledClasses", "(\"SaveData_TA\",\"ProfileLoadoutSave_TA\",\"ProductsSave_TA\",\"ProductsArchiveSave_TA\",\"ProductsFavoriteSave_TA\")"),
-        ("OnlineStorageConfig_TA", "MinSecondsBetweenCloudUploads", "2147483647"),
+        ("SaveGameManager_TA", "bDisableSaveOSS", "False"),
     ];
 
     for (cls, prop, val) in overrides {
@@ -5409,49 +5414,6 @@ pub fn patch_products_config(body: &[u8]) -> (Vec<u8>, bool) {
             res.extend_from_slice(block.as_bytes());
             res.extend_from_slice(&out[close_idx..]);
             out = res;
-            any_changed = true;
-        }
-    }
-
-    if let Some((start, end)) = find_named_object(&out, "OnlineStorageConfig")
-        .or_else(|| find_named_object(&out, "OnlineStorageConfig_TA"))
-    {
-        let obj = &out[start..end];
-        let mut obj_str = String::from_utf8_lossy(obj).into_owned();
-        let mut obj_changed = false;
-
-        if let Some(pos) = obj_str.find("\"MinSecondsBetweenCloudUploads\"") {
-            if let Some(col) = obj_str[pos..].find(':') {
-                let num_start = pos + col + 1;
-                let trimmed = obj_str[num_start..].trim_start();
-                let skip = obj_str[num_start..].len() - trimmed.len();
-                let actual_num_start = num_start + skip;
-                let num_end = actual_num_start + obj_str[actual_num_start..]
-                    .find(|c: char| !c.is_ascii_digit())
-                    .unwrap_or(obj_str.len() - actual_num_start);
-                if &obj_str[actual_num_start..num_end] != "2147483647" {
-                    obj_str.replace_range(actual_num_start..num_end, "2147483647");
-                    obj_changed = true;
-                }
-            }
-        } else if let Some(last_brace) = obj_str.rfind('}') {
-            obj_str.insert_str(last_brace, ",\"MinSecondsBetweenCloudUploads\":2147483647");
-            obj_changed = true;
-        }
-
-        if !obj_str.contains("\"SaveDisabledClasses\"") {
-            if let Some(last_brace) = obj_str.rfind('}') {
-                obj_str.insert_str(last_brace, ",\"SaveDisabledClasses\":[\"SaveData_TA\",\"ProfileLoadoutSave_TA\",\"ProductsSave_TA\",\"ProductsArchiveSave_TA\",\"ProductsFavoriteSave_TA\"]");
-                obj_changed = true;
-            }
-        }
-
-        if obj_changed {
-            let mut next = Vec::with_capacity(out.len() + 128);
-            next.extend_from_slice(&out[..start]);
-            next.extend_from_slice(obj_str.as_bytes());
-            next.extend_from_slice(&out[end..]);
-            out = next;
             any_changed = true;
         }
     }
@@ -6413,9 +6375,20 @@ pub fn patch_player_products_json(
                 .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())));
             if pid == Some(wanted_id as i64) {
                 let item_paint = item.get("Attributes").and_then(|v| v.as_array()).and_then(|attrs| {
-                    attrs.iter().find(|a| a.get("Key").and_then(|k| k.as_str()) == Some("Painted")).and_then(|a| {
-                        a.get("Value").and_then(|v| v.as_str().and_then(|s| s.parse::<i32>().ok()).or_else(|| v.as_i64().map(|n| n as i32)))
+                    attrs.iter().find(|a| {
+                        a.get("Key").and_then(|k| k.as_str()).map(|k| k.eq_ignore_ascii_case("Painted")).unwrap_or(false)
+                    }).and_then(|a| {
+                        a.get("Value").and_then(|v| {
+                            v.as_str().and_then(|s| s.parse::<i32>().ok())
+                                .or_else(|| v.as_i64().map(|n| n as i32))
+                        })
                     })
+                }).or_else(|| {
+                    item.get("PaintID")
+                        .or_else(|| item.get("paint_id"))
+                        .or_else(|| item.get("PaintId"))
+                        .or_else(|| item.get("paintId"))
+                        .and_then(|v| v.as_i64().map(|n| n as i32).or_else(|| v.as_str().and_then(|s| s.parse().ok())))
                 }).unwrap_or(0);
                 if item_paint == paint_id {
                     matched = true;
@@ -7116,9 +7089,7 @@ mod tests {
         assert!(s.contains("\"MaxSecondsBetweenFullProductSyncs\",\"Value\":\"2147483647\""));
         assert!(s.contains("\"bClearSyncTimestampOnMissingProduct\",\"Value\":\"False\""));
         assert!(s.contains("\"bEnableOfflineItemsDuplicationPrevention\",\"Value\":\"False\""));
-        assert!(s.contains("\"bDisableSaveOSS\",\"Value\":\"True\""));
-        assert!(s.contains("\"MinSecondsBetweenCloudUploads\":2147483647"));
-        assert!(s.contains("\"SaveDisabledClasses\""));
+        assert!(s.contains("\"bDisableSaveOSS\",\"Value\":\"False\""));
         assert!(s.contains("\"ProductsConfig\":{"));
     }
 
