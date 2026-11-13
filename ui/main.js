@@ -6467,7 +6467,7 @@ function initAvatarTab() {
             } else {
                 if (loginBtn) loginBtn.style.display = 'inline-block';
                 if (unlinkBtn) unlinkBtn.style.display = 'none';
-                if (statusEl) statusEl.textContent = 'Not linked';
+                if (statusEl) statusEl.textContent = t('custom.steam_not_linked', 'Not linked');
             }
         } catch (e) {
             console.warn('Failed to query steam auth status:', e);

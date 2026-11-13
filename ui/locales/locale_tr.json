@@ -152,7 +152,16 @@
     "avatar_preview": "Avatar Önizleme",
     "avatar_status_ready": "Avatar uygulanmaya hazır",
     "apply_avatar": "Özel Avatarı Uygula",
-    "restore_avatar": "Varsayılana Sıfırla"
+    "restore_avatar": "Varsayılana Sıfırla",
+    "steam_auth_label": "Steam Hesabı Doğrulama",
+    "steam_auth_desc": "Doğrulanmış Steam avatarınızı ve adınızı doğrudan bağlamak için Steam OpenID ile giriş yapın.",
+    "steam_signin_btn": "Steam ile Giriş Yap",
+    "steam_unlink_btn": "Steam Bağlantısını Kes",
+    "steam_not_linked": "Bağlı değil",
+    "why_steam_auth_title": "Neden Steam ile giriş yapmalısınız?",
+    "why_steam_auth_simple": "Steam, giriş yapmadan yapılan profil resmi isteklerini sınırlandırır. Giriş yapmak, Rocket League'in gerçek Steam resminizi gecikme olmadan her zaman yüklemesini sağlar. Şifreniz tamamen Steam sunucularında güvendedir.",
+    "boost_hud_restore_orig": "Orijinali geri yükle",
+    "boost_hud_test": "Boostu test et"
   },
   "ranks": {
     "title": "Sahte Rütbeler",

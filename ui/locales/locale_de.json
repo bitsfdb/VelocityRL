@@ -140,7 +140,16 @@
     "leaderboard_rank": "Eigener Rang / Platzierung",
     "leaderboard_mmr": "Eigene Bestenlisten-MMR",
     "save_leaderboard": "Bestenliste speichern",
-    "subtab_avatar": "Custom Profile Pictures (PFP)"
+    "subtab_avatar": "Custom Profile Pictures (PFP)",
+    "steam_auth_label": "Steam-Konto-Authentifizierung",
+    "steam_auth_desc": "Melde dich über Steam OpenID an, um deinen verifizierten Steam-Avatar und Namen zu verknüpfen.",
+    "steam_signin_btn": "Mit Steam anmelden",
+    "steam_unlink_btn": "Steam trennen",
+    "steam_not_linked": "Nicht verknüpft",
+    "why_steam_auth_title": "Warum mit Steam anmelden?",
+    "why_steam_auth_simple": "Steam begrenzt Abfragen für Profilbilder ohne Anmeldung. Durch die Anmeldung lädt Rocket League dein echtes Steam-Bild jederzeit ohne Verzögerung. Dein Passwort bleibt 100% privat bei Steam.",
+    "boost_hud_restore_orig": "Original wiederherstellen",
+    "boost_hud_test": "Boost testen"
   },
   "ranks": {
     "title": "Fake Ranks",

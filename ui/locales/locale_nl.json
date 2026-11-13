@@ -128,7 +128,16 @@
     "item_shop_credits": "Item Shop Credits",
     "tournament_credits": "Tournament Credits",
     "save_credits": "Sla credits op",
-    "subtab_avatar": "Custom Profile Pictures (PFP)"
+    "subtab_avatar": "Custom Profile Pictures (PFP)",
+    "steam_auth_label": "Steam-accountverificatie",
+    "steam_auth_desc": "Log in via Steam OpenID om je geverifieerde Steam-avatar en naam rechtstreeks te koppelen.",
+    "steam_signin_btn": "Aanmelden via Steam",
+    "steam_unlink_btn": "Steam ontkoppelen",
+    "steam_not_linked": "Niet gekoppeld",
+    "why_steam_auth_title": "Waarom aanmelden via Steam?",
+    "why_steam_auth_simple": "Steam beperkt anonieme verzoeken voor profielfoto's. Door in te loggen laadt Rocket League je echte Steam-foto direct zonder vertraging. Je wachtwoord blijft 100% privé op Steam.",
+    "boost_hud_restore_orig": "Origineel herstellen",
+    "boost_hud_test": "Boost testen"
   },
   "ranks": {
     "title": "Neppe Rangen",
