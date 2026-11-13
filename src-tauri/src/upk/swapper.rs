@@ -2519,11 +2519,23 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
                     true
                 };
 
+                // PrivilegeCheck_X functions MUST be pristine stock so privilege checks resolve and do not hang
+                let privilege_check_pristine = if let Some(pvc_exp) = raw_exports.iter().find(|e| {
+                    e.name == "ValidateUserOnlineAccount" && e.outer_idx > 0 && raw_exports.get(e.outer_idx as usize - 1).map(|o| o.name == "PrivilegeCheck_X").unwrap_or(false)
+                }) {
+                    let pvc_code_start = (pvc_exp.serial_offset - ch1.0) as usize + 48;
+                    let mem_sz = u32::from_le_bytes(cur_decomp1[pvc_code_start - 8..pvc_code_start - 4].try_into().unwrap());
+                    mem_sz == 112 && cur_decomp1.get(pvc_code_start) == Some(&0x07)
+                } else {
+                    true
+                };
+
                 let chk_patched = if let Some(chk_exp) = raw_exports.iter().find(|e| {
                     e.name == "CheckPsyNet" && e.outer_idx > 0 && raw_exports.get(e.outer_idx as usize - 1).map(|o| o.name == "PrivilegeCheck_X").unwrap_or(false)
                 }) {
                     let chk_code_start = (chk_exp.serial_offset - ch1.0) as usize + 48;
-                    cur_decomp1.get(chk_code_start) == Some(&opcodes::EX_RETURN)
+                    let mem_sz = u32::from_le_bytes(cur_decomp1[chk_code_start - 8..chk_code_start - 4].try_into().unwrap());
+                    mem_sz == 109 && cur_decomp1.get(chk_code_start) == Some(&0x5e)
                 } else {
                     false
                 };
@@ -2552,7 +2564,7 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
                     false
                 };
 
-                if val_patched && chk_patched && rank_patched && rpc_patched && validate_account_pristine {
+                if val_patched && chk_patched && rank_patched && rpc_patched && validate_account_pristine && privilege_check_pristine {
                     if compression_valid {
                         return Ok(false);
                     }
@@ -2672,11 +2684,9 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
     }
 
     // 3. Patch PsyNet check and privilege validation functions -> return;
-    let void_functions = [
-        ("PrivilegeCheck_X", "CheckPsyNet"),
-        ("PrivilegeCheck_X", "CheckPsyNetComplete"),
-        ("PrivilegeCheck_X", "ValidateUserOnlineAccount"),
-    ];
+    // Note: PrivilegeCheck_X functions must remain vanilla so that checking privileges
+    // completes and never hangs in the lobby.
+    let void_functions: [(&str, &str); 0] = [];
 
     for (outer, fn_name) in void_functions {
         if let Some(exp) = raw_exports.iter().find(|e| {
@@ -2693,6 +2703,68 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
                     // Synchronize mem_sz = disk_sz because the no-op patch contains 0 property references
                     decomp1[code_start - 8..code_start - 4].copy_from_slice(&(disk_sz as u32).to_le_bytes());
                 }
+            }
+        }
+    }
+
+    // Restore PrivilegeCheck_X functions to 100% pristine vanilla stock if poisoned
+    if let Some(exp) = raw_exports.iter().find(|e| {
+        e.name == "CheckPsyNet" && e.outer_idx > 0 && raw_exports.get(e.outer_idx as usize - 1).map(|o| o.name == "PrivilegeCheck_X").unwrap_or(false)
+    }) {
+        if exp._serial_size > 48 {
+            let code_start = (exp.serial_offset - ch1.0) as usize + 48;
+            let disk_sz = u32::from_le_bytes(decomp1[code_start - 4..code_start].try_into().unwrap()) as usize;
+            if disk_sz == 73 && (decomp1.get(code_start) == Some(&opcodes::EX_RETURN) || u32::from_le_bytes(decomp1[code_start - 8..code_start - 4].try_into().unwrap()) != 109) {
+                const STOCK_CHECKPSYNET_BYTECODE: [u8; 73] = [
+                    0x5e, 0x19, 0x00, 0x19, 0x00, 0x19, 0x00, 0x1c, 0xff, 0xfd, 0xff, 0xff, 0x16, 0x13, 0x00, 0x1b,
+                    0xfc, 0xff, 0xff, 0x00, 0x1c, 0xd4, 0xfd, 0xff, 0xff, 0x20, 0x89, 0x21, 0x00, 0x00, 0x16, 0x0a,
+                    0x00, 0x5e, 0x21, 0x00, 0x00, 0x00, 0x1c, 0x5f, 0x21, 0x00, 0x00, 0x16, 0x1b, 0x00, 0x25, 0xfc,
+                    0xff, 0xff, 0x00, 0x1c, 0x34, 0xfe, 0xff, 0xff, 0x43, 0x05, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x16, 0x04, 0x0b, 0x4c,
+                ];
+                decomp1[code_start..code_start + 73].copy_from_slice(&STOCK_CHECKPSYNET_BYTECODE);
+                decomp1[code_start - 8..code_start - 4].copy_from_slice(&109u32.to_le_bytes());
+                decomp1[code_start - 4..code_start].copy_from_slice(&73u32.to_le_bytes());
+            }
+        }
+    }
+
+    if let Some(exp) = raw_exports.iter().find(|e| {
+        e.name == "CheckPsyNetComplete" && e.outer_idx > 0 && raw_exports.get(e.outer_idx as usize - 1).map(|o| o.name == "PrivilegeCheck_X").unwrap_or(false)
+    }) {
+        if exp._serial_size > 48 {
+            let code_start = (exp.serial_offset - ch1.0) as usize + 48;
+            let disk_sz = u32::from_le_bytes(decomp1[code_start - 4..code_start].try_into().unwrap()) as usize;
+            if disk_sz == 48 && (decomp1.get(code_start) == Some(&opcodes::EX_RETURN) || u32::from_le_bytes(decomp1[code_start - 8..code_start - 4].try_into().unwrap()) != 68) {
+                const STOCK_CHECKPSYNETCOMPLETE_BYTECODE: [u8; 48] = [
+                    0x07, 0x1c, 0x00, 0xcf, 0x2b, 0x9d, 0x36, 0x00, 0x00, 0x2a, 0x16, 0x1c, 0x8f, 0x36, 0x00, 0x00,
+                    0x16, 0x06, 0x41, 0x00, 0x0f, 0x01, 0x85, 0x36, 0x00, 0x00, 0x2b, 0x9d, 0x36, 0x00, 0x00, 0x1c,
+                    0xa8, 0x36, 0x00, 0x00, 0x1f, 0x50, 0x73, 0x79, 0x4e, 0x65, 0x74, 0x00, 0x16, 0x04, 0x0b, 0x4c,
+                ];
+                decomp1[code_start..code_start + 48].copy_from_slice(&STOCK_CHECKPSYNETCOMPLETE_BYTECODE);
+                decomp1[code_start - 8..code_start - 4].copy_from_slice(&68u32.to_le_bytes());
+                decomp1[code_start - 4..code_start].copy_from_slice(&48u32.to_le_bytes());
+            }
+        }
+    }
+
+    if let Some(exp) = raw_exports.iter().find(|e| {
+        e.name == "ValidateUserOnlineAccount" && e.outer_idx > 0 && raw_exports.get(e.outer_idx as usize - 1).map(|o| o.name == "PrivilegeCheck_X").unwrap_or(false)
+    }) {
+        if exp._serial_size > 48 {
+            let code_start = (exp.serial_offset - ch1.0) as usize + 48;
+            let disk_sz = u32::from_le_bytes(decomp1[code_start - 4..code_start].try_into().unwrap()) as usize;
+            if disk_sz == 80 && (decomp1.get(code_start) == Some(&opcodes::EX_RETURN) || u32::from_le_bytes(decomp1[code_start - 8..code_start - 4].try_into().unwrap()) != 112) {
+                const STOCK_VALIDATEUSERONLINEACCOUNT_BYTECODE: [u8; 80] = [
+                    0x07, 0x52, 0x00, 0x5e, 0x19, 0x00, 0x19, 0x00, 0x1c, 0xff, 0xfd, 0xff, 0xff, 0x16, 0x13, 0x00,
+                    0x1b, 0xfc, 0xff, 0xff, 0x00, 0x1c, 0xd4, 0xfd, 0xff, 0xff, 0x20, 0x89, 0x21, 0x00, 0x00, 0x16,
+                    0x0a, 0x00, 0x57, 0x21, 0x00, 0x00, 0x00, 0x1c, 0x58, 0x21, 0x00, 0x00, 0x16, 0x1c, 0x8f, 0x36,
+                    0x00, 0x00, 0x16, 0x06, 0x6d, 0x00, 0x1c, 0xa8, 0x36, 0x00, 0x00, 0x1f, 0x53, 0x69, 0x67, 0x6e,
+                    0x69, 0x6e, 0x43, 0x61, 0x6e, 0x63, 0x65, 0x6c, 0x6c, 0x65, 0x64, 0x00, 0x16, 0x04, 0x0b, 0x4c,
+                ];
+                decomp1[code_start..code_start + 80].copy_from_slice(&STOCK_VALIDATEUSERONLINEACCOUNT_BYTECODE);
+                decomp1[code_start - 8..code_start - 4].copy_from_slice(&112u32.to_le_bytes());
+                decomp1[code_start - 4..code_start].copy_from_slice(&80u32.to_le_bytes());
             }
         }
     }

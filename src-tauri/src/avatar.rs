@@ -265,7 +265,65 @@ pub fn get_authenticated_steam_user() -> Option<SteamAuthenticatedUser> {
 #[tauri::command]
 pub fn clear_authenticated_steam_user(app: tauri::AppHandle) -> Result<(), String> {
     clear_authenticated_steam_user_internal();
+    let _ = set_load_other_pfps_enabled(app.clone(), false);
     let _ = restore_custom_avatar_upk(app);
+    Ok(())
+}
+
+fn load_other_pfps_config_path(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path().app_config_dir().ok().map(|p| p.join("load_other_pfps.json"))
+}
+
+pub fn is_load_other_pfps_enabled_internal() -> bool {
+    let candidates = [
+        PathBuf::from("/root/.config/com.velocityrl.app/load_other_pfps.json"),
+        PathBuf::from("load_other_pfps.json"),
+    ];
+    for p in &candidates {
+        if p.is_file() {
+            if let Ok(c) = fs::read_to_string(p) {
+                if let Ok(val) = serde_json::from_str::<bool>(&c) {
+                    return val;
+                }
+            }
+        }
+    }
+    false
+}
+
+#[tauri::command]
+pub fn get_load_other_pfps(app: tauri::AppHandle) -> bool {
+    if get_authenticated_steam_user_internal().is_none() {
+        return false;
+    }
+    if let Some(p) = load_other_pfps_config_path(&app) {
+        if p.is_file() {
+            if let Ok(c) = fs::read_to_string(&p) {
+                if let Ok(val) = serde_json::from_str::<bool>(&c) {
+                    return val;
+                }
+            }
+        }
+    }
+    is_load_other_pfps_enabled_internal()
+}
+
+#[tauri::command]
+pub fn set_load_other_pfps_enabled(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    if enabled && get_authenticated_steam_user_internal().is_none() {
+        return Err("Steam login required to enable loading other profile pictures".into());
+    }
+    if let Some(p) = load_other_pfps_config_path(&app) {
+        if let Some(parent) = p.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let _ = fs::write(&p, serde_json::to_string(&enabled).unwrap_or_default());
+    }
+    let global_p = PathBuf::from("/root/.config/com.velocityrl.app/load_other_pfps.json");
+    if let Some(parent) = global_p.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let _ = fs::write(&global_p, serde_json::to_string(&enabled).unwrap_or_default());
     Ok(())
 }
 
@@ -735,25 +793,33 @@ pub async fn apply_custom_avatar_upk(app: tauri::AppHandle, avatar_source: Strin
         fs::read(path).map_err(|e| format!("Failed to read avatar file: {e}"))?
     };
 
-    let (_, processed_png) = process_avatar_image(&image_bytes)?;
+    let (raw_bgra, processed_png) = process_avatar_image(&image_bytes)?;
     // Persist downloaded/processed avatar to local disk cache and /root/avatar.png
     let _ = save_cached_avatar(&app, &processed_png);
     let _ = fs::write("/root/avatar.png", &processed_png);
     set_active_avatar_png(processed_png.clone());
 
-    // If a modified TAGame.upk exists from old direct UPK stomping, restore it to pristine backup
     if let Some(game_dir) = get_game_dir(&app) {
         if let Ok(cooked_dir) = crate::upk::swapper::resolve_cooked_dir(&game_dir) {
             let tagame_path = cooked_dir.join("TAGame.upk");
             let backup_path = cooked_dir.join(TAGAME_BACKUP_NAME);
-            if backup_path.is_file() {
-                let _ = fs::copy(&backup_path, &tagame_path);
+            if tagame_path.is_file() {
+                if !backup_path.is_file() {
+                    let _ = fs::copy(&tagame_path, &backup_path);
+                } else {
+                    let _ = fs::copy(&backup_path, &tagame_path);
+                }
+                if let Err(e) = apply_custom_avatar_to_tagame(&tagame_path, &raw_bgra) {
+                    crate::applog::event(&format!("avatar: failed to apply to TAGame.upk: {e}"));
+                } else {
+                    crate::applog::event("avatar: successfully applied custom avatar to TAGame.upk");
+                }
             }
         }
     }
 
-    crate::applog::event("avatar: custom avatar activated in broker pipeline (served via HTTP on 15759/7546/49320)");
-    Ok("Custom avatar active via broker HTTP pipeline".into())
+    crate::applog::event("avatar: custom avatar activated in broker pipeline and TAGame.upk");
+    Ok("Custom avatar active via broker HTTP pipeline and TAGame.upk".into())
 }
 
 #[tauri::command]

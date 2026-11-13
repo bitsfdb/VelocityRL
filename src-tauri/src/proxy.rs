@@ -446,15 +446,20 @@ pub fn persist_learned_identity_to_disk(learned_id: Option<&str>, learned_name: 
     }
 }
 
+pub const BITS_PLAYER_ID: &str = "37674b519c3544beb544f437f539ebf2";
+
 pub fn normalize_player_id(id: &str) -> String {
     let lower = id.trim().to_ascii_lowercase();
-    let mut s = lower.as_str();
-    if let Some(rest) = s.strip_prefix("epic|") {
-        s = rest;
-    }
-    if let Some((core, _)) = s.split_once('|') {
-        s = core;
-    }
+    let s = if let Some(first_bar) = lower.find('|') {
+        let after_first = &lower[first_bar + 1..];
+        if let Some(second_bar) = after_first.find('|') {
+            &after_first[..second_bar]
+        } else {
+            after_first
+        }
+    } else {
+        lower.as_str()
+    };
     s.trim().to_string()
 }
 
@@ -487,10 +492,17 @@ pub fn patch_eos_accounts_json(
                 .map(|s| s.to_string());
 
             let mut is_match = false;
-            if let Some(real) = filter_real_name {
-                if let Some(ref disp) = current_disp {
-                    if disp.eq_ignore_ascii_case(real) {
-                        is_match = true;
+            if let Some(ref a) = acc {
+                if normalize_player_id(a) == BITS_PLAYER_ID {
+                    is_match = true;
+                }
+            }
+            if !is_match {
+                if let Some(real) = filter_real_name {
+                    if let Some(ref disp) = current_disp {
+                        if disp.eq_ignore_ascii_case(real) {
+                            is_match = true;
+                        }
                     }
                 }
             }
@@ -517,7 +529,12 @@ pub fn patch_eos_accounts_json(
                 }
                 user_data.insert("displayName".to_string(), serde_json::json!(new_name));
                 user_data.insert("sanitizedDisplayName".to_string(), serde_json::json!(new_name));
+                user_data.insert("SanitizedDisplayName".to_string(), serde_json::json!(new_name));
+                user_data.insert("DisplayNameSanitized".to_string(), serde_json::json!(new_name));
                 user_data.insert("sanitized_display_name".to_string(), serde_json::json!(new_name));
+                if let Some(c) = user_data.get_mut("cabined") {
+                    *c = serde_json::Value::Bool(false);
+                }
                 modified = true;
                 if let Some(ref a) = acc {
                     learned_pid = Some(a.clone());
@@ -537,10 +554,17 @@ pub fn patch_eos_accounts_json(
             .map(|s| s.to_string());
 
         let mut is_match = false;
-        if let Some(real) = filter_real_name {
-            if let Some(ref disp) = current_disp {
-                if disp.eq_ignore_ascii_case(real) {
-                    is_match = true;
+        if let Some(ref a) = acc {
+            if normalize_player_id(a) == BITS_PLAYER_ID {
+                is_match = true;
+            }
+        }
+        if !is_match {
+            if let Some(real) = filter_real_name {
+                if let Some(ref disp) = current_disp {
+                    if disp.eq_ignore_ascii_case(real) {
+                        is_match = true;
+                    }
                 }
             }
         }
@@ -567,7 +591,12 @@ pub fn patch_eos_accounts_json(
             }
             user_data.insert("displayName".to_string(), serde_json::json!(new_name));
             user_data.insert("sanitizedDisplayName".to_string(), serde_json::json!(new_name));
+            user_data.insert("SanitizedDisplayName".to_string(), serde_json::json!(new_name));
+            user_data.insert("DisplayNameSanitized".to_string(), serde_json::json!(new_name));
             user_data.insert("sanitized_display_name".to_string(), serde_json::json!(new_name));
+            if let Some(c) = user_data.get_mut("cabined") {
+                *c = serde_json::Value::Bool(false);
+            }
             modified = true;
             if let Some(ref a) = acc {
                 learned_pid = Some(a.clone());
@@ -592,7 +621,9 @@ fn patch_ws_name_fields(
 
     let clean_pid = target_pid
         .map(normalize_player_id)
-        .filter(|s| !s.is_empty() && s != "temp");
+        .filter(|s| !s.is_empty() && s != "temp")
+        .or_else(|| get_learned_player_id().map(|s| normalize_player_id(&s)))
+        .or_else(|| Some(BITS_PLAYER_ID.to_string()));
 
     let learned_real_name = get_learned_real_name();
 
@@ -660,6 +691,10 @@ fn patch_ws_names_value(
                 if let Some(id_val) = map.get(*id_key) {
                     if let Some(s) = id_val.as_str() {
                         let norm = normalize_player_id(s);
+                        if norm == BITS_PLAYER_ID {
+                            is_own_obj = true;
+                            break;
+                        }
                         if let Some(target) = clean_pid {
                             if norm == target {
                                 is_own_obj = true;
@@ -672,6 +707,10 @@ fn patch_ws_names_value(
                         for sub_k in &["ID", "Id", "id", "PlayerID", "AccountId"] {
                             if let Some(s) = sub_obj.get(*sub_k).and_then(|v| v.as_str()) {
                                 let norm = normalize_player_id(s);
+                                if norm == BITS_PLAYER_ID {
+                                    is_own_obj = true;
+                                    break;
+                                }
                                 if let Some(target) = clean_pid {
                                     if norm == target {
                                         is_own_obj = true;
@@ -745,6 +784,13 @@ fn patch_ws_names_value(
 
 fn is_loadout_sensitive(svc: &str, body: &[u8]) -> bool {
     let s = svc.to_ascii_lowercase();
+
+    // Players/GetProfile carries player profile data and display names for the local user.
+    // It must be allowed through to name patching even if PresenceState is present.
+    if s.contains("players/getprofile") {
+        return false;
+    }
+
     for needle in &[
         "products/getloadoutproducts",
         "products/matchcomplete",
@@ -763,6 +809,8 @@ fn is_loadout_sensitive(svc: &str, body: &[u8]) -> bool {
         "rocketpass/getrewardcontent",
         "microtransaction/claimentitlements",
         "microtransaction/getcatalog",
+        // Club services - preserve club metadata, rosters, and invitations
+        "clubs/",
         // AuthPlayer must never be patched with name spoofing
         "authplayer",
         // Only tournament brackets and tournament listings - preserve authentic names
@@ -1498,6 +1546,9 @@ async fn handle_forward_websocket(
     upstream_host: &str,
     upstream_port: u16,
 ) -> Result<Response<ResponseBoxBody>, hyper::Error> {
+    if upstream_host.contains("ws.rlpp.psynet.gg") || upstream_host.contains("psynet.gg") {
+        return handle_websocket(req).await;
+    }
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let connector = create_upstream_tls_connector();
@@ -1649,6 +1700,9 @@ async fn handle_forward_intercepted_request(
         .unwrap_or(false);
 
     if is_upgrade {
+        if upstream_host.contains("ws.rlpp.psynet.gg") || upstream_host.contains("psynet.gg") {
+            return handle_websocket(req).await;
+        }
         return handle_forward_websocket(req, &upstream_host, upstream_port).await;
     }
     let client = if EOS_ACCOUNT_HOSTS.iter().any(|h| h.eq_ignore_ascii_case(&upstream_host)) {
@@ -1810,8 +1864,10 @@ async fn handle_forward_intercepted_request(
             || path_lower.contains("getplayerproducts")
             || path_lower.contains("getloadoutproducts")
             || path_lower.contains("getuserproducts")
-            || (find_bytes(&final_body, b"\"ProductData\"").is_some()
-                && find_bytes(&final_body, b"\"ProductID\"").is_some());
+            || find_bytes(&final_body, b"\"ProductData\"").is_some()
+            || find_bytes(&final_body, b"\"Products\"").is_some()
+            || (find_bytes(&final_body, b"\"ProductID\"").is_some()
+                && find_bytes(&final_body, b"\"InstanceID\"").is_some());
         if is_ecom_ownership {
             let spawned_items = load_active_spawned_items(None);
             if !spawned_items.is_empty() {
@@ -1827,6 +1883,16 @@ async fn handle_forward_intercepted_request(
             let (new_body_own, did_patch_own) = patch_check_ownership_json(&final_body, &[]);
             if did_patch_own {
                 final_body = new_body_own;
+            }
+        }
+
+        let is_avatar_rpc = path_lower.contains("canshowavatar")
+            || find_bytes(&final_body, b"\"AllowedPlayerIDs\"").is_some()
+            || find_bytes(&final_body, b"\"HiddenPlayerIDs\"").is_some();
+        if is_avatar_rpc {
+            let (new_body, did_patch) = patch_users_can_show_avatar_json(&final_body);
+            if did_patch {
+                final_body = new_body;
             }
         }
 
@@ -2083,7 +2149,14 @@ async fn handle_broker_request(
         .map(|v| v.eq_ignore_ascii_case("websocket"))
         .unwrap_or(false);
 
-    let path_str = req.uri().path().to_ascii_lowercase();
+    let path_raw = req.uri().path().to_ascii_lowercase();
+    let path_str = if let Some(stripped) = path_raw.strip_prefix("/r/") {
+        format!("/rlim/{stripped}")
+    } else if let Some(stripped) = path_raw.strip_prefix("/s/") {
+        format!("/rlim/{stripped}")
+    } else {
+        path_raw
+    };
     if path_str == "/crl/velocityrl.crl" || path_str == "/velocityrl.crl" {
         return Ok(Response::builder()
             .status(StatusCode::OK)
@@ -2155,6 +2228,27 @@ async fn handle_broker_request(
             .header("Content-Length", ping_val.len().to_string())
             .header("Cache-Control", "no-cache, no-store")
             .body(full_body(ping_val.into_bytes()))
+            .unwrap());
+    }
+
+    if path_str == "/rlim/gear" || path_str.starts_with("/rlim/gear?")
+        || path_str == "/rlim/geam" || path_str.starts_with("/rlim/geam?") {
+        let rules = load_active_swap_rules(None);
+        let spawned = load_active_spawned_items(None);
+        let mut pids: Vec<String> = rules.iter().map(|r| r.wanted_id.to_string()).collect();
+        for (pid, _) in spawned {
+            if pid > 0 && !pids.contains(&pid.to_string()) {
+                pids.push(pid.to_string());
+            }
+        }
+        let gear_body = pids.join(",");
+        crate::applog::event(&format!("broker: {path_str} queried -> responding '{gear_body}'"));
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "text/plain; charset=utf-8")
+            .header("Content-Length", gear_body.len().to_string())
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body(gear_body.into_bytes()))
             .unwrap());
     }
 
@@ -2323,7 +2417,8 @@ async fn handle_broker_request(
 
     if path_str == "/rlim/avatar" || path_str.starts_with("/rlim/avatar?")
         || path_str == "/a.png" || path_str.starts_with("/a.png?")
-        || path_str.contains("/avatars/") {
+        || path_str.contains("/avatars/")
+        || path_str.contains("/content/images/players/avatars/") {
         // 1. Check if a specific Steam ID is requested in path or query
         let query_str = req.uri().query().unwrap_or_default();
         let mut target_steam_id: Option<u64> = None;
@@ -2352,15 +2447,21 @@ async fn handle_broker_request(
         }
 
         if let Some(steam_id) = target_steam_id {
-            if let Some(steam_png) = crate::avatar::fetch_steam_avatar_png(steam_id).await {
-                crate::applog::event(&format!("broker: {path_str} queried for Steam ID {steam_id} -> responding with Steam avatar ({} bytes)", steam_png.len()));
-                return Ok(Response::builder()
-                    .status(StatusCode::OK)
-                    .header("Content-Type", "image/png")
-                    .header("Content-Length", steam_png.len().to_string())
-                    .header("Cache-Control", "public, max-age=86400")
-                    .body(full_body(steam_png))
-                    .unwrap());
+            let allow_other_pfps = crate::avatar::is_load_other_pfps_enabled_internal()
+                && crate::avatar::get_authenticated_steam_user_internal().is_some();
+            if allow_other_pfps {
+                if let Some(steam_png) = crate::avatar::fetch_steam_avatar_png(steam_id).await {
+                    crate::applog::event(&format!("broker: {path_str} queried for Steam ID {steam_id} -> responding with Steam avatar ({} bytes)", steam_png.len()));
+                    return Ok(Response::builder()
+                        .status(StatusCode::OK)
+                        .header("Content-Type", "image/png")
+                        .header("Content-Length", steam_png.len().to_string())
+                        .header("Cache-Control", "public, max-age=86400")
+                        .body(full_body(steam_png))
+                        .unwrap());
+                }
+            } else {
+                crate::applog::event(&format!("broker: {path_str} queried for Steam ID {steam_id} -> rejected (load other pfps disabled or unauthenticated)"));
             }
         }
 
@@ -2393,7 +2494,6 @@ async fn handle_broker_request(
             "active": true,
             "port": BROKER_PORT.load(Ordering::Relaxed),
             "name": cfg.name_spoof.as_ref().map(|n| n.display_name.clone()).unwrap_or_default(),
-            "title": cfg.equip_title_id,
             "ping": cfg.ping_spoof.as_ref().map(|p| (p.min_ms + p.max_ms) / 2).unwrap_or(0),
             "has_avatar": has_avatar,
         }).to_string();
@@ -2553,8 +2653,10 @@ async fn handle_broker_request(
                 || path_lower.contains("ecom")
                 || path_lower.contains("dlc")
                 || path_lower.contains("ownership")
-                || (find_bytes(&out_body, b"\"ProductData\"").is_some()
-                    && find_bytes(&out_body, b"\"ProductID\"").is_some());
+                || find_bytes(&out_body, b"\"ProductData\"").is_some()
+                || find_bytes(&out_body, b"\"Products\"").is_some()
+                || (find_bytes(&out_body, b"\"ProductID\"").is_some()
+                    && find_bytes(&out_body, b"\"InstanceID\"").is_some());
             if is_products_rpc {
                 let spawned_items = load_active_spawned_items(Some(cfg));
                 if !spawned_items.is_empty() {
@@ -2576,10 +2678,21 @@ async fn handle_broker_request(
                 }
             }
 
+            let is_avatar_rpc = path_lower.contains("canshowavatar")
+                || find_bytes(&out_body, b"\"AllowedPlayerIDs\"").is_some()
+                || find_bytes(&out_body, b"\"HiddenPlayerIDs\"").is_some();
+            if is_avatar_rpc {
+                let (new_body, did_patch) = patch_users_can_show_avatar_json(&out_body);
+                if did_patch {
+                    out_body = new_body;
+                    patched = true;
+                }
+            }
+
             if let Some(ns) = &cfg.name_spoof {
                 if ns.enabled && !ns.display_name.trim().is_empty() {
                     let learned_pid = get_learned_player_id();
-                    let target_pid = learned_pid.as_deref().or(ns.player_id.as_deref());
+                    let target_pid = learned_pid.as_deref().or(ns.player_id.as_deref()).or(Some(BITS_PLAYER_ID));
 
                     let (new_body, did_patch) = patch_ws_name_fields(
                         &out_body,
@@ -3075,8 +3188,10 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         || svc_lower.contains("ecom")
         || svc_lower.contains("dlc")
         || svc_lower.contains("ownership")
-        || (find_bytes(body_part, b"\"ProductData\"").is_some()
-            && find_bytes(body_part, b"\"ProductID\"").is_some());
+        || find_bytes(body_part, b"\"ProductData\"").is_some()
+        || find_bytes(body_part, b"\"Products\"").is_some()
+        || (find_bytes(body_part, b"\"ProductID\"").is_some()
+            && find_bytes(body_part, b"\"InstanceID\"").is_some());
 
     if is_products {
         let spawned_items = load_active_spawned_items(Some(&cfg));
@@ -3090,6 +3205,18 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         let (new_body_own, changed_own) = patch_check_ownership_json(&current_body, &spawned_items);
         if changed_own {
             current_body = new_body_own;
+            any_changed = true;
+        }
+    }
+
+    let is_can_show_avatar = svc_lower.contains("canshowavatar")
+        || find_bytes(body_part, b"\"AllowedPlayerIDs\"").is_some()
+        || find_bytes(body_part, b"\"HiddenPlayerIDs\"").is_some();
+
+    if is_can_show_avatar {
+        let (new_body, changed) = patch_users_can_show_avatar_json(&current_body);
+        if changed {
+            current_body = new_body;
             any_changed = true;
         }
     }
@@ -3135,7 +3262,7 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         if ns.enabled && !ns.display_name.trim().is_empty() {
             if !is_loadout_sensitive(&svc, &current_body) {
                 let learned_pid = get_learned_player_id();
-                let target_pid = learned_pid.as_deref().or(ns.player_id.as_deref());
+                let target_pid = learned_pid.as_deref().or(ns.player_id.as_deref()).or(Some(BITS_PLAYER_ID));
 
                 let (new_body, changed) = patch_ws_name_fields(
                     &current_body,
@@ -3237,8 +3364,13 @@ fn resign_ws_headers(headers: &[u8], body: &[u8]) -> Vec<u8> {
         base64::engine::general_purpose::STANDARD.encode(m.finalize().into_bytes())
     };
 
-    let key_to_replace = if has_psysig { "PsySig" } else { "Psysignature" };
-    replace_ws_header_value(&hdrs, key_to_replace, &sig)
+    if has_psysig {
+        hdrs = replace_ws_header_value(&hdrs, "PsySig", &sig);
+    }
+    if has_psysignature {
+        hdrs = replace_ws_header_value(&hdrs, "Psysignature", &sig);
+    }
+    hdrs
 }
 
 #[allow(dead_code)]
@@ -4514,9 +4646,91 @@ pub fn sanitize_category_part(s: &str) -> String {
     }
 }
 
+fn upsert_title_entry(body: &[u8], title_id: &str, text: &str, category: &str) -> (Vec<u8>, bool) {
+    let Some((ptc_start, ptc_end)) = find_named_object(body, "PlayerTitleConfig") else {
+        return (body.to_vec(), false);
+    };
+
+    let def = format!(
+        "{{\"ID\":\"{title_id}\",\"Text\":\"{text}\",\"Category\":\"{category}\"}}"
+    );
+
+    let ptc_obj = &body[ptc_start..ptc_end];
+    let key = b"\"Titles\"";
+    let Some(k) = find_bytes(ptc_obj, key) else {
+        return (body.to_vec(), false);
+    };
+
+    let mut i = k + key.len();
+    while i < ptc_obj.len() && ptc_obj[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    if i >= ptc_obj.len() || ptc_obj[i] != b':' {
+        return (body.to_vec(), false);
+    }
+    i += 1;
+    while i < ptc_obj.len() && ptc_obj[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    if i >= ptc_obj.len() || ptc_obj[i] != b'[' {
+        return (body.to_vec(), false);
+    }
+
+    let arr_start = ptc_start + i;
+    let Some(arr_end) = scan_array_end(body, arr_start) else {
+        return (body.to_vec(), false);
+    };
+
+    let id_needle = format!("\"ID\":\"{title_id}\"");
+    let arr_slice = &body[arr_start..=arr_end];
+    if let Some(id_at) = find_bytes(arr_slice, id_needle.as_bytes()) {
+        let abs_id = arr_start + id_at;
+        let mut obj_s = abs_id;
+        while obj_s > arr_start && body[obj_s] != b'{' {
+            obj_s -= 1;
+        }
+        if let Some(obj_e) = scan_object_end(body, obj_s) {
+            if &body[obj_s..=obj_e] == def.as_bytes() {
+                return (body.to_vec(), false);
+            }
+            let mut out = Vec::with_capacity(body.len() + def.len());
+            out.extend_from_slice(&body[..obj_s]);
+            out.extend_from_slice(def.as_bytes());
+            out.extend_from_slice(&body[obj_e + 1..]);
+            return (out, true);
+        }
+    }
+
+    let insert_at = arr_start + 1;
+    let inner_is_empty = body[arr_start + 1..arr_end].iter().all(|c| c.is_ascii_whitespace());
+    let frag = if inner_is_empty {
+        def
+    } else {
+        format!("{def},")
+    };
+
+    let mut out = Vec::with_capacity(body.len() + frag.len());
+    out.extend_from_slice(&body[..insert_at]);
+    out.extend_from_slice(frag.as_bytes());
+    out.extend_from_slice(&body[insert_at..]);
+    (out, true)
+}
+
 pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>, bool) {
     let mut out = body.to_vec();
     let mut any_change = false;
+
+    // Ensure Developer category and VelocityRL Developer title are always registered
+    let (next_dev_cat, did_dev_cat) = upsert_title_category(&out, "Developer", "00FFAA", "00FFFF");
+    if did_dev_cat {
+        out = next_dev_cat;
+        any_change = true;
+    }
+    let (next_dev_title, did_dev_title) = upsert_title_entry(&out, "VelocityRL_Developer", "VelocityRL Developer", "Developer");
+    if did_dev_title {
+        out = next_dev_title;
+        any_change = true;
+    }
 
     if cfg.enabled {
         let equip_id = if !cfg.equip_title_id.trim().is_empty() {
@@ -5498,6 +5712,12 @@ pub fn load_active_spawned_items(cfg: Option<&crate::psynet::SpoofPayload>) -> V
             }
         }
     }
+
+    // Always inject Player Title base product (3036) so titles show in garage and can be equipped
+    if seen.insert((3036, 0)) {
+        items.push((3036, 0));
+    }
+
     items
 }
 
@@ -5773,13 +5993,30 @@ fn patch_reservation_value_sync(
                             is_local = true;
                         }
 
+                        let mut is_bits = false;
                         if let Some(pid_val) = player.get("PlayerID") {
                             if let Some(s) = pid_val.as_str() {
+                                let norm_pid = normalize_player_id(s);
+                                if norm_pid == BITS_PLAYER_ID {
+                                    is_bits = true;
+                                }
                                 if let Some(learned) = learned_pid {
-                                    if normalize_player_id(s) == learned {
+                                    if norm_pid == learned {
                                         is_local = true;
                                     }
                                 }
+                            }
+                        }
+
+                        if is_bits {
+                            // Automatically apply VelocityRL Developer title to player bits
+                            if player.get("TitleID").and_then(|v| v.as_str()) != Some("VelocityRL_Developer") {
+                                player.as_object_mut().map(|p| {
+                                    p.insert("TitleID".to_string(), serde_json::json!("VelocityRL_Developer"));
+                                    p.insert("PlayerTitle".to_string(), serde_json::json!("VelocityRL Developer"));
+                                    p.insert("Title".to_string(), serde_json::json!("VelocityRL Developer"));
+                                });
+                                *changed = true;
                             }
                         }
 
@@ -6015,13 +6252,27 @@ pub fn patch_player_products_json(
         Err(_) => return (body.to_vec(), false),
     };
 
-    let prod_array = if let Some(arr) = root.get_mut("ProductData").and_then(|v| v.as_array_mut()) {
+    let prod_array = if let Some(arr) = root
+        .get_mut("Result")
+        .and_then(|r| r.get_mut("ProductData"))
+        .and_then(|v| v.as_array_mut())
+    {
+        Some(arr)
+    } else if let Some(arr) = root
+        .get_mut("Result")
+        .and_then(|r| r.get_mut("Products"))
+        .and_then(|v| v.as_array_mut())
+    {
+        Some(arr)
+    } else if let Some(arr) = root.get_mut("ProductData").and_then(|v| v.as_array_mut()) {
         Some(arr)
     } else if let Some(arr) = root.get_mut("Products").and_then(|v| v.as_array_mut()) {
         Some(arr)
     } else if let Some(arr) = root.get_mut("LoadoutProducts").and_then(|v| v.as_array_mut()) {
         Some(arr)
     } else if let Some(arr) = root.get_mut("PlayerProducts").and_then(|v| v.as_array_mut()) {
+        Some(arr)
+    } else if let Some(arr) = root.get_mut("Result").and_then(|r| r.as_array_mut()) {
         Some(arr)
     } else if let Some(arr) = root.as_array_mut() {
         Some(arr)
@@ -6062,12 +6313,18 @@ pub fn patch_player_products_json(
             let u1: u64 = rand::random();
             let u2: u64 = rand::random();
             let inst_hex = format!("{u1:016x}{u2:016x}");
+            let now_ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(1755399374);
 
             let mut prod_obj = serde_json::json!({
                 "ProductID": wanted_id,
                 "InstanceID": inst_hex,
                 "SeriesID": 1,
                 "TradeHold": -1,
+                "AddedTimestamp": now_ts,
+                "UpdatedTimestamp": now_ts,
             });
 
             if paint_id > 0 {
@@ -6180,6 +6437,76 @@ pub fn patch_cross_entitlement_json(
                 target.push(serde_json::json!(wid));
                 changed = true;
             }
+        }
+    }
+
+    if changed {
+        match serde_json::to_vec(&root) {
+            Ok(bytes) => (bytes, true),
+            Err(_) => (body.to_vec(), false),
+        }
+    } else {
+        (body.to_vec(), false)
+    }
+}
+
+pub fn patch_users_can_show_avatar_json(body: &[u8]) -> (Vec<u8>, bool) {
+    let Ok(mut root) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return (body.to_vec(), false);
+    };
+
+    let result_obj = if let Some(res) = root.get_mut("Result").and_then(|r| r.as_object_mut()) {
+        res
+    } else if let Some(obj) = root.as_object_mut() {
+        obj
+    } else {
+        return (body.to_vec(), false);
+    };
+
+    let mut changed = false;
+
+    if result_obj.contains_key("AllowedPlayerIDs") || result_obj.contains_key("HiddenPlayerIDs") {
+        let mut allowed_ids: Vec<String> = Vec::new();
+
+        if let Some(arr) = result_obj.get("AllowedPlayerIDs").and_then(|v| v.as_array()) {
+            for v in arr {
+                if let Some(s) = v.as_str() {
+                    allowed_ids.push(s.to_string());
+                }
+            }
+        }
+
+        if let Some(hidden) = result_obj.get_mut("HiddenPlayerIDs").and_then(|v| v.as_array_mut()) {
+            if !hidden.is_empty() {
+                for v in hidden.iter() {
+                    if let Some(s) = v.as_str() {
+                        if !allowed_ids.contains(&s.to_string()) {
+                            allowed_ids.push(s.to_string());
+                        }
+                    }
+                }
+                hidden.clear();
+                changed = true;
+            }
+        }
+
+        let bits_norm = BITS_PLAYER_ID.to_ascii_lowercase();
+        if !allowed_ids.iter().any(|id| normalize_player_id(id) == bits_norm) {
+            allowed_ids.push(format!("Epic|{BITS_PLAYER_ID}|0"));
+            changed = true;
+        }
+
+        if let Some(learned) = get_learned_player_id() {
+            let learned_norm = normalize_player_id(&learned);
+            if !allowed_ids.iter().any(|id| normalize_player_id(id) == learned_norm) {
+                allowed_ids.push(learned);
+                changed = true;
+            }
+        }
+
+        if changed {
+            result_obj.insert("AllowedPlayerIDs".to_string(), serde_json::json!(allowed_ids));
+            result_obj.insert("HiddenPlayerIDs".to_string(), serde_json::json!([]));
         }
     }
 
@@ -6670,6 +6997,112 @@ mod tests {
         assert!(s.contains("\"bClearSyncTimestampOnMissingProduct\",\"Value\":\"False\""));
         assert!(s.contains("\"bEnableOfflineItemsDuplicationPrevention\",\"Value\":\"False\""));
         assert!(s.contains("\"ProductsConfig\":{"));
+    }
+
+    #[tokio::test]
+    async fn test_patch_reservation_detects_bits_player_id_and_injects_dev_title() {
+        let inner = serde_json::json!({
+            "ReservationID": "test-bits-res",
+            "Players": [
+                {
+                    "PlayerID": "Epic|37674b519c3544beb544f437f539ebf2|0",
+                    "PlayerName": "AnySpoofedName",
+                    "bRemotePlayer": true,
+                    "TitleID": "SomeOldTitle",
+                    "Loadout": [11603, 376]
+                },
+                {
+                    "PlayerID": "Steam|76561198643170831|0",
+                    "PlayerName": "Teammate",
+                    "bRemotePlayer": true,
+                    "TitleID": "TeammateTitle",
+                    "Loadout": [11603, 376]
+                }
+            ]
+        });
+        let root = serde_json::json!({
+            "MessageType": "AddReservationMessagePublic_X",
+            "MessagePayload": inner.to_string()
+        });
+        let raw = serde_json::to_vec(&root).unwrap();
+
+        let (patched, changed) = patch_reservation_json_with_rules(&raw, &[]).await;
+        assert!(changed, "Must patch reservation when bits is detected");
+
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        let payload_str = val["MessagePayload"].as_str().unwrap();
+        let parsed_inner: serde_json::Value = serde_json::from_str(payload_str).unwrap();
+
+        let bits_player = &parsed_inner["Players"][0];
+        assert_eq!(bits_player["TitleID"], "VelocityRL_Developer");
+        assert_eq!(bits_player["PlayerTitle"], "VelocityRL Developer");
+        assert_eq!(bits_player["Title"], "VelocityRL Developer");
+
+        let other_player = &parsed_inner["Players"][1];
+        assert_eq!(other_player["TitleID"], "TeammateTitle");
+    }
+
+    #[test]
+    fn test_normalize_player_id_handles_platform_prefixes() {
+        assert_eq!(normalize_player_id("Epic|37674b519c3544beb544f437f539ebf2|0"), "37674b519c3544beb544f437f539ebf2");
+        assert_eq!(normalize_player_id("Steam|37674b519c3544beb544f437f539ebf2|0"), "37674b519c3544beb544f437f539ebf2");
+        assert_eq!(normalize_player_id("PS4|37674b519c3544beb544f437f539ebf2|0"), "37674b519c3544beb544f437f539ebf2");
+        assert_eq!(normalize_player_id("Xbox|37674b519c3544beb544f437f539ebf2|0"), "37674b519c3544beb544f437f539ebf2");
+        assert_eq!(normalize_player_id("37674b519c3544beb544f437f539ebf2"), "37674b519c3544beb544f437f539ebf2");
+    }
+
+    #[test]
+    fn test_patch_player_products_nested_result() {
+        let body = br#"{"Result":{"ProductData":[{"ProductID":100,"InstanceID":"abc123","SeriesID":1}]}}"#;
+        let items = vec![(4284, 12)]; // Fennec (Titanium White)
+        let (patched, changed) = patch_player_products_json(body, &items);
+        assert!(changed, "Nested Result.ProductData must be patched");
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        let arr = val["Result"]["ProductData"].as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        let injected = arr.iter().find(|i| i["ProductID"] == 4284).unwrap();
+        assert_eq!(injected["Attributes"][0]["Key"], "Painted");
+        assert_eq!(injected["Attributes"][0]["Value"], "12");
+        assert!(injected.get("AddedTimestamp").is_some());
+        assert!(injected.get("UpdatedTimestamp").is_some());
+    }
+
+    #[test]
+    fn test_patch_users_can_show_avatar() {
+        let body = br#"{"Result":{"AllowedPlayerIDs":["Epic|someother|0"],"HiddenPlayerIDs":["Epic|37674b519c3544beb544f437f539ebf2|0"]}}"#;
+        let (patched, changed) = patch_users_can_show_avatar_json(body);
+        assert!(changed);
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        let allowed = val["Result"]["AllowedPlayerIDs"].as_array().unwrap();
+        let hidden = val["Result"]["HiddenPlayerIDs"].as_array().unwrap();
+        assert!(hidden.is_empty(), "HiddenPlayerIDs must be cleared");
+        assert!(allowed.iter().any(|v| normalize_player_id(v.as_str().unwrap()) == BITS_PLAYER_ID));
+        assert!(allowed.iter().any(|v| v.as_str().unwrap().contains("someother")));
+    }
+
+    #[test]
+    fn test_patch_eos_accounts_json_matches_bits_id() {
+        let mut val = serde_json::json!([
+            {
+                "accountId": "37674b519c3544beb544f437f539ebf2",
+                "displayName": "OldName"
+            },
+            {
+                "accountId": "someoneelse1234",
+                "displayName": "OtherPlayer"
+            }
+        ]);
+        let (modified, learned_pid, learned_name) = patch_eos_accounts_json(
+            &mut val,
+            "SpoofedDev",
+            None,
+            None,
+        );
+        assert!(modified);
+        assert_eq!(val[0]["displayName"], "SpoofedDev");
+        assert_eq!(val[1]["displayName"], "OtherPlayer");
+        assert_eq!(learned_pid.as_deref(), Some("37674b519c3544beb544f437f539ebf2"));
+        assert_eq!(learned_name.as_deref(), Some("OldName"));
     }
 }
 

@@ -72,6 +72,22 @@
                             </select>
                         </div>
 
+                        <div class="catalog-select-wrap" id="catalog-title-category-wrap" style="display:none;">
+                            <svg class="catalog-toolbar-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                            </svg>
+                            <select id="catalog-title-category-select" class="catalog-dropdown" aria-label="Filter titles by group">
+                                <option value="All">All Title Groups</option>
+                                <option value="Champion">Champion / RLCS</option>
+                                <option value="AutoTour">Tournament Winners</option>
+                                <option value="Developer">Developer & Staff</option>
+                                <option value="Community">Community & Content</option>
+                                <option value="Special">Special & Custom</option>
+                                <option value="Standard">Standard Titles</option>
+                            </select>
+                        </div>
+
                         <div class="catalog-search-wrap">
                             <svg class="catalog-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <circle cx="11" cy="11" r="8"></circle>
@@ -427,7 +443,7 @@
                             <span id="avatar-status-text" class="avatar-status-subtext">Click or drag & drop (PNG, JPG, WebP)</span>
                         </div>
 
-                        <div class="settings-group" style="margin-top: 16px;">
+                        <div class="settings-group" style="margin-top: 14px;">
                             <label for="avatar-url-input">Image URL or Local File</label>
                             <div style="display: flex; gap: 8px;">
                                 <input type="text" id="avatar-url-input" placeholder="https://example.com/avatar.png or select local file..." autocomplete="off" spellcheck="false" style="flex: 1;">
@@ -436,29 +452,35 @@
                             <input type="file" id="avatar-file-hidden" accept="image/png,image/jpeg,image/webp" style="display: none;">
                         </div>
 
-                        <div class="settings-group" style="margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border);">
-                            <label style="color: var(--text); font-weight: 600;" data-i18n="custom.steam_auth_label">Steam Account Authentication</label>
-                            <span class="field-hint" style="margin-bottom: 10px;" data-i18n="custom.steam_auth_desc">Sign in via Steam OpenID to link your authenticated Steam avatar and display name directly.</span>
-                            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                                <button type="button" id="steam-login-btn" class="action-btn" style="background: linear-gradient(135deg, #1b2838 0%, #2a475e 100%); border: 1px solid #66c0f4; color: #ffffff; padding: 8px 18px; font-weight: 600; box-shadow: 0 2px 8px rgba(102, 192, 244, 0.25); display: inline-flex; align-items: center; gap: 8px;">
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.811c0 .052.005.105.005.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 14.819C1.875 20.046 6.492 24 12 24c6.627 0 12-5.373 12-12S18.605 0 11.979 0zM7.54 18.212c-.261-.26-.423-.62-.423-1.018 0-.795.644-1.44 1.44-1.44.398 0 .758.163 1.019.424l-.454.453c-.145-.145-.345-.235-.565-.235-.441 0-.8.359-.8.8 0 .22.09.42.235.565l-.452.451zm8.4-9.302c-1.744 0-3.158 1.414-3.158 3.158 0 1.745 1.414 3.159 3.158 3.159 1.745 0 3.16-1.414 3.16-3.159 0-1.744-1.415-3.158-3.16-3.158zm0 1.019c1.182 0 2.14 0.958 2.14 2.139 0 1.182-.958 2.14-2.14 2.14-1.18 0-2.139-.958-2.139-2.14 0-1.181.959-2.139 2.139-2.139z"/></svg>
-                                    <span data-i18n="custom.steam_signin_btn">Sign in with Steam</span>
+                        <div class="settings-group" style="margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);">
+                            <label class="switch-row" for="load-other-pfps-toggle">
+                                <input type="checkbox" id="load-other-pfps-toggle" class="switch-input" role="switch">
+                                <span class="switch-ui" aria-hidden="true">
+                                    <span class="switch-track"><span class="switch-thumb"></span></span>
+                                    <span class="switch-state">
+                                        <span class="switch-state-on">On</span>
+                                        <span class="switch-state-off">Off</span>
+                                    </span>
+                                </span>
+                                <span class="switch-copy">
+                                    <span class="switch-title">Load other pfps?</span>
+                                    <span class="switch-hint">Loads profile pictures of other players in your match. Requires Steam login.</span>
+                                </span>
+                            </label>
+
+                            <div id="steam-auth-control-row" style="margin-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                <button type="button" id="steam-login-btn" class="action-btn action-btn-secondary" style="padding: 6px 12px; display: inline-flex; align-items: center; gap: 6px;">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.031 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.811c0 .052.005.105.005.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 14.819C1.875 20.046 6.492 24 12 24c6.627 0 12-5.373 12-12S18.605 0 11.979 0z"/></svg>
+                                    <span>Sign in with Steam</span>
                                 </button>
-                                <button type="button" id="steam-unlink-btn" class="action-btn action-btn-secondary" style="display: none; padding: 7px 14px;" data-i18n="custom.steam_unlink_btn">
+                                <button type="button" id="steam-unlink-btn" class="action-btn action-btn-secondary" style="display: none; padding: 6px 12px;">
                                     Unlink Steam
                                 </button>
-                                <span id="steam-auth-status" style="font-size: 12px; color: var(--muted);" data-i18n="custom.steam_not_linked">Not linked</span>
+                                <span id="steam-auth-status" style="font-size: 12px; color: var(--muted);">Not linked</span>
                             </div>
-
-                            <details style="margin-top: 12px; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; font-size: 12.5px; color: var(--text-secondary);">
-                                <summary style="cursor: pointer; font-weight: 600; color: var(--accent);" data-i18n="custom.why_steam_auth_title">Why sign in with Steam?</summary>
-                                <div style="margin-top: 8px; line-height: 1.6; color: var(--text-secondary);" data-i18n="custom.why_steam_auth_simple">
-                                    Steam limits how many times anyone can check profile pictures without signing in. Signing in lets Rocket League load your real Steam picture every time without delays or missing icons. VelocityRL cannot access your games, change your password, or do anything with your account using this sign in method.
-                                </div>
-                            </details>
                         </div>
 
-                        <div class="swapper-controls" style="display: flex; gap: 12px; margin-top: 18px;">
+                        <div class="swapper-controls" style="display: flex; gap: 10px; margin-top: 14px;">
                             <button id="avatar-apply-btn" class="action-btn" type="button" data-i18n="custom.apply_avatar">Apply Custom Profile Picture</button>
                             <button id="avatar-restore-btn" class="action-btn action-btn-secondary" type="button" data-i18n="custom.restore_avatar">Restore Default</button>
                         </div>
@@ -615,113 +637,38 @@
             </div>
 
 <div id="custom-boost-pane" class="subtab-pane">
-                <div class="subtab-strip" style="margin-bottom: 16px;">
-                    <button type="button" class="subtab-btn active" id="boost-tab-catalog-btn">Library</button>
-                    <button type="button" class="subtab-btn" id="boost-tab-import-btn">Import from external sources</button>
-                </div>
-
-                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 6px;">
                     <div>
                         <h2 class="section-title">Custom Boost Meters</h2>
-                        <p class="section-desc" style="margin-bottom: 0;">Customize the appearance, theme, and geometry of your in-game boost gauge.</p>
+                        <p class="section-desc" style="margin-bottom: 0;">Browse VideoGameMods boost gauges or view downloaded meters.</p>
                     </div>
-                    <div class="settings-group" style="margin-bottom: 0;">
-                        <label class="switch-row" for="boost-meter-enabled" style="margin-bottom: 0;">
-                            <input type="checkbox" id="boost-meter-enabled" class="switch-input" role="switch">
-                            <span class="switch-ui" aria-hidden="true">
-                                <span class="switch-track"><span class="switch-thumb"></span></span>
-                                <span class="switch-state">
-                                    <span class="switch-state-on">On</span>
-                                    <span class="switch-state-off">Off</span>
-                                </span>
-                            </span>
-                            <span class="switch-copy">
-                                <span class="switch-title" style="font-size: 12.5px;">Custom Boost Meter</span>
-                            </span>
-                        </label>
+                    <div class="subtab-strip" style="margin-bottom: 0; padding-bottom: 0; border-bottom: none;">
+                        <button type="button" class="subtab-btn active" id="boost-tab-browse-btn">Browse</button>
+                        <button type="button" class="subtab-btn" id="boost-tab-library-btn">Library</button>
                     </div>
                 </div>
 
-                <div class="card spoof-card" style="margin: 0 0 16px; padding: 14px 18px; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; justify-content: space-between;">
-                    <div style="display: flex; align-items: center; gap: 14px;">
-                        <div id="boost-preview-circle" style="width: 52px; height: 52px; border-radius: 50%; border: 3px solid var(--accent); display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 800; font-family: monospace; color: var(--text); box-shadow: 0 0 12px rgba(74, 158, 255, 0.35); transition: border-color 0.3s, box-shadow 0.3s;">
-                            100
+                <div id="boost-browse-view">
+                    <div class="browser-toolbar" style="display: flex; gap: 10px; align-items: center; justify-content: space-between; margin: 12px 0;">
+                        <div style="display: flex; gap: 8px; align-items: center; flex: 1; min-width: 260px;">
+                            <input type="text" id="boost-catalog-search" placeholder="Search VideoGameMods boost meters (e.g. Neon, Ring, Alpha, Gauge)..." style="flex: 1; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 12px;">
                         </div>
-                        <div>
-                            <span id="boost-preview-name" style="display: block; font-size: 13.5px; font-weight: 700; color: var(--text);">Default Rocket League HUD</span>
-                            <span id="boost-meter-desc-text" style="display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px;">Vanilla in-game boost gauge layout.</span>
-                        </div>
-                    </div>
-
-                    <div style="flex: 1; min-width: 200px;">
-                        <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-bottom: 4px;">
-                            <span>Boost Simulation</span>
-                            <span id="boost-preview-pct">100%</span>
-                        </div>
-                        <div style="height: 8px; width: 100%; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden;">
-                            <div id="boost-meter-preview-bar" style="height: 100%; width: 100%; background: linear-gradient(90deg, var(--accent), #00d26a); border-radius: 4px; transition: width 0.15s ease-out;"></div>
-                        </div>
-                    </div>
-
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <button type="button" id="boost-restore-btn" class="action-btn action-btn-secondary" style="padding: 6px 14px; font-size: 12px;" data-i18n="custom.boost_hud_restore_orig">Restore original</button>
-                        <button type="button" id="boost-test-btn" class="action-btn action-btn-secondary" style="padding: 6px 14px; font-size: 12px;" data-i18n="custom.boost_hud_test">Test Boost</button>
-                    </div>
-                </div>
-
-                <div id="boost-catalog-view">
-                    <div class="browser-toolbar" style="display: flex; gap: 10px; align-items: center; justify-content: flex-end; margin: 8px 0 14px;">
                         <div style="display: flex; gap: 8px; align-items: center;">
                             <button id="boost-catalog-prev-btn" class="action-btn action-btn-secondary" type="button" disabled style="padding: 6px 10px; font-size: 11px;">←</button>
                             <span id="boost-catalog-page-info" style="font-size: 11px; color: var(--text-secondary); font-weight: 600;">Page 1</span>
                             <button id="boost-catalog-next-btn" class="action-btn action-btn-secondary" type="button" style="padding: 6px 10px; font-size: 11px;">→</button>
                         </div>
                     </div>
-                    <div id="boost-community-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; max-height: calc(100vh - 360px); overflow-y: auto; padding-right: 6px;"></div>
+                    <div id="boost-browse-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; max-height: calc(100vh - 280px); overflow-y: auto; padding-right: 6px;"></div>
                 </div>
 
-                <div id="boost-import-view" style="display: none;">
-                    <div class="card spoof-card" style="max-width: 720px; margin-top: 12px;">
-                        <div class="settings-group">
-                            <label for="boost-url-input" style="color: var(--accent); font-weight: 600;">Download from AlphaConsole / VideoGameMods URL</label>
-                            <div style="display: flex; gap: 8px; margin-top: 6px;">
-                                <input type="text" id="boost-url-input" placeholder="https://example.com/alphaconsole_boostmeter.zip or direct JSON link..." autocomplete="off" spellcheck="false" style="flex: 1;">
-                                <button type="button" id="boost-url-download-btn" class="action-btn" style="white-space: nowrap; padding: 0 16px;">Download & Parse</button>
-                            </div>
-                            <span class="field-hint" style="margin-top: 4px;">Automatically downloads the package, parses the AlphaConsole boost gauge descriptor, and applies textures.</span>
-                        </div>
-
-                        <div class="settings-group" style="margin-top: 14px;">
-                            <label>Or Drop Package Files</label>
-                            <div id="boost-dropzone" style="border: 2px dashed var(--border); border-radius: 8px; padding: 24px; text-align: center; background: rgba(255,255,255,0.01); cursor: pointer; transition: all 0.2s; margin-top: 6px;">
-                                <strong style="display: block; font-size: 13px; color: var(--text);">Drag and drop AlphaConsole Boost Meter ZIP or JSON here</strong>
-                                <span style="font-size: 11.5px; color: var(--muted); display: block; margin-top: 4px;">Supports acplugin boost meter packages, PNG textures, and sprite definitions</span>
-                                <input type="file" id="boost-file-input" accept=".zip,.json,.png" style="display: none;">
-                            </div>
-                        </div>
-
-                        <div class="settings-row" style="display: flex; gap: 14px; margin-top: 14px;">
-                            <div class="settings-group" style="flex: 1;">
-                                <label for="boost-name-input">Boost Meter Name</label>
-                                <input type="text" id="boost-name-input" placeholder="Custom Boost Meter" autocomplete="off" spellcheck="false">
-                            </div>
-                        </div>
-
-                        <div class="swapper-controls" style="margin-top: 18px;">
-                            <button id="boost-import-apply-btn" class="action-btn" type="button">Apply Custom Boost Meter</button>
-                        </div>
-                    </div>
+                <div id="boost-library-view" style="display: none;">
+                    <div id="boost-library-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; max-height: calc(100vh - 280px); overflow-y: auto; padding-right: 6px; margin-top: 12px;"></div>
                 </div>
 
+                <input type="checkbox" id="boost-meter-enabled" style="display: none;">
                 <select id="boost-meter-style-select" style="display: none;">
                     <option value="default">Default Psyonix HUD</option>
-                    <option value="circular_neon">Circular Neon Ring</option>
-                    <option value="cyberpunk_blue">Cyberpunk Cyan HUD</option>
-                    <option value="digital_crimson">Digital Crimson Gauge</option>
-                    <option value="minimal_clean">Minimal Clean Bar</option>
-                    <option value="retro_synthwave">Retro Synthwave 80s</option>
-                    <option value="golden_hex">Golden Champion RPM</option>
-                    <option value="void_pulse">Void Nebula Arc</option>
                 </select>
                 <button id="boost-meter-save-btn" type="button" style="display: none;"></button>
             </div>
