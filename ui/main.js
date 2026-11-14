@@ -2395,6 +2395,7 @@ function initCatalogGrid() {
 
                 showProgress(true, 100);
                 showToast(`Successfully spawned <strong>${spawnedCount}</strong> items / titles into your Rocket League profile!`, 'success');
+                updateStatus('Spawned!', false);
                 selectedCatalogItems.clear();
                 updateCatalogSelectionUi();
                 renderCatalogGridPage();
@@ -2403,11 +2404,11 @@ function initCatalogGrid() {
                 showToast(String(err), 'error');
                 updateStatus('Error', true);
             } finally {
+                showProgress(false);
+                updateCatalogSelectionUi();
                 setTimeout(() => {
-                    showProgress(false);
                     updateStatus('bitsfdb', false);
-                    updateCatalogSelectionUi();
-                }, 1500);
+                }, 3000);
             }
         });
     }
@@ -6736,6 +6737,44 @@ let dropsTabWired = false;
 let loadedDropsCatalog = [];
 const selectedDropIds = new Set();
 
+function getDropThumbnail(item) {
+    const id = item?.id || 0;
+    const name = (item?.name || '').toLowerCase();
+
+    // 1. Decryptor / Golden decryptor
+    if (id === 2446 || name.includes('decryptor')) {
+        return 'https://api.velocityrl.tech/thumbnails/key_magic_t.png';
+    }
+
+    // 2. Giftboxes by rarity
+    if (name.includes('black market') || name.includes('blackmarket')) {
+        return 'https://api.velocityrl.tech/thumbnails/giftbox_blackmarket_t.png';
+    }
+    if (name.includes('exotic')) {
+        return 'https://api.velocityrl.tech/thumbnails/giftbox_exotic_t.png';
+    }
+    if (name.includes('import')) {
+        return 'https://api.velocityrl.tech/thumbnails/giftbox_import_t.png';
+    }
+    if (name.includes('very rare') || name.includes('veryrare')) {
+        return 'https://api.velocityrl.tech/thumbnails/giftbox_veryrare_t.png';
+    }
+    if (name.includes('rare')) {
+        return 'https://api.velocityrl.tech/thumbnails/giftbox_rare_t.png';
+    }
+    if (name.includes('uncommon')) {
+        return 'https://api.velocityrl.tech/thumbnails/giftbox_uncommon_t.png';
+    }
+
+    // 3. Loot crate flag / crate
+    if (id === 1847 || name === 'loot crate') {
+        return 'https://api.velocityrl.tech/thumbnails/flag_lootcrate_t.png';
+    }
+
+    // 4. Default high-res official crate & drop container thumbnail
+    return 'https://api.velocityrl.tech/thumbnails/itemcontainer_t.png';
+}
+
 function initDropsTab() {
     if (dropsTabWired) return;
     dropsTabWired = true;
@@ -6775,6 +6814,7 @@ function initDropsTab() {
 
         grid.innerHTML = filtered.map(d => {
             const isSel = selectedDropIds.has(d.id);
+            const thumbUrl = getDropThumbnail(d);
             return `
                 <div class="drop-item-card ${isSel ? 'selected' : ''}" data-drop-id="${d.id}" style="
                     background: ${isSel ? 'rgba(75, 153, 247, 0.25)' : 'rgba(255, 255, 255, 0.05)'};
@@ -6788,9 +6828,22 @@ function initDropsTab() {
                     transition: all 0.15s ease;
                     user-select: none;
                 ">
-                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;">
-                        <span style="font-weight: 600; font-size: 13px; color: #fff; line-height: 1.3;">${escHtml(d.name)}</span>
-                        <input type="checkbox" ${isSel ? 'checked' : ''} style="pointer-events: none; margin-top: 2px;">
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <img src="${escHtml(thumbUrl)}" alt="${escHtml(d.name)}" style="
+                            width: 48px;
+                            height: 48px;
+                            object-fit: contain;
+                            flex-shrink: 0;
+                            border-radius: 6px;
+                            background: rgba(0, 0, 0, 0.2);
+                            padding: 2px;
+                        " onerror="this.src='https://api.velocityrl.tech/thumbnails/itemcontainer_t.png';">
+                        <div style="flex: 1; min-width: 0;">
+                            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 6px;">
+                                <span style="font-weight: 600; font-size: 13px; color: #fff; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">${escHtml(d.name)}</span>
+                                <input type="checkbox" ${isSel ? 'checked' : ''} style="pointer-events: none; margin-top: 2px;">
+                            </div>
+                        </div>
                     </div>
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px; font-size: 11px; color: #888;">
                         <span>ID: ${d.id}</span>
@@ -6863,14 +6916,18 @@ function initDropsTab() {
             const res = await invoke('spawn_drops', { crateIds: ids, amount: qty });
             showProgress(true, 100);
             showToast(res, 'success');
+            updateStatus('Spawned!', false);
             selectedDropIds.clear();
             updateDropsUi();
         } catch (e) {
             showToast(formatError(e), 'error');
+            updateStatus('Error', true);
         } finally {
             spawnBtn.disabled = false;
             showProgress(false, 0);
-            updateStatus('', false);
+            setTimeout(() => {
+                updateStatus('bitsfdb', false);
+            }, 3000);
         }
     });
 
