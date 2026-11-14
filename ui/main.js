@@ -1957,7 +1957,60 @@ function updateCatalogSelectionUi() {
     const clearBtn = document.getElementById('catalog-clear-sel-btn');
 
     const spawnBaseLabel = typeof t === 'function' ? t('swapper.spawn_selected', 'Spawn Selected') : 'Spawn Selected';
-    if (countEl) countEl.textContent = `${count} item${count === 1 ? '' : 's'} selected`;
+    if (countEl) {
+        if (count === 0) {
+            countEl.textContent = '0 items selected';
+        } else if (count === 1) {
+            const onlyEntry = selectedCatalogItems.values().next().value;
+            const pId = onlyEntry.paint_id;
+            let paintSuffix = '';
+            if (pId === 'all') {
+                paintSuffix = ' (All Paints)';
+            } else if (pId > 0) {
+                const pLabel = typeof paintLabel === 'function' ? paintLabel(pId) : `Paint ${pId}`;
+                paintSuffix = ` (${pLabel})`;
+            }
+            countEl.textContent = `1 item selected: ${onlyEntry.product || 'Item'}${paintSuffix} [Qty: 1]`;
+        } else {
+            // Check if all selected items are the same product (e.g. multiple paint variants or same item)
+            const entries = Array.from(selectedCatalogItems.values());
+            const firstNumericId = entries[0].numericId || entries[0].id;
+            const sameProduct = entries.every(e => (e.numericId || e.id) === firstNumericId);
+
+            if (sameProduct) {
+                const prodName = entries[0].product || 'Item';
+                const paintNames = entries.map(e => {
+                    const p = e.paint_id;
+                    if (p === 'all') return 'All Paints';
+                    if (p > 0) return typeof paintLabel === 'function' ? paintLabel(p) : `Paint ${p}`;
+                    return 'Default';
+                });
+                countEl.textContent = `${prodName} [Qty: ${entries.length}] - ${paintNames.join(', ')}`;
+            } else {
+                // Group by product name to show quantity and paints per distinct item
+                const byProduct = new Map();
+                for (const e of entries) {
+                    const pName = e.product || 'Item';
+                    if (!byProduct.has(pName)) {
+                        byProduct.set(pName, []);
+                    }
+                    const p = e.paint_id;
+                    const pStr = p === 'all' ? 'All Paints' : (p > 0 ? (typeof paintLabel === 'function' ? paintLabel(p) : `Paint ${p}`) : 'Default');
+                    byProduct.get(pName).push(pStr);
+                }
+
+                if (byProduct.size <= 3) {
+                    const parts = [];
+                    for (const [pName, paints] of byProduct.entries()) {
+                        parts.push(`${pName} [Qty: ${paints.length}] (${paints.join(', ')})`);
+                    }
+                    countEl.textContent = parts.join(' | ');
+                } else {
+                    countEl.textContent = `${count} items selected across ${byProduct.size} categories [Qty: ${count}]`;
+                }
+            }
+        }
+    }
     if (spawnText) spawnText.textContent = count > 0 ? `${spawnBaseLabel} (${count})` : spawnBaseLabel;
     if (spawnBtn) spawnBtn.disabled = (count === 0);
     if (clearBtn) clearBtn.style.display = count > 0 ? 'inline-block' : 'none';
@@ -6816,6 +6869,7 @@ function initDropsTab() {
             return;
         }
 
+        const qty = parseInt(qtySelect?.value || '1', 10);
         grid.innerHTML = filtered.map(d => {
             const isSel = selectedDropIds.has(d.id);
             const thumbUrl = getDropThumbnail(d);
@@ -6851,7 +6905,10 @@ function initDropsTab() {
                     </div>
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px; font-size: 11px; color: #888;">
                         <span>ID: ${d.id}</span>
-                        <span style="color: #4b99f7; font-weight: 500;">+ 1 Key</span>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span class="drop-qty-badge" style="background: rgba(75, 153, 247, 0.18); color: #93c5fd; padding: 1px 6px; border-radius: 4px; font-weight: 600;">Qty: ${qty}x</span>
+                            <span style="color: #4b99f7; font-weight: 500;">+ ${qty} ${qty === 1 ? 'Key' : 'Keys'}</span>
+                        </div>
                     </div>
                 </div>
             `;
@@ -6885,6 +6942,10 @@ function initDropsTab() {
     }
 
     searchInput?.addEventListener('input', () => {
+        renderDropsGrid();
+    });
+
+    qtySelect?.addEventListener('change', () => {
         renderDropsGrid();
     });
 
