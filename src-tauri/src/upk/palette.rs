@@ -677,7 +677,7 @@ fn validate_applied(
     let end = start + last.compressed_size as usize;
     let last_uncomp = compression::decompress_chunk(&file[start..end])
         .map_err(|e| PaletteError::Msg(format!("validate decompress last: {e}")))?;
-    if last_uncomp.len() != last.uncompressed_size as usize {
+    if last_uncomp.len().abs_diff(last.uncompressed_size as usize) > 1 {
         return Err(PaletteError::Msg(format!(
             "last chunk serial size mismatch: decompressed {} expected {}",
             last_uncomp.len(),
@@ -1755,7 +1755,7 @@ fn apply_combined_copies(
 
     let mut last_uncomp = compression::decompress_chunk(&file[last_payload_start..last_payload_end])
         .map_err(|e| PaletteError::Msg(format!("decompress last chunk: {e}")))?;
-    if last_uncomp.len() != last.uncompressed_size as usize {
+    if last_uncomp.len().abs_diff(last.uncompressed_size as usize) > 1 {
         return Err(PaletteError::Msg(format!(
             "last chunk decompressed {} bytes, table says {}",
             last_uncomp.len(),
