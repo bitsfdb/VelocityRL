@@ -246,7 +246,8 @@
     "title": "Paleta de colores",
     "desc": "Desbloquea colores de equipo personalizados y la paleta extendida en Rocket League.",
     "apply": "Aplicar",
-    "restore": "Restaurar"
+    "restore": "Restaurar",
+    "reset": "Reset / Fix UPK"
   },
   "settings": {
     "title": "Ajustes",

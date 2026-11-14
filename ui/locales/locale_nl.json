@@ -233,7 +233,8 @@
     "title": "Kleurenpalet",
     "desc": "Ontgrendeld custom team autokleuren en uitgebreide paletopties in Rocket League.",
     "apply": "Pas toe",
-    "restore": "Herstel"
+    "restore": "Herstel",
+    "reset": "Reset / Fix UPK"
   },
   "settings": {
     "title": "Instellingen",

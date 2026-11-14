@@ -2157,7 +2157,7 @@ function renderCatalogGridPage() {
                  ${item.titleCategory ? `<span style="font-size:9px;color:rgba(255,255,255,0.45);margin-top:4px;">${escHtml(item.titleCategory)}</span>` : ''}
                </div>`
             : (img
-                ? `<img src="${escHtml(img)}" class="catalog-card-thumb" alt="${escHtml(name)}" loading="lazy" onerror="this.style.opacity='0';" />`
+                ? `<img src="${escHtml(img)}" class="catalog-card-thumb" alt="${escHtml(name)}" loading="lazy" onerror="if(this.dataset.fallback){this.style.opacity='0';}else{this.dataset.fallback='1';this.src='https://raw.githubusercontent.com/itemchanger/assets/main/assets/'+this.src.split('/').pop().replace('_t.png','.png');}" />`
                 : `<div style="display:flex;align-items:center;justify-content:center;height:100%;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#444" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>`);
 
         card.innerHTML = `
@@ -2801,7 +2801,7 @@ function renderResults(matches, resultsDiv, selectionHandler) {
         const decalPill = decalBody ? ` <span style="font-size:10px;padding:1px 5px;background:rgba(91,140,255,0.15);color:#93c5fd;border-radius:3px;font-weight:600;">${escHtml(decalBody)}</span>` : '';
 
         div.innerHTML = `
-            ${pImg ? `<img src="${escHtml(pImg)}" class="flyout-img" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="flyout-img" style="display:none;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>` : '<div class="flyout-img" style="display:flex;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>'}
+            ${pImg ? `<img src="${escHtml(pImg)}" class="flyout-img" onerror="if(this.dataset.fallback){this.style.display='none';this.nextElementSibling.style.display='flex';}else{this.dataset.fallback='1';this.src='https://raw.githubusercontent.com/itemchanger/assets/main/assets/'+this.src.split('/').pop().replace('_t.png','.png');}" /><div class="flyout-img" style="display:none;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>` : '<div class="flyout-img" style="display:flex;align-items:center;justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>'}
             <div class="flyout-info">
                 <span class="item-name">${escHtml(pName)}${decalPill}</span>
                 <span style="font-size: 10px; color: var(--text-secondary)">${escHtml(pSlot)}${decalBody ? ` (${escHtml(decalBody)})` : ''}</span>
@@ -7482,6 +7482,25 @@ function initMiscTab() {
     paletteRestore?.addEventListener('click', () => runPaletteAction(
         paletteRestore, 'restore_rich_palette', 'Restored', 'Color palette off.',
     ));
+    const paletteReset = document.getElementById('palette-reset-btn');
+    paletteReset?.addEventListener('click', async () => {
+        if (paletteBusy) return;
+        paletteBusy = true;
+        paletteReset.disabled = true;
+        const origText = paletteReset.textContent;
+        paletteReset.textContent = 'Resetting...';
+        try {
+            const res = await invoke('reset_tagame_for_verify');
+            showToast('success', res || 'TAGame.upk restored from backup.');
+            await updatePaletteUi();
+        } catch (err) {
+            showToast('error', String(err));
+        } finally {
+            paletteBusy = false;
+            paletteReset.disabled = false;
+            paletteReset.textContent = origText;
+        }
+    });
 
     const enabledEl = document.getElementById('logo-spoof-enabled');
     const urlEl = document.getElementById('logo-spoof-url');

@@ -173,7 +173,7 @@ impl<'de> Deserialize<'de> for Item {
         };
 
         let product = get_str(&["Product", "product", "name", "label", "long_label"]);
-        let image_url = get_str(&["src", "thumbnail", "image_url"]);
+        let image_url = get_str(&["src", "thumbnail", "thumbnail_url", "ThumbnailURL", "image_url"]);
         let asset_package = get_str(&["AssetPackage", "asset_package"]);
         let asset_path = get_str(&["AssetPath", "asset_path"]);
         let object_name = get_opt_str(&["ObjectName", "object_name"]);
@@ -466,12 +466,28 @@ async fn send_diagnostic(mut payload: serde_json::Value) {
 fn populate_thumbnails(items: &mut [Item]) {
     const THUMB_BASE: &str = "https://api.velocityrl.tech/thumbnails/";
     for item in items.iter_mut() {
-        if item.image_url.is_empty() && !item.asset_package.is_empty() {
-            let stem = item.asset_package
-                .to_lowercase()
-                .replace("_sf.upk", "")
-                .replace(".upk", "");
+        if item.image_url.is_empty() {
+            let stem = if item.is_multi_asset_package.unwrap_or(false) && item.object_name.as_ref().map_or(false, |s| !s.is_empty()) {
+                item.object_name.as_ref().unwrap()
+                    .to_lowercase()
+                    .replace("_sf.upk", "")
+                    .replace(".upk", "")
+            } else if !item.asset_package.is_empty() {
+                item.asset_package
+                    .to_lowercase()
+                    .replace("_sf.upk", "")
+                    .replace(".upk", "")
+            } else if let Some(ref obj) = item.object_name {
+                obj.to_lowercase()
+                    .replace("_sf.upk", "")
+                    .replace(".upk", "")
+            } else {
+                continue;
+            };
             item.image_url = format!("{}{}_t.png", THUMB_BASE, stem);
+        } else if !item.image_url.starts_with("http://") && !item.image_url.starts_with("https://") && !item.image_url.starts_with("/") {
+            // Relative filename slug e.g. "skin_octane_dragon_t.png"
+            item.image_url = format!("{}{}", THUMB_BASE, item.image_url);
         }
     }
 }

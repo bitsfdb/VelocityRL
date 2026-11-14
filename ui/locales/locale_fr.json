@@ -257,7 +257,8 @@
     "title": "Palette de couleurs",
     "desc": "Déverrouille des couleurs de voiture d'équipe personnalisées et des options de palette étendues dans Rocket League.",
     "apply": "Appliquer",
-    "restore": "Restaurer"
+    "restore": "Restaurer",
+    "reset": "Reset / Fix UPK"
   },
   "settings": {
     "title": "Paramètres",

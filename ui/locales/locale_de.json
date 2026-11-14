@@ -245,7 +245,8 @@
     "title": "Farbpalette",
     "desc": "Schaltet benutzerdefinierte Teamfarben und erweiterte Farbpaletten in Rocket League frei.",
     "apply": "Anwenden",
-    "restore": "Wiederherstellen"
+    "restore": "Wiederherstellen",
+    "reset": "Reset / Fix UPK"
   },
   "settings": {
     "title": "Einstellungen",

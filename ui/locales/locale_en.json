@@ -268,7 +268,8 @@
     "title": "Color palette",
     "desc": "Unlocks custom team car colors and extended palette options in Rocket League.",
     "apply": "Apply",
-    "restore": "Restore"
+    "restore": "Restore",
+    "reset": "Reset / Fix UPK"
   },
   "settings": {
     "title": "Settings",

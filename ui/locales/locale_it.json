@@ -233,7 +233,8 @@
     "title": "Tavolozza colori",
     "desc": "Sblocca colori auto personalizzati e opzioni di tavolozza estese in Rocket League.",
     "apply": "Applica",
-    "restore": "Ripristina"
+    "restore": "Ripristina",
+    "reset": "Reset / Fix UPK"
   },
   "settings": {
     "title": "Impostazioni",

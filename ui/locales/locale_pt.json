@@ -233,7 +233,8 @@
     "title": "Paleta de cores",
     "desc": "Desbloqueia cores personalizadas para o carro de equipe e opções estendidas de paleta no Rocket League.",
     "apply": "Aplicar",
-    "restore": "Restaurar"
+    "restore": "Restaurar",
+    "reset": "Reset / Fix UPK"
   },
   "settings": {
     "title": "Configurações",

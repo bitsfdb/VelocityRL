@@ -257,7 +257,8 @@
     "title": "Renk paleti",
     "desc": "Rocket League'de özel takım araba renklerini ve genişletilmiş palet seçeneklerini açar.",
     "apply": "Uygula",
-    "restore": "Geri Yükle"
+    "restore": "Geri Yükle",
+    "reset": "Reset / Fix UPK"
   },
   "settings": {
     "title": "Ayarlar",
