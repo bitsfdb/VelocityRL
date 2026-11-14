@@ -3254,7 +3254,7 @@ async fn patch_ws_frame_text(text: &str) -> (String, bool) {
     (text.to_string(), false)
 }
 
-async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
+pub async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
     let Some(hdr_end) = find_bytes(frame, b"\r\n\r\n") else {
         return (frame.to_vec(), false);
     };
