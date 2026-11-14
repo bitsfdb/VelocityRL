@@ -2589,6 +2589,7 @@ async fn handle_broker_request(
 
     if path_str == "/rlim/avatar" || path_str.starts_with("/rlim/avatar?")
         || path_str == "/a.png" || path_str.starts_with("/a.png?")
+        || path_str == "/s/pfp" || path_str.starts_with("/s/pfp/") || path_str.starts_with("/rlim/pfp/")
         || path_str.contains("/avatars/")
         || path_str.contains("/content/images/players/avatars/") {
         // 1. Check if a specific Steam ID is requested in path or query
