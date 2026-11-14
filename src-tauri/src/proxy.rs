@@ -2332,7 +2332,8 @@ async fn handle_broker_request(
             .status(StatusCode::OK)
             .header("Content-Type", "text/plain; charset=utf-8")
             .header("Content-Length", body_str.len().to_string())
-            .header("Cache-Control", "no-cache, no-store")
+            .header("Cache-Control", "no-store")
+            .header("Connection", "close")
             .body(full_body(body_str.into_bytes()))
             .unwrap());
     }

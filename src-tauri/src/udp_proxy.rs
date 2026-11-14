@@ -264,6 +264,7 @@ pub fn patch_c2s_login_bunch(buf: &mut [u8], len: &mut usize, target_name: &str)
     let shifts = [3usize, 0, 1, 2, 4, 5, 6, 7];
 
     for &shift in &shifts {
+        let orig_buf = buf[..old_len].to_vec();
         // Bit-unshift buf into a temporary buffer to scan on byte boundaries
         let mut unshifted = vec![0u8; old_len + 1];
         if shift == 0 {
@@ -296,68 +297,152 @@ pub fn patch_c2s_login_bunch(buf: &mut [u8], len: &mut usize, target_name: &str)
             let old_name_len = val_end - val_start;
             let new_name_bytes = target_name.as_bytes();
             let new_name_len = new_name_bytes.len();
+            let byte_delta = new_name_len as isize - old_name_len as isize;
 
-            // Check if string length prefix (4 bytes little-endian) precedes `?Name=`
-            let prefix_start = if pos >= 4 { pos - 4 } else { 0 };
+            // In Unreal Engine / Rocket League connection options:
+            // The FString starts before the connection string options (e.g. at ':?Name=...')
+            // Scan backwards from `?Name=` to find ':' (0x3A), which precedes options
+            let mut colon_pos = pos;
+            while colon_pos > 0 && unshifted[colon_pos] != b':' {
+                colon_pos -= 1;
+            }
+            if unshifted[colon_pos] != b':' {
+                colon_pos = pos;
+            }
+
+            // The 4-byte string length is located immediately preceding colon_pos (colon_pos - 4)
+            let prefix_start = if colon_pos >= 4 { colon_pos - 4 } else { 0 };
 
             let mut patched_unshifted = Vec::with_capacity(old_len + new_name_len + 16);
-            patched_unshifted.extend_from_slice(&unshifted[..val_start]);
-            patched_unshifted.extend_from_slice(new_name_bytes);
-            patched_unshifted.extend_from_slice(&unshifted[val_end..old_len]);
+            // 1. Copy prefix up to string length field
+            patched_unshifted.extend_from_slice(&unshifted[..prefix_start]);
 
-            // Update string length prefix if present
-            if pos >= 4 {
+            // 2. Compute and append updated string length
+            if colon_pos >= 4 {
                 let orig_str_len = u32::from_le_bytes([
                     unshifted[prefix_start],
                     unshifted[prefix_start + 1],
                     unshifted[prefix_start + 2],
                     unshifted[prefix_start + 3],
                 ]);
-                // If it looks like a valid length (> old_name_len)
-                if orig_str_len as usize >= old_name_len && (orig_str_len as usize) < old_len {
-                    let updated_str_len = ((orig_str_len as isize) + (new_name_len as isize - old_name_len as isize)) as u32;
-                    let len_bytes = updated_str_len.to_le_bytes();
-                    patched_unshifted[prefix_start..prefix_start + 4].copy_from_slice(&len_bytes);
-                }
+                let updated_str_len = ((orig_str_len as isize + byte_delta).max(0)) as u32;
+                patched_unshifted.extend_from_slice(&updated_str_len.to_le_bytes());
+            } else {
+                patched_unshifted.extend_from_slice(&unshifted[prefix_start..colon_pos]);
             }
+
+            // 3. Copy from colon_pos up to start of old name value (?Name=)
+            patched_unshifted.extend_from_slice(&unshifted[colon_pos..val_start]);
+
+            // 4. Append new name bytes
+            patched_unshifted.extend_from_slice(new_name_bytes);
+
+            // 5. Append remainder of packet
+            patched_unshifted.extend_from_slice(&unshifted[val_end..old_len]);
 
             let patched_len = patched_unshifted.len();
             if patched_len > buf.len() {
                 return false;
             }
 
-            // Re-shift into buf
+            // Re-shift into temporary buffer
+            let mut shifted = vec![0u8; patched_len + 4];
             if shift == 0 {
-                buf[..patched_len].copy_from_slice(&patched_unshifted[..patched_len]);
-                *len = patched_len;
+                shifted[..patched_len].copy_from_slice(&patched_unshifted[..patched_len]);
             } else {
-                let mut shifted = vec![0u8; patched_len + 2];
                 for i in 0..patched_len {
                     shifted[i] |= patched_unshifted[i] << shift;
                     shifted[i + 1] |= patched_unshifted[i] >> (8 - shift);
                 }
-                let final_len = (patched_len * 8 + shift + 7) / 8;
-                if final_len > buf.len() {
-                    return false;
-                }
-                buf[..final_len].copy_from_slice(&shifted[..final_len]);
-                *len = final_len;
+                // Preserve lower bits of byte 0 from the original buffer (rewrite_datagram_payload parity)
+                let mask = (1u8 << shift) - 1;
+                shifted[0] = (orig_buf[0] & mask) | (shifted[0] & !mask);
             }
 
-            // Update NumBunchBits in packet header (12 bits at bit offset 32 or byte offset 4..6)
-            // Bit delta is 8 * (new_name_len - old_name_len)
-            let byte_delta = new_name_len as isize - old_name_len as isize;
-            if byte_delta != 0 && *len >= 8 {
+            let new_total_len = if shift == 0 {
+                patched_len
+            } else {
+                (patched_len * 8 + shift + 7) / 8
+            };
+
+            if new_total_len > buf.len() {
+                return false;
+            }
+
+            // Find highest set bit in the original packet (rewrite_datagram_payload parity)
+            let mut highest_bit: isize = -1;
+            for byte_idx in (0..old_len).rev() {
+                let b = orig_buf[byte_idx];
+                if b != 0 {
+                    for bit_pos in (0..8).rev() {
+                        if (b & (1 << bit_pos)) != 0 {
+                            highest_bit = (byte_idx * 8 + bit_pos) as isize;
+                            break;
+                        }
+                    }
+                    if highest_bit >= 0 {
+                        break;
+                    }
+                }
+            }
+
+            // Dynamically locate 12-bit NumBunchBits field
+            let mut nbb_bit_offset: isize = -1;
+            if highest_bit > 12 {
+                let target_pos = (shift + 92) as isize;
+                let max_scan = highest_bit - 12;
+                for pos_idx in 0..=max_scan {
+                    let mut nbb_val = 0u32;
+                    for b in 0..12 {
+                        let bit_coord = (pos_idx + b) as usize;
+                        let bit = (orig_buf[bit_coord >> 3] >> (bit_coord & 7)) & 1;
+                        nbb_val |= (bit as u32) << b;
+                    }
+                    if (nbb_val as isize) + pos_idx + 12 == highest_bit {
+                        if nbb_bit_offset < 0 || (pos_idx - target_pos).abs() < (nbb_bit_offset - target_pos).abs() {
+                            nbb_bit_offset = pos_idx;
+                        }
+                    }
+                }
+            }
+
+            // If found, rewrite 12-bit NumBunchBits at its exact bit offset in the shifted buffer
+            if nbb_bit_offset >= 0 && byte_delta != 0 {
+                let mut old_nbb = 0u32;
+                for b in 0..12 {
+                    let bit_coord = (nbb_bit_offset + b) as usize;
+                    let bit = (orig_buf[bit_coord >> 3] >> (bit_coord & 7)) & 1;
+                    old_nbb |= (bit as u32) << b;
+                }
                 let bit_delta = byte_delta * 8;
-                let raw_u32 = u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]);
+                let updated_nbb = ((old_nbb as isize + bit_delta).max(0) as u32) & 0x0FFF;
+                for b in 0..12 {
+                    let bit_coord = (nbb_bit_offset + b) as usize;
+                    let byte_pos = bit_coord >> 3;
+                    let bit_pos = bit_coord & 7;
+                    if byte_pos < shifted.len() {
+                        if ((updated_nbb >> b) & 1) != 0 {
+                            shifted[byte_pos] |= 1 << bit_pos;
+                        } else {
+                            shifted[byte_pos] &= !(1 << bit_pos);
+                        }
+                    }
+                }
+            } else if byte_delta != 0 && new_total_len >= 8 {
+                // Fallback to standard header offset
+                let bit_delta = byte_delta * 8;
+                let raw_u32 = u32::from_le_bytes([shifted[4], shifted[5], shifted[6], shifted[7]]);
                 let nbb = raw_u32 & 0x0FFF;
                 let updated_nbb = ((nbb as isize + bit_delta).max(0) as u32) & 0x0FFF;
                 let new_u32 = (raw_u32 & !0x0FFF) | updated_nbb;
-                buf[4..8].copy_from_slice(&new_u32.to_le_bytes());
+                shifted[4..8].copy_from_slice(&new_u32.to_le_bytes());
             }
 
+            buf[..new_total_len].copy_from_slice(&shifted[..new_total_len]);
+            *len = new_total_len;
+
             crate::applog::event(&format!(
-                "udp_proxy: patched C2S login bunch name to '{target_name}' (shift={shift}, len: {old_len} -> {len})"
+                "udp_proxy: patched C2S login bunch name to '{target_name}' (shift={shift}, nbb_offset={nbb_bit_offset}, len: {old_len} -> {len})"
             ));
             return true;
         }
