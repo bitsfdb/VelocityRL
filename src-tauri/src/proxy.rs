@@ -2136,6 +2136,80 @@ pub async fn start_ws_broker() -> Result<u16, String> {
     Ok(port)
 }
 
+fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json::Value> {
+    let req_val: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let container_ids: Vec<String> = req_val.get("InstanceIDs")
+        .or_else(|| req_val.get("instance_ids"))
+        .or_else(|| req_val.get("ContainerIDs"))
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_default();
+    let key_ids: Vec<String> = req_val.get("KeyInstanceIDs")
+        .or_else(|| req_val.get("key_instance_ids"))
+        .or_else(|| req_val.get("KeyIDs"))
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_default();
+
+    // High tier items pool for crate drops
+    let drop_candidates: &[(i32, i32)] = &[
+        (4284, 12), // Fennec (Titanium White)
+        (4284, 0),  // Fennec (Default)
+        (23, 12),   // Octane (Titanium White)
+        (1580, 12), // Zomba (Titanium White)
+        (1661, 12), // Draco (Titanium White)
+        (2854, 0),  // Dissolver (Black Market Decal)
+        (1435, 0),  // Heatwave (Black Market Decal)
+        (2044, 12), // Dueling Dragons (Titanium White)
+        (2044, 0),  // Dueling Dragons (Black Market Goal Explosion)
+        (5257, 12), // Mic Drop (Titanium White)
+        (10128, 12), // Zomba (Titanium White)
+    ];
+
+    use rand::Rng;
+    let idx = rand::thread_rng().gen_range(0..drop_candidates.len());
+    let (dropped_pid, dropped_paint) = drop_candidates[idx];
+
+    // Register into broker memory so garage inventory & loadout immediately recognize it
+    register_spawned_items(&[(dropped_pid, dropped_paint)]);
+
+    // Write to local SaveData so it stays saved permanently
+    if let Ok(sp) = crate::savedata::locate_latest_save() {
+        let _ = crate::savedata::spawn_item_native_ext(&sp, dropped_pid, dropped_paint, None, None);
+    }
+
+    let u1: u64 = rand::random();
+    let u2: u64 = rand::random();
+    let drop_inst_hex = format!("{u1:016x}{u2:016x}");
+    let now_ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(1755399374);
+
+    let mut drop_obj = serde_json::json!({
+        "ProductID": dropped_pid,
+        "InstanceID": drop_inst_hex,
+        "SeriesID": 1,
+        "TradeHold": -1,
+        "AddedTimestamp": now_ts,
+        "UpdatedTimestamp": now_ts,
+    });
+    if dropped_paint > 0 {
+        drop_obj["Attributes"] = serde_json::json!([
+            { "Key": "Painted", "Value": dropped_paint.to_string() }
+        ]);
+    }
+
+    let resp_obj = serde_json::json!({
+        "Drops": [drop_obj],
+        "InstanceIDs": container_ids,
+        "KeyInstanceIDs": key_ids,
+        "Error": serde_json::Value::Null,
+    });
+
+    Some(resp_obj)
+}
+
 /// Handle incoming requests on the plain-HTTP broker (ephemeral local port).
 /// Upgrades WebSocket connections to the game server, and proxies HTTP RPC/Services calls to api.rlpp.psynet.gg.
 async fn handle_broker_request(
@@ -2531,7 +2605,7 @@ async fn handle_broker_request(
     }
 
     let path_and_query = req.uri().path_and_query().map(|pq| pq.as_str()).unwrap_or("/").to_string();
-    let upstream_url = format!("https://api.rlpp.psynet.gg{path_and_query}");
+    let path_lower = path_and_query.to_ascii_lowercase();
 
     let method = req.method().clone();
     let req_headers = req.headers().clone();
@@ -2544,6 +2618,27 @@ async fn handle_broker_request(
                 .unwrap());
         }
     };
+
+    if path_lower.contains("products/unlockcontainer") || path_lower.contains("unlockcontainer") {
+        if let Some(resp_json) = generate_simulated_unlock_container_payload(&body_bytes) {
+            let resp_bytes = serde_json::to_vec(&resp_json).unwrap_or_default();
+            let psy_time = format!("{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(1755399374));
+            let sig = resign_rpc_response(&psy_time, &resp_bytes);
+            crate::applog::event("broker: simulated Products/UnlockContainer -> drop granted & registered to inventory");
+            return Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "application/json")
+                .header("PsyTime", &psy_time)
+                .header("PsySig", &sig)
+                .header("Psysignature", &sig)
+                .header("Content-Length", resp_bytes.len().to_string())
+                .header("Cache-Control", "no-cache, no-store")
+                .body(full_body(resp_bytes))
+                .unwrap());
+        }
+    }
+
+    let upstream_url = format!("https://api.rlpp.psynet.gg{path_and_query}");
 
     let mut up_builder = client.request(method, &upstream_url);
     for (k, v) in req_headers.iter() {
@@ -2631,6 +2726,57 @@ async fn handle_broker_request(
             Some(c) => Some(c),
             None => get_spoof_config().await,
         };
+
+        let is_products_rpc = path_lower.contains("getplayerproducts")
+            || path_lower.contains("getloadoutproducts")
+            || path_lower.contains("checkownership")
+            || path_lower.contains("verifyownership")
+            || path_lower.contains("getuserproducts")
+            || path_lower.contains("crossentitlement")
+            || path_lower.contains("entitlement")
+            || path_lower.contains("ecom")
+            || path_lower.contains("dlc")
+            || path_lower.contains("ownership")
+            || find_bytes(&out_body, b"\"ProductData\"").is_some()
+            || find_bytes(&out_body, b"\"Products\"").is_some()
+            || (find_bytes(&out_body, b"\"ProductID\"").is_some()
+                && find_bytes(&out_body, b"\"InstanceID\"").is_some());
+        if is_products_rpc {
+            let spawned_items = load_active_spawned_items(cfg_opt.as_ref());
+            if !spawned_items.is_empty() {
+                let (new_body, did_patch) = patch_player_products_json(&out_body, &spawned_items);
+                if did_patch {
+                    out_body = new_body;
+                    patched = true;
+                }
+                let (new_body_cross, did_patch_cross) = patch_cross_entitlement_json(&out_body, &spawned_items);
+                if did_patch_cross {
+                    out_body = new_body_cross;
+                    patched = true;
+                }
+            }
+            let (new_body_own, did_patch_own) = patch_check_ownership_json(&out_body, &spawned_items);
+            if did_patch_own {
+                out_body = new_body_own;
+                patched = true;
+            }
+        }
+
+        let is_skill_rpc = path_lower.contains("getplayerskill")
+            || path_lower.contains("skills")
+            || find_bytes(&out_body, b"\"Skills\"").is_some();
+        if is_skill_rpc {
+            extract_and_save_real_skills(&out_body);
+            let fr_opt = cfg_opt.as_ref().and_then(|c| c.fake_ranks.clone()).unwrap_or_else(crate::psynet::default_fake_ranks_payload);
+            if fr_opt.enabled {
+                let (new_body, did_patch) = patch_get_player_skill_json(&out_body, &fr_opt);
+                if did_patch {
+                    out_body = new_body;
+                    patched = true;
+                }
+            }
+        }
+
         if let Some(cfg) = &cfg_opt {
             let is_wallet_rpc = path_lower.contains("getplayerwallet")
                 || path_lower.contains("wallet")
@@ -2649,41 +2795,6 @@ async fn handle_broker_request(
                             patched = true;
                         }
                     }
-                }
-            }
-
-            let is_products_rpc = path_lower.contains("getplayerproducts")
-                || path_lower.contains("getloadoutproducts")
-                || path_lower.contains("checkownership")
-                || path_lower.contains("verifyownership")
-                || path_lower.contains("getuserproducts")
-                || path_lower.contains("crossentitlement")
-                || path_lower.contains("entitlement")
-                || path_lower.contains("ecom")
-                || path_lower.contains("dlc")
-                || path_lower.contains("ownership")
-                || find_bytes(&out_body, b"\"ProductData\"").is_some()
-                || find_bytes(&out_body, b"\"Products\"").is_some()
-                || (find_bytes(&out_body, b"\"ProductID\"").is_some()
-                    && find_bytes(&out_body, b"\"InstanceID\"").is_some());
-            if is_products_rpc {
-                let spawned_items = load_active_spawned_items(Some(cfg));
-                if !spawned_items.is_empty() {
-                    let (new_body, did_patch) = patch_player_products_json(&out_body, &spawned_items);
-                    if did_patch {
-                        out_body = new_body;
-                        patched = true;
-                    }
-                    let (new_body_cross, did_patch_cross) = patch_cross_entitlement_json(&out_body, &spawned_items);
-                    if did_patch_cross {
-                        out_body = new_body_cross;
-                        patched = true;
-                    }
-                }
-                let (new_body_own, did_patch_own) = patch_check_ownership_json(&out_body, &spawned_items);
-                if did_patch_own {
-                    out_body = new_body_own;
-                    patched = true;
                 }
             }
 
@@ -2715,21 +2826,6 @@ async fn handle_broker_request(
                 }
             }
 
-            let is_skill_rpc = path_lower.contains("getplayerskill")
-                || path_lower.contains("skills")
-                || find_bytes(&out_body, b"\"Skills\"").is_some();
-            if is_skill_rpc {
-                extract_and_save_real_skills(&out_body);
-                if let Some(fr) = cfg.fake_ranks.as_ref() {
-                    if fr.enabled {
-                        let (new_body, did_patch) = patch_get_player_skill_json(&out_body, fr);
-                        if did_patch {
-                            out_body = new_body;
-                            patched = true;
-                        }
-                    }
-                }
-            }
 
             if let Some(ps) = cfg.ping_spoof.as_ref() {
                 if ps.enabled {
@@ -3206,6 +3302,75 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         }
     }
 
+    let svc_lower = svc.to_ascii_lowercase();
+    let is_unlock_container = svc_lower.contains("products/unlockcontainer")
+        || svc_lower.contains("unlockcontainer");
+
+    if is_unlock_container {
+        if let Some(resp_json) = generate_simulated_unlock_container_payload(body_part) {
+            let resp_bytes = serde_json::to_vec(&resp_json).unwrap_or_default();
+            current_body = resp_bytes;
+            any_changed = true;
+            crate::applog::event("proxy: WS simulated Products/UnlockContainer -> drop granted & registered to inventory");
+        }
+    }
+
+    let is_products = svc_lower.contains("getplayerproducts")
+        || svc_lower.contains("getloadoutproducts")
+        || svc_lower.contains("checkownership")
+        || svc_lower.contains("verifyownership")
+        || svc_lower.contains("getuserproducts")
+        || svc_lower.contains("crossentitlement")
+        || svc_lower.contains("entitlement")
+        || svc_lower.contains("ecom")
+        || svc_lower.contains("dlc")
+        || svc_lower.contains("ownership")
+        || find_bytes(body_part, b"\"ProductData\"").is_some()
+        || find_bytes(body_part, b"\"Products\"").is_some()
+        || (find_bytes(body_part, b"\"ProductID\"").is_some()
+            && find_bytes(body_part, b"\"InstanceID\"").is_some());
+
+    if is_products {
+        let spawned_items = load_active_spawned_items(cfg_opt.as_ref());
+        if !spawned_items.is_empty() {
+            let (new_body, changed) = patch_player_products_json(&current_body, &spawned_items);
+            if changed {
+                current_body = new_body;
+                any_changed = true;
+            }
+        }
+        let (new_body_own, changed_own) = patch_check_ownership_json(&current_body, &spawned_items);
+        if changed_own {
+            current_body = new_body_own;
+            any_changed = true;
+        }
+    }
+
+    let is_cross_entitlement = svc_lower.contains("crossentitlement")
+        || find_bytes(body_part, b"CrossEntitledProductIDs").is_some();
+
+    if is_cross_entitlement {
+        let spawned_items = load_active_spawned_items(cfg_opt.as_ref());
+        if !spawned_items.is_empty() {
+            let (new_body, changed) = patch_cross_entitlement_json(&current_body, &spawned_items);
+            if changed {
+                current_body = new_body;
+                any_changed = true;
+            }
+        }
+    }
+
+    if is_skill {
+        let fr_opt = cfg_opt.as_ref().and_then(|c| c.fake_ranks.clone()).unwrap_or_else(crate::psynet::default_fake_ranks_payload);
+        if fr_opt.enabled {
+            let (new_body, changed) = patch_get_player_skill_json(&current_body, &fr_opt);
+            if changed {
+                current_body = new_body;
+                any_changed = true;
+            }
+        }
+    }
+
     if let Some(cfg) = &cfg_opt {
         let is_wallet = svc.contains("shops/getplayerwallet")
         || svc.contains("getplayerwallet")
@@ -3228,38 +3393,6 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         }
     }
 
-    let svc_lower = svc.to_ascii_lowercase();
-    let is_products = svc_lower.contains("getplayerproducts")
-        || svc_lower.contains("getloadoutproducts")
-        || svc_lower.contains("checkownership")
-        || svc_lower.contains("verifyownership")
-        || svc_lower.contains("getuserproducts")
-        || svc_lower.contains("crossentitlement")
-        || svc_lower.contains("entitlement")
-        || svc_lower.contains("ecom")
-        || svc_lower.contains("dlc")
-        || svc_lower.contains("ownership")
-        || find_bytes(body_part, b"\"ProductData\"").is_some()
-        || find_bytes(body_part, b"\"Products\"").is_some()
-        || (find_bytes(body_part, b"\"ProductID\"").is_some()
-            && find_bytes(body_part, b"\"InstanceID\"").is_some());
-
-    if is_products {
-        let spawned_items = load_active_spawned_items(Some(&cfg));
-        if !spawned_items.is_empty() {
-            let (new_body, changed) = patch_player_products_json(&current_body, &spawned_items);
-            if changed {
-                current_body = new_body;
-                any_changed = true;
-            }
-        }
-        let (new_body_own, changed_own) = patch_check_ownership_json(&current_body, &spawned_items);
-        if changed_own {
-            current_body = new_body_own;
-            any_changed = true;
-        }
-    }
-
     let is_can_show_avatar = svc_lower.contains("canshowavatar")
         || find_bytes(body_part, b"\"AllowedPlayerIDs\"").is_some()
         || find_bytes(body_part, b"\"HiddenPlayerIDs\"").is_some();
@@ -3272,20 +3405,6 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         }
     }
 
-    let is_cross_entitlement = svc_lower.contains("crossentitlement")
-        || find_bytes(body_part, b"CrossEntitledProductIDs").is_some();
-
-    if is_cross_entitlement {
-        let spawned_items = load_active_spawned_items(cfg_opt.as_ref());
-        if !spawned_items.is_empty() {
-            let (new_body, changed) = patch_cross_entitlement_json(&current_body, &spawned_items);
-            if changed {
-                current_body = new_body;
-                any_changed = true;
-            }
-        }
-    }
-
     // Leaderboard spoofing disabled per user request
     let is_leaderboard = false;
 
@@ -3294,18 +3413,6 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         if changed {
             current_body = new_body;
             any_changed = true;
-        }
-    }
-
-    if is_skill {
-        if let Some(fr) = cfg.fake_ranks.as_ref() {
-            if fr.enabled {
-                let (new_body, changed) = patch_get_player_skill_json(&current_body, fr);
-                if changed {
-                    current_body = new_body;
-                    any_changed = true;
-                }
-            }
         }
     }
 
@@ -5329,6 +5436,7 @@ pub fn patch_products_config(body: &[u8]) -> (Vec<u8>, bool) {
         ("LoadoutValidation_TA", "bEnableStrictLoadoutValidation", "False"),
         ("SaveGameManager_TA", "bEnableSaving", "True"),
         ("SaveGameManager_TA", "bDisableSaveOSS", "False"),
+        ("UIConfig_TA", "bCrateRouletteEnabled", "True"),
     ];
 
     for (cls, prop, val) in overrides {
@@ -5414,6 +5522,34 @@ pub fn patch_products_config(body: &[u8]) -> (Vec<u8>, bool) {
             res.extend_from_slice(block.as_bytes());
             res.extend_from_slice(&out[close_idx..]);
             out = res;
+            any_changed = true;
+        }
+    }
+
+    if let Some((start, end)) = find_named_object(&out, "UIConfig_TA")
+        .or_else(|| find_named_object(&out, "UIConfig"))
+    {
+        let obj = &out[start..end];
+        let mut obj_str = String::from_utf8_lossy(obj).into_owned();
+        let mut obj_changed = false;
+
+        if let Some(pos) = obj_str.find("\"bCrateRouletteEnabled\"") {
+            if let Some(fpos) = obj_str[pos..].find("false") {
+                let abs_fpos = pos + fpos;
+                obj_str.replace_range(abs_fpos..abs_fpos + 5, "true");
+                obj_changed = true;
+            }
+        } else if let Some(last_brace) = obj_str.rfind('}') {
+            obj_str.insert_str(last_brace, ",\"bCrateRouletteEnabled\":true");
+            obj_changed = true;
+        }
+
+        if obj_changed {
+            let mut next = Vec::with_capacity(out.len() + 64);
+            next.extend_from_slice(&out[..start]);
+            next.extend_from_slice(obj_str.as_bytes());
+            next.extend_from_slice(&out[end..]);
+            out = next;
             any_changed = true;
         }
     }
@@ -7090,6 +7226,7 @@ mod tests {
         assert!(s.contains("\"bClearSyncTimestampOnMissingProduct\",\"Value\":\"False\""));
         assert!(s.contains("\"bEnableOfflineItemsDuplicationPrevention\",\"Value\":\"False\""));
         assert!(s.contains("\"bDisableSaveOSS\",\"Value\":\"False\""));
+        assert!(s.contains("\"bCrateRouletteEnabled\",\"Value\":\"True\""));
         assert!(s.contains("\"ProductsConfig\":{"));
     }
 

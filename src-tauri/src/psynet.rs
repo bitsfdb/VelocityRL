@@ -155,6 +155,25 @@ pub struct FakeRanksPayload {
     pub reward_levels: Option<FakeRewardLevelsPayload>,
 }
 
+pub fn default_fake_ranks_payload() -> FakeRanksPayload {
+    FakeRanksPayload {
+        enabled: true,
+        default: Some(FakeRankOverridePayload {
+            display_mmr: Some(1900.0),
+            mu: Some(58.0),
+            sigma: Some(2.5),
+            tier: Some(22), // SSL
+            division: Some(0),
+            win_streak: Some(10),
+        }),
+        playlists: None,
+        reward_levels: Some(FakeRewardLevelsPayload {
+            season_level: Some(7), // SSL rewards
+            season_level_wins: Some(10),
+        }),
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct InventorySpoofItemPayload {
     #[serde(default)]
