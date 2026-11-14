@@ -1,426 +1,532 @@
 [
   {
     "id": 2445,
-    "name": "Crate - Haunted Hallows (Unlocked)"
+    "name": "Crate - Haunted Hallows (Unlocked)",
+    "icon": "assets/drops/crateunlocked_halloween17.png"
   },
   {
     "id": 2446,
-    "name": "Decryptor"
+    "name": "Decryptor",
+    "icon": "assets/drops/key_magic.png"
   },
   {
     "id": 2522,
-    "name": "Crate - Secret Santa (Unlocked)"
+    "name": "Crate - Secret Santa (Unlocked)",
+    "icon": "assets/drops/crateunlocked_winter17.png"
   },
   {
     "id": 2731,
-    "name": "Crate - Spring Fever (Unlocked)"
+    "name": "Crate - Spring Fever (Unlocked)",
+    "icon": "assets/drops/crateunlocked_spring18.png"
   },
   {
     "id": 3011,
-    "name": "Crate - RL Beach Blast (Unlocked)"
+    "name": "Crate - RL Beach Blast (Unlocked)",
+    "icon": "assets/drops/crateunlocked_summer18.png"
   },
   {
     "id": 3049,
-    "name": "Golden Egg '18"
+    "name": "Golden Egg '18",
+    "icon": "assets/drops/crateunlocked_anniversary18.png"
   },
   {
     "id": 3468,
-    "name": "Golden Pumpkin '18"
+    "name": "Golden Pumpkin '18",
+    "icon": "assets/drops/crateunlocked_halloween18.png"
   },
   {
     "id": 3646,
-    "name": "Golden Gift '18"
+    "name": "Golden Gift '18",
+    "icon": "assets/drops/crateunlocked_winter18.png"
   },
   {
     "id": 3849,
-    "name": "Golden Lantern '19"
+    "name": "Golden Lantern '19",
+    "icon": "assets/drops/crateunlocked_chinesenewyear19.png"
   },
   {
     "id": 4049,
-    "name": "Premium"
+    "name": "Premium",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 4299,
-    "name": "Golden Egg '19"
+    "name": "Golden Egg '19",
+    "icon": "assets/drops/crateunlocked_radsummer19.png"
   },
   {
     "id": 4592,
-    "name": "Golden Gift '19"
+    "name": "Golden Gift '19",
+    "icon": "assets/drops/crateunlocked_winter19.png"
   },
   {
     "id": 4593,
-    "name": "Golden Pumpkin '19"
+    "name": "Golden Pumpkin '19",
+    "icon": "assets/drops/crateunlocked_halloween19.png"
   },
   {
     "id": 4722,
-    "name": "Bonus Gift"
+    "name": "Bonus Gift",
+    "icon": "assets/drops/crateunlocked_decryptorgift.png"
   },
   {
     "id": 4960,
-    "name": "Golden Gift Basket '22"
+    "name": "Golden Gift Basket '22",
+    "icon": "assets/drops/crateunlocked_spring20.png"
   },
   {
     "id": 5085,
-    "name": "Prospects Cup"
+    "name": "Prospects Cup",
+    "icon": "assets/drops/crateunlocked_tournament1.png"
   },
   {
     "id": 5086,
-    "name": "Challengers Cup"
+    "name": "Challengers Cup",
+    "icon": "assets/drops/crateunlocked_tournament2.png"
   },
   {
     "id": 5087,
-    "name": "All-Stars Cup"
+    "name": "All-Stars Cup",
+    "icon": "assets/drops/crateunlocked_tournament3.png"
   },
   {
     "id": 5088,
-    "name": "Champions Cup"
+    "name": "Champions Cup",
+    "icon": "assets/drops/crateunlocked_tournament4.png"
   },
   {
     "id": 5297,
-    "name": "Golden Egg '20"
+    "name": "Golden Egg '20",
+    "icon": "assets/drops/crateunlocked_anniversary20.png"
   },
   {
     "id": 5298,
-    "name": "Black Market Drop"
+    "name": "Black Market Drop",
+    "icon": "assets/drops/giftbox_blackmarket.png"
   },
   {
     "id": 5299,
-    "name": "Exotic Drop"
+    "name": "Exotic Drop",
+    "icon": "assets/drops/giftbox_exotic.png"
   },
   {
     "id": 5300,
-    "name": "Import Drop"
+    "name": "Import Drop",
+    "icon": "assets/drops/giftbox_import.png"
   },
   {
     "id": 5301,
-    "name": "Special Drop"
+    "name": "Special Drop",
+    "icon": "assets/drops/giftbox_rare.png"
   },
   {
     "id": 5302,
-    "name": "Sport Drop"
+    "name": "Sport Drop",
+    "icon": "assets/drops/giftbox_uncommon.png"
   },
   {
     "id": 5303,
-    "name": "Deluxe Drop"
+    "name": "Deluxe Drop",
+    "icon": "assets/drops/giftbox_veryrare.png"
   },
   {
     "id": 5611,
-    "name": "Golden Pumpkin '20"
+    "name": "Golden Pumpkin '20",
+    "icon": "assets/drops/crateunlocked_halloween20.png"
   },
   {
     "id": 5660,
-    "name": "Golden Gift '20"
+    "name": "Golden Gift '20",
+    "icon": "assets/drops/crateunlocked_winter20.png"
   },
   {
     "id": 5764,
-    "name": "Golden Lantern '21"
+    "name": "Golden Lantern '21",
+    "icon": "assets/drops/crateunlocked_chinesenewyear21.png"
   },
   {
     "id": 5895,
-    "name": "Accolade"
+    "name": "Accolade",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 5903,
-    "name": "Accolade II"
+    "name": "Accolade II",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 5904,
-    "name": "Accolade III"
+    "name": "Accolade III",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 6128,
-    "name": "Accolade IV"
+    "name": "Accolade IV",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 6832,
-    "name": "Accolade V"
+    "name": "Accolade V",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 7172,
-    "name": "Golden Moon '22"
+    "name": "Golden Moon '22",
+    "icon": "assets/drops/crateunlocked_chinesenewyear22.png"
   },
   {
     "id": 7174,
-    "name": "Accolade VI"
+    "name": "Accolade VI",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 7221,
-    "name": "Golden Gift '21"
+    "name": "Golden Gift '21",
+    "icon": "assets/drops/crateunlocked_winter21.png"
   },
   {
     "id": 7673,
-    "name": "Golden Egg '22"
+    "name": "Golden Egg '22",
+    "icon": "assets/drops/crateunlocked_anniversary22.png"
   },
   {
     "id": 7698,
-    "name": "Accolade VII"
+    "name": "Accolade VII",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 7876,
-    "name": "Accolade VIII"
+    "name": "Accolade VIII",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 8261,
-    "name": "Golden Pumpkin '22"
+    "name": "Golden Pumpkin '22",
+    "icon": "assets/drops/crateunlocked_halloween22.png"
   },
   {
     "id": 8413,
-    "name": "Africa Decal Pack"
+    "name": "Africa Decal Pack",
+    "icon": "assets/drops/crateunlocked_wca.png"
   },
   {
     "id": 8414,
-    "name": "Asia & Oceania Decal Pack"
+    "name": "Asia & Oceania Decal Pack",
+    "icon": "assets/drops/crateunlocked_wcao.png"
   },
   {
     "id": 8415,
-    "name": "Eastern Europe Decal Pack"
+    "name": "Eastern Europe Decal Pack",
+    "icon": "assets/drops/crateunlocked_wcee.png"
   },
   {
     "id": 8416,
-    "name": "Middle East Decal Pack"
+    "name": "Middle East Decal Pack",
+    "icon": "assets/drops/crateunlocked_wcme.png"
   },
   {
     "id": 8417,
-    "name": "North America Decal Pack"
+    "name": "North America Decal Pack",
+    "icon": "assets/drops/crateunlocked_wcna.png"
   },
   {
     "id": 8418,
-    "name": "Northern Europe Decal Pack"
+    "name": "Northern Europe Decal Pack",
+    "icon": "assets/drops/crateunlocked_wcne.png"
   },
   {
     "id": 8419,
-    "name": "South America Decal Pack"
+    "name": "South America Decal Pack",
+    "icon": "assets/drops/crateunlocked_wcsa.png"
   },
   {
     "id": 8420,
-    "name": "Southern Europe Decal Pack"
+    "name": "Southern Europe Decal Pack",
+    "icon": "assets/drops/crateunlocked_wcse.png"
   },
   {
     "id": 8421,
-    "name": "Western Europe Decal Pack"
+    "name": "Western Europe Decal Pack",
+    "icon": "assets/drops/crateunlocked_wcwe.png"
   },
   {
     "id": 8442,
-    "name": "Federation Banners"
+    "name": "Federation Banners",
+    "icon": "assets/drops/crateunlocked_wcbnrs.png"
   },
   {
     "id": 8457,
-    "name": "Accolade IX"
+    "name": "Accolade IX",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 8458,
-    "name": "Golden Gift '22"
+    "name": "Golden Gift '22",
+    "icon": "assets/drops/crateunlocked_winter22.png"
   },
   {
     "id": 8728,
-    "name": "Golden Moon '23"
+    "name": "Golden Moon '23",
+    "icon": "assets/drops/crateunlocked_chinesenewyear23.png"
   },
   {
     "id": 8810,
-    "name": "Accolade X"
+    "name": "Accolade X",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 8991,
-    "name": "Golden Toolkit"
+    "name": "Golden Toolkit",
+    "icon": "assets/drops/crateunlocked_spring23.png"
   },
   {
     "id": 9100,
-    "name": "Accolade XI"
+    "name": "Accolade XI",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 9107,
-    "name": "Golden Egg '23"
+    "name": "Golden Egg '23",
+    "icon": "assets/drops/crateunlocked_anniversary23.png"
   },
   {
     "id": 9329,
-    "name": "Golden Trophy '23"
+    "name": "Golden Trophy '23",
+    "icon": "assets/drops/crateunlocked_championsroad23.png"
   },
   {
     "id": 9330,
-    "name": "Accolade XII"
+    "name": "Accolade XII",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 9724,
-    "name": "Golden Pumpkin '23"
+    "name": "Golden Pumpkin '23",
+    "icon": "assets/drops/crateunlocked_halloween23.png"
   },
   {
     "id": 9739,
-    "name": "Accolade XIII"
+    "name": "Accolade XIII",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 9899,
-    "name": "Golden Gift '23"
+    "name": "Golden Gift '23",
+    "icon": "assets/drops/crateunlocked_winter23.png"
   },
   {
     "id": 10224,
-    "name": "Accolade XIV"
+    "name": "Accolade XIV",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 10363,
-    "name": "Golden Cup '24"
+    "name": "Golden Cup '24",
+    "icon": "assets/drops/crateunlocked_cityslam24.png"
   },
   {
     "id": 10373,
-    "name": "Golden Moon '24"
+    "name": "Golden Moon '24",
+    "icon": "assets/drops/crateunlocked_chinesenewyear24.png"
   },
   {
     "id": 10403,
-    "name": "Golden X-Crate"
+    "name": "Golden X-Crate",
+    "icon": "assets/drops/crateunlocked_xcrate.png"
   },
   {
     "id": 10534,
-    "name": "Golden Record '24"
+    "name": "Golden Record '24",
+    "icon": "assets/drops/crateunlocked_neonnights24.png"
   },
   {
     "id": 10560,
-    "name": "Golden Egg '24"
+    "name": "Golden Egg '24",
+    "icon": "assets/drops/crateunlocked_anniversary24.png"
   },
   {
     "id": 10652,
-    "name": "Accolade XV"
+    "name": "Accolade XV",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 10666,
-    "name": "Caribbean Bundle"
+    "name": "Caribbean Bundle",
+    "icon": "assets/drops/crateunlocked_c.png"
   },
   {
     "id": 10667,
-    "name": "Eastern Europe Bundle"
+    "name": "Eastern Europe Bundle",
+    "icon": "assets/drops/crateunlocked_ee.png"
   },
   {
     "id": 10668,
-    "name": "North America Bundle"
+    "name": "North America Bundle",
+    "icon": "assets/drops/crateunlocked_na.png"
   },
   {
     "id": 10669,
-    "name": "Northern Europe Bundle"
+    "name": "Northern Europe Bundle",
+    "icon": "assets/drops/crateunlocked_ne.png"
   },
   {
     "id": 10670,
-    "name": "South America Bundle 1"
+    "name": "South America Bundle 1",
+    "icon": "assets/drops/crateunlocked_sa1.png"
   },
   {
     "id": 10671,
-    "name": "South America Bundle 2"
+    "name": "South America Bundle 2",
+    "icon": "assets/drops/crateunlocked_sa2.png"
   },
   {
     "id": 10672,
-    "name": "Southern Europe Bundle"
+    "name": "Southern Europe Bundle",
+    "icon": "assets/drops/crateunlocked_se.png"
   },
   {
     "id": 10673,
-    "name": "Western Europe Bundle"
+    "name": "Western Europe Bundle",
+    "icon": "assets/drops/crateunlocked_we.png"
   },
   {
     "id": 10898,
-    "name": "Golden Trophy '24"
+    "name": "Golden Trophy '24",
+    "icon": "assets/drops/crateunlocked_championsroad24.png"
   },
   {
     "id": 10899,
-    "name": "Accolade XVI"
+    "name": "Accolade XVI",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 10913,
-    "name": "Golden Pumpkin '24"
+    "name": "Golden Pumpkin '24",
+    "icon": "assets/drops/crateunlocked_halloween24.png"
   },
   {
     "id": 11158,
-    "name": "Miku Gift"
+    "name": "Miku Gift",
+    "icon": "assets/drops/crateunlocked_aventurine.png"
   },
   {
     "id": 11163,
-    "name": "Golden Gift '24"
+    "name": "Golden Gift '24",
+    "icon": "assets/drops/crateunlocked_winter24.png"
   },
   {
     "id": 11248,
-    "name": "Accolade XVII"
+    "name": "Accolade XVII",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 11529,
-    "name": "Accolade XVIII"
+    "name": "Accolade XVIII",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 11567,
-    "name": "Accolade XIX"
+    "name": "Accolade XIX",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 11568,
-    "name": "Accolade XX"
+    "name": "Accolade XX",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 11569,
-    "name": "Ooze Canister"
+    "name": "Ooze Canister",
+    "icon": "assets/drops/crateunlocked_frog.png"
   },
   {
     "id": 11570,
-    "name": "Golden Moon '25"
+    "name": "Golden Moon '25",
+    "icon": "assets/drops/crateunlocked_goldenmoon25.png"
   },
   {
     "id": 11854,
-    "name": "Anniversary Crate"
+    "name": "Anniversary Crate",
+    "icon": "assets/drops/crateunlocked_dragoncat.png"
   },
   {
     "id": 12349,
-    "name": "Golden Gift '25"
+    "name": "Golden Gift '25",
+    "icon": "assets/drops/crateunlocked_winter25.png"
   },
   {
     "id": 12369,
-    "name": "Accolade XXI"
+    "name": "Accolade XXI",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 12390,
-    "name": "Goalentines Gift"
+    "name": "Goalentines Gift",
+    "icon": "assets/drops/crateunlocked_s21goalentines.png"
   },
   {
     "id": 12515,
-    "name": "Accolade XXII"
+    "name": "Accolade XXII",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 12586,
-    "name": "Air Jordan Shoebox"
+    "name": "Air Jordan Shoebox",
+    "icon": "assets/drops/crateunlocked_luminousairplane.png"
   },
   {
     "id": 12591,
-    "name": "Cooking Pot Crate"
+    "name": "Cooking Pot Crate",
+    "icon": "assets/drops/crateunlocked_courgette.png"
   },
   {
     "id": 12617,
-    "name": "Fool's Golden Egg"
+    "name": "Fool's Golden Egg",
+    "icon": "assets/drops/crateunlocked_fool.png"
   },
   {
     "id": 12688,
-    "name": "Accolade XXIII"
+    "name": "Accolade XXIII",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 12689,
-    "name": "FIFA 2026"
+    "name": "FIFA 2026",
+    "icon": "assets/drops/crateunlocked_spheregulp.png"
   },
   {
     "id": 12790,
-    "name": "Unity 2026"
+    "name": "Unity 2026",
+    "icon": "assets/drops/crateunlocked_s23musicallte.png"
   },
   {
     "id": 12793,
-    "name": "Treasure Chest"
+    "name": "Treasure Chest",
+    "icon": "assets/drops/crateunlocked_opticorange.png"
   },
   {
     "id": 12915,
-    "name": "Accolade XXIV"
+    "name": "Accolade XXIV",
+    "icon": "assets/drops/itemcontainer.png"
   },
   {
     "id": 12917,
-    "name": "Treasure Chest"
+    "name": "Treasure Chest",
+    "icon": "assets/drops/crateunlocked_umbragenesis.png"
   },
   {
     "id": 13030,
-    "name": "Inferno Collection"
+    "name": "Inferno Collection",
+    "icon": "assets/drops/crateunlocked_luxlow1.png"
   },
   {
     "id": 13031,
-    "name": "Nova Collection"
+    "name": "Nova Collection",
+    "icon": "assets/drops/crateunlocked_luxmed1.png"
   },
   {
     "id": 13034,
-    "name": "Apex Collection"
+    "name": "Apex Collection",
+    "icon": "assets/drops/crateunlocked_luxlow2.png"
   }
 ]

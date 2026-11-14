@@ -6738,41 +6738,45 @@ let loadedDropsCatalog = [];
 const selectedDropIds = new Set();
 
 function getDropThumbnail(item) {
+    if (item?.icon) {
+        return item.icon;
+    }
+
     const id = item?.id || 0;
     const name = (item?.name || '').toLowerCase();
 
     // 1. Decryptor / Golden decryptor
     if (id === 2446 || name.includes('decryptor')) {
-        return 'https://api.velocityrl.tech/thumbnails/key_magic_t.png';
+        return 'assets/drops/key_magic.png';
     }
 
     // 2. Giftboxes by rarity
     if (name.includes('black market') || name.includes('blackmarket')) {
-        return 'https://api.velocityrl.tech/thumbnails/giftbox_blackmarket_t.png';
+        return 'assets/drops/giftbox_blackmarket.png';
     }
     if (name.includes('exotic')) {
-        return 'https://api.velocityrl.tech/thumbnails/giftbox_exotic_t.png';
+        return 'assets/drops/giftbox_exotic.png';
     }
     if (name.includes('import')) {
-        return 'https://api.velocityrl.tech/thumbnails/giftbox_import_t.png';
+        return 'assets/drops/giftbox_import.png';
     }
     if (name.includes('very rare') || name.includes('veryrare')) {
-        return 'https://api.velocityrl.tech/thumbnails/giftbox_veryrare_t.png';
+        return 'assets/drops/giftbox_veryrare.png';
     }
     if (name.includes('rare')) {
-        return 'https://api.velocityrl.tech/thumbnails/giftbox_rare_t.png';
+        return 'assets/drops/giftbox_rare.png';
     }
     if (name.includes('uncommon')) {
-        return 'https://api.velocityrl.tech/thumbnails/giftbox_uncommon_t.png';
+        return 'assets/drops/giftbox_uncommon.png';
     }
 
     // 3. Loot crate flag / crate
     if (id === 1847 || name === 'loot crate') {
-        return 'https://api.velocityrl.tech/thumbnails/flag_lootcrate_t.png';
+        return 'assets/drops/flag_lootcrate.png';
     }
 
     // 4. Default high-res official crate & drop container thumbnail
-    return 'https://api.velocityrl.tech/thumbnails/itemcontainer_t.png';
+    return 'assets/drops/itemcontainer.png';
 }
 
 function initDropsTab() {
@@ -6837,7 +6841,7 @@ function initDropsTab() {
                             border-radius: 6px;
                             background: rgba(0, 0, 0, 0.2);
                             padding: 2px;
-                        " onerror="this.src='https://api.velocityrl.tech/thumbnails/itemcontainer_t.png';">
+                        " onerror="this.src='assets/drops/itemcontainer.png';">
                         <div style="flex: 1; min-width: 0;">
                             <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 6px;">
                                 <span style="font-weight: 600; font-size: 13px; color: #fff; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">${escHtml(d.name)}</span>
