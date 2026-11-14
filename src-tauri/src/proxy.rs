@@ -3360,6 +3360,7 @@ pub async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
 
     let is_reservation = find_bytes(body_part, b"ServerAddress").is_some()
         || find_bytes(body_part, b"AddReservationMessage").is_some()
+        || find_bytes(body_part, b"PlayWithLoadout").is_some()
         || find_bytes(body_part, b"\"Loadout\"").is_some()
         || find_bytes(body_part, b"\\\"Loadout\\\"").is_some();
     if is_reservation {
@@ -6387,6 +6388,25 @@ fn patch_reservation_value_sync(
 
             if let Some(prod_ids_val) = map.get_mut("ProductIDs") {
                 patch_product_ids_node(prod_ids_val, rules, changed);
+            }
+
+            // Products.PlayWithLoadout or PlayWithLoadout event support
+            let is_play_with_loadout = map.get("EventName")
+                .and_then(|v| v.as_str())
+                .map(|s| s.contains("PlayWithLoadout") || s.contains("Products.PlayWithLoadout"))
+                .unwrap_or(false);
+            if is_play_with_loadout {
+                if let Some(event_data) = map.get_mut("EventData").and_then(|v| v.as_object_mut()) {
+                    let is_primary = event_data.get("bPrimaryPlayer").and_then(|v| v.as_bool()).unwrap_or(true);
+                    if is_primary {
+                        if let Some(loadout_val) = event_data.get_mut("Loadout") {
+                            patch_loadout_node(loadout_val, rules, changed);
+                        }
+                        if let Some(prods_val) = event_data.get_mut("Products") {
+                            patch_loadout_node(prods_val, rules, changed);
+                        }
+                    }
+                }
             }
 
             for (k, v) in map.iter_mut() {
