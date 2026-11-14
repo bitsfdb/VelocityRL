@@ -2005,7 +2005,6 @@ pub async fn start_ws_broker() -> Result<u16, String> {
         return Ok(existing);
     }
 
-    // Bind standard primary port 15759 first, fallback to 7546, 49320, 49325 or ephemeral if occupied.
     let listener = match tokio::net::TcpListener::bind("127.0.0.1:15759").await {
         Ok(l) => l,
         Err(_) => match tokio::net::TcpListener::bind("127.0.0.1:7546").await {
@@ -2239,10 +2238,20 @@ async fn handle_broker_request(
     }
 
     if path_str == "/rlim/name" || path_str.starts_with("/rlim/name?") {
-        let name = crate::psynet::load_active_spoof_from_disk()
-            .and_then(|c| c.name_spoof)
+        let spoof_cfg = match crate::psynet::load_active_spoof_from_disk() {
+            Some(c) => Some(c),
+            None => get_spoof_config().await,
+        };
+        let name = spoof_cfg
+            .as_ref()
+            .and_then(|c| c.name_spoof.as_ref())
             .filter(|ns| ns.enabled && !ns.display_name.trim().is_empty())
             .map(|ns| ns.display_name.trim().to_string())
+            .or_else(|| {
+                spoof_cfg.as_ref()
+                    .filter(|c| !c.custom_name.trim().is_empty())
+                    .map(|c| c.custom_name.trim().to_string())
+            })
             .unwrap_or_default();
         crate::applog::event(&format!("broker: {path_str} queried -> responding '{name}' for GFxData_LocalPlayer_TA::ChangeName hook"));
         return Ok(Response::builder()
@@ -2347,7 +2356,26 @@ async fn handle_broker_request(
 
     if path_str == "/rlim/sp" || path_str.starts_with("/rlim/sp?") {
         let rules = load_active_swap_rules(None);
-        let sp_ids: Vec<String> = rules.iter().map(|r| r.wanted_id.to_string()).collect();
+        let spawned = load_active_spawned_items(None);
+        let mut sp_ids: Vec<String> = Vec::new();
+        for (pid, paint) in &spawned {
+            if *pid > 0 {
+                let id_str = if *paint > 0 {
+                    format!("{pid}:{paint}")
+                } else {
+                    pid.to_string()
+                };
+                if !sp_ids.contains(&id_str) {
+                    sp_ids.push(id_str);
+                }
+            }
+        }
+        for r in &rules {
+            let pid_str = r.wanted_id.to_string();
+            if !sp_ids.contains(&pid_str) {
+                sp_ids.push(pid_str);
+            }
+        }
         let sp_body = sp_ids.join(",");
         crate::applog::event(&format!("broker: {path_str} queried -> responding '{sp_body}'"));
         return Ok(Response::builder()
