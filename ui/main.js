@@ -6798,11 +6798,6 @@ function getDropThumbnail(item) {
     const id = item?.id || 0;
     const name = (item?.name || '').toLowerCase();
 
-    // 1. Decryptor / Golden decryptor
-    if (id === 2446 || name.includes('decryptor')) {
-        return 'assets/drops/key_magic.png';
-    }
-
     // 2. Giftboxes by rarity
     if (name.includes('black market') || name.includes('blackmarket')) {
         return 'assets/drops/giftbox_blackmarket.png';
@@ -6875,39 +6870,40 @@ function initDropsTab() {
             const thumbUrl = getDropThumbnail(d);
             return `
                 <div class="drop-item-card ${isSel ? 'selected' : ''}" data-drop-id="${d.id}" style="
-                    background: ${isSel ? 'rgba(75, 153, 247, 0.25)' : 'rgba(255, 255, 255, 0.05)'};
+                    background: ${isSel ? 'rgba(75, 153, 247, 0.22)' : 'rgba(255, 255, 255, 0.04)'};
                     border: 1px solid ${isSel ? 'var(--accent, #4b99f7)' : 'rgba(255, 255, 255, 0.1)'};
-                    border-radius: 8px;
-                    padding: 12px;
+                    box-shadow: ${isSel ? '0 0 16px rgba(75, 153, 247, 0.3)' : 'none'};
+                    border-radius: 10px;
+                    padding: 16px;
                     cursor: pointer;
                     display: flex;
                     flex-direction: column;
                     justify-content: space-between;
-                    transition: all 0.15s ease;
+                    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
                     user-select: none;
                 ">
-                    <div style="display: flex; gap: 10px; align-items: center;">
+                    <div style="display: flex; gap: 14px; align-items: center;">
                         <img src="${escHtml(thumbUrl)}" alt="${escHtml(d.name)}" style="
-                            width: 48px;
-                            height: 48px;
+                            width: 72px;
+                            height: 72px;
                             object-fit: contain;
                             flex-shrink: 0;
-                            border-radius: 6px;
-                            background: rgba(0, 0, 0, 0.2);
-                            padding: 2px;
+                            border-radius: 8px;
+                            background: rgba(0, 0, 0, 0.35);
+                            padding: 4px;
+                            border: 1px solid rgba(255, 255, 255, 0.08);
                         " onerror="this.src='assets/drops/itemcontainer.png';">
                         <div style="flex: 1; min-width: 0;">
                             <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 6px;">
-                                <span style="font-weight: 600; font-size: 13px; color: #fff; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">${escHtml(d.name)}</span>
-                                <input type="checkbox" ${isSel ? 'checked' : ''} style="pointer-events: none; margin-top: 2px;">
+                                <span style="font-weight: 700; font-size: 15px; color: #fff; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">${escHtml(d.name)}</span>
                             </div>
                         </div>
                     </div>
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px; font-size: 11px; color: #888;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 14px; font-size: 12px; color: #999;">
                         <span>ID: ${d.id}</span>
                         <div style="display: flex; align-items: center; gap: 8px;">
-                            <span class="drop-qty-badge" style="background: rgba(75, 153, 247, 0.18); color: #93c5fd; padding: 1px 6px; border-radius: 4px; font-weight: 600;">Qty: ${qty}x</span>
-                            <span style="color: #4b99f7; font-weight: 500;">+ ${qty} ${qty === 1 ? 'Key' : 'Keys'}</span>
+                            <span class="drop-qty-badge" style="background: rgba(75, 153, 247, 0.22); color: #93c5fd; padding: 2px 8px; border-radius: 5px; font-weight: 600; font-size: 11px;">Qty: ${qty}x</span>
+                            <span style="color: #4b99f7; font-weight: 600;">+ ${qty} ${qty === 1 ? 'Key' : 'Keys'}</span>
                         </div>
                     </div>
                 </div>
@@ -6934,10 +6930,9 @@ function initDropsTab() {
             const id = parseInt(card.dataset.dropId, 10);
             const isSel = selectedDropIds.has(id);
             card.classList.toggle('selected', isSel);
-            card.style.background = isSel ? 'rgba(75, 153, 247, 0.25)' : 'rgba(255, 255, 255, 0.05)';
+            card.style.background = isSel ? 'rgba(75, 153, 247, 0.22)' : 'rgba(255, 255, 255, 0.04)';
             card.style.borderColor = isSel ? 'var(--accent, #4b99f7)' : 'rgba(255, 255, 255, 0.1)';
-            const cb = card.querySelector('input[type="checkbox"]');
-            if (cb) cb.checked = isSel;
+            card.style.boxShadow = isSel ? '0 0 16px rgba(75, 153, 247, 0.3)' : 'none';
         });
     }
 

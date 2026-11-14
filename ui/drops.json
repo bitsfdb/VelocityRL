@@ -5,11 +5,6 @@
     "icon": "assets/drops/crateunlocked_halloween17.png"
   },
   {
-    "id": 2446,
-    "name": "Decryptor",
-    "icon": "assets/drops/key_magic.png"
-  },
-  {
     "id": 2522,
     "name": "Crate - Secret Santa (Unlocked)",
     "icon": "assets/drops/crateunlocked_winter17.png"
@@ -45,11 +40,6 @@
     "icon": "assets/drops/crateunlocked_chinesenewyear19.png"
   },
   {
-    "id": 4049,
-    "name": "Premium",
-    "icon": "assets/drops/itemcontainer.png"
-  },
-  {
     "id": 4299,
     "name": "Golden Egg '19",
     "icon": "assets/drops/crateunlocked_radsummer19.png"
@@ -63,11 +53,6 @@
     "id": 4593,
     "name": "Golden Pumpkin '19",
     "icon": "assets/drops/crateunlocked_halloween19.png"
-  },
-  {
-    "id": 4722,
-    "name": "Bonus Gift",
-    "icon": "assets/drops/crateunlocked_decryptorgift.png"
   },
   {
     "id": 4960,
