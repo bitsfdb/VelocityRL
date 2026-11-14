@@ -2173,10 +2173,7 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
     // Register into broker memory so garage inventory & loadout immediately recognize it
     register_spawned_items(&[(dropped_pid, dropped_paint)]);
 
-    // Write to local SaveData so it stays saved permanently
-    if let Ok(sp) = crate::savedata::locate_latest_save() {
-        let _ = crate::savedata::spawn_item_native_ext(&sp, dropped_pid, dropped_paint, None, None);
-    }
+    // Pure network proxy mode: Save file on disk is not touched!
 
     let u1: u64 = rand::random();
     let u2: u64 = rand::random();
@@ -2767,12 +2764,13 @@ async fn handle_broker_request(
             || find_bytes(&out_body, b"\"Skills\"").is_some();
         if is_skill_rpc {
             extract_and_save_real_skills(&out_body);
-            let fr_opt = cfg_opt.as_ref().and_then(|c| c.fake_ranks.clone()).unwrap_or_else(crate::psynet::default_fake_ranks_payload);
-            if fr_opt.enabled {
-                let (new_body, did_patch) = patch_get_player_skill_json(&out_body, &fr_opt);
-                if did_patch {
-                    out_body = new_body;
-                    patched = true;
+            if let Some(fr) = cfg_opt.as_ref().and_then(|c| c.fake_ranks.as_ref()) {
+                if fr.enabled {
+                    let (new_body, did_patch) = patch_get_player_skill_json(&out_body, fr);
+                    if did_patch {
+                        out_body = new_body;
+                        patched = true;
+                    }
                 }
             }
         }
@@ -3361,12 +3359,13 @@ async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
     }
 
     if is_skill {
-        let fr_opt = cfg_opt.as_ref().and_then(|c| c.fake_ranks.clone()).unwrap_or_else(crate::psynet::default_fake_ranks_payload);
-        if fr_opt.enabled {
-            let (new_body, changed) = patch_get_player_skill_json(&current_body, &fr_opt);
-            if changed {
-                current_body = new_body;
-                any_changed = true;
+        if let Some(fr) = cfg_opt.as_ref().and_then(|c| c.fake_ranks.as_ref()) {
+            if fr.enabled {
+                let (new_body, changed) = patch_get_player_skill_json(&current_body, fr);
+                if changed {
+                    current_body = new_body;
+                    any_changed = true;
+                }
             }
         }
     }
