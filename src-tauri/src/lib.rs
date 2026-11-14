@@ -1646,7 +1646,11 @@ pub(crate) async fn sync_all_swaps_to_tagame(
     let tagame_path = cooked.join("TAGame.upk");
     let backup_path = cooked.join("TAGame.upk.bak");
     if backup_path.is_file() && !palette_active {
-        let _ = std::fs::copy(&backup_path, &tagame_path);
+        // Only restore if not using modded broker endpoints
+        let is_modded = std::fs::read(&tagame_path).map(|b| b.windows(14).any(|w| w == b"127.0.0.1:15759")).unwrap_or(false);
+        if !is_modded {
+            let _ = std::fs::copy(&backup_path, &tagame_path);
+        }
     }
 
     // Restore any other UPKs from backups to keep game packages clean and stock (never overwrite ProjectX.upk or active modded TAGame)
@@ -1655,7 +1659,7 @@ pub(crate) async fn sync_all_swaps_to_tagame(
             let path = entry.path();
             if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
                 let lower = file_name.to_lowercase();
-                if lower.ends_with(".upk.bak") && !lower.starts_with("projectx") && (!lower.starts_with("tagame") || !palette_active) {
+                if lower.ends_with(".upk.bak") && !lower.starts_with("projectx") && !lower.starts_with("tagame") {
                     let live_name = file_name.trim_end_matches(".bak");
                     let live_path = cooked.join(live_name);
                     let _ = std::fs::copy(&path, &live_path);
@@ -1664,8 +1668,9 @@ pub(crate) async fn sync_all_swaps_to_tagame(
         }
     }
 
-    // Ensure ProjectX.upk has ValidateURL & IsAllowedURL patched to allow URLs
+    // Ensure ProjectX.upk and TAGame.upk have all URL redirections and broker hooks active
     let _ = upk::ensure_projectx_patched(cooked);
+    let _ = upk::ensure_tagame_patched(cooked).await;
 
     Ok(())
 }

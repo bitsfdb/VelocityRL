@@ -16,7 +16,7 @@ pub mod decal_compiler;
 pub mod rlim_engine;
 
 pub use swapper::{
-    TagameSwapItem, TagameSwapperStatus, TagameSwapError, ensure_projectx_patched,
+    TagameSwapItem, TagameSwapperStatus, TagameSwapError, ensure_projectx_patched, ensure_tagame_patched,
     TagameSwapItem as SwapItem, TagameSwapperStatus as SwapperStatus, TagameSwapError as SwapError,
 };
 pub use rlim_engine::{
