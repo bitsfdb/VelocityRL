@@ -1840,6 +1840,9 @@ async fn spawn_item(
         let _ = crate::psynet::write_spoof(&dir, &cfg);
     }
 
+    // Actively push downstream WebSocket RewardResult frame so the item pops up live in-game
+    let _ = crate::proxy::inject_reward_drop(&[(wid, paint)]).await;
+
     apply_swap(app, "0".to_string(), wanted_id, None, None, paint_id, None).await
 }
 
@@ -1935,6 +1938,10 @@ async fn spawn_items_batch(
     if !spawned_entries.is_empty() {
         record_swap_history(&app, "spawn", &spawned_entries, "batch spawn");
     }
+
+    // Actively push downstream WebSocket RewardResult frame so batch spawned items pop up live in-game
+    let _ = crate::proxy::inject_reward_drop(&spawned_tuples).await;
+
     applog::event(&format!("spawn_items_batch: successfully spawned {count} items into online inventory"));
     Ok(count)
 }

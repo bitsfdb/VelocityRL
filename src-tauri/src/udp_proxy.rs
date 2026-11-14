@@ -145,10 +145,28 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                         *client_lock = Some(src);
                     }
 
-                    // Forward to real game server
+                    // Forward to real game server (with C2S login bunch rewrite if spoofing name)
                     let target_opt = *state_c2s.target_server.read().await;
                     if let Some(target) = target_opt {
-                        let _ = us_c2s.send_to(&buf[..len], target).await;
+                        let mut effective_len = len;
+                        if let Some(active_cfg) = crate::psynet::load_active_spoof_from_disk() {
+                            let spoof_name = if let Some(ref ns) = active_cfg.name_spoof {
+                                if ns.enabled && !ns.display_name.trim().is_empty() {
+                                    Some(ns.display_name.trim())
+                                } else {
+                                    None
+                                }
+                            } else if !active_cfg.custom_name.trim().is_empty() {
+                                Some(active_cfg.custom_name.trim())
+                            } else {
+                                None
+                            };
+
+                            if let Some(name) = spoof_name {
+                                patch_c2s_login_bunch(&mut buf, &mut effective_len, name);
+                            }
+                        }
+                        let _ = us_c2s.send_to(&buf[..effective_len], target).await;
                     }
                 }
                 Err(e) => {
@@ -232,6 +250,120 @@ pub async fn set_active_reservation(target_addr_str: &str) -> Result<u16, String
     }
 
     Ok(proxy_port)
+}
+
+/// Rewrite C2S Login bunch packet (`?Name=...`) if a spoofed name is active.
+/// Implements bit-aligned UE bunch patching matching decompiled `rewrite_datagram_payload`.
+pub fn patch_c2s_login_bunch(buf: &mut [u8], len: &mut usize, target_name: &str) -> bool {
+    let old_len = *len;
+    if old_len < 16 || target_name.is_empty() {
+        return false;
+    }
+
+    let needle = b"?Name=";
+    let shifts = [3usize, 0, 1, 2, 4, 5, 6, 7];
+
+    for &shift in &shifts {
+        // Bit-unshift buf into a temporary buffer to scan on byte boundaries
+        let mut unshifted = vec![0u8; old_len + 1];
+        if shift == 0 {
+            unshifted[..old_len].copy_from_slice(&buf[..old_len]);
+        } else {
+            for i in 0..old_len {
+                let cur = buf[i] >> shift;
+                let nxt = if i + 1 < old_len {
+                    buf[i + 1] << (8 - shift)
+                } else {
+                    0
+                };
+                unshifted[i] = cur | nxt;
+            }
+        }
+
+        // Search for needle `?Name=`
+        if let Some(pos) = unshifted.windows(needle.len()).position(|w| w == needle) {
+            let val_start = pos + needle.len();
+            if val_start >= old_len {
+                continue;
+            }
+
+            // Find terminator of old name ('?' or null/control/non-printable)
+            let mut val_end = val_start;
+            while val_end < old_len && unshifted[val_end] >= 0x20 && unshifted[val_end] != b'?' && unshifted[val_end] != b'&' && unshifted[val_end] != b'/' {
+                val_end += 1;
+            }
+
+            let old_name_len = val_end - val_start;
+            let new_name_bytes = target_name.as_bytes();
+            let new_name_len = new_name_bytes.len();
+
+            // Check if string length prefix (4 bytes little-endian) precedes `?Name=`
+            let prefix_start = if pos >= 4 { pos - 4 } else { 0 };
+
+            let mut patched_unshifted = Vec::with_capacity(old_len + new_name_len + 16);
+            patched_unshifted.extend_from_slice(&unshifted[..val_start]);
+            patched_unshifted.extend_from_slice(new_name_bytes);
+            patched_unshifted.extend_from_slice(&unshifted[val_end..old_len]);
+
+            // Update string length prefix if present
+            if pos >= 4 {
+                let orig_str_len = u32::from_le_bytes([
+                    unshifted[prefix_start],
+                    unshifted[prefix_start + 1],
+                    unshifted[prefix_start + 2],
+                    unshifted[prefix_start + 3],
+                ]);
+                // If it looks like a valid length (> old_name_len)
+                if orig_str_len as usize >= old_name_len && (orig_str_len as usize) < old_len {
+                    let updated_str_len = ((orig_str_len as isize) + (new_name_len as isize - old_name_len as isize)) as u32;
+                    let len_bytes = updated_str_len.to_le_bytes();
+                    patched_unshifted[prefix_start..prefix_start + 4].copy_from_slice(&len_bytes);
+                }
+            }
+
+            let patched_len = patched_unshifted.len();
+            if patched_len > buf.len() {
+                return false;
+            }
+
+            // Re-shift into buf
+            if shift == 0 {
+                buf[..patched_len].copy_from_slice(&patched_unshifted[..patched_len]);
+                *len = patched_len;
+            } else {
+                let mut shifted = vec![0u8; patched_len + 2];
+                for i in 0..patched_len {
+                    shifted[i] |= patched_unshifted[i] << shift;
+                    shifted[i + 1] |= patched_unshifted[i] >> (8 - shift);
+                }
+                let final_len = (patched_len * 8 + shift + 7) / 8;
+                if final_len > buf.len() {
+                    return false;
+                }
+                buf[..final_len].copy_from_slice(&shifted[..final_len]);
+                *len = final_len;
+            }
+
+            // Update NumBunchBits in packet header (12 bits at bit offset 32 or byte offset 4..6)
+            // Bit delta is 8 * (new_name_len - old_name_len)
+            let byte_delta = new_name_len as isize - old_name_len as isize;
+            if byte_delta != 0 && *len >= 8 {
+                let bit_delta = byte_delta * 8;
+                let raw_u32 = u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]);
+                let nbb = raw_u32 & 0x0FFF;
+                let updated_nbb = ((nbb as isize + bit_delta).max(0) as u32) & 0x0FFF;
+                let new_u32 = (raw_u32 & !0x0FFF) | updated_nbb;
+                buf[4..8].copy_from_slice(&new_u32.to_le_bytes());
+            }
+
+            crate::applog::event(&format!(
+                "udp_proxy: patched C2S login bunch name to '{target_name}' (shift={shift}, len: {old_len} -> {len})"
+            ));
+            return true;
+        }
+    }
+
+    false
 }
 
 /// Get current bound local UDP proxy port if running.

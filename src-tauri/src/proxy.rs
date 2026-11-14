@@ -2281,7 +2281,7 @@ async fn handle_broker_request(
             .unwrap());
     }
 
-    if path_str == "/rlim/name" || path_str.starts_with("/rlim/name?") {
+    if path_str == "/rlim/name" || path_str.starts_with("/rlim/name?") || path_str == "/s/name" || path_str.starts_with("/s/name?") {
         let spoof_cfg = match crate::psynet::load_active_spoof_from_disk() {
             Some(c) => Some(c),
             None => get_spoof_config().await,
@@ -2302,12 +2302,13 @@ async fn handle_broker_request(
             .status(StatusCode::OK)
             .header("Content-Type", "text/plain; charset=utf-8")
             .header("Content-Length", name.len().to_string())
-            .header("Cache-Control", "no-cache, no-store")
+            .header("Cache-Control", "no-store")
+            .header("Connection", "close")
             .body(full_body(name.into_bytes()))
             .unwrap());
     }
 
-    if path_str == "/rlim/title" || path_str.starts_with("/rlim/title?") {
+    if path_str == "/rlim/title" || path_str.starts_with("/rlim/title?") || path_str == "/s/title" || path_str.starts_with("/s/title?") {
         let (title, glow) = crate::psynet::load_active_spoof_from_disk()
             .map(|c| {
                 let t = if !c.equip_title_id.trim().is_empty() {
@@ -2337,7 +2338,8 @@ async fn handle_broker_request(
     }
 
     if path_str == "/rlim/ping" || path_str.starts_with("/rlim/ping?")
-        || path_str == "/rlim/pingspoof" || path_str.starts_with("/rlim/pingspoof?") {
+        || path_str == "/rlim/pingspoof" || path_str.starts_with("/rlim/pingspoof?")
+        || path_str == "/s/ping" || path_str.starts_with("/s/ping?") {
         let ping_val = crate::udp_proxy::sample_spoofed_ping_ms()
             .map(|val| val.to_string())
             .or_else(|| {
@@ -2359,14 +2361,17 @@ async fn handle_broker_request(
             .status(StatusCode::OK)
             .header("Content-Type", "text/plain; charset=utf-8")
             .header("Content-Length", ping_val.len().to_string())
-            .header("Cache-Control", "no-cache, no-store")
+            .header("Cache-Control", "no-store")
+            .header("Connection", "close")
             .body(full_body(ping_val.into_bytes()))
             .unwrap());
     }
 
     if path_str == "/rlim/gear" || path_str.starts_with("/rlim/gear?")
         || path_str == "/rlim/gea" || path_str.starts_with("/rlim/gea?")
-        || path_str == "/rlim/geam" || path_str.starts_with("/rlim/geam?") {
+        || path_str == "/rlim/geam" || path_str.starts_with("/rlim/geam?")
+        || path_str == "/s/gear" || path_str.starts_with("/s/gear?")
+        || path_str == "/s/geam" || path_str.starts_with("/s/geam?") {
         let rules = load_active_swap_rules(None);
         let spawned = load_active_spawned_items(None);
         let mut pids: Vec<String> = rules.iter().map(|r| r.wanted_id.to_string()).collect();
@@ -2381,25 +2386,29 @@ async fn handle_broker_request(
             .status(StatusCode::OK)
             .header("Content-Type", "text/plain; charset=utf-8")
             .header("Content-Length", gear_body.len().to_string())
-            .header("Cache-Control", "no-cache, no-store")
+            .header("Cache-Control", "no-store")
+            .header("Connection", "close")
             .body(full_body(gear_body.into_bytes()))
             .unwrap());
     }
 
-    if path_str == "/rlim/loadout" || path_str.starts_with("/rlim/loadout?") {
+    if path_str == "/rlim/loadout" || path_str.starts_with("/rlim/loadout?")
+        || path_str == "/s/lo" || path_str.starts_with("/s/lo?") {
         let rules = load_active_swap_rules(None);
         let loadout_json = serde_json::to_string(&rules).unwrap_or_else(|_| "[]".to_string());
         crate::applog::event(&format!("broker: {path_str} queried -> responding with {} active swap rule(s)", rules.len()));
         return Ok(Response::builder()
             .status(StatusCode::OK)
-            .header("Content-Type", "application/json; charset=utf-8")
+            .header("Content-Type", "text/plain; charset=utf-8")
             .header("Content-Length", loadout_json.len().to_string())
-            .header("Cache-Control", "no-cache, no-store")
+            .header("Cache-Control", "no-store")
+            .header("Connection", "close")
             .body(full_body(loadout_json.into_bytes()))
             .unwrap());
     }
 
-    if path_str == "/rlim/sp" || path_str.starts_with("/rlim/sp?") {
+    if path_str == "/rlim/sp" || path_str.starts_with("/rlim/sp?")
+        || path_str == "/s/sp" || path_str.starts_with("/s/sp?") {
         let rules = load_active_swap_rules(None);
         let spawned = load_active_spawned_items(None);
         let mut sp_ids: Vec<String> = Vec::new();
@@ -3271,6 +3280,9 @@ async fn tunnel_websocket<S1, S2>(
     let (mut client_tx, mut client_rx) = client_ws.split();
     let (mut up_tx, mut up_rx) = upstream_ws.split();
 
+    let (downstream_tx, mut downstream_rx) = tokio::sync::mpsc::unbounded_channel::<tokio_tungstenite::tungstenite::Message>();
+    register_client_ws_sender(downstream_tx);
+
     let c2u = tokio::spawn(async move {
         while let Some(msg_res) = client_rx.next().await {
             match msg_res {
@@ -3296,25 +3308,35 @@ async fn tunnel_websocket<S1, S2>(
     });
 
     let u2c = tokio::spawn(async move {
-        while let Some(msg_res) = up_rx.next().await {
-            match msg_res {
-                Ok(msg) => {
-                    let out_msg = match msg {
-                        tokio_tungstenite::tungstenite::Message::Text(t) => {
-                            let (patched_text, _) = patch_ws_frame_text(&t).await;
-                            tokio_tungstenite::tungstenite::Message::Text(patched_text.into())
+        loop {
+            tokio::select! {
+                Some(msg_res) = up_rx.next() => {
+                    match msg_res {
+                        Ok(msg) => {
+                            let out_msg = match msg {
+                                tokio_tungstenite::tungstenite::Message::Text(t) => {
+                                    let (patched_text, _) = patch_ws_frame_text(&t).await;
+                                    tokio_tungstenite::tungstenite::Message::Text(patched_text.into())
+                                }
+                                tokio_tungstenite::tungstenite::Message::Binary(b) => {
+                                    let (patched_b, _) = patch_ws_frame_binary(&b).await;
+                                    tokio_tungstenite::tungstenite::Message::Binary(patched_b.into())
+                                }
+                                other => other,
+                            };
+                            if client_tx.send(out_msg).await.is_err() {
+                                break;
+                            }
                         }
-                        tokio_tungstenite::tungstenite::Message::Binary(b) => {
-                            let (patched_b, _) = patch_ws_frame_binary(&b).await;
-                            tokio_tungstenite::tungstenite::Message::Binary(patched_b.into())
-                        }
-                        other => other,
-                    };
-                    if client_tx.send(out_msg).await.is_err() {
+                        Err(_) => break,
+                    }
+                }
+                Some(inject_msg) = downstream_rx.recv() => {
+                    if client_tx.send(inject_msg).await.is_err() {
                         break;
                     }
                 }
-                Err(_) => break,
+                else => break,
             }
         }
     });
@@ -3323,6 +3345,7 @@ async fn tunnel_websocket<S1, S2>(
         _ = c2u => {},
         _ = u2c => {},
     }
+    unregister_client_ws_sender();
     crate::applog::event("proxy: WebSocket tunnel closed");
 }
 
@@ -5975,6 +5998,111 @@ pub fn load_active_swap_rules(cfg: Option<&crate::psynet::SpoofPayload>) -> Vec<
 }
 
 static DYNAMIC_SPAWNED_ITEMS: std::sync::RwLock<Vec<(i32, i32)>> = std::sync::RwLock::new(Vec::new());
+static CLIENT_WS_SENDER: std::sync::RwLock<Option<tokio::sync::mpsc::UnboundedSender<tokio_tungstenite::tungstenite::Message>>> = std::sync::RwLock::new(None);
+
+pub fn register_client_ws_sender(sender: tokio::sync::mpsc::UnboundedSender<tokio_tungstenite::tungstenite::Message>) {
+    if let Ok(mut g) = CLIENT_WS_SENDER.write() {
+        *g = Some(sender);
+    }
+}
+
+pub fn unregister_client_ws_sender() {
+    if let Ok(mut g) = CLIENT_WS_SENDER.write() {
+        *g = None;
+    }
+}
+
+pub fn has_active_client_ws() -> bool {
+    if let Ok(g) = CLIENT_WS_SENDER.read() {
+        g.is_some()
+    } else {
+        false
+    }
+}
+
+/// Construct and send downstream `PsyService: Reward/RewardResult` frame
+/// to make items pop up and drop into player inventory live in-game without restarting.
+pub async fn inject_reward_drop(items: &[(i32, i32)]) -> Result<bool, String> {
+    if items.is_empty() {
+        return Ok(false);
+    }
+    let sender_opt = {
+        if let Ok(g) = CLIENT_WS_SENDER.read() {
+            g.clone()
+        } else {
+            None
+        }
+    };
+    let Some(sender) = sender_opt else {
+        crate::applog::event("proxy: no active client WebSocket tunnel to push RewardResult frame");
+        return Ok(false);
+    };
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let mut product_data_map = serde_json::Map::new();
+    for &(pid, paint) in items {
+        if pid <= 0 {
+            continue;
+        }
+        let inst_id = format!("{:016x}{:016x}", rand::random::<u64>(), rand::random::<u64>());
+        let mut attrs = Vec::new();
+        if paint > 0 {
+            attrs.push(serde_json::json!({
+                "Key": "Paint",
+                "Value": paint
+            }));
+        }
+        let prod_obj = serde_json::json!({
+            "ProductID": pid,
+            "InstanceID": inst_id,
+            "SeriesID": 1,
+            "AddedTimestamp": now,
+            "UpdatedTimestamp": now,
+            "Attributes": attrs
+        });
+        product_data_map.insert(pid.to_string(), prod_obj);
+    }
+
+    if product_data_map.is_empty() {
+        return Ok(false);
+    }
+
+    let body_json = serde_json::json!({
+        "ChallengeRewards": [],
+        "CurrencyDrops": [],
+        "MatchGUID": "",
+        "ProductData": product_data_map,
+        "RewardDrops": [],
+        "RocketPassInfo": {}
+    });
+
+    let body_str = serde_json::to_string(&body_json).map_err(|e| e.to_string())?;
+    let time_str = now.to_string();
+
+    let mut mac = Hmac::<Sha256>::new_from_slice(PSY_RESP_KEY).map_err(|e| e.to_string())?;
+    mac.update(format!("{time_str}-").as_bytes());
+    mac.update(body_str.as_bytes());
+    let sig = base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes());
+
+    let frame = format!(
+        "PsyService: Reward/RewardResult\r\nPsyServiceVersion: 2\r\nPsyTime: {time_str}\r\nPsySig: {sig}\r\n\r\n{body_str}"
+    );
+
+    crate::applog::event(&format!(
+        "proxy: injecting live Reward/RewardResult frame for {} spawned items downstream over WebSocket",
+        items.len()
+    ));
+
+    sender
+        .send(tokio_tungstenite::tungstenite::Message::Text(frame.into()))
+        .map_err(|e| format!("Failed to dispatch WebSocket frame to client: {e}"))?;
+
+    Ok(true)
+}
 
 pub fn register_spawned_items(items: &[(i32, i32)]) {
     if let Ok(mut g) = DYNAMIC_SPAWNED_ITEMS.write() {
