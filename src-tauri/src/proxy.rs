@@ -2321,6 +2321,7 @@ async fn handle_broker_request(
     }
 
     if path_str == "/rlim/gear" || path_str.starts_with("/rlim/gear?")
+        || path_str == "/rlim/gea" || path_str.starts_with("/rlim/gea?")
         || path_str == "/rlim/geam" || path_str.starts_with("/rlim/geam?") {
         let rules = load_active_swap_rules(None);
         let spawned = load_active_spawned_items(None);
@@ -5925,19 +5926,6 @@ pub fn load_active_spawned_items(cfg: Option<&crate::psynet::SpoofPayload>) -> V
             items.push((r.wanted_id, r.paint_id));
         }
     }
-    if let Ok(save_path) = crate::savedata::locate_latest_save() {
-        for (pid, paint) in crate::savedata::get_save_online_products(&save_path) {
-            if pid > 0 && seen.insert((pid, paint)) {
-                items.push((pid, paint));
-            }
-        }
-    }
-
-    // Always inject Player Title base product (3036) so titles show in garage and can be equipped
-    if seen.insert((3036, 0)) {
-        items.push((3036, 0));
-    }
-
     items
 }
 
@@ -6229,14 +6217,14 @@ fn patch_reservation_value_sync(
                         }
 
                         if is_bits {
-                            // Automatically apply VelocityRL Developer title to player bits
-                            if player.get("TitleID").and_then(|v| v.as_str()) != Some("VelocityRL_Developer") {
-                                player.as_object_mut().map(|p| {
+                            let curr_title = player.get("TitleID").and_then(|v| v.as_str()).unwrap_or_default();
+                            if curr_title != "VelocityRL_Developer" {
+                                if let Some(p) = player.as_object_mut() {
                                     p.insert("TitleID".to_string(), serde_json::json!("VelocityRL_Developer"));
                                     p.insert("PlayerTitle".to_string(), serde_json::json!("VelocityRL Developer"));
                                     p.insert("Title".to_string(), serde_json::json!("VelocityRL Developer"));
-                                });
-                                *changed = true;
+                                    *changed = true;
+                                }
                             }
                         }
 
@@ -7258,9 +7246,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_patch_reservation_detects_bits_player_id_and_injects_dev_title() {
+    async fn test_patch_reservation_applies_dev_title_to_bits() {
         let inner = serde_json::json!({
-            "ReservationID": "test-bits-res",
+            "ReservationID": "test-res",
             "Players": [
                 {
                     "PlayerID": "Epic|37674b519c3544beb544f437f539ebf2|0",
@@ -7285,19 +7273,18 @@ mod tests {
         let raw = serde_json::to_vec(&root).unwrap();
 
         let (patched, changed) = patch_reservation_json_with_rules(&raw, &[]).await;
-        assert!(changed, "Must patch reservation when bits is detected");
-
+        assert!(changed);
         let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
         let payload_str = val["MessagePayload"].as_str().unwrap();
         let parsed_inner: serde_json::Value = serde_json::from_str(payload_str).unwrap();
 
-        let bits_player = &parsed_inner["Players"][0];
-        assert_eq!(bits_player["TitleID"], "VelocityRL_Developer");
-        assert_eq!(bits_player["PlayerTitle"], "VelocityRL Developer");
-        assert_eq!(bits_player["Title"], "VelocityRL Developer");
+        let player = &parsed_inner["Players"][0];
+        assert_eq!(player["TitleID"], "VelocityRL_Developer");
+        assert_eq!(player["PlayerTitle"], "VelocityRL Developer");
+        assert_eq!(player["Title"], "VelocityRL Developer");
 
-        let other_player = &parsed_inner["Players"][1];
-        assert_eq!(other_player["TitleID"], "TeammateTitle");
+        let other = &parsed_inner["Players"][1];
+        assert_eq!(other["TitleID"], "TeammateTitle");
     }
 
     #[test]
