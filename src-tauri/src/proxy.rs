@@ -6271,6 +6271,31 @@ fn patch_reservation_value_sync(
                         }
 
                         if is_local {
+                            // Inject custom title if active spoof config defines one
+                            if let Some(spoof) = crate::psynet::load_active_spoof_from_disk() {
+                                if spoof.enabled {
+                                    let equip_id = if !spoof.equip_title_id.trim().is_empty() {
+                                        spoof.equip_title_id.trim()
+                                    } else {
+                                        spoof.display_title_id.trim()
+                                    };
+                                    let mut custom_text = spoof.custom_text.trim();
+                                    if custom_text.is_empty() {
+                                        custom_text = spoof.custom_name.trim();
+                                    }
+                                    if !equip_id.is_empty() {
+                                        if let Some(p) = player.as_object_mut() {
+                                            p.insert("TitleID".to_string(), serde_json::json!(equip_id));
+                                            if !custom_text.is_empty() {
+                                                p.insert("PlayerTitle".to_string(), serde_json::json!(custom_text));
+                                                p.insert("Title".to_string(), serde_json::json!(custom_text));
+                                            }
+                                            *changed = true;
+                                        }
+                                    }
+                                }
+                            }
+
                             if let Some(loadout_val) = player.get_mut("Loadout") {
                                 patch_loadout_node(loadout_val, rules, changed);
                             }
