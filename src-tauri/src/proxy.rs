@@ -2445,29 +2445,31 @@ async fn handle_broker_request(
     <meta charset="utf-8">
     <title>VelocityRL — Steam Linked</title>
     <style>
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{
-            margin: 0; padding: 0; background: #121212; color: #e8e8e8;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #121212; color: #e8e8e8;
+            font-family: system-ui, -apple-system, Segoe UI, sans-serif;
             display: flex; align-items: center; justify-content: center; min-height: 100vh;
+            padding: 24px;
         }}
         .card {{
-            background: #1a1a1a; border: 1px solid #333333; border-radius: 12px;
-            padding: 36px 32px; text-align: center; max-width: 420px;
-            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+            background: #1a1a1a; border: 1px solid #333333; border-radius: 6px;
+            padding: 32px; text-align: center; max-width: 400px; width: 100%;
         }}
         .avatar-img {{
-            width: 96px; height: 96px; border-radius: 50%; border: 3px solid #4a9eff;
-            margin-bottom: 20px; object-fit: cover; box-shadow: 0 0 20px rgba(74, 158, 255, 0.35);
+            width: 80px; height: 80px; border-radius: 4px; border: 1px solid #333333;
+            margin-bottom: 20px; object-fit: cover; display: inline-block;
         }}
-        h1 {{ font-size: 20px; font-weight: 700; margin: 0 0 8px; color: #4a9eff; }}
-        p {{ color: #a0a0a0; font-size: 13.5px; line-height: 1.5; margin: 6px 0; }}
+        h1 {{ font-size: 20px; font-weight: 600; margin: 0 0 10px; color: #e8e8e8; }}
+        p {{ color: #a0a0a0; font-size: 14px; line-height: 1.5; margin: 6px 0; }}
+        b {{ color: #ffffff; }}
         .badge {{
-            display: inline-block; margin-top: 14px; padding: 6px 14px;
-            background: rgba(74, 158, 255, 0.12); color: #4a9eff;
-            border: 1px solid rgba(74, 158, 255, 0.3); border-radius: 20px;
-            font-size: 12px; font-weight: 600;
+            display: inline-block; margin-top: 16px; padding: 4px 10px;
+            background: #222222; color: #4a9eff;
+            border: 1px solid #333333; border-radius: 4px;
+            font-size: 12px; font-weight: 500;
         }}
-        .hint {{ margin-top: 24px; font-size: 12px; color: #666; }}
+        .hint {{ margin-top: 24px; font-size: 13px; color: #888888; }}
     </style>
 </head>
 <body>
@@ -5886,6 +5888,21 @@ pub fn load_active_swap_rules(cfg: Option<&crate::psynet::SpoofPayload>) -> Vec<
                         });
                     }
                 }
+            }
+        }
+    }
+
+    if let Ok(dyn_items) = DYNAMIC_SPAWNED_ITEMS.read() {
+        for &(wid, pid) in dyn_items.iter() {
+            if wid > 0 && seen.insert((0, wid, 0)) {
+                let is_body = is_known_body_id(wid);
+                rules.push(ActiveSwapRule {
+                    owned_id: 0,
+                    wanted_id: wid,
+                    paint_id: pid,
+                    slot: if is_body { "Body".to_string() } else { "".to_string() },
+                    slot_idx: if is_body { 0 } else { 255 },
+                });
             }
         }
     }

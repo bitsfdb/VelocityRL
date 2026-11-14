@@ -574,8 +574,9 @@ fn classify_via_swatches(
         }
     }
 
+    let is_expanded_blue = blue.value_count == 22 || blue.value_count == 21;
     if is_combined(sets)
-        || blue.value_count != SRC_VALUES
+        || (!is_expanded_blue && blue.value_count != SRC_VALUES)
         || accent.hue_count != ACCENT_HUE_COUNT
         || accent.value_count != SRC_VALUES
     {
@@ -1328,7 +1329,7 @@ fn extract_value_major_band(
 }
 
 fn is_full_stack(team: &SwatchSource) -> bool {
-    if team.hue_count != STACK_HUE_COUNT || team.value_count != STACK_VALUE_COUNT {
+    if team.hue_count != STACK_HUE_COUNT || (team.value_count != STACK_VALUE_COUNT && team.value_count != 22) {
         return false;
     }
     (team.hue_count as i64) * (team.value_count as i64) == team.color_count as i64
@@ -1417,17 +1418,35 @@ fn combine_swatches(blocks: &[&SwatchSource]) -> Result<CombinedSwatches, Palett
     if orange.debug_elem != debug_elem || accent.debug_elem != debug_elem {
         return Err(PaletteError::Msg("DebugColors element size mismatch".into()));
     }
-    if blue.hue_count != TEAM_HUE_COUNT || blue.value_count != SRC_VALUES {
-        return Err(PaletteError::Msg(format!(
-            "BlueTeamV3 must be {TEAM_HUE_COUNT}×{SRC_VALUES} (got {}×{})",
-            blue.hue_count, blue.value_count
-        )));
-    }
-    if orange.hue_count != TEAM_HUE_COUNT || orange.value_count != SRC_VALUES {
-        return Err(PaletteError::Msg(format!(
-            "OrangeTeamV3 must be {TEAM_HUE_COUNT}×{SRC_VALUES} (got {}×{})",
-            orange.hue_count, orange.value_count
-        )));
+    let is_expanded_source = (blue.value_count == 22 || blue.value_count == 21)
+        && (orange.value_count == 22 || orange.value_count == 21);
+
+    if !is_expanded_source {
+        if blue.hue_count != TEAM_HUE_COUNT || blue.value_count != SRC_VALUES {
+            return Err(PaletteError::Msg(format!(
+                "BlueTeamV3 must be {TEAM_HUE_COUNT}×{SRC_VALUES} (got {}×{})",
+                blue.hue_count, blue.value_count
+            )));
+        }
+        if orange.hue_count != TEAM_HUE_COUNT || orange.value_count != SRC_VALUES {
+            return Err(PaletteError::Msg(format!(
+                "OrangeTeamV3 must be {TEAM_HUE_COUNT}×{SRC_VALUES} (got {}×{})",
+                orange.hue_count, orange.value_count
+            )));
+        }
+    } else {
+        if blue.hue_count != TEAM_HUE_COUNT {
+            return Err(PaletteError::Msg(format!(
+                "BlueTeamV3 hue count must be {TEAM_HUE_COUNT} (got {})",
+                blue.hue_count
+            )));
+        }
+        if orange.hue_count != TEAM_HUE_COUNT {
+            return Err(PaletteError::Msg(format!(
+                "OrangeTeamV3 hue count must be {TEAM_HUE_COUNT} (got {})",
+                orange.hue_count
+            )));
+        }
     }
     if accent.hue_count != ACCENT_HUE_COUNT || accent.value_count != SRC_VALUES {
         return Err(PaletteError::Msg(format!(
@@ -1438,6 +1457,17 @@ fn combine_swatches(blocks: &[&SwatchSource]) -> Result<CombinedSwatches, Palett
     let _ = source_hues(blue)?;
     let _ = source_hues(orange)?;
     let _ = source_hues(accent)?;
+
+    if is_expanded_source {
+        // Source sets are already an expanded palette (e.g. 10×22 or 10×21), use blue directly for the target stack
+        return Ok(CombinedSwatches {
+            hue_count: blue.hue_count,
+            value_count: blue.value_count,
+            color_count: blue.color_count as i32,
+            colors_payload: blue.colors_payload.clone(),
+            debug_payload: blue.debug_payload.clone(),
+        });
+    }
 
     let hue_count = STACK_HUE_COUNT;
     let value_count = STACK_VALUE_COUNT;
@@ -1707,7 +1737,9 @@ fn apply_combined_copies(
         hue_count: combined.hue_count,
         value_count: combined.value_count,
     };
-    if !is_three_band_stack(&stacked_check, &owned[0], &owned[1], &owned[2]) {
+    if (owned[0].value_count == SRC_VALUES && owned[1].value_count == SRC_VALUES)
+        && !is_three_band_stack(&stacked_check, &owned[0], &owned[1], &owned[2])
+    {
         return Err(PaletteError::Msg(
             "stacked BlueV3+OrangeV3+Accent did not produce the expected 10×21 grid".into(),
         ));
