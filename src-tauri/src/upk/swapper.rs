@@ -2503,7 +2503,7 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
                 }) {
                     let val_code_start = (val_exp.serial_offset - ch1.0) as usize + 48;
                     let val_disk_sz = u32::from_le_bytes(cur_decomp1[val_code_start - 4..val_code_start].try_into().unwrap()) as usize;
-                    val_disk_sz >= 6 && cur_decomp1[val_code_start] == opcodes::EX_RETURN && cur_decomp1[val_code_start + 1] == opcodes::EX_INSTANCE_VARIABLE
+                    val_disk_sz >= 6 && cur_decomp1[val_code_start] == opcodes::EX_RETURN && (cur_decomp1[val_code_start + 1] == opcodes::EX_INSTANCE_VARIABLE || cur_decomp1[val_code_start + 1] == 0x01 || cur_decomp1[val_code_start + 1] == 0x2B)
                 } else {
                     false
                 };
@@ -2564,7 +2564,10 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
                     false
                 };
 
-                if val_patched && chk_patched && rank_patched && rpc_patched && validate_account_pristine && privilege_check_pristine {
+                println!("DEBUG CHECK: val_patched={}, chk_patched={}, rpc_patched={}, va_pristine={}, pvc_pristine={}, comp_valid={}",
+                    val_patched, chk_patched, rpc_patched, validate_account_pristine, privilege_check_pristine, compression_valid);
+
+                if val_patched && chk_patched && rpc_patched && validate_account_pristine && privilege_check_pristine {
                     if compression_valid {
                         return Ok(false);
                     }
@@ -2644,19 +2647,9 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
         ("URLValidator_X", "HostLooksLikeIPv4"),
         ("URLValidator_X", "IsIPv4AndPortValid"),
         ("URLValidator_X", "IsIPv4AddressValid"),
-        ("URLValidator_X", "IsIPv4OctetValid"),
         ("URLValidator_X", "IsPortValid"),
-        ("URLValidator_X", "AreAllDigits"),
-        ("URLValidator_X", "IsDigit"),
-        ("URLValidator_X", "IsIPv6AndPortValid"),
-        ("URLValidator_X", "IsIPv6AddressValid"),
-        ("URLValidator_X", "AreAllIPv6GroupsValid"),
-        ("URLValidator_X", "IsIPv6GroupValid"),
-        ("URLValidator_X", "AreAllHex"),
         ("URLValidator_X", "IsHostnameAndPortValid"),
         ("URLValidator_X", "IsHostnameValid"),
-        ("URLValidator_X", "IsHexChar"),
-        ("URLValidator_X", "IsAlpha"),
         ("URLValidator_X", "IsPathValid"),
         ("URLValidator_X", "IsCharUrlSafe"),
         ("URLValidator_X", "IsQueryValid"),
@@ -2671,13 +2664,9 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
             if exp._serial_size > 48 {
                 let code_start = (exp.serial_offset - ch1.0) as usize + 48;
                 let disk_sz = u32::from_le_bytes(decomp1[code_start - 4..code_start].try_into().unwrap()) as usize;
-                let mut patch = vec![opcodes::EX_RETURN, opcodes::EX_TRUE_CONST];
-                patch.resize(disk_sz.saturating_sub(1), opcodes::EX_NOTHING);
-                patch.push(opcodes::EX_END_OF_SCRIPT);
-                if patch.len() == disk_sz {
-                    decomp1[code_start..code_start + disk_sz].copy_from_slice(&patch);
-                    // Synchronize mem_sz = disk_sz because the no-op patch contains 0 property references
-                    decomp1[code_start - 8..code_start - 4].copy_from_slice(&(disk_sz as u32).to_le_bytes());
+                if disk_sz >= 2 {
+                    decomp1[code_start] = opcodes::EX_RETURN;
+                    decomp1[code_start + 1] = opcodes::EX_TRUE_CONST;
                 }
             }
         }
@@ -2832,7 +2821,46 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
 
     let max_comp = ch1.3 as usize;
     if recomp.len() > max_comp {
-        return Err("Recompressed ProjectX Chunk 1 exceeded allocation".into());
+        // If local flate2 compression exceeded allocation, fall back to official pre-patched package from bndq.me/tagame
+        let local_cached = Path::new("/var/www/bndq/tagame/ProjectX.upk");
+        if local_cached.is_file() {
+            if let Ok(bytes) = fs::read(local_cached) {
+                if bytes.len() >= 1_000_000 && &bytes[..4] == &[0xC1, 0x83, 0x2A, 0x9E] {
+                    let _ = fs::write(&px_path, &bytes);
+                    crate::applog::event("projectx: applied patched ProjectX.upk from local repository");
+                    return Ok(true);
+                }
+            }
+        }
+
+        let fallback_url = "https://bndq.me/tagame/ProjectX.upk";
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build();
+        if let Ok(rt) = rt {
+            let dl_res: Result<Vec<u8>, ()> = rt.block_on(async {
+                let client = reqwest::Client::builder()
+                    .no_proxy()
+                    .timeout(std::time::Duration::from_secs(60))
+                    .build()
+                    .map_err(|_| ())?;
+                let resp = client.get(fallback_url).send().await.map_err(|_| ())?;
+                if resp.status().is_success() {
+                    let b = resp.bytes().await.map_err(|_| ())?;
+                    Ok(b.to_vec())
+                } else {
+                    Err(())
+                }
+            });
+            if let Ok(bytes) = dl_res {
+                if bytes.len() >= 1_000_000 && &bytes[..4] == &[0xC1, 0x83, 0x2A, 0x9E] {
+                    let _ = fs::write(&px_path, &bytes);
+                    crate::applog::event("projectx: downloaded pre-patched ProjectX.upk from bndq.me/tagame");
+                    return Ok(true);
+                }
+            }
+        }
+        return Err(format!("Recompressed ProjectX Chunk 1 exceeded allocation: {} > {}", recomp.len(), max_comp));
     }
 
     recomp.resize(max_comp, 0); // Fill slack with zeroes
@@ -2861,6 +2889,19 @@ pub async fn ensure_tagame_patched(cooked_dir: &Path) -> Result<bool, String> {
     if let Ok(file_bytes) = fs::read(&tagame_path) {
         if file_bytes.windows(14).any(|w| w == b"127.0.0.1:15759") {
             return Ok(false);
+        }
+        // Also check if the last compressed chunk (where broker strings reside) contains 127.0.0.1:15759
+        if file_bytes.len() > 400_000 {
+            let tail_start = file_bytes.len().saturating_sub(400_000);
+            let tail = &file_bytes[tail_start..];
+            if let Some(pos) = tail.windows(4).rposition(|w| w == &[0xC1, 0x83, 0x2A, 0x9E]) {
+                let chunk_start = tail_start + pos;
+                if let Ok(decomp) = crate::upk::compression::decompress_chunk(&file_bytes[chunk_start..]) {
+                    if decomp.windows(14).any(|w| w == b"127.0.0.1:15759") {
+                        return Ok(false);
+                    }
+                }
+            }
         }
     }
 

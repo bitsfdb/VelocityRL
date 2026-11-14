@@ -1905,13 +1905,6 @@ async fn spawn_items_batch(
     }
 
     save_swaps(&app, &swaps);
-    if let Ok(config) = get_config(app.clone()).await {
-        if !config.game_dir.is_empty() {
-            if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
-            }
-        }
-    }
     if !spawned_entries.is_empty() {
         record_swap_history(&app, "spawn", &spawned_entries, "batch spawn");
     }
