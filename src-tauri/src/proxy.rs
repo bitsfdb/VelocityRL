@@ -732,6 +732,15 @@ fn patch_ws_names_value(
                 is_own_obj = true;
             }
 
+            // If this object is explicitly marked as primary/local player or non-remote
+            if !is_own_obj && !has_other_id {
+                let is_primary = map.get("bPrimaryPlayer").and_then(|v| v.as_bool()).unwrap_or(false);
+                let is_remote = map.get("bRemotePlayer").and_then(|v| v.as_bool()).unwrap_or(true);
+                if is_primary || !is_remote {
+                    is_own_obj = true;
+                }
+            }
+
             for (k, v) in map.iter_mut() {
                 let is_name_key = NAME_KEYS.iter().any(|nk| nk.eq_ignore_ascii_case(k));
                 if is_name_key {
@@ -1796,6 +1805,7 @@ async fn handle_forward_intercepted_request(
             .filter(|n| n.enabled && !n.display_name.trim().is_empty());
 
         let mut final_body = resp_bytes;
+        let mut body_modified = false;
         if let Some(ns) = name_spoof {
             if let Ok(mut json_val) = serde_json::from_slice::<serde_json::Value>(&final_body) {
                 let learned_pid_store = get_learned_player_id();
@@ -1820,6 +1830,7 @@ async fn handle_forward_intercepted_request(
                 if modified {
                     if let Ok(serialized) = serde_json::to_vec(&json_val) {
                         final_body = serialized;
+                        body_modified = true;
                     }
                 }
 
@@ -1831,6 +1842,7 @@ async fn handle_forward_intercepted_request(
                     );
                     if ws_changed {
                         final_body = ws_patched;
+                        body_modified = true;
                     }
                 }
             }
@@ -1849,6 +1861,7 @@ async fn handle_forward_intercepted_request(
                 let (new_body, did_patch) = patch_player_wallet_json(&final_body, cs);
                 if did_patch {
                     final_body = new_body;
+                    body_modified = true;
                 }
             }
         }
@@ -1874,15 +1887,18 @@ async fn handle_forward_intercepted_request(
                 let (new_body_prod, did_patch_prod) = patch_player_products_json(&final_body, &spawned_items);
                 if did_patch_prod {
                     final_body = new_body_prod;
+                    body_modified = true;
                 }
                 let (new_body_cross, did_patch_cross) = patch_cross_entitlement_json(&final_body, &spawned_items);
                 if did_patch_cross {
                     final_body = new_body_cross;
+                    body_modified = true;
                 }
             }
             let (new_body_own, did_patch_own) = patch_check_ownership_json(&final_body, &[]);
             if did_patch_own {
                 final_body = new_body_own;
+                body_modified = true;
             }
         }
 
@@ -1893,6 +1909,7 @@ async fn handle_forward_intercepted_request(
             let (new_body, did_patch) = patch_users_can_show_avatar_json(&final_body);
             if did_patch {
                 final_body = new_body;
+                body_modified = true;
             }
         }
 
@@ -1902,10 +1919,33 @@ async fn handle_forward_intercepted_request(
             if k_lower != "content-length"
                 && k_lower != "content-encoding"
                 && k_lower != "transfer-encoding"
+                && (!body_modified || (k_lower != "psysig" && k_lower != "psysignature"))
             {
                 resp_builder = resp_builder.header(k.as_str(), v.as_bytes());
             }
         }
+
+        if body_modified {
+            let psy_time = resp_headers
+                .get("psytime")
+                .or_else(|| resp_headers.get("PsyTime"))
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| {
+                    format!(
+                        "{}",
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs())
+                            .unwrap_or(1755399374)
+                    )
+                });
+            let sig = resign_rpc_response(&psy_time, &final_body);
+            resp_builder = resp_builder.header("PsyTime", &psy_time);
+            resp_builder = resp_builder.header("PsySig", &sig);
+            resp_builder = resp_builder.header("Psysignature", &sig);
+        }
+
         resp_builder = resp_builder.header("Content-Length", final_body.len().to_string());
         Ok(resp_builder.body(full_body(final_body)).unwrap())
     } else {
