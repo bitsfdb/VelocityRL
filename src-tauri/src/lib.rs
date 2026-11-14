@@ -793,6 +793,21 @@ async fn get_items(app: tauri::AppHandle, lang: Option<String>) -> Result<Vec<It
     }
 
     if lang_id == 0 {
+        const BUNDLED_ITEMS_JSON: &str = include_str!("../../resources/items.json");
+        if let Ok(items) = parse_items_slice(BUNDLED_ITEMS_JSON.as_bytes().to_vec()).await {
+            set_cached_items(lang_id, items.clone());
+
+            let d_dir = data_dir.clone();
+            let c_dir = config_dir.clone();
+            let items_for_save = items.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = persist_catalog(items_for_save, d_dir.clone(), c_dir.clone(), None, lang_id).await;
+                background_check_items_update(d_dir, c_dir, lang_id).await;
+            });
+
+            return Ok(items);
+        }
+
         let mut bundled_candidates = Vec::new();
         if let Ok(res_dir) = app.path().resource_dir() {
             bundled_candidates.push(res_dir.join("items.json"));

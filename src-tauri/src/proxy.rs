@@ -6046,19 +6046,30 @@ fn patch_loadout_int_array(
             }
         }
 
-        // 2. If not replaced yet, check if this rule is for a Body
+        // 2. Map by slot index if known (Body = 0, Decal = 1, Wheels = 2, Boost = 3, etc.)
         let is_body = r.slot_idx == 0
             || r.slot.eq_ignore_ascii_case("Body")
             || is_known_body_id(r.wanted_id)
             || (r.owned_id > 0 && is_known_body_id(r.owned_id));
 
-        if !replaced && is_body && !arr.is_empty() {
-            // Index 0 in Rocket League positional loadout array is ALWAYS the Body slot
-            if arr[0].as_i64().map(|n| n as i32) != Some(r.wanted_id) {
-                arr[0] = serde_json::json!(r.wanted_id);
-                *changed = true;
+        let slot_idx = if is_body {
+            Some(0)
+        } else if r.slot_idx != 255 {
+            Some(r.slot_idx as usize)
+        } else {
+            crate::savedata::slot_name_to_index(&r.slot)
+        };
+
+        if !replaced {
+            if let Some(idx) = slot_idx {
+                if idx < arr.len() {
+                    if arr[idx].as_i64().map(|n| n as i32) != Some(r.wanted_id) {
+                        arr[idx] = serde_json::json!(r.wanted_id);
+                        *changed = true;
+                    }
+                    replaced = true;
+                }
             }
-            replaced = true;
         }
 
         // 3. If not replaced and wanted_id not already in array, append
