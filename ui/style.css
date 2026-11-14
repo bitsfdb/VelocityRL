@@ -114,12 +114,12 @@ body.is-loading main {
 ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
 
 .sidebar {
-    width: var(--sidebar);
+    width: clamp(180px, 18vw, 220px);
     background: var(--panel);
     border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
-    padding: var(--space-3) var(--space-2);
+    padding: 14px 10px;
     flex: 0 0 auto;
     align-self: stretch;
     min-height: 0;
@@ -130,28 +130,74 @@ body.is-loading main {
 .logo-section {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-2);
-    margin-bottom: var(--space-3);
+    gap: 10px;
+    padding: 6px 10px 14px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     flex-shrink: 0;
 }
 
 .logo-name {
-    font-weight: 600;
-    font-size: clamp(13px, 1.1vw, 15px);
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: -0.01em;
+    color: var(--text);
 }
 
-.nav-links { display: flex; flex-direction: column; gap: var(--space-1); flex-shrink: 0; }
+.nav-links { display: flex; flex-direction: column; gap: 3px; flex-shrink: 0; }
+
+.nav-section-title {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    opacity: 0.6;
+    padding: 8px 10px 4px;
+    text-transform: uppercase;
+}
 
 .nav-item {
-    padding: var(--row-pad-y) var(--row-pad-x);
-    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 7px;
     color: var(--muted);
+    font-size: 13px;
+    font-weight: 500;
     cursor: pointer;
+    transition: all 0.15s ease;
 }
 
-.nav-item:hover { background: var(--panel-hover); color: var(--text); }
-.nav-item.active { background: #2a2a2a; color: var(--text); }
+.nav-item .nav-icon {
+    flex-shrink: 0;
+    color: var(--muted);
+    opacity: 0.75;
+    transition: all 0.15s ease;
+}
+
+.nav-item:hover {
+    background: var(--panel-hover);
+    color: var(--text);
+}
+
+.nav-item:hover .nav-icon {
+    opacity: 1;
+    color: var(--text);
+}
+
+.nav-item.active {
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+    font-weight: 600;
+    border-left: 3px solid var(--accent);
+    padding-left: 9px;
+}
+
+.nav-item.active .nav-icon {
+    color: var(--accent);
+    opacity: 1;
+}
 .nav-wip {
     margin-left: 4px;
     font-size: 10px;
@@ -1195,28 +1241,41 @@ select::-ms-expand { display: none; }
 
 .subtab-strip {
     display: flex;
-    gap: 6px;
-    margin: 0;
+    gap: 4px;
+    margin: 0 0 16px;
+    padding: 4px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
     flex-shrink: 0;
     flex-wrap: wrap;
+    align-items: center;
 }
 
 .subtab-btn {
-    padding: 8px 14px;
+    padding: 6px 14px;
     font: inherit;
-    font-size: 13px;
+    font-size: 12.5px;
+    font-weight: 500;
     background: transparent;
-    border: 1px solid var(--border);
+    border: 1px solid transparent;
     border-radius: 6px;
     color: var(--muted);
     cursor: pointer;
+    transition: all 0.15s ease;
 }
 
-.subtab-btn:hover { color: var(--text); }
-.subtab-btn.active {
-    border-color: var(--accent);
+.subtab-btn:hover {
     color: var(--text);
-    background: #222;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.subtab-btn.active {
+    border-color: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    font-weight: 600;
+    background: var(--panel);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
 @keyframes toastSlideOut {
