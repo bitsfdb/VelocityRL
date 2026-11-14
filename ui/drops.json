@@ -1,0 +1,426 @@
+[
+  {
+    "id": 2445,
+    "name": "Crate - Haunted Hallows (Unlocked)"
+  },
+  {
+    "id": 2446,
+    "name": "Decryptor"
+  },
+  {
+    "id": 2522,
+    "name": "Crate - Secret Santa (Unlocked)"
+  },
+  {
+    "id": 2731,
+    "name": "Crate - Spring Fever (Unlocked)"
+  },
+  {
+    "id": 3011,
+    "name": "Crate - RL Beach Blast (Unlocked)"
+  },
+  {
+    "id": 3049,
+    "name": "Golden Egg '18"
+  },
+  {
+    "id": 3468,
+    "name": "Golden Pumpkin '18"
+  },
+  {
+    "id": 3646,
+    "name": "Golden Gift '18"
+  },
+  {
+    "id": 3849,
+    "name": "Golden Lantern '19"
+  },
+  {
+    "id": 4049,
+    "name": "Premium"
+  },
+  {
+    "id": 4299,
+    "name": "Golden Egg '19"
+  },
+  {
+    "id": 4592,
+    "name": "Golden Gift '19"
+  },
+  {
+    "id": 4593,
+    "name": "Golden Pumpkin '19"
+  },
+  {
+    "id": 4722,
+    "name": "Bonus Gift"
+  },
+  {
+    "id": 4960,
+    "name": "Golden Gift Basket '22"
+  },
+  {
+    "id": 5085,
+    "name": "Prospects Cup"
+  },
+  {
+    "id": 5086,
+    "name": "Challengers Cup"
+  },
+  {
+    "id": 5087,
+    "name": "All-Stars Cup"
+  },
+  {
+    "id": 5088,
+    "name": "Champions Cup"
+  },
+  {
+    "id": 5297,
+    "name": "Golden Egg '20"
+  },
+  {
+    "id": 5298,
+    "name": "Black Market Drop"
+  },
+  {
+    "id": 5299,
+    "name": "Exotic Drop"
+  },
+  {
+    "id": 5300,
+    "name": "Import Drop"
+  },
+  {
+    "id": 5301,
+    "name": "Special Drop"
+  },
+  {
+    "id": 5302,
+    "name": "Sport Drop"
+  },
+  {
+    "id": 5303,
+    "name": "Deluxe Drop"
+  },
+  {
+    "id": 5611,
+    "name": "Golden Pumpkin '20"
+  },
+  {
+    "id": 5660,
+    "name": "Golden Gift '20"
+  },
+  {
+    "id": 5764,
+    "name": "Golden Lantern '21"
+  },
+  {
+    "id": 5895,
+    "name": "Accolade"
+  },
+  {
+    "id": 5903,
+    "name": "Accolade II"
+  },
+  {
+    "id": 5904,
+    "name": "Accolade III"
+  },
+  {
+    "id": 6128,
+    "name": "Accolade IV"
+  },
+  {
+    "id": 6832,
+    "name": "Accolade V"
+  },
+  {
+    "id": 7172,
+    "name": "Golden Moon '22"
+  },
+  {
+    "id": 7174,
+    "name": "Accolade VI"
+  },
+  {
+    "id": 7221,
+    "name": "Golden Gift '21"
+  },
+  {
+    "id": 7673,
+    "name": "Golden Egg '22"
+  },
+  {
+    "id": 7698,
+    "name": "Accolade VII"
+  },
+  {
+    "id": 7876,
+    "name": "Accolade VIII"
+  },
+  {
+    "id": 8261,
+    "name": "Golden Pumpkin '22"
+  },
+  {
+    "id": 8413,
+    "name": "Africa Decal Pack"
+  },
+  {
+    "id": 8414,
+    "name": "Asia & Oceania Decal Pack"
+  },
+  {
+    "id": 8415,
+    "name": "Eastern Europe Decal Pack"
+  },
+  {
+    "id": 8416,
+    "name": "Middle East Decal Pack"
+  },
+  {
+    "id": 8417,
+    "name": "North America Decal Pack"
+  },
+  {
+    "id": 8418,
+    "name": "Northern Europe Decal Pack"
+  },
+  {
+    "id": 8419,
+    "name": "South America Decal Pack"
+  },
+  {
+    "id": 8420,
+    "name": "Southern Europe Decal Pack"
+  },
+  {
+    "id": 8421,
+    "name": "Western Europe Decal Pack"
+  },
+  {
+    "id": 8442,
+    "name": "Federation Banners"
+  },
+  {
+    "id": 8457,
+    "name": "Accolade IX"
+  },
+  {
+    "id": 8458,
+    "name": "Golden Gift '22"
+  },
+  {
+    "id": 8728,
+    "name": "Golden Moon '23"
+  },
+  {
+    "id": 8810,
+    "name": "Accolade X"
+  },
+  {
+    "id": 8991,
+    "name": "Golden Toolkit"
+  },
+  {
+    "id": 9100,
+    "name": "Accolade XI"
+  },
+  {
+    "id": 9107,
+    "name": "Golden Egg '23"
+  },
+  {
+    "id": 9329,
+    "name": "Golden Trophy '23"
+  },
+  {
+    "id": 9330,
+    "name": "Accolade XII"
+  },
+  {
+    "id": 9724,
+    "name": "Golden Pumpkin '23"
+  },
+  {
+    "id": 9739,
+    "name": "Accolade XIII"
+  },
+  {
+    "id": 9899,
+    "name": "Golden Gift '23"
+  },
+  {
+    "id": 10224,
+    "name": "Accolade XIV"
+  },
+  {
+    "id": 10363,
+    "name": "Golden Cup '24"
+  },
+  {
+    "id": 10373,
+    "name": "Golden Moon '24"
+  },
+  {
+    "id": 10403,
+    "name": "Golden X-Crate"
+  },
+  {
+    "id": 10534,
+    "name": "Golden Record '24"
+  },
+  {
+    "id": 10560,
+    "name": "Golden Egg '24"
+  },
+  {
+    "id": 10652,
+    "name": "Accolade XV"
+  },
+  {
+    "id": 10666,
+    "name": "Caribbean Bundle"
+  },
+  {
+    "id": 10667,
+    "name": "Eastern Europe Bundle"
+  },
+  {
+    "id": 10668,
+    "name": "North America Bundle"
+  },
+  {
+    "id": 10669,
+    "name": "Northern Europe Bundle"
+  },
+  {
+    "id": 10670,
+    "name": "South America Bundle 1"
+  },
+  {
+    "id": 10671,
+    "name": "South America Bundle 2"
+  },
+  {
+    "id": 10672,
+    "name": "Southern Europe Bundle"
+  },
+  {
+    "id": 10673,
+    "name": "Western Europe Bundle"
+  },
+  {
+    "id": 10898,
+    "name": "Golden Trophy '24"
+  },
+  {
+    "id": 10899,
+    "name": "Accolade XVI"
+  },
+  {
+    "id": 10913,
+    "name": "Golden Pumpkin '24"
+  },
+  {
+    "id": 11158,
+    "name": "Miku Gift"
+  },
+  {
+    "id": 11163,
+    "name": "Golden Gift '24"
+  },
+  {
+    "id": 11248,
+    "name": "Accolade XVII"
+  },
+  {
+    "id": 11529,
+    "name": "Accolade XVIII"
+  },
+  {
+    "id": 11567,
+    "name": "Accolade XIX"
+  },
+  {
+    "id": 11568,
+    "name": "Accolade XX"
+  },
+  {
+    "id": 11569,
+    "name": "Ooze Canister"
+  },
+  {
+    "id": 11570,
+    "name": "Golden Moon '25"
+  },
+  {
+    "id": 11854,
+    "name": "Anniversary Crate"
+  },
+  {
+    "id": 12349,
+    "name": "Golden Gift '25"
+  },
+  {
+    "id": 12369,
+    "name": "Accolade XXI"
+  },
+  {
+    "id": 12390,
+    "name": "Goalentines Gift"
+  },
+  {
+    "id": 12515,
+    "name": "Accolade XXII"
+  },
+  {
+    "id": 12586,
+    "name": "Air Jordan Shoebox"
+  },
+  {
+    "id": 12591,
+    "name": "Cooking Pot Crate"
+  },
+  {
+    "id": 12617,
+    "name": "Fool's Golden Egg"
+  },
+  {
+    "id": 12688,
+    "name": "Accolade XXIII"
+  },
+  {
+    "id": 12689,
+    "name": "FIFA 2026"
+  },
+  {
+    "id": 12790,
+    "name": "Unity 2026"
+  },
+  {
+    "id": 12793,
+    "name": "Treasure Chest"
+  },
+  {
+    "id": 12915,
+    "name": "Accolade XXIV"
+  },
+  {
+    "id": 12917,
+    "name": "Treasure Chest"
+  },
+  {
+    "id": 13030,
+    "name": "Inferno Collection"
+  },
+  {
+    "id": 13031,
+    "name": "Nova Collection"
+  },
+  {
+    "id": 13034,
+    "name": "Apex Collection"
+  }
+]
