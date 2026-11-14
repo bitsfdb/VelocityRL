@@ -46,12 +46,7 @@ pub const SYSTEM_PROXY_PORT: u16 = 8080;
 
 /// EOS account/profile API hosts. On Linux these are hosts-redirected to the
 /// local :443 MITM (Wine WinINET proxies are ignored by Proton/EOS).
-pub const EOS_ACCOUNT_HOSTS: &[&str] = &[
-    "api.epicgames.dev",
-    "account-public-service-prod.ol.epicgames.com",
-    "account-public-service-prod03.ol.epicgames.com",
-    "api.epicgames.com",
-];
+pub const EOS_ACCOUNT_HOSTS: &[&str] = &["api.epicgames.dev"];
 
 pub fn hostname_only(host: &str) -> &str {
     host.split(':').next().unwrap_or(host).trim()
@@ -68,11 +63,7 @@ pub fn host_header_port(host_hdr: &str, default: u16) -> u16 {
 
 pub fn is_eos_account_host(host: &str) -> bool {
     let h = hostname_only(host).to_ascii_lowercase();
-    h == "api.epicgames.dev"
-        || h.ends_with(".epicgames.dev")
-        || h == "api.epicgames.com"
-        || h.ends_with(".epicgames.com")
-        || h.contains("account-public-service")
+    h == "api.epicgames.dev" || h.ends_with(".epicgames.dev")
 }
 
 pub fn is_intercept_target(host: &str) -> bool {
@@ -737,7 +728,7 @@ fn patch_ws_names_value(
                 }
             }
 
-            if !is_own_obj && !has_other_id {
+            if !is_own_obj && !has_other_id && clean_pid.is_none() {
                 is_own_obj = true;
             }
 
@@ -1148,8 +1139,6 @@ async fn handle_crl_or_http(
              \x20       shExpMatch(host, \"*.epicgames.dev\") ||\n\
              \x20       host == \"api.epicgames.dev\" ||\n\
              \x20       shExpMatch(host, \"*account-public-service*\") ||\n\
-             \x20       shExpMatch(host, \"*.epicgames.com\") ||\n\
-             \x20       host == \"api.epicgames.com\" ||\n\
              \x20       shExpMatch(host, \"*.psynet.gg\") ||\n\
              \x20       host == \"config.psynet.gg\" ||\n\
              \x20       shExpMatch(host, \"*.psyops.psynet.gg\") ||\n\
@@ -3272,6 +3261,11 @@ pub async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
 
     let headers_part = &frame[..hdr_end];
     let body_part = &frame[hdr_end + 4..];
+
+    let conn_id = get_ws_header_value(headers_part, "PsyConnectionID");
+    if !conn_id.is_empty() {
+        set_learned_player_id(&conn_id);
+    }
 
     let svc = get_ws_header_value(headers_part, "PsyService");
     let is_skill = svc.contains("skills/getplayerskill")
