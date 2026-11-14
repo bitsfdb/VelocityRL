@@ -1787,17 +1787,8 @@ async fn spawn_item(
     // Register item in broker memory for live session injection
     crate::proxy::register_spawned_items(&[(wid, paint)]);
 
-    // Write item directly to local SaveData so it appears instantly in the garage
-    let save_path = savedata::ensure_or_create_savedata().ok();
-    if let Some(ref sp) = save_path {
-        if let Some(ref all_items) = all_items_opt {
-            if let Some(wanted) = all_items.iter().find(|i| i.id == wid) {
-                let slot_idx = savedata::slot_name_to_index(&wanted.slot);
-                let base_pid = Some(wid);
-                let _ = savedata::spawn_item_native_ext(sp, wid, paint, slot_idx, base_pid);
-            }
-        }
-    }
+    // Pure network proxy mode: Save file on disk is not touched!
+    // The proxy dynamically injects items into Products/GetPlayerProducts over WebSocket & HTTP broker.
 
     // Also update psynet_config.json inventory_spoof
     let mut cfg = crate::psynet::load_active_spoof_from_disk().unwrap_or_default();
@@ -1885,17 +1876,8 @@ async fn spawn_items_batch(
     // Register into broker memory so getplayerproducts / checkownership inject them live into session
     crate::proxy::register_spawned_items(&spawned_tuples);
 
-    // Write items directly into local SaveData so they appear in garage immediately
-    let save_path = savedata::ensure_or_create_savedata().ok();
-    if let Some(ref sp) = save_path {
-        for &(wid, paint_id) in &spawned_tuples {
-            if let Some(wanted) = all_items.iter().find(|i| i.id == wid) {
-                let slot_idx = savedata::slot_name_to_index(&wanted.slot);
-                let base_pid = Some(wid);
-                let _ = savedata::spawn_item_native_ext(sp, wid, paint_id, slot_idx, base_pid);
-            }
-        }
-    }
+    // Pure network proxy mode: Save file on disk is not touched!
+    // The proxy dynamically injects items into Products/GetPlayerProducts over WebSocket & HTTP broker.
 
     // Also update psynet_config.json inventory_spoof
     let mut cfg = crate::psynet::load_active_spoof_from_disk().unwrap_or_default();
