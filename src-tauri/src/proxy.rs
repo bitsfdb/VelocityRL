@@ -3393,7 +3393,10 @@ pub async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
     let mut any_changed = false;
 
     let is_reservation = find_bytes(body_part, b"ServerAddress").is_some()
+        || find_bytes(body_part, b"ReservationsReadyMessage_X").is_some()
         || find_bytes(body_part, b"AddReservationMessage").is_some()
+        || find_bytes(body_part, b"DSR/ClientMessage").is_some()
+        || find_bytes(body_part, b"DSR/RelayToServer").is_some()
         || find_bytes(body_part, b"PlayWithLoadout").is_some()
         || find_bytes(body_part, b"\"Loadout\"").is_some()
         || find_bytes(body_part, b"\\\"Loadout\\\"").is_some();
