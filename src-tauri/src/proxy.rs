@@ -2045,9 +2045,9 @@ pub async fn start_ws_broker() -> Result<u16, String> {
         return Ok(existing);
     }
 
-    let listener = match tokio::net::TcpListener::bind("127.0.0.1:49320").await {
+    let listener = match tokio::net::TcpListener::bind("127.0.0.1:15759").await {
         Ok(l) => l,
-        Err(_) => match tokio::net::TcpListener::bind("127.0.0.1:15759").await {
+        Err(_) => match tokio::net::TcpListener::bind("127.0.0.1:49320").await {
             Ok(l) => l,
             Err(_) => match tokio::net::TcpListener::bind("127.0.0.1:7546").await {
                 Ok(l) => l,
