@@ -2231,13 +2231,17 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
         "UpdatedTimestamp": now_ts,
     });
     if dropped_paint > 0 {
+        drop_obj["Paint"] = serde_json::json!(dropped_paint);
+        drop_obj["PaintID"] = serde_json::json!(dropped_paint);
         drop_obj["Attributes"] = serde_json::json!([
-            { "Key": "Painted", "Value": dropped_paint.to_string() }
+            { "Key": "Painted", "Value": dropped_paint.to_string() },
+            { "Key": "Paint", "Value": dropped_paint.to_string() }
         ]);
     }
 
     let resp_obj = serde_json::json!({
-        "Drops": [drop_obj],
+        "Drops": [drop_obj.clone()],
+        "ContainerDrops": [drop_obj],
         "InstanceIDs": container_ids,
         "KeyInstanceIDs": key_ids,
         "Error": serde_json::Value::Null,
@@ -2412,9 +2416,15 @@ async fn handle_broker_request(
             }
         }
         for r in &rules {
-            let pid_str = r.wanted_id.to_string();
-            if !sp_ids.contains(&pid_str) {
-                sp_ids.push(pid_str);
+            if r.wanted_id > 0 {
+                let id_str = if r.paint_id > 0 {
+                    format!("{}:{}", r.wanted_id, r.paint_id)
+                } else {
+                    r.wanted_id.to_string()
+                };
+                if !sp_ids.contains(&id_str) {
+                    sp_ids.push(id_str);
+                }
             }
         }
         let sp_body = sp_ids.join(",");
@@ -2429,6 +2439,7 @@ async fn handle_broker_request(
     }
 
     if path_str == "/rlim/pk" || path_str.starts_with("/rlim/pk?")
+        || path_str == "/rlim/sk" || path_str.starts_with("/rlim/sk?")
         || path_str == "/rlim/lo" || path_str.starts_with("/rlim/lo?") {
         crate::applog::event(&format!("broker: {path_str} queried"));
         return Ok(Response::builder()
@@ -6182,19 +6193,21 @@ fn patch_loadout_node(
                                 if r.paint_id > 0 {
                                     if obj.get("PaintID").and_then(|v| v.as_i64()).map(|n| n as i32) != Some(r.paint_id) {
                                         obj["PaintID"] = serde_json::json!(r.paint_id);
+                                        obj["Paint"] = serde_json::json!(r.paint_id);
                                         *changed = true;
                                     }
                                     let needs_attr = match obj.get("Attributes").and_then(|v| v.as_array()) {
                                         Some(attrs) => !attrs.iter().any(|a| {
-                                            a.get("Key").and_then(|k| k.as_str()) == Some("Painted")
-                                                && (a.get("Value").and_then(|v| v.as_str()) == Some(&r.paint_id.to_string())
+                                            let is_paint_key = a.get("Key").and_then(|k| k.as_str()).map(|k| k.eq_ignore_ascii_case("Painted") || k.eq_ignore_ascii_case("Paint")).unwrap_or(false);
+                                            is_paint_key && (a.get("Value").and_then(|v| v.as_str()) == Some(&r.paint_id.to_string())
                                                     || a.get("Value").and_then(|v| v.as_i64()) == Some(r.paint_id as i64))
                                         }),
                                         None => true,
                                     };
                                     if needs_attr {
                                         obj["Attributes"] = serde_json::json!([
-                                            { "Key": "Painted", "Value": r.paint_id.to_string() }
+                                            { "Key": "Painted", "Value": r.paint_id.to_string() },
+                                            { "Key": "Paint", "Value": r.paint_id.to_string() }
                                         ]);
                                         *changed = true;
                                     }
@@ -6208,10 +6221,12 @@ fn patch_loadout_node(
                                 "ProductID": r.wanted_id,
                                 "SlotIndex": r.slot_idx,
                                 "PaintID": r.paint_id,
+                                "Paint": r.paint_id,
                             });
                             if r.paint_id > 0 {
                                 obj["Attributes"] = serde_json::json!([
-                                    { "Key": "Painted", "Value": r.paint_id.to_string() }
+                                    { "Key": "Painted", "Value": r.paint_id.to_string() },
+                                    { "Key": "Paint", "Value": r.paint_id.to_string() }
                                 ]);
                             }
                             arr.push(obj);
@@ -6228,10 +6243,12 @@ fn patch_loadout_node(
                         "ProductID": r.wanted_id,
                         "SlotIndex": r.slot_idx,
                         "PaintID": r.paint_id,
+                        "Paint": r.paint_id,
                     });
                     if r.paint_id > 0 {
                         obj["Attributes"] = serde_json::json!([
-                            { "Key": "Painted", "Value": r.paint_id.to_string() }
+                            { "Key": "Painted", "Value": r.paint_id.to_string() },
+                            { "Key": "Paint", "Value": r.paint_id.to_string() }
                         ]);
                     }
                     arr.push(obj);
@@ -6671,6 +6688,23 @@ pub fn patch_player_products_json(
                 if item_paint == paint_id {
                     matched = true;
                     break;
+                } else if paint_id > 0 && item_paint == 0 {
+                    // Item exists unpainted; upgrade it in-place to requested paint
+                    item["Paint"] = serde_json::json!(paint_id);
+                    item["PaintID"] = serde_json::json!(paint_id);
+                    item["Attributes"] = serde_json::json!([
+                        {
+                            "Key": "Painted",
+                            "Value": paint_id.to_string()
+                        },
+                        {
+                            "Key": "Paint",
+                            "Value": paint_id.to_string()
+                        }
+                    ]);
+                    changed = true;
+                    matched = true;
+                    break;
                 }
             }
         }
@@ -6694,9 +6728,15 @@ pub fn patch_player_products_json(
             });
 
             if paint_id > 0 {
+                prod_obj["Paint"] = serde_json::json!(paint_id);
+                prod_obj["PaintID"] = serde_json::json!(paint_id);
                 prod_obj["Attributes"] = serde_json::json!([
                     {
                         "Key": "Painted",
+                        "Value": paint_id.to_string()
+                    },
+                    {
+                        "Key": "Paint",
                         "Value": paint_id.to_string()
                     }
                 ]);
@@ -7433,8 +7473,12 @@ mod tests {
         let arr = val["Result"]["ProductData"].as_array().unwrap();
         assert_eq!(arr.len(), 2);
         let injected = arr.iter().find(|i| i["ProductID"] == 4284).unwrap();
+        assert_eq!(injected["PaintID"], 12);
+        assert_eq!(injected["Paint"], 12);
         assert_eq!(injected["Attributes"][0]["Key"], "Painted");
         assert_eq!(injected["Attributes"][0]["Value"], "12");
+        assert_eq!(injected["Attributes"][1]["Key"], "Paint");
+        assert_eq!(injected["Attributes"][1]["Value"], "12");
         assert!(injected.get("AddedTimestamp").is_some());
         assert!(injected.get("UpdatedTimestamp").is_some());
     }
