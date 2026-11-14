@@ -2571,8 +2571,14 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
                 let code_start = (exp.serial_offset - ch1.0) as usize + 48;
                 let disk_sz = u32::from_le_bytes(decomp1[code_start - 4..code_start].try_into().unwrap()) as usize;
                 if disk_sz >= 2 {
-                    decomp1[code_start] = opcodes::EX_RETURN;
-                    decomp1[code_start + 1] = opcodes::EX_TRUE_CONST;
+                    let mut patch = vec![opcodes::EX_RETURN, opcodes::EX_TRUE_CONST];
+                    patch.resize(disk_sz.saturating_sub(1), opcodes::EX_NOTHING);
+                    patch.push(opcodes::EX_END_OF_SCRIPT);
+                    if patch.len() == disk_sz {
+                        decomp1[code_start..code_start + disk_sz].copy_from_slice(&patch);
+                        // Synchronize mem_sz = disk_sz to prevent UE3 bytecode deserializer overshoot (Bad expr token 00)
+                        decomp1[code_start - 8..code_start - 4].copy_from_slice(&(disk_sz as u32).to_le_bytes());
+                    }
                 }
             }
         }

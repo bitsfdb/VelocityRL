@@ -442,14 +442,11 @@
                         </div>
 
                         <div class="settings-group">
-                            <label for="name-spoof-real" data-i18n="custom.real_name">Original / Current Name</label>
-                            <input type="text" id="name-spoof-real" data-i18n-placeholder="custom.real_name_placeholder" placeholder="Enter your current in-game name (e.g. Zen)..." autocomplete="off" spellcheck="false">
-                        </div>
-
-                        <div class="settings-group">
-                            <label for="name-spoof-display" data-i18n="custom.display_name">Spoofed Name</label>
-                            <input type="text" id="name-spoof-display" data-i18n-placeholder="custom.display_name_placeholder" placeholder="Enter new spoofed name..." autocomplete="off" spellcheck="false">
+                            <label for="name-spoof-display" data-i18n="custom.display_name">Spoofed Display Name</label>
+                            <input type="text" id="name-spoof-display" data-i18n-placeholder="custom.display_name_placeholder" placeholder="Enter new display name (e.g. Zen, Squishy, Kronovi)..." autocomplete="off" spellcheck="false">
+                            <input type="hidden" id="name-spoof-real">
                             <input type="hidden" id="name-spoof-player-id">
+                            <span class="field-hint" style="margin-top: 6px;">Auto-detects your account identity in real time. No original name required.</span>
                         </div>
 
                         <div class="swapper-controls">
