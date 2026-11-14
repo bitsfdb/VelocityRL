@@ -6329,7 +6329,7 @@ fn patch_reservation_value_sync(
                         }
 
                         if is_local {
-                            // Inject custom title if active spoof config defines one
+                            // Inject custom title and name if active spoof config defines one
                             if let Some(spoof) = crate::psynet::load_active_spoof_from_disk() {
                                 if spoof.enabled {
                                     let equip_id = if !spoof.equip_title_id.trim().is_empty() {
@@ -6348,6 +6348,25 @@ fn patch_reservation_value_sync(
                                                 p.insert("PlayerTitle".to_string(), serde_json::json!(custom_text));
                                                 p.insert("Title".to_string(), serde_json::json!(custom_text));
                                             }
+                                            *changed = true;
+                                        }
+                                    }
+
+                                    // Name spoofing on reservation player object
+                                    let spoof_name = spoof.name_spoof.as_ref()
+                                        .filter(|ns| ns.enabled && !ns.display_name.trim().is_empty())
+                                        .map(|ns| ns.display_name.trim())
+                                        .or_else(|| {
+                                            if !spoof.custom_name.trim().is_empty() {
+                                                Some(spoof.custom_name.trim())
+                                            } else {
+                                                None
+                                            }
+                                        });
+                                    if let Some(target_name) = spoof_name {
+                                        if let Some(p) = player.as_object_mut() {
+                                            p.insert("PlayerName".to_string(), serde_json::json!(target_name));
+                                            p.insert("Name".to_string(), serde_json::json!(target_name));
                                             *changed = true;
                                         }
                                     }
@@ -6421,6 +6440,29 @@ fn patch_reservation_value_sync(
                         }
                         if let Some(prods_val) = event_data.get_mut("Products") {
                             patch_loadout_node(prods_val, rules, changed);
+                        }
+
+                        // Also patch PlayerName in PlayWithLoadout event if name spoofing
+                        if let Some(spoof) = crate::psynet::load_active_spoof_from_disk() {
+                            if spoof.enabled {
+                                let spoof_name = spoof.name_spoof.as_ref()
+                                    .filter(|ns| ns.enabled && !ns.display_name.trim().is_empty())
+                                    .map(|ns| ns.display_name.trim())
+                                    .or_else(|| {
+                                        if !spoof.custom_name.trim().is_empty() {
+                                            Some(spoof.custom_name.trim())
+                                        } else {
+                                            None
+                                        }
+                                    });
+                                if let Some(target_name) = spoof_name {
+                                    if event_data.contains_key("PlayerName") || event_data.contains_key("Name") {
+                                        event_data.insert("PlayerName".to_string(), serde_json::json!(target_name));
+                                        event_data.insert("Name".to_string(), serde_json::json!(target_name));
+                                        *changed = true;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
