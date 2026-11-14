@@ -833,6 +833,7 @@ async function init() {
             if (paneId === 'custom-palette-pane') initMiscTab();
             if (paneId === 'custom-decals-pane') initDecalsTab();
             if (paneId === 'custom-boost-pane') initBoostMeterTab();
+            if (paneId === 'custom-balls-pane') initBallsTab();
             if (paneId === 'custom-titlescreen-pane') initTitleScreenPane();
             if (paneId === 'custom-ping-pane') initPingSpoofPane();
             if (paneId === 'restore-pane') refreshBackups();
@@ -6357,6 +6358,214 @@ function initBoostMeterTab() {
 
     loadBoostConfig();
     loadVgmBoostMeters(1, 'boost');
+}
+
+
+const BALL_SKINS = [
+    {
+        id: 'ball_champions',
+        name: 'Classic Champions Edition',
+        author: 'RLCS Archive',
+        accent: '#3b82f6',
+        description: 'Iconic RLCS blue and gold high-visibility match ball.',
+        gradient: 'radial-gradient(circle at 35% 35%, #60a5fa, #1e3a8a)'
+    },
+    {
+        id: 'ball_leather_retro',
+        name: '1970 Vintage Leather',
+        author: 'HeritageRL',
+        accent: '#d97706',
+        description: 'Distressed classic stitched leather panels with realistic grain.',
+        gradient: 'radial-gradient(circle at 35% 35%, #fbbf24, #78350f)'
+    },
+    {
+        id: 'ball_cyber_glow',
+        name: 'Cyberpunk Neon Hex',
+        author: 'Pulse Modding',
+        accent: '#06b6d4',
+        description: 'Futuristic illuminated cyan circuit lines with high-contrast seams.',
+        gradient: 'radial-gradient(circle at 35% 35%, #22d3ee, #0f172a)'
+    },
+    {
+        id: 'ball_golden_trophy',
+        name: 'Golden Champion Sovereign',
+        author: 'CrownRL',
+        accent: '#eab308',
+        description: 'Polished mirrored gold surface designed for championship lobbies.',
+        gradient: 'radial-gradient(circle at 35% 35%, #fde047, #a16207)'
+    },
+    {
+        id: 'ball_matrix_green',
+        name: 'Terminal Grid Matrix',
+        author: 'CodeZero',
+        accent: '#10b981',
+        description: 'Sub-surface phosphor green digital binary code pattern.',
+        gradient: 'radial-gradient(circle at 35% 35%, #34d399, #064e3b)'
+    },
+    {
+        id: 'ball_void_dark',
+        name: 'Abyssal Matte Obsidian',
+        author: 'MinimalistRL',
+        accent: '#8b5cf6',
+        description: 'Ultra clean matte black sphere with ambient violet seam glow.',
+        gradient: 'radial-gradient(circle at 35% 35%, #a78bfa, #18181b)'
+    }
+];
+
+const BALL_SPOOF_KEY = 'velocityrl_ball_spoof';
+let ballsTabReady = false;
+
+function initBallsTab() {
+    const enabledEl = document.getElementById('custom-ball-enabled');
+    const tabBrowseBtn = document.getElementById('ball-tab-browse-btn');
+    const tabCustomBtn = document.getElementById('ball-tab-custom-btn');
+    const browseView = document.getElementById('ball-browse-view');
+    const customView = document.getElementById('ball-custom-view');
+    const browseGrid = document.getElementById('ball-browse-grid');
+    const searchInput = document.getElementById('ball-search-input');
+    const dropzone = document.getElementById('ball-dropzone');
+    const fileInput = document.getElementById('ball-file-input');
+    const dropLabel = document.getElementById('ball-dropzone-label');
+    const applyBtn = document.getElementById('ball-apply-btn');
+    const resetBtn = document.getElementById('ball-reset-btn');
+
+    if (!browseGrid) return;
+
+    let selectedBallId = 'default';
+    let customBallFile = null;
+
+    if (tabBrowseBtn && tabCustomBtn && browseView && customView) {
+        tabBrowseBtn.onclick = () => {
+            tabBrowseBtn.classList.add('active');
+            tabCustomBtn.classList.remove('active');
+            browseView.style.display = 'block';
+            customView.style.display = 'none';
+        };
+        tabCustomBtn.onclick = () => {
+            tabCustomBtn.classList.add('active');
+            tabBrowseBtn.classList.remove('active');
+            browseView.style.display = 'none';
+            customView.style.display = 'block';
+        };
+    }
+
+    const loadBallConfig = () => {
+        const stored = readLocalJson(BALL_SPOOF_KEY).ball_spoof || { enabled: false, selected_id: 'default' };
+        if (enabledEl) enabledEl.checked = !!stored.enabled;
+        selectedBallId = stored.selected_id || 'default';
+    };
+
+    const renderBallCards = (filterQuery = '') => {
+        const q = filterQuery.toLowerCase().trim();
+        const filtered = q
+            ? BALL_SKINS.filter(b => b.name.toLowerCase().includes(q) || b.author.toLowerCase().includes(q) || b.description.toLowerCase().includes(q))
+            : BALL_SKINS;
+
+        browseGrid.innerHTML = filtered.map(ball => {
+            const isSelected = ball.id === selectedBallId;
+            return `
+                <div class="card ball-card" data-ball-id="${ball.id}" style="background: rgba(255,255,255,0.02); border: 1px solid ${isSelected ? 'var(--accent)' : 'var(--border)'}; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between; transition: border-color 0.2s;">
+                    <div>
+                        <div style="height: 100px; width: 100%; border-radius: 6px; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; background: rgba(0,0,0,0.3);">
+                            <div style="width: 64px; height: 64px; border-radius: 50%; background: ${ball.gradient}; box-shadow: 0 4px 14px rgba(0,0,0,0.5), inset -2px -2px 6px rgba(0,0,0,0.6);"></div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px;">
+                            <strong style="font-size: 13.5px; color: var(--text);">${escHtml(ball.name)}</strong>
+                        </div>
+                        <span style="display: block; font-size: 11px; color: var(--muted); margin-bottom: 8px;">by ${escHtml(ball.author)}</span>
+                        <p style="font-size: 11.5px; color: var(--muted); line-height: 1.35; margin: 0 0 12px;">${escHtml(ball.description)}</p>
+                    </div>
+                    <button type="button" class="action-btn ball-select-btn ${isSelected ? 'action-btn-secondary' : ''}" data-ball-id="${ball.id}" style="width: 100%; font-size: 12px; padding: 6px 10px;">
+                        ${isSelected ? 'Active Ball' : 'Apply Ball'}
+                    </button>
+                </div>
+            `;
+        }).join('');
+
+        browseGrid.querySelectorAll('.ball-select-btn').forEach(btn => {
+            btn.onclick = async () => {
+                const bId = btn.dataset.ballId;
+                selectedBallId = bId;
+                if (enabledEl) enabledEl.checked = true;
+                const payload = { enabled: true, selected_id: bId };
+                localStorage.setItem(BALL_SPOOF_KEY, JSON.stringify({ ball_spoof: payload }));
+                await runToolSave(btn, 'Ball skin', { ball_spoof: payload }, { enabled: true });
+                renderBallCards(searchInput?.value || '');
+                showToast(`Applied ball skin: ${BALL_SKINS.find(x => x.id === bId)?.name || bId}`, 'success');
+            };
+        });
+    };
+
+    if (searchInput) {
+        searchInput.oninput = () => renderBallCards(searchInput.value);
+    }
+
+    if (dropzone && fileInput) {
+        dropzone.onclick = () => fileInput.click();
+        dropzone.ondragover = (e) => { e.preventDefault(); dropzone.style.borderColor = 'var(--accent)'; };
+        dropzone.ondragleave = () => { dropzone.style.borderColor = 'var(--border)'; };
+        dropzone.ondrop = (e) => {
+            e.preventDefault();
+            dropzone.style.borderColor = 'var(--border)';
+            if (e.dataTransfer?.files?.[0]) {
+                customBallFile = e.dataTransfer.files[0];
+                if (dropLabel) dropLabel.textContent = `Selected: ${customBallFile.name}`;
+            }
+        };
+        fileInput.onchange = () => {
+            if (fileInput.files?.[0]) {
+                customBallFile = fileInput.files[0];
+                if (dropLabel) dropLabel.textContent = `Selected: ${customBallFile.name}`;
+            }
+        };
+    }
+
+    if (applyBtn) {
+        applyBtn.onclick = async () => {
+            if (!customBallFile) {
+                showToast('Please select or drop a ball texture file (.png or .dds).', 'error');
+                return;
+            }
+            try {
+                applyBtn.disabled = true;
+                applyBtn.textContent = 'Applying Ball...';
+                const payload = {
+                    enabled: true,
+                    selected_id: 'custom_file',
+                    filename: customBallFile.name
+                };
+                localStorage.setItem(BALL_SPOOF_KEY, JSON.stringify({ ball_spoof: payload }));
+                await runToolSave(applyBtn, 'Custom ball file', { ball_spoof: payload }, { enabled: true });
+                showToast(`Custom ball "${customBallFile.name}" applied successfully!`, 'success');
+                applyBtn.disabled = false;
+                applyBtn.textContent = 'Apply Custom Ball';
+            } catch (err) {
+                showToast(`Failed to apply custom ball: ${err}`, 'error');
+                applyBtn.disabled = false;
+                applyBtn.textContent = 'Apply Custom Ball';
+            }
+        };
+    }
+
+    if (resetBtn) {
+        resetBtn.onclick = async () => {
+            selectedBallId = 'default';
+            customBallFile = null;
+            if (enabledEl) enabledEl.checked = false;
+            if (dropLabel) dropLabel.textContent = 'Drag and drop ball texture (.png / .dds) here';
+            const payload = { enabled: false, selected_id: 'default' };
+            localStorage.setItem(BALL_SPOOF_KEY, JSON.stringify({ ball_spoof: payload }));
+            await runToolSave(resetBtn, 'Ball skin reset', { ball_spoof: payload }, { enabled: false });
+            renderBallCards(searchInput?.value || '');
+            showToast('Restored default Soccar ball.', 'success');
+        };
+    }
+
+    if (ballsTabReady) return;
+    ballsTabReady = true;
+
+    loadBallConfig();
+    renderBallCards();
 }
 
 function initCustomizationTab() {

@@ -374,6 +374,7 @@
                     <button type="button" class="subtab-btn" data-subtab="custom-palette-pane">Palette</button>
                     <button type="button" class="subtab-btn" data-subtab="custom-decals-pane">Decals</button>
                     <button type="button" class="subtab-btn" data-subtab="custom-boost-pane">Boost Meter</button>
+                    <button type="button" class="subtab-btn" data-subtab="custom-balls-pane">Balls</button>
                     <button type="button" class="subtab-btn" data-subtab="custom-titlescreen-pane">Title Screen</button>
                     <button type="button" class="subtab-btn" data-subtab="custom-ping-pane">Ping Spoof</button>
                     <button type="button" class="subtab-btn" data-subtab="custom-credits-pane" data-i18n="custom.subtab_credits">Credits</button>
@@ -672,6 +673,71 @@
                     <option value="default">Default Psyonix HUD</option>
                 </select>
                 <button id="boost-meter-save-btn" type="button" style="display: none;"></button>
+            </div>
+
+                
+            <div id="custom-balls-pane" class="subtab-pane">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 6px;">
+                    <div>
+                        <h2 class="section-title">Custom Ball Skins</h2>
+                        <p class="section-desc" style="margin-bottom: 0;">Apply custom match ball textures and explore community ball skins.</p>
+                    </div>
+                    <div class="subtab-strip" style="margin-bottom: 0; padding-bottom: 0; border-bottom: none;">
+                        <button type="button" class="subtab-btn active" id="ball-tab-browse-btn">Preset Balls</button>
+                        <button type="button" class="subtab-btn" id="ball-tab-custom-btn">Custom Texture</button>
+                    </div>
+                </div>
+
+                <div id="ball-browse-view">
+                    <div class="browser-toolbar" style="display: flex; gap: 10px; align-items: center; justify-content: space-between; margin: 12px 0;">
+                        <div style="display: flex; gap: 8px; align-items: center; flex: 1; min-width: 260px;">
+                            <input type="text" id="ball-search-input" placeholder="Filter ball skins (e.g. Champions, Cyber, Leather, Gold)..." style="flex: 1; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 12px;">
+                        </div>
+                    </div>
+                    <div id="ball-browse-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; max-height: calc(100vh - 280px); overflow-y: auto; padding-right: 6px;"></div>
+                </div>
+
+                <div id="ball-custom-view" style="display: none;">
+                    <div class="card spoof-card" style="max-width: 680px; margin-top: 12px;">
+                        <div class="settings-group">
+                            <label class="switch-row" for="custom-ball-enabled">
+                                <input type="checkbox" id="custom-ball-enabled" class="switch-input" role="switch">
+                                <span class="switch-ui" aria-hidden="true">
+                                    <span class="switch-track"><span class="switch-thumb"></span></span>
+                                    <span class="switch-state">
+                                        <span class="switch-state-on">On</span>
+                                        <span class="switch-state-off">Off</span>
+                                    </span>
+                                </span>
+                                <span class="switch-copy">
+                                    <span class="switch-title">Custom Ball Swapping</span>
+                                    <span class="switch-hint">Replaces default Soccar ball texture in Park_P and match packages</span>
+                                </span>
+                            </label>
+                        </div>
+
+                        <div class="settings-group">
+                            <label>Ball Texture Map (PNG / DDS)</label>
+                            <div id="ball-dropzone" style="border: 2px dashed var(--border); border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; background: rgba(255,255,255,0.02); transition: border-color 0.2s, background 0.2s;">
+                                <div style="display: flex; justify-content: center; margin-bottom: 8px;">
+                                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent);">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path>
+                                        <path d="M2 12h20"></path>
+                                    </svg>
+                                </div>
+                                <strong id="ball-dropzone-label" style="display: block; font-size: 13px; color: var(--text);">Drag and drop ball texture (.png / .dds) here</strong>
+                                <span style="font-size: 11px; color: var(--muted); display: block; margin-top: 4px;">or click to browse local files</span>
+                            </div>
+                            <input type="file" id="ball-file-input" accept=".png,.dds,.tga" style="display: none;">
+                        </div>
+
+                        <div class="swapper-controls" style="margin-top: 16px; display: flex; gap: 10px;">
+                            <button id="ball-apply-btn" class="action-btn" type="button">Apply Custom Ball</button>
+                            <button id="ball-reset-btn" class="action-btn action-btn-secondary" type="button">Restore Default Ball</button>
+                        </div>
+                    </div>
+                </div>
             </div>
 
                 <div id="custom-titlescreen-pane" class="subtab-pane">
