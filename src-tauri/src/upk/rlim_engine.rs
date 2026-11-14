@@ -526,7 +526,6 @@ pub fn apply_rlim_suite(
     }
     if config.bridge_timer.enabled {
         patched_fns.push("Engine.Default__WorldInfo::Tick".into());
-        patched_fns.push("PlayerController_TA::PlayerTick".into());
     }
 
     crate::applog::event(&format!(
