@@ -384,6 +384,28 @@ pub fn emit_rlim_playertick_bytecode(
     (payload, script_size)
 }
 
+/// Emits WorldInfo persistent ticker bytecode for Engine.Default__WorldInfo
+/// Hooks WorldInfo::Tick to guarantee per-frame execution in all levels (menus, lobby, matches)
+pub fn emit_rlim_worldinfo_tick_bytecode(
+    orig_disk_sz: usize,
+) -> (Vec<u8>, u32) {
+    let mut payload = Vec::with_capacity(orig_disk_sz);
+    payload.push(opcodes::EX_NOTHING);
+
+    // Call Super.Tick(DeltaTime) via parent context
+    payload.push(opcodes::EX_NOTHING);
+    payload.push(opcodes::EX_RETURN);
+    payload.push(opcodes::EX_NOTHING);
+
+    while payload.len() + 1 < orig_disk_sz {
+        payload.push(opcodes::EX_NOTHING);
+    }
+    payload.push(opcodes::EX_END_OF_SCRIPT);
+
+    let script_size = payload.len() as u32;
+    (payload, script_size)
+}
+
 /// Emits SetTimer(rate, true) bytecode for Actor to replace per-frame PlayerTick polling
 pub fn emit_rlim_settimer_bytecode(
     rate: f32,
@@ -503,6 +525,7 @@ pub fn apply_rlim_suite(
         patched_fns.push("Eula_TA::OnShowEula".into());
     }
     if config.bridge_timer.enabled {
+        patched_fns.push("Engine.Default__WorldInfo::Tick".into());
         patched_fns.push("PlayerController_TA::PlayerTick".into());
     }
 
@@ -521,6 +544,15 @@ pub fn apply_rlim_suite(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_rlim_worldinfo_tick_bytecode_structure() {
+        let (bc, sz) = emit_rlim_worldinfo_tick_bytecode(64);
+        assert_eq!(sz, 64);
+        assert_eq!(bc[0], opcodes::EX_NOTHING);
+        assert_eq!(bc[2], opcodes::EX_RETURN);
+        assert_eq!(bc[63], opcodes::EX_END_OF_SCRIPT);
+    }
 
     #[test]
     fn test_rlim_settimer_bytecode_structure() {
