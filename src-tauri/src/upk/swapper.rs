@@ -2785,69 +2785,11 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
     Ok(true)
 }
 
-/// Download and apply modded TAGame.upk (with embedded broker endpoints) from bndq.me/tagame
-pub async fn ensure_tagame_patched(cooked_dir: &Path) -> Result<bool, String> {
-    let tagame_path = if cooked_dir.join("TAGame.upk").is_file() {
-        cooked_dir.join("TAGame.upk")
-    } else if cooked_dir.join("TAGame/CookedPCConsole/TAGame.upk").is_file() {
-        cooked_dir.join("TAGame/CookedPCConsole/TAGame.upk")
-    } else {
-        return Ok(false);
-    };
-
-    let bak_path = tagame_path.with_extension("upk.bak");
-
-    // Check if current tagame_path already contains the custom port 15759
-    if let Ok(file_bytes) = fs::read(&tagame_path) {
-        if file_bytes.windows(14).any(|w| w == b"127.0.0.1:15759") {
-            return Ok(false);
-        }
-        // Also check if the last compressed chunk (where broker strings reside) contains 127.0.0.1:15759
-        if file_bytes.len() > 400_000 {
-            let tail_start = file_bytes.len().saturating_sub(400_000);
-            let tail = &file_bytes[tail_start..];
-            if let Some(pos) = tail.windows(4).rposition(|w| w == &[0xC1, 0x83, 0x2A, 0x9E]) {
-                let chunk_start = tail_start + pos;
-                if let Ok(decomp) = crate::upk::compression::decompress_chunk(&file_bytes[chunk_start..]) {
-                    if decomp.windows(14).any(|w| w == b"127.0.0.1:15759") {
-                        return Ok(false);
-                    }
-                }
-            }
-        }
-    }
-
-    // Preserve clean backup before replacing with patched package
-    if !bak_path.is_file() {
-        if let Ok(bytes) = fs::read(&tagame_path) {
-            let _ = fs::write(&bak_path, &bytes);
-        }
-    }
-
-    let url = "https://bndq.me/tagame/TAGame.upk";
-    crate::applog::event(&format!("tagame: downloading patched package from {url}"));
-
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .user_agent(crate::app_user_agent())
-        .timeout(std::time::Duration::from_secs(300))
-        .danger_accept_invalid_certs(true)
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
-    if !resp.status().is_success() {
-        return Err(format!("Download returned HTTP {}", resp.status()));
-    }
-
-    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
-    if bytes.len() < 50_000_000 {
-        return Err("Downloaded TAGame.upk payload too small".into());
-    }
-
-    fs::write(&tagame_path, &bytes).map_err(|e| format!("Failed to write {}: {e}", tagame_path.display()))?;
-    crate::applog::event("tagame: successfully patched TAGame.upk with embedded broker endpoints");
-    Ok(true)
+/// Ensure TAGame.upk does not use corrupted third-party packages; preserve vanilla package integrity.
+pub async fn ensure_tagame_patched(_cooked_dir: &Path) -> Result<bool, String> {
+    // TAGame.upk must remain vanilla stock (or cleanly patched in-place by palette/swapper).
+    // Downloading external pre-patched TAGame.upk causes uncompressed chunk mismatches in UE3.
+    Ok(false)
 }
 
 

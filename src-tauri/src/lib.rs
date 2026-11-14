@@ -1677,11 +1677,7 @@ pub(crate) async fn sync_all_swaps_to_tagame(
     let tagame_path = cooked.join("TAGame.upk");
     let backup_path = cooked.join("TAGame.upk.bak");
     if backup_path.is_file() && !palette_active {
-        // Only restore if not using modded broker endpoints
-        let is_modded = std::fs::read(&tagame_path).map(|b| b.windows(14).any(|w| w == b"127.0.0.1:15759")).unwrap_or(false);
-        if !is_modded {
-            let _ = std::fs::copy(&backup_path, &tagame_path);
-        }
+        let _ = std::fs::copy(&backup_path, &tagame_path);
     }
 
     // Restore any other UPKs from backups to keep game packages clean and stock (never overwrite ProjectX.upk or active modded TAGame)
