@@ -377,6 +377,7 @@
                     <button type="button" class="subtab-btn" data-subtab="custom-titlescreen-pane">Title Screen</button>
                     <button type="button" class="subtab-btn" data-subtab="custom-ping-pane">Ping Spoof</button>
                     <button type="button" class="subtab-btn" data-subtab="custom-credits-pane" data-i18n="custom.subtab_credits">Credits</button>
+                    <button type="button" class="subtab-btn" data-subtab="custom-drops-pane">Drops & Crates</button>
                 </div>
 
                 <div id="custom-names-pane" class="subtab-pane active">
@@ -809,6 +810,41 @@
                         <div class="swapper-controls">
                             <button id="credit-spoof-save-btn" class="action-btn" type="button" data-i18n="custom.save_credits">Save credits</button>
                         </div>
+                    </div>
+                </div>
+
+                <div id="custom-drops-pane" class="subtab-pane">
+                    <h2 class="section-title">Spawn Drops & Crates</h2>
+                    <p class="section-desc">Spawn any crate or drop container directly into your Rocket League profile. All crates automatically come bundled with keys for immediate opening in-game!</p>
+
+                    <div class="card spoof-card" style="margin-bottom: 16px;">
+                        <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+                            <div style="flex: 1; min-width: 220px;">
+                                <input type="text" id="drop-search-input" placeholder="Search crates, golden eggs, gifts, cups..." autocomplete="off" spellcheck="false" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.3); color: #fff;">
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <label for="drop-quantity-select" style="font-size: 13px; color: #aaa; margin: 0;">Quantity per crate:</label>
+                                <select id="drop-quantity-select" style="padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: #1c202a; color: #fff;">
+                                    <option value="1">1x (+ 1 Key)</option>
+                                    <option value="5" selected>5x (+ 5 Keys)</option>
+                                    <option value="10">10x (+ 10 Keys)</option>
+                                    <option value="25">25x (+ 25 Keys)</option>
+                                </select>
+                            </div>
+                            <button type="button" id="spawn-selected-drops-btn" class="action-btn" style="padding: 8px 18px; font-weight: 600;">
+                                Spawn Selected
+                            </button>
+                            <button type="button" id="select-all-drops-btn" class="action-btn action-btn-secondary" style="padding: 8px 14px;">
+                                Select All
+                            </button>
+                            <button type="button" id="deselect-all-drops-btn" class="action-btn action-btn-secondary" style="padding: 8px 14px;">
+                                Clear
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="drops-grid-container" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; max-height: 520px; overflow-y: auto; padding-right: 6px;">
+                        <!-- Dynamically populated -->
                     </div>
                 </div>
             </div>

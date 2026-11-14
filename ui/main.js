@@ -6315,6 +6315,7 @@ function initCustomizationTab() {
     initTitleScreenPane();
     initPingSpoofPane();
     initLeaderboardTab();
+    initDropsTab();
     if (customizationTabReady) return;
     customizationTabReady = true;
 }
@@ -6729,6 +6730,151 @@ function initPingSpoofPane() {
             }
         });
     }
+}
+
+let dropsTabWired = false;
+let loadedDropsCatalog = [];
+const selectedDropIds = new Set();
+
+function initDropsTab() {
+    if (dropsTabWired) return;
+    dropsTabWired = true;
+
+    const grid = document.getElementById('drops-grid-container');
+    const searchInput = document.getElementById('drop-search-input');
+    const qtySelect = document.getElementById('drop-quantity-select');
+    const spawnBtn = document.getElementById('spawn-selected-drops-btn');
+    const selectAllBtn = document.getElementById('select-all-drops-btn');
+    const deselectAllBtn = document.getElementById('deselect-all-drops-btn');
+
+    if (!grid || !spawnBtn) return;
+
+    async function loadDropsData() {
+        try {
+            const res = await fetch('drops.json');
+            loadedDropsCatalog = await res.json();
+            renderDropsGrid();
+        } catch (e) {
+            console.error('Failed to load drops.json:', e);
+            if (grid) grid.innerHTML = '<div style="color: #ff5555; padding: 20px;">Failed to load drops list.</div>';
+        }
+    }
+
+    function renderDropsGrid() {
+        if (!grid) return;
+        const query = (searchInput?.value || '').trim().toLowerCase();
+        const filtered = loadedDropsCatalog.filter(d => {
+            if (!query) return true;
+            return d.name.toLowerCase().includes(query) || String(d.id).includes(query);
+        });
+
+        if (filtered.length === 0) {
+            grid.innerHTML = '<div style="color: #888; padding: 30px; text-align: center; grid-column: 1 / -1;">No drops or crates matched your search.</div>';
+            return;
+        }
+
+        grid.innerHTML = filtered.map(d => {
+            const isSel = selectedDropIds.has(d.id);
+            return `
+                <div class="drop-item-card ${isSel ? 'selected' : ''}" data-drop-id="${d.id}" style="
+                    background: ${isSel ? 'rgba(75, 153, 247, 0.25)' : 'rgba(255, 255, 255, 0.05)'};
+                    border: 1px solid ${isSel ? 'var(--accent, #4b99f7)' : 'rgba(255, 255, 255, 0.1)'};
+                    border-radius: 8px;
+                    padding: 12px;
+                    cursor: pointer;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: space-between;
+                    transition: all 0.15s ease;
+                    user-select: none;
+                ">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;">
+                        <span style="font-weight: 600; font-size: 13px; color: #fff; line-height: 1.3;">${escHtml(d.name)}</span>
+                        <input type="checkbox" ${isSel ? 'checked' : ''} style="pointer-events: none; margin-top: 2px;">
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px; font-size: 11px; color: #888;">
+                        <span>ID: ${d.id}</span>
+                        <span style="color: #4b99f7; font-weight: 500;">+ 1 Key</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        grid.querySelectorAll('.drop-item-card').forEach(card => {
+            card.addEventListener('click', () => {
+                const id = parseInt(card.dataset.dropId, 10);
+                if (selectedDropIds.has(id)) {
+                    selectedDropIds.delete(id);
+                } else {
+                    selectedDropIds.add(id);
+                }
+                updateDropsUi();
+            });
+        });
+    }
+
+    function updateDropsUi() {
+        const count = selectedDropIds.size;
+        spawnBtn.textContent = count > 0 ? `Spawn Selected (${count})` : 'Spawn Selected';
+        grid?.querySelectorAll('.drop-item-card').forEach(card => {
+            const id = parseInt(card.dataset.dropId, 10);
+            const isSel = selectedDropIds.has(id);
+            card.classList.toggle('selected', isSel);
+            card.style.background = isSel ? 'rgba(75, 153, 247, 0.25)' : 'rgba(255, 255, 255, 0.05)';
+            card.style.borderColor = isSel ? 'var(--accent, #4b99f7)' : 'rgba(255, 255, 255, 0.1)';
+            const cb = card.querySelector('input[type="checkbox"]');
+            if (cb) cb.checked = isSel;
+        });
+    }
+
+    searchInput?.addEventListener('input', () => {
+        renderDropsGrid();
+    });
+
+    selectAllBtn?.addEventListener('click', () => {
+        const query = (searchInput?.value || '').trim().toLowerCase();
+        loadedDropsCatalog.forEach(d => {
+            if (!query || d.name.toLowerCase().includes(query) || String(d.id).includes(query)) {
+                selectedDropIds.add(d.id);
+            }
+        });
+        updateDropsUi();
+    });
+
+    deselectAllBtn?.addEventListener('click', () => {
+        selectedDropIds.clear();
+        updateDropsUi();
+    });
+
+    spawnBtn?.addEventListener('click', async () => {
+        if (selectedDropIds.size === 0) {
+            showToast('Please select at least one crate or drop to spawn.', 'warning');
+            return;
+        }
+
+        const qty = parseInt(qtySelect?.value || '1', 10);
+        const ids = Array.from(selectedDropIds);
+
+        spawnBtn.disabled = true;
+        showProgress(true, 30);
+        updateStatus(`Spawning ${ids.length} drop type(s) (${qty}x each with keys)...`, false);
+
+        try {
+            const res = await invoke('spawn_drops', { crateIds: ids, amount: qty });
+            showProgress(true, 100);
+            showToast(res, 'success');
+            selectedDropIds.clear();
+            updateDropsUi();
+        } catch (e) {
+            showToast(formatError(e), 'error');
+        } finally {
+            spawnBtn.disabled = false;
+            showProgress(false, 0);
+            updateStatus('', false);
+        }
+    });
+
+    loadDropsData();
 }
 
 function wireReswapButton() {

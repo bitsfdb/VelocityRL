@@ -1933,6 +1933,49 @@ async fn spawn_items_batch(
 }
 
 #[tauri::command]
+async fn spawn_drops(
+    app: tauri::AppHandle,
+    crate_ids: Vec<i32>,
+    amount: Option<usize>,
+) -> Result<String, String> {
+    if !features::is_build_supported() {
+        return Err("VelocityRL build is outdated. Please update to the latest version.".into());
+    }
+    let qty = amount.unwrap_or(1).clamp(1, 50);
+    let mut batch_items = Vec::new();
+
+    // 1353 is the official Key product ID in Rocket League
+    const KEY_PRODUCT_ID: i32 = 1353;
+
+    for &cid in &crate_ids {
+        if cid <= 0 {
+            continue;
+        }
+        for _ in 0..qty {
+            // Add the Crate / Drop
+            batch_items.push(SpawnBatchItem {
+                wanted_id: cid.to_string(),
+                paint_id: None,
+            });
+            // Crates always come with a key!
+            batch_items.push(SpawnBatchItem {
+                wanted_id: KEY_PRODUCT_ID.to_string(),
+                paint_id: None,
+            });
+        }
+    }
+
+    if batch_items.is_empty() {
+        return Err("No valid crates selected to spawn.".into());
+    }
+
+    let total = batch_items.len();
+    let spawned = spawn_items_batch(app, batch_items).await?;
+    let crate_count = total / 2;
+    Ok(format!("Successfully spawned {crate_count} Drop(s) / Crate(s) + {crate_count} Key(s)! ({spawned} items total)"))
+}
+
+#[tauri::command]
 async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<(), String> {
     let mut swaps = load_swaps(&app);
     let target_id = path
@@ -3964,6 +4007,7 @@ pub fn run() {
             apply_swap,
             spawn_item,
             spawn_items_batch,
+            spawn_drops,
             make_savedata,
             reswap_all,
             restore_backups,
