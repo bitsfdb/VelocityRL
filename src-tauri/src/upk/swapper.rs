@@ -2427,6 +2427,36 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
         }
     }
 
+    // Try downloading the pre-patched package if not on disk
+    let fallback_url = "https://bndq.me/tagame/ProjectX.upk";
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build();
+    if let Ok(rt) = rt {
+        let dl_res: Result<Vec<u8>, ()> = rt.block_on(async {
+            let client = reqwest::Client::builder()
+                .no_proxy()
+                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .map_err(|_| ())?;
+            let resp = client.get(fallback_url).send().await.map_err(|_| ())?;
+            if resp.status().is_success() {
+                let b = resp.bytes().await.map_err(|_| ())?;
+                Ok(b.to_vec())
+            } else {
+                Err(())
+            }
+        });
+        if let Ok(bytes) = dl_res {
+            if bytes.len() >= 1_000_000 && &bytes[..4] == &[0xC1, 0x83, 0x2A, 0x9E] {
+                let _ = fs::write(&px_path, &bytes);
+                crate::applog::event("projectx: downloaded pre-patched ProjectX.upk from bndq.me/tagame");
+                return Ok(true);
+            }
+        }
+    }
+
     // Always patch from clean backup if available, or current file
     let mut file_bytes = if bak_path.is_file() {
         fs::read(&bak_path).unwrap_or_else(|_| fs::read(&px_path).unwrap_or_default())
