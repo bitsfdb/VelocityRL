@@ -12,6 +12,34 @@ use std::sync::Arc;
 use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
 
+use aes::Aes256;
+use cbc::{Decryptor, Encryptor};
+use cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvInit};
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
+
+type HmacSha256 = Hmac<Sha256>;
+type Aes256CbcDec = Decryptor<Aes256>;
+type Aes256CbcEnc = Encryptor<Aes256>;
+
+/// Modern Rocket League UDP Match Security Session Keys
+#[derive(Clone, Debug)]
+pub struct ReservationCrypto {
+    pub aes_key: [u8; 32],
+    pub aes_iv: [u8; 16],
+    pub hmac_key: [u8; 32],
+}
+
+impl ReservationCrypto {
+    pub fn new(aes_key: [u8; 32], aes_iv: [u8; 16], hmac_key: [u8; 32]) -> Self {
+        Self {
+            aes_key,
+            aes_iv,
+            hmac_key,
+        }
+    }
+}
+
 /// Shared state for the UDP Match Proxy.
 struct ProxyState {
     /// Local UDP port Rocket League connects to (e.g. 127.0.0.1:local_port).
@@ -20,6 +48,8 @@ struct ProxyState {
     target_server: RwLock<Option<SocketAddr>>,
     /// Learned endpoint of the local Rocket League client.
     client_endpoint: RwLock<Option<SocketAddr>>,
+    /// Active AES-256-CBC and HMAC-SHA256 session keys parsed from reservation.
+    active_crypto: RwLock<Option<ReservationCrypto>>,
     /// Whether the proxy is active.
     running: AtomicBool,
 }
@@ -87,6 +117,7 @@ mod once_cell_or_lazy {
                         local_port: AtomicU16::new(0),
                         target_server: RwLock::new(None),
                         client_endpoint: RwLock::new(None),
+                        active_crypto: RwLock::new(None),
                         running: AtomicBool::new(false),
                     })
                 })
@@ -149,29 +180,45 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                     // Forward to real game server (with C2S login bunch rewrite if spoofing name)
                     let target_opt = *state_c2s.target_server.read().await;
                     if let Some(target) = target_opt {
-                        let mut effective_len = len;
-                        let mut was_patched = false;
-                        if let Some(active_cfg) = crate::psynet::load_active_spoof_from_disk() {
-                            let spoof_name = if let Some(ref ns) = active_cfg.name_spoof {
-                                if ns.enabled && !ns.display_name.trim().is_empty() {
-                                    Some(ns.display_name.trim())
+                        let active_crypto_opt = state_c2s.active_crypto.read().await.clone();
+
+                        let (final_buf, was_patched) = if let Some(crypto) = active_crypto_opt {
+                            // Datagram proxying pipeline:
+                            // 1. Decrypt C2S datagram with AES-256-CBC
+                            // 2. Validate PKCS#7 padding and length (must have 32-byte HMAC at end)
+                            // 3. Patch plaintext bunch (?Name=...)
+                            // 4. Recompute HMAC-SHA256 over patched plaintext
+                            // 5. Append HMAC, PKCS#7 pad to 16 bytes, re-encrypt with AES-256-CBC
+                            process_c2s_encrypted_datagram(&buf[..len], &crypto)
+                        } else {
+                            // Unencrypted fallback
+                            let mut unenc_buf = buf[..len].to_vec();
+                            let mut effective_len = len;
+                            let mut patched = false;
+                            if let Some(active_cfg) = crate::psynet::load_active_spoof_from_disk() {
+                                let spoof_name = if let Some(ref ns) = active_cfg.name_spoof {
+                                    if ns.enabled && !ns.display_name.trim().is_empty() {
+                                        Some(ns.display_name.trim())
+                                    } else {
+                                        None
+                                    }
+                                } else if !active_cfg.custom_name.trim().is_empty() {
+                                    Some(active_cfg.custom_name.trim())
                                 } else {
                                     None
-                                }
-                            } else if !active_cfg.custom_name.trim().is_empty() {
-                                Some(active_cfg.custom_name.trim())
-                            } else {
-                                None
-                            };
+                                };
 
-                            if let Some(name) = spoof_name {
-                                was_patched = patch_c2s_login_bunch(&mut buf, &mut effective_len, name);
+                                if let Some(name) = spoof_name {
+                                    patched = patch_c2s_login_bunch(&mut unenc_buf, &mut effective_len, name);
+                                    unenc_buf.truncate(effective_len);
+                                }
                             }
-                        }
+                            (unenc_buf, patched)
+                        };
 
                         c2s_pkt_count += 1;
                         if was_patched || c2s_pkt_count <= 5 || c2s_pkt_count % 120 == 0 {
-                            let (summary, decoded_info) = decode_udp_packet_summary(&buf[..effective_len], true);
+                            let (summary, decoded_info) = decode_udp_packet_summary(&final_buf, true);
                             crate::proxy::record_network_event(
                                 "UDP",
                                 "OUTBOUND",
@@ -183,7 +230,7 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                             );
                         }
 
-                        let _ = us_c2s.send_to(&buf[..effective_len], target).await;
+                        let _ = us_c2s.send_to(&final_buf, target).await;
                     }
                 }
                 Err(e) => {
@@ -238,6 +285,14 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
 /// Set active match reservation target address.
 /// Parses IPv4/IPv6 address or resolves hostname.
 pub async fn set_active_reservation(target_addr_str: &str) -> Result<u16, String> {
+    set_active_reservation_with_crypto(target_addr_str, None).await
+}
+
+/// Set active match reservation target address with modern AES-256-CBC and HMAC-SHA256 session keys.
+pub async fn set_active_reservation_with_crypto(
+    target_addr_str: &str,
+    crypto: Option<ReservationCrypto>,
+) -> Result<u16, String> {
     let proxy_port = ensure_udp_proxy().await?;
     let state = PROXY_STATE.get();
 
@@ -280,6 +335,10 @@ pub async fn set_active_reservation(target_addr_str: &str) -> Result<u16, String
         let mut client_lock = state.client_endpoint.write().await;
         *client_lock = None;
     }
+    {
+        let mut crypto_lock = state.active_crypto.write().await;
+        *crypto_lock = crypto.clone();
+    }
 
     crate::proxy::record_network_event(
         "UDP",
@@ -287,11 +346,113 @@ pub async fn set_active_reservation(target_addr_str: &str) -> Result<u16, String
         &format!("{resolved}"),
         "RESERVATION",
         &format!("Active Match Server Rerouted -> 127.0.0.1:{proxy_port}"),
-        &format!("Target Upstream Match Server: {resolved}\nLocal Bound UDP Port: {proxy_port}"),
+        &format!(
+            "Target Upstream Match Server: {resolved}\nLocal Bound UDP Port: {proxy_port}\nCrypto Mode: {}",
+            if crypto.is_some() { "AES-256-CBC + HMAC-SHA256 (RL Replicated)" } else { "Plaintext Passthrough" }
+        ),
         true,
     );
 
     Ok(proxy_port)
+}
+
+/// Replicate RL `rewrite_datagram_payload`:
+/// 1. Decrypt AES-256-CBC datagram using reservation AES key and IV
+/// 2. Unpad PKCS#7 (and verify block padding)
+/// 3. Verify payload contains 32-byte HMAC-SHA256 digest at end
+/// 4. Extract plaintext payload, patch `?Name=` UE login bunch if spoofing
+/// 5. Compute new HMAC-SHA256 digest over patched plaintext
+/// 6. Append HMAC-SHA256 digest, pad with PKCS#7 to 16 bytes
+/// 7. Encrypt with AES-256-CBC using reservation AES key and IV
+pub fn process_c2s_encrypted_datagram(
+    packet: &[u8],
+    crypto: &ReservationCrypto,
+) -> (Vec<u8>, bool) {
+    if packet.len() < 48 || packet.len() % 16 != 0 {
+        // Not a valid AES-CBC encrypted block datagram
+        return (packet.to_vec(), false);
+    }
+
+    // 1. Decrypt datagram with AES-256-CBC
+    let mut dec_buf = packet.to_vec();
+    let decryptor = match Aes256CbcDec::new_from_slices(&crypto.aes_key, &crypto.aes_iv) {
+        Ok(d) => d,
+        Err(_) => return (packet.to_vec(), false),
+    };
+
+    let pt = match decryptor.decrypt_padded_mut::<Pkcs7>(&mut dec_buf) {
+        Ok(p) => p,
+        Err(_) => {
+            // Decrypt failed or padding invalid; passthrough original packet
+            return (packet.to_vec(), false);
+        }
+    };
+
+    // 2. Verified length: must have at least 32 bytes for the HMAC-SHA256 signature
+    if pt.len() < 32 {
+        return (packet.to_vec(), false);
+    }
+
+    let payload_len = pt.len() - 32;
+    let mut payload = pt[..payload_len].to_vec();
+    let _received_hmac = &pt[payload_len..];
+
+    // 3. Patch plaintext bunch if name spoofing is active
+    let mut effective_len = payload.len();
+    let mut was_patched = false;
+
+    if let Some(active_cfg) = crate::psynet::load_active_spoof_from_disk() {
+        let spoof_name = if let Some(ref ns) = active_cfg.name_spoof {
+            if ns.enabled && !ns.display_name.trim().is_empty() {
+                Some(ns.display_name.trim())
+            } else {
+                None
+            }
+        } else if !active_cfg.custom_name.trim().is_empty() {
+            Some(active_cfg.custom_name.trim())
+        } else {
+            None
+        };
+
+        if let Some(name) = spoof_name {
+            was_patched = patch_c2s_login_bunch(&mut payload, &mut effective_len, name);
+            payload.truncate(effective_len);
+        }
+    }
+
+    if !was_patched {
+        // If not patched, pass original packet through directly (rewrite_datagram_payload parity)
+        return (packet.to_vec(), false);
+    }
+
+    // 4. Recompute HMAC-SHA256 over modified payload
+    let mut mac = match HmacSha256::new_from_slice(&crypto.hmac_key) {
+        Ok(m) => m,
+        Err(_) => return (packet.to_vec(), false),
+    };
+    mac.update(&payload);
+    let computed_hmac = mac.finalize().into_bytes();
+
+    // 5. Append HMAC-SHA256 (32 bytes)
+    payload.extend_from_slice(&computed_hmac);
+
+    // 6. Encrypt with AES-256-CBC and PKCS#7 padding
+    let encryptor = match Aes256CbcEnc::new_from_slices(&crypto.aes_key, &crypto.aes_iv) {
+        Ok(e) => e,
+        Err(_) => return (packet.to_vec(), false),
+    };
+
+    let data_len = payload.len();
+    let max_len = data_len + 16;
+    let mut enc_buf = vec![0u8; max_len];
+    enc_buf[..data_len].copy_from_slice(&payload);
+
+    let ciphertext = match encryptor.encrypt_padded_mut::<Pkcs7>(&mut enc_buf, data_len) {
+        Ok(ct) => ct.to_vec(),
+        Err(_) => return (packet.to_vec(), false),
+    };
+
+    (ciphertext, true)
 }
 
 /// Rewrite C2S Login bunch packet (`?Name=...`) if a spoofed name is active.

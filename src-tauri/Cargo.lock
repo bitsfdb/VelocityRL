@@ -584,6 +584,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cbc"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26b52a9543ae338f279b96b0b9fed9c8093744685043739079ce85cd58f289a6"
+dependencies = [
+ "cipher",
+]
+
+[[package]]
 name = "cc"
 version = "1.2.62"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5318,6 +5327,7 @@ version = "2.1.0"
 dependencies = [
  "aes",
  "base64 0.22.1",
+ "cbc",
  "chrono",
  "cipher",
  "ctrlc",

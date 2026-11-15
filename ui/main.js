@@ -6135,26 +6135,120 @@ function initBoostMeterTab() {
     const libraryView = document.getElementById('boost-library-view');
     const tabBrowseBtn = document.getElementById('boost-tab-browse-btn');
     const tabLibraryBtn = document.getElementById('boost-tab-library-btn');
+    const tabCustomBtn = document.getElementById('boost-tab-custom-btn');
     const searchInput = document.getElementById('boost-catalog-search');
+    const customView = document.getElementById('boost-custom-view');
+    const boostDropzone = document.getElementById('boost-dropzone');
+    const boostFileInput = document.getElementById('boost-file-input');
+    const boostNameInput = document.getElementById('boost-name-input');
+    const boostApplyCustomBtn = document.getElementById('boost-apply-custom-btn');
+    const boostDropLabel = document.getElementById('boost-dropzone-label');
 
     if (!enabledEl) return;
 
     let activeStyle = 'default';
+    let customBoostFile = null;
 
-    // Subtab switching between Browse (VideoGameMods) & Library (Downloaded/Installed)
-    if (tabBrowseBtn && tabLibraryBtn && browseView && libraryView) {
-        tabBrowseBtn.onclick = () => {
-            tabBrowseBtn.classList.add('active');
-            tabLibraryBtn.classList.remove('active');
-            browseView.style.display = 'block';
-            libraryView.style.display = 'none';
-        };
-        tabLibraryBtn.onclick = () => {
-            tabLibraryBtn.classList.add('active');
-            tabBrowseBtn.classList.remove('active');
+    // Subtab switching between Browse, Library & Custom Import
+    if (browseView && libraryView) {
+        const switchSubTab = (which) => {
+            [tabBrowseBtn, tabLibraryBtn, tabCustomBtn].forEach(b => b?.classList.remove('active'));
             browseView.style.display = 'none';
-            libraryView.style.display = 'block';
-            renderDownloadedBoostMeters();
+            libraryView.style.display = 'none';
+            if (customView) customView.style.display = 'none';
+
+            if (which === 'browse') {
+                tabBrowseBtn?.classList.add('active');
+                browseView.style.display = 'block';
+            } else if (which === 'library') {
+                tabLibraryBtn?.classList.add('active');
+                libraryView.style.display = 'block';
+                renderDownloadedBoostMeters();
+            } else if (which === 'custom') {
+                tabCustomBtn?.classList.add('active');
+                if (customView) customView.style.display = 'block';
+            }
+        };
+
+        if (tabBrowseBtn) tabBrowseBtn.onclick = () => switchSubTab('browse');
+        if (tabLibraryBtn) tabLibraryBtn.onclick = () => switchSubTab('library');
+        if (tabCustomBtn) tabCustomBtn.onclick = () => switchSubTab('custom');
+    }
+
+    if (boostDropzone && boostFileInput) {
+        boostDropzone.addEventListener('click', () => boostFileInput.click());
+        boostFileInput.addEventListener('change', (e) => {
+            const f = e.target.files?.[0];
+            if (f) {
+                customBoostFile = f;
+                if (boostDropLabel) boostDropLabel.textContent = `Selected: ${f.name}`;
+                if (boostNameInput && !boostNameInput.value) {
+                    boostNameInput.value = f.name.replace(/\.[^/.]+$/, '');
+                }
+            }
+        });
+        boostDropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            boostDropzone.classList.add('drag-over');
+        });
+        boostDropzone.addEventListener('dragleave', () => {
+            boostDropzone.classList.remove('drag-over');
+        });
+        boostDropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            boostDropzone.classList.remove('drag-over');
+            const f = e.dataTransfer?.files?.[0];
+            if (f) {
+                customBoostFile = f;
+                if (boostDropLabel) boostDropLabel.textContent = `Selected: ${f.name}`;
+                if (boostNameInput && !boostNameInput.value) {
+                    boostNameInput.value = f.name.replace(/\.[^/.]+$/, '');
+                }
+            }
+        });
+    }
+
+    if (boostApplyCustomBtn) {
+        boostApplyCustomBtn.onclick = async () => {
+            if (!customBoostFile) {
+                showToast('Please select or drop an AlphaConsole compatible boost meter package (.zip, .json, or .png).', 'error');
+                return;
+            }
+            const rename = boostNameInput?.value?.trim() || customBoostFile.name.replace(/\.[^/.]+$/, '');
+            boostApplyCustomBtn.disabled = true;
+            boostApplyCustomBtn.textContent = 'Applying...';
+            try {
+                const slug = 'custom_' + rename.toLowerCase().replace(/[^a-z0-9]/g, '_');
+                const payload = {
+                    enabled: true,
+                    style: slug,
+                    name: rename,
+                    filename: customBoostFile.name
+                };
+                activeStyle = slug;
+                if (enabledEl) enabledEl.checked = true;
+                localStorage.setItem(BOOST_METER_SPOOF_KEY, JSON.stringify({ boost_meter_spoof: payload }));
+                await runToolSave(boostApplyCustomBtn, 'Boost meter custom', { boost_meter_spoof: payload }, { enabled: true });
+
+                if (!COMMUNITY_BOOST_METERS.some(item => item.id === slug)) {
+                    COMMUNITY_BOOST_METERS.push({
+                        id: slug,
+                        name: rename,
+                        author: 'User Imported',
+                        type: 'Custom HUD',
+                        gradient: 'linear-gradient(90deg, #38ef7d, #11998e)',
+                        accent: '#38ef7d',
+                        description: `Custom AlphaConsole boost gauge: ${rename}`
+                    });
+                }
+
+                showToast(`Applied custom boost meter "${rename}"!`, 'success');
+            } catch (err) {
+                showToast(String(err), 'error');
+            } finally {
+                boostApplyCustomBtn.disabled = false;
+                boostApplyCustomBtn.textContent = 'Apply Custom Boost Meter';
+            }
         };
     }
 
@@ -6645,6 +6739,8 @@ function initBallsTab() {
         });
     };
 
+    const ballNameInput = document.getElementById('ball-name-input');
+
     if (searchInput) {
         searchInput.oninput = () => renderBallCards(searchInput.value);
     }
@@ -6652,19 +6748,25 @@ function initBallsTab() {
     if (dropzone && fileInput) {
         dropzone.onclick = () => fileInput.click();
         dropzone.ondragover = (e) => { e.preventDefault(); dropzone.style.borderColor = 'var(--accent)'; };
-        dropzone.ondragleave = () => { dropzone.style.borderColor = 'var(--border)'; };
+        dropzone.ondragleave = () => { dropzone.style.borderColor = 'var(--accent)'; };
         dropzone.ondrop = (e) => {
             e.preventDefault();
-            dropzone.style.borderColor = 'var(--border)';
+            dropzone.style.borderColor = 'var(--accent)';
             if (e.dataTransfer?.files?.[0]) {
                 customBallFile = e.dataTransfer.files[0];
                 if (dropLabel) dropLabel.textContent = `Selected: ${customBallFile.name}`;
+                if (ballNameInput && !ballNameInput.value) {
+                    ballNameInput.value = customBallFile.name.replace(/\.[^/.]+$/, '');
+                }
             }
         };
         fileInput.onchange = () => {
             if (fileInput.files?.[0]) {
                 customBallFile = fileInput.files[0];
                 if (dropLabel) dropLabel.textContent = `Selected: ${customBallFile.name}`;
+                if (ballNameInput && !ballNameInput.value) {
+                    ballNameInput.value = customBallFile.name.replace(/\.[^/.]+$/, '');
+                }
             }
         };
     }
@@ -6672,20 +6774,22 @@ function initBallsTab() {
     if (applyBtn) {
         applyBtn.onclick = async () => {
             if (!customBallFile) {
-                showToast('Please select or drop a ball texture file (.png or .dds).', 'error');
+                showToast('Please select or drop an AlphaConsole ball texture package (.zip, .json, or .png).', 'error');
                 return;
             }
+            const rename = ballNameInput?.value?.trim() || customBallFile.name.replace(/\.[^/.]+$/, '');
             try {
                 applyBtn.disabled = true;
                 applyBtn.textContent = 'Applying Ball...';
                 const payload = {
                     enabled: true,
                     selected_id: 'custom_file',
+                    name: rename,
                     filename: customBallFile.name
                 };
                 localStorage.setItem(BALL_SPOOF_KEY, JSON.stringify({ ball_spoof: payload }));
                 await runToolSave(applyBtn, 'Custom ball file', { ball_spoof: payload }, { enabled: true });
-                showToast(`Custom ball "${customBallFile.name}" applied successfully!`, 'success');
+                showToast(`Custom ball "${rename}" applied successfully!`, 'success');
                 applyBtn.disabled = false;
                 applyBtn.textContent = 'Apply Custom Ball';
             } catch (err) {

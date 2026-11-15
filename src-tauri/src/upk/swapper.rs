@@ -2402,8 +2402,8 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
                         let c1_c_sz = i32::from_le_bytes(plain_header[c1_p + 20..c1_p + 24].try_into().unwrap_or([0; 4])) as usize;
                         if c1_c_off + c1_c_sz <= cur_px_bytes.len() {
                             if let Ok(c1_decomp) = crate::upk::compression::decompress_chunk(&cur_px_bytes[c1_c_off..c1_c_off + c1_c_sz]) {
-                                if c1_decomp.windows(25).any(|w| w == b"http://127.0.0.1:15759/rpc")
-                                    && c1_decomp.windows(23).any(|w| w == b"ws://127.0.0.1:15759/")
+                                if c1_decomp.windows(26).any(|w| w == b"http://127.0.0.1:15759/rpc")
+                                    && c1_decomp.windows(21).any(|w| w == b"ws://127.0.0.1:15759/")
                                 {
                                     return Ok(false); // Already cleanly patched with both RPC and WS broker
                                 }

@@ -2352,6 +2352,7 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
         "TradeHold": -1,
         "AddedTimestamp": now_ts,
         "UpdatedTimestamp": now_ts,
+        "bSkipRoulette": false,
     });
     if dropped_paint > 0 {
         drop_obj["Paint"] = serde_json::json!(dropped_paint);
@@ -2783,70 +2784,7 @@ async fn handle_broker_request(
         }
     }
 
-    if path_str == "/network" || path_str == "/network/" || path_str == "/dashboard" || path_str == "/inspect" {
-        let html = include_str!("../resources/network_dashboard.html");
-        return Ok(Response::builder()
-            .status(StatusCode::OK)
-            .header("Content-Type", "text/html; charset=utf-8")
-            .header("Content-Length", html.len().to_string())
-            .header("Cache-Control", "no-cache, no-store")
-            .body(full_body(html.as_bytes().to_vec()))
-            .unwrap());
-    }
 
-    if path_str == "/network/events" || path_str == "/api/network/events" {
-        let events = get_network_events();
-        let payload = serde_json::to_vec(&events).unwrap_or_default();
-        return Ok(Response::builder()
-            .status(StatusCode::OK)
-            .header("Content-Type", "application/json")
-            .header("Access-Control-Allow-Origin", "*")
-            .header("Content-Length", payload.len().to_string())
-            .header("Cache-Control", "no-cache, no-store")
-            .body(full_body(payload))
-            .unwrap());
-    }
-
-    if path_str == "/network/status" || path_str == "/api/network/status" {
-        let cfg = crate::psynet::load_active_spoof_from_disk().unwrap_or_default();
-        let udp_port = crate::udp_proxy::get_local_port().unwrap_or(0);
-        let broker_port = BROKER_PORT.load(Ordering::Relaxed);
-        let info = serde_json::json!({
-            "broker_port": broker_port,
-            "udp_match_proxy_port": udp_port,
-            "spoof_active": cfg.enabled,
-            "name_spoof": cfg.name_spoof.as_ref().map(|n| n.display_name.clone()).unwrap_or_default(),
-            "fake_rank_enabled": cfg.fake_ranks.as_ref().map(|s| s.enabled).unwrap_or(false),
-            "ping_spoof": cfg.ping_spoof,
-            "title_id": cfg.equip_title_id,
-            "credits": cfg.credit_spoof,
-        });
-        let payload = serde_json::to_vec(&info).unwrap_or_default();
-        return Ok(Response::builder()
-            .status(StatusCode::OK)
-            .header("Content-Type", "application/json")
-            .header("Access-Control-Allow-Origin", "*")
-            .header("Content-Length", payload.len().to_string())
-            .header("Cache-Control", "no-cache, no-store")
-            .body(full_body(payload))
-            .unwrap());
-    }
-
-    if path_str == "/network/upk" || path_str == "/api/network/upk" {
-        let (upk_name, parsed_info) = inspect_active_upk_payload();
-        let payload = serde_json::to_vec(&serde_json::json!({
-            "upk": upk_name,
-            "data": parsed_info,
-        })).unwrap_or_default();
-        return Ok(Response::builder()
-            .status(StatusCode::OK)
-            .header("Content-Type", "application/json")
-            .header("Access-Control-Allow-Origin", "*")
-            .header("Content-Length", payload.len().to_string())
-            .header("Cache-Control", "no-cache, no-store")
-            .body(full_body(payload))
-            .unwrap());
-    }
 
     if path_str == "/rlim/status" || path_str.starts_with("/rlim/status?") {
         let cfg = crate::psynet::load_active_spoof_from_disk().unwrap_or_default();
@@ -4852,7 +4790,7 @@ async fn handle_http_config(
     resp_builder = resp_builder.header("Psysignature", &sig);
     resp_builder = resp_builder.header("PsySig", &sig);
 
-    // Record Config CDN event in Network Inspector (revealing decrypted JSON structure and patches)
+    // Record Config CDN event
     record_network_event(
         "CONFIG_CDN",
         "INBOUND",
@@ -5818,6 +5756,9 @@ pub fn patch_products_config(body: &[u8]) -> (Vec<u8>, bool) {
         ("SaveGameManager_TA", "bEnableSaving", "True"),
         ("SaveGameManager_TA", "bDisableSaveOSS", "False"),
         ("UIConfig_TA", "bCrateRouletteEnabled", "True"),
+        ("GameplaySettingsSave_TA", "bQuickDropOpening", "False"),
+        ("UISavedValues_TA", "S.Drops.v1.quick", "0"),
+        ("UISavedValues_TA", "S.Drops.v1.roulette", "1"),
     ];
 
     for (cls, prop, val) in overrides {
@@ -6458,6 +6399,113 @@ fn find_server_address(val: &serde_json::Value) -> Option<String> {
     None
 }
 
+/// Recursively search for modern Rocket League match security keys (`Keys`: `{ Key, IV, HMACKey }`)
+/// or flat keys in reservation JSON.
+pub fn find_reservation_crypto(val: &serde_json::Value) -> Option<crate::udp_proxy::ReservationCrypto> {
+    match val {
+        serde_json::Value::Object(map) => {
+            // Check direct "Keys" container object
+            if let Some(keys_obj) = map.get("Keys").and_then(|v| v.as_object()) {
+                if let (Some(k), Some(iv), Some(h)) = (
+                    keys_obj.get("Key").and_then(|v| v.as_str()),
+                    keys_obj.get("IV").and_then(|v| v.as_str()),
+                    keys_obj.get("HMACKey").and_then(|v| v.as_str()),
+                ) {
+                    if let Some(crypto) = parse_reservation_crypto_keys(k, iv, h) {
+                        return Some(crypto);
+                    }
+                }
+            }
+
+            // Check flat keys in map
+            if let (Some(k), Some(iv), Some(h)) = (
+                map.get("Key").and_then(|v| v.as_str()),
+                map.get("IV").and_then(|v| v.as_str()),
+                map.get("HMACKey").and_then(|v| v.as_str()),
+            ) {
+                if let Some(crypto) = parse_reservation_crypto_keys(k, iv, h) {
+                    return Some(crypto);
+                }
+            }
+
+            for (_k, v) in map {
+                if let Some(s) = v.as_str() {
+                    let trimmed = s.trim();
+                    if trimmed.starts_with('{') && trimmed.ends_with('}') {
+                        if let Ok(inner) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                            if let Some(found) = find_reservation_crypto(&inner) {
+                                return Some(found);
+                            }
+                        }
+                    }
+                } else if let Some(found) = find_reservation_crypto(v) {
+                    return Some(found);
+                }
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr {
+                if let Some(found) = find_reservation_crypto(v) {
+                    return Some(found);
+                }
+            }
+        }
+        _ => {}
+    }
+    None
+}
+
+/// Parse base64, hex, or raw 32-byte Key, 16-byte IV, and 32-byte HMACKey.
+fn parse_reservation_crypto_keys(
+    key_str: &str,
+    iv_str: &str,
+    hmac_key_str: &str,
+) -> Option<crate::udp_proxy::ReservationCrypto> {
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD;
+
+    let parse_bytes = |s: &str, expected_len: usize| -> Option<Vec<u8>> {
+        let trimmed = s.trim();
+        // Try Base64
+        if let Ok(b) = b64.decode(trimmed) {
+            if b.len() == expected_len {
+                return Some(b);
+            }
+        }
+        // Try Hex
+        if trimmed.len() == expected_len * 2 {
+            if let Ok(b) = (0..trimmed.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&trimmed[i..i + 2], 16))
+                .collect::<Result<Vec<u8>, _>>()
+            {
+                if b.len() == expected_len {
+                    return Some(b);
+                }
+            }
+        }
+        // Try Raw bytes
+        if trimmed.as_bytes().len() == expected_len {
+            return Some(trimmed.as_bytes().to_vec());
+        }
+        None
+    };
+
+    let key_bytes = parse_bytes(key_str, 32)?;
+    let iv_bytes = parse_bytes(iv_str, 16)?;
+    let hmac_bytes = parse_bytes(hmac_key_str, 32)?;
+
+    let mut aes_key = [0u8; 32];
+    let mut aes_iv = [0u8; 16];
+    let mut hmac_key = [0u8; 32];
+
+    aes_key.copy_from_slice(&key_bytes);
+    aes_iv.copy_from_slice(&iv_bytes);
+    hmac_key.copy_from_slice(&hmac_bytes);
+
+    Some(crate::udp_proxy::ReservationCrypto::new(aes_key, aes_iv, hmac_key))
+}
+
 fn patch_product_ids_node(
     node: &mut serde_json::Value,
     rules: &[ActiveSwapRule],
@@ -6693,13 +6741,16 @@ fn patch_reservation_value_sync(
 ) {
     match val {
         serde_json::Value::Object(map) => {
-            // Only rewrite game connection endpoints to local UDP proxy port.
-            // Leave PingURL vanilla so UDP datacenter telemetry / ping reflectors work unhindered.
-            for key in &["ServerAddress", "GameURL"] {
-                if let Some(addr_val) = map.get_mut(*key) {
-                    if let Some(addr_str) = addr_val.as_str() {
-                        if !addr_str.starts_with("127.0.0.1") && proxy_port > 0 {
-                            *addr_val = serde_json::json!(format!("127.0.0.1:{proxy_port}"));
+            // Reroute match server addresses to local UDP proxy (127.0.0.1:{proxy_port})
+            // Replicates RL UDP Proxy architecture:
+            // Intercepts UDP traffic, decrypts AES-256-CBC with reservation keys,
+            // patches login bunches, recomputes HMAC-SHA256, and relays upstream.
+            if proxy_port > 0 {
+                let target_loopback = format!("127.0.0.1:{proxy_port}");
+                for key in &["ServerAddress", "GameURL"] {
+                    if let Some(s) = map.get(*key).and_then(|v| v.as_str()) {
+                        if !s.starts_with("127.0.0.1:") {
+                            map.insert((*key).to_string(), serde_json::json!(target_loopback));
                             *changed = true;
                         }
                     }
@@ -6948,8 +6999,10 @@ pub async fn patch_reservation_json_with_rules(
     };
 
     let server_addr_opt = find_server_address(&root);
+    let crypto_opt = find_reservation_crypto(&root);
+
     let proxy_port = if let Some(addr_str) = &server_addr_opt {
-        match crate::udp_proxy::set_active_reservation(addr_str).await {
+        match crate::udp_proxy::set_active_reservation_with_crypto(addr_str, crypto_opt).await {
             Ok(p) => p,
             Err(e) => {
                 crate::applog::event(&format!("proxy: error setting UDP reservation target {addr_str}: {e}"));
@@ -7169,21 +7222,19 @@ pub fn patch_player_products_json(
         }
 
         if !matched {
-            let u1: u64 = rand::random();
-            let u2: u64 = rand::random();
-            let inst_hex = format!("{u1:016x}{u2:016x}");
-            let now_ts = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs() as i64)
-                .unwrap_or(1755399374);
+            // Deterministic instance ID based on wanted_id and paint_id
+            // Prevents Rocket League client from detecting newly generated items on every relaunch,
+            // which causes recurring spawn drop toasts and "items failed to sync resyncing" save errors.
+            let inst_hex = format!("vrl{:08x}{:08x}0000000000000000", wanted_id as u32, paint_id as u32);
+            let static_ts: i64 = 1700000000;
 
             let mut prod_obj = serde_json::json!({
                 "ProductID": wanted_id,
                 "InstanceID": inst_hex,
                 "SeriesID": 1,
                 "TradeHold": -1,
-                "AddedTimestamp": now_ts,
-                "UpdatedTimestamp": now_ts,
+                "AddedTimestamp": static_ts,
+                "UpdatedTimestamp": static_ts,
             });
 
             if paint_id > 0 {

@@ -632,13 +632,13 @@
                         </div>
 
                         <div class="settings-group">
-                            <label for="decal-name-input">Decal Name / Label</label>
+                            <label for="decal-name-input">Decal Name / Label (Rename)</label>
                             <input type="text" id="decal-name-input" placeholder="e.g. Clean Carbon Octane" autocomplete="off" spellcheck="false">
                         </div>
 
                         <div class="settings-group">
-                            <label>Decal Package (ZIP / JSON / Textures)</label>
-                            <div id="decal-dropzone" style="border: 2px dashed var(--border); border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; background: rgba(255,255,255,0.02); transition: border-color 0.2s, background 0.2s;">
+                            <label>Decal Package (AlphaConsole ZIP / JSON / Textures)</label>
+                            <div id="decal-dropzone" style="border: 2px dashed var(--accent); border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; background: rgba(33,150,243,0.03); transition: border-color 0.2s, background 0.2s;">
                                 <div style="display: flex; justify-content: center; margin-bottom: 8px;">
                                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent);">
                                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -646,8 +646,9 @@
                                         <line x1="12" y1="3" x2="12" y2="15"></line>
                                     </svg>
                                 </div>
-                                <strong style="display: block; font-size: 13px; color: var(--text);">Drag and drop AlphaConsole ZIP or JSON here</strong>
-                                <span style="font-size: 11px; color: var(--muted); display: block; margin-top: 4px;">or click anywhere in this box to browse local files</span>
+                                <h3 style="margin: 0 0 4px 0; font-size: 15px; font-weight: 800; letter-spacing: 0.5px; color: var(--accent);">THATS IT</h3>
+                                <strong id="decal-dropzone-label" style="display: block; font-size: 13px; color: var(--text);">Drag and drop AlphaConsole ZIP, JSON, or texture PNG here</strong>
+                                <span style="font-size: 11px; color: var(--muted); display: block; margin-top: 4px;">or click anywhere in this box to browse local files (supports renaming)</span>
                             </div>
                             <input type="file" id="decal-json-file" accept=".zip,.json,image/png" style="display: none;">
                         </div>
@@ -675,6 +676,7 @@
                     <div class="subtab-strip" style="margin-bottom: 0; padding-bottom: 0; border-bottom: none;">
                         <button type="button" class="subtab-btn active" id="boost-tab-browse-btn">Browse</button>
                         <button type="button" class="subtab-btn" id="boost-tab-library-btn">Library</button>
+                        <button type="button" class="subtab-btn" id="boost-tab-custom-btn">Custom / Import</button>
                     </div>
                 </div>
 
@@ -694,6 +696,35 @@
 
                 <div id="boost-library-view" style="display: none;">
                     <div id="boost-library-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; max-height: calc(100vh - 280px); overflow-y: auto; padding-right: 6px; margin-top: 12px;"></div>
+                </div>
+
+                <div id="boost-custom-view" style="display: none;">
+                    <div class="card spoof-card" style="max-width: 720px; margin-top: 12px;">
+                        <div class="settings-group">
+                            <label for="boost-name-input">Boost Meter Name / Label (Rename)</label>
+                            <input type="text" id="boost-name-input" placeholder="e.g. Cyber Neon Gauge" autocomplete="off" spellcheck="false">
+                        </div>
+
+                        <div class="settings-group">
+                            <label>Boost Meter Package (AlphaConsole ZIP / JSON / PNG)</label>
+                            <div id="boost-dropzone" style="border: 2px dashed var(--accent); border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; background: rgba(33,150,243,0.03); transition: border-color 0.2s, background 0.2s;">
+                                <div style="display: flex; justify-content: center; margin-bottom: 8px;">
+                                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent);">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <polyline points="12 6 12 12 16 14"></polyline>
+                                    </svg>
+                                </div>
+                                <h3 style="margin: 0 0 4px 0; font-size: 15px; font-weight: 800; letter-spacing: 0.5px; color: var(--accent);">THATS IT</h3>
+                                <strong id="boost-dropzone-label" style="display: block; font-size: 13px; color: var(--text);">Drag and drop AlphaConsole ZIP, JSON, or texture PNG here</strong>
+                                <span style="font-size: 11px; color: var(--muted); display: block; margin-top: 4px;">or click anywhere in this box to browse local files (supports renaming)</span>
+                            </div>
+                            <input type="file" id="boost-file-input" accept=".zip,.json,image/png" style="display: none;">
+                        </div>
+
+                        <div class="swapper-controls" style="margin-top: 16px; display: flex; gap: 10px;">
+                            <button id="boost-apply-custom-btn" class="action-btn" type="button">Apply Custom Boost Meter</button>
+                        </div>
+                    </div>
                 </div>
 
                 <input type="checkbox" id="boost-meter-enabled" style="display: none;">
@@ -769,8 +800,13 @@
                         </div>
 
                         <div class="settings-group">
-                            <label>Ball Texture Map (PNG / DDS)</label>
-                            <div id="ball-dropzone" style="border: 2px dashed var(--border); border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; background: rgba(255,255,255,0.02); transition: border-color 0.2s, background 0.2s;">
+                            <label for="ball-name-input">Ball Skin Name / Label (Rename)</label>
+                            <input type="text" id="ball-name-input" placeholder="e.g. Star Champions Soccar Ball" autocomplete="off" spellcheck="false">
+                        </div>
+
+                        <div class="settings-group">
+                            <label>Ball Texture Map (AlphaConsole ZIP / JSON / PNG)</label>
+                            <div id="ball-dropzone" style="border: 2px dashed var(--accent); border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; background: rgba(33,150,243,0.03); transition: border-color 0.2s, background 0.2s;">
                                 <div style="display: flex; justify-content: center; margin-bottom: 8px;">
                                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent);">
                                         <circle cx="12" cy="12" r="10"></circle>
@@ -778,10 +814,11 @@
                                         <path d="M2 12h20"></path>
                                     </svg>
                                 </div>
-                                <strong id="ball-dropzone-label" style="display: block; font-size: 13px; color: var(--text);">Drag and drop ball texture (.png / .dds) here</strong>
-                                <span style="font-size: 11px; color: var(--muted); display: block; margin-top: 4px;">or click to browse local files</span>
+                                <h3 style="margin: 0 0 4px 0; font-size: 15px; font-weight: 800; letter-spacing: 0.5px; color: var(--accent);">THATS IT</h3>
+                                <strong id="ball-dropzone-label" style="display: block; font-size: 13px; color: var(--text);">Drag and drop AlphaConsole ZIP, JSON, or texture PNG here</strong>
+                                <span style="font-size: 11px; color: var(--muted); display: block; margin-top: 4px;">or click anywhere in this box to browse local files (supports renaming)</span>
                             </div>
-                            <input type="file" id="ball-file-input" accept=".png,.dds,.tga" style="display: none;">
+                            <input type="file" id="ball-file-input" accept=".zip,.json,image/png,.dds,.tga" style="display: none;">
                         </div>
 
                         <div class="swapper-controls" style="margin-top: 16px; display: flex; gap: 10px;">
