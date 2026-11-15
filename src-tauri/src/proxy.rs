@@ -1848,6 +1848,23 @@ async fn handle_forward_intercepted_request(
             }
         }
 
+        let path_lower = path.to_ascii_lowercase();
+        let is_skill_rpc = path_lower.contains("getplayerskill")
+            || path_lower.contains("skills")
+            || find_bytes(&final_body, b"\"Skills\"").is_some();
+        if is_skill_rpc {
+            extract_and_save_real_skills(&final_body);
+            if let Some(fr) = spoof_cfg.as_ref().and_then(|c| c.fake_ranks.as_ref()) {
+                if fr.enabled {
+                    let (new_body, did_patch) = patch_get_player_skill_json(&final_body, fr);
+                    if did_patch {
+                        final_body = new_body;
+                        body_modified = true;
+                    }
+                }
+            }
+        }
+
         if let Some(cs) = spoof_cfg.as_ref().and_then(|c| c.credit_spoof.as_ref()).filter(|c| c.enabled) {
             let path_lower = path.to_ascii_lowercase();
             let is_wallet = path_lower.contains("wallet")
@@ -1866,7 +1883,6 @@ async fn handle_forward_intercepted_request(
             }
         }
 
-        let path_lower = path.to_ascii_lowercase();
         let is_ecom_ownership = path_lower.contains("ecom")
             || path_lower.contains("entitlement")
             || path_lower.contains("ownership")
@@ -1882,7 +1898,7 @@ async fn handle_forward_intercepted_request(
             || (find_bytes(&final_body, b"\"ProductID\"").is_some()
                 && find_bytes(&final_body, b"\"InstanceID\"").is_some());
         if is_ecom_ownership {
-            let spawned_items = load_active_spawned_items(None);
+            let spawned_items = load_active_spawned_items(spoof_cfg.as_ref());
             if !spawned_items.is_empty() {
                 let (new_body_prod, did_patch_prod) = patch_player_products_json(&final_body, &spawned_items);
                 if did_patch_prod {
@@ -1895,7 +1911,7 @@ async fn handle_forward_intercepted_request(
                     body_modified = true;
                 }
             }
-            let (new_body_own, did_patch_own) = patch_check_ownership_json(&final_body, &[]);
+            let (new_body_own, did_patch_own) = patch_check_ownership_json(&final_body, &spawned_items);
             if did_patch_own {
                 final_body = new_body_own;
                 body_modified = true;
@@ -4558,6 +4574,15 @@ async fn handle_http_config(
     if prod_changed {
         out_body = next_prod;
         patched = true;
+    }
+
+    if let Some(next_psynet) = patch_psynet_url(&out_body) {
+        out_body = next_psynet;
+        patched = true;
+        crate::applog::event(&format!(
+            "proxy: patched PsyNetUrl to broker ({} bytes)",
+            out_body.len()
+        ));
     }
 
     if !patched {
