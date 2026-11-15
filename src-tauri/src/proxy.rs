@@ -23,6 +23,63 @@ use tokio_rustls::rustls::sign::CertifiedKey;
 use tokio_rustls::rustls::ServerConfig;
 use tokio_rustls::TlsAcceptor;
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct NetworkEventEntry {
+    pub id: u64,
+    pub timestamp: String,
+    pub protocol: String, // "HTTP", "WS_C2S", "WS_S2C", "UDP", "RPC"
+    pub direction: String, // "INBOUND", "OUTBOUND", "LOOPBACK"
+    pub service_or_url: String,
+    pub status_or_type: String,
+    pub summary: String,
+    pub payload_snippet: String,
+    pub intercepted: bool,
+}
+
+static NETWORK_EVENT_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+static NETWORK_EVENT_RING: std::sync::Mutex<Option<std::collections::VecDeque<NetworkEventEntry>>> =
+    std::sync::Mutex::new(None);
+
+pub fn record_network_event(
+    protocol: &str,
+    direction: &str,
+    service_or_url: &str,
+    status_or_type: &str,
+    summary: &str,
+    payload_snippet: &str,
+    intercepted: bool,
+) {
+    let id = NETWORK_EVENT_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let now = chrono::Utc::now().to_rfc3339();
+    let entry = NetworkEventEntry {
+        id,
+        timestamp: now,
+        protocol: protocol.to_string(),
+        direction: direction.to_string(),
+        service_or_url: service_or_url.to_string(),
+        status_or_type: status_or_type.to_string(),
+        summary: summary.to_string(),
+        payload_snippet: payload_snippet.chars().take(2048).collect(),
+        intercepted,
+    };
+    if let Ok(mut lock) = NETWORK_EVENT_RING.lock() {
+        let deque = lock.get_or_insert_with(|| std::collections::VecDeque::with_capacity(256));
+        if deque.len() >= 250 {
+            deque.pop_front();
+        }
+        deque.push_back(entry);
+    }
+}
+
+pub fn get_network_events() -> Vec<NetworkEventEntry> {
+    if let Ok(lock) = NETWORK_EVENT_RING.lock() {
+        if let Some(deque) = lock.as_ref() {
+            return deque.iter().cloned().collect();
+        }
+    }
+    Vec::new()
+}
+
 const LEAF_CONFIG_CERT_PEM: &[u8] =
     include_bytes!("../resources/certs/leaf_config.psynet.gg.crt");
 const LEAF_CONFIG_KEY_PEM: &[u8] =
@@ -2693,6 +2750,55 @@ async fn handle_broker_request(
         }
     }
 
+    if path_str == "/network" || path_str == "/network/" || path_str == "/dashboard" || path_str == "/inspect" {
+        let html = include_str!("../resources/network_dashboard.html");
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "text/html; charset=utf-8")
+            .header("Content-Length", html.len().to_string())
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body(html.as_bytes().to_vec()))
+            .unwrap());
+    }
+
+    if path_str == "/network/events" || path_str == "/api/network/events" {
+        let events = get_network_events();
+        let payload = serde_json::to_vec(&events).unwrap_or_default();
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json")
+            .header("Access-Control-Allow-Origin", "*")
+            .header("Content-Length", payload.len().to_string())
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body(payload))
+            .unwrap());
+    }
+
+    if path_str == "/network/status" || path_str == "/api/network/status" {
+        let cfg = crate::psynet::load_active_spoof_from_disk().unwrap_or_default();
+        let udp_port = crate::udp_proxy::get_local_port().unwrap_or(0);
+        let broker_port = BROKER_PORT.load(Ordering::Relaxed);
+        let info = serde_json::json!({
+            "broker_port": broker_port,
+            "udp_match_proxy_port": udp_port,
+            "spoof_active": cfg.enabled,
+            "name_spoof": cfg.name_spoof.as_ref().map(|n| n.display_name.clone()).unwrap_or_default(),
+            "fake_rank_enabled": cfg.fake_ranks.as_ref().map(|s| s.enabled).unwrap_or(false),
+            "ping_spoof": cfg.ping_spoof,
+            "title_id": cfg.equip_title_id,
+            "credits": cfg.credit_spoof,
+        });
+        let payload = serde_json::to_vec(&info).unwrap_or_default();
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json")
+            .header("Access-Control-Allow-Origin", "*")
+            .header("Content-Length", payload.len().to_string())
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body(payload))
+            .unwrap());
+    }
+
     if path_str == "/rlim/status" || path_str.starts_with("/rlim/status?") {
         let cfg = crate::psynet::load_active_spoof_from_disk().unwrap_or_default();
         let has_avatar = crate::avatar::get_active_avatar_png().is_some();
@@ -3020,6 +3126,16 @@ async fn handle_broker_request(
         resp_builder = resp_builder.header("Psysignature", &sig);
     }
 
+    record_network_event(
+        "HTTP",
+        "INBOUND",
+        &path_lower,
+        &status.to_string(),
+        if patched { "Broker Services RPC (Patched)" } else { "Broker Services RPC" },
+        &String::from_utf8_lossy(&out_body),
+        patched,
+    );
+
     resp_builder = resp_builder.header("Content-Length", out_body.len().to_string());
     Ok(resp_builder.body(full_body(out_body)).unwrap())
 }
@@ -3341,11 +3457,29 @@ async fn tunnel_websocket<S1, S2>(
                 Ok(msg) => {
                     let out_msg = match msg {
                         tokio_tungstenite::tungstenite::Message::Text(t) => {
-                            let (patched_text, _) = patch_ws_frame_text(&t).await;
+                            let (patched_text, did_patch) = patch_ws_frame_text(&t).await;
+                            record_network_event(
+                                "WS_C2S",
+                                "OUTBOUND",
+                                "ws.rlpp.psynet.gg",
+                                "FRAME_TEXT",
+                                if did_patch { "WebSocket C2S Frame (Patched)" } else { "WebSocket C2S Frame" },
+                                &patched_text,
+                                did_patch,
+                            );
                             tokio_tungstenite::tungstenite::Message::Text(patched_text.into())
                         }
                         tokio_tungstenite::tungstenite::Message::Binary(b) => {
-                            let (patched_b, _) = patch_ws_frame_binary(&b).await;
+                            let (patched_b, did_patch) = patch_ws_frame_binary(&b).await;
+                            record_network_event(
+                                "WS_C2S",
+                                "OUTBOUND",
+                                "ws.rlpp.psynet.gg",
+                                "FRAME_BINARY",
+                                if did_patch { "WebSocket C2S Binary (Patched)" } else { "WebSocket C2S Binary" },
+                                &String::from_utf8_lossy(&patched_b),
+                                did_patch,
+                            );
                             tokio_tungstenite::tungstenite::Message::Binary(patched_b.into())
                         }
                         other => other,
@@ -3367,11 +3501,29 @@ async fn tunnel_websocket<S1, S2>(
                         Ok(msg) => {
                             let out_msg = match msg {
                                 tokio_tungstenite::tungstenite::Message::Text(t) => {
-                                    let (patched_text, _) = patch_ws_frame_text(&t).await;
+                                    let (patched_text, did_patch) = patch_ws_frame_text(&t).await;
+                                    record_network_event(
+                                        "WS_S2C",
+                                        "INBOUND",
+                                        "ws.rlpp.psynet.gg",
+                                        "FRAME_TEXT",
+                                        if did_patch { "WebSocket S2C Frame (Patched)" } else { "WebSocket S2C Frame" },
+                                        &patched_text,
+                                        did_patch,
+                                    );
                                     tokio_tungstenite::tungstenite::Message::Text(patched_text.into())
                                 }
                                 tokio_tungstenite::tungstenite::Message::Binary(b) => {
-                                    let (patched_b, _) = patch_ws_frame_binary(&b).await;
+                                    let (patched_b, did_patch) = patch_ws_frame_binary(&b).await;
+                                    record_network_event(
+                                        "WS_S2C",
+                                        "INBOUND",
+                                        "ws.rlpp.psynet.gg",
+                                        "FRAME_BINARY",
+                                        if did_patch { "WebSocket S2C Binary (Patched)" } else { "WebSocket S2C Binary" },
+                                        &String::from_utf8_lossy(&patched_b),
+                                        did_patch,
+                                    );
                                     tokio_tungstenite::tungstenite::Message::Binary(patched_b.into())
                                 }
                                 other => other,
@@ -6208,11 +6360,18 @@ pub fn load_active_spawned_items(cfg: Option<&crate::psynet::SpoofPayload>) -> V
 fn find_server_address(val: &serde_json::Value) -> Option<String> {
     match val {
         serde_json::Value::Object(map) => {
-            for key in &["ServerAddress", "GameURL", "PingURL"] {
+            // Priority 1: Match Game Server address (ServerAddress or GameURL)
+            for key in &["ServerAddress", "GameURL"] {
                 if let Some(s) = map.get(*key).and_then(|v| v.as_str()) {
                     if !s.starts_with("127.0.0.1") && s.contains(':') {
                         return Some(s.to_string());
                     }
+                }
+            }
+            // Priority 2: Fallback to PingURL only if no direct match server address exists
+            if let Some(s) = map.get("PingURL").and_then(|v| v.as_str()) {
+                if !s.starts_with("127.0.0.1") && s.contains(':') {
+                    return Some(s.to_string());
                 }
             }
             for (_k, v) in map {
@@ -6477,7 +6636,9 @@ fn patch_reservation_value_sync(
 ) {
     match val {
         serde_json::Value::Object(map) => {
-            for key in &["ServerAddress", "GameURL", "PingURL"] {
+            // Only rewrite game connection endpoints to local UDP proxy port.
+            // Leave PingURL vanilla so UDP datacenter telemetry / ping reflectors work unhindered.
+            for key in &["ServerAddress", "GameURL"] {
                 if let Some(addr_val) = map.get_mut(*key) {
                     if let Some(addr_str) = addr_val.as_str() {
                         if !addr_str.starts_with("127.0.0.1") && proxy_port > 0 {

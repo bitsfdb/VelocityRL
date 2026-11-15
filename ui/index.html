@@ -711,12 +711,27 @@
                         <p class="section-desc" style="margin-bottom: 0;">Apply custom match ball textures and explore community ball skins.</p>
                     </div>
                     <div class="subtab-strip" style="margin-bottom: 0; padding-bottom: 0; border-bottom: none;">
-                        <button type="button" class="subtab-btn active" id="ball-tab-browse-btn">Preset Balls</button>
-                        <button type="button" class="subtab-btn" id="ball-tab-custom-btn">Custom Texture</button>
+                        <button type="button" class="subtab-btn active" id="ball-tab-vgm-btn">Browse VideoGameMods</button>
+                        <button type="button" class="subtab-btn" id="ball-tab-browse-btn">Preset Balls</button>
+                        <button type="button" class="subtab-btn" id="ball-tab-custom-btn">Download / Custom</button>
                     </div>
                 </div>
 
-                <div id="ball-browse-view">
+                <div id="ball-vgm-view">
+                    <div class="browser-toolbar" style="display: flex; gap: 10px; align-items: center; justify-content: space-between; margin: 12px 0;">
+                        <div style="display: flex; gap: 8px; align-items: center; flex: 1; min-width: 260px;">
+                            <input type="text" id="ball-vgm-search" placeholder="Search VideoGameMods balls (e.g. Champions, Gold, Dragon, Star, Neon)..." style="flex: 1; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 12px;">
+                        </div>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <button id="ball-vgm-prev-btn" class="action-btn action-btn-secondary" type="button" disabled style="padding: 6px 10px; font-size: 11px;">←</button>
+                            <span id="ball-vgm-page-info" style="font-size: 11px; color: var(--text-secondary); font-weight: 600;">Page 1</span>
+                            <button id="ball-vgm-next-btn" class="action-btn action-btn-secondary" type="button" style="padding: 6px 10px; font-size: 11px;">→</button>
+                        </div>
+                    </div>
+                    <div id="ball-vgm-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; max-height: calc(100vh - 280px); overflow-y: auto; padding-right: 6px;"></div>
+                </div>
+
+                <div id="ball-browse-view" style="display: none;">
                     <div class="browser-toolbar" style="display: flex; gap: 10px; align-items: center; justify-content: space-between; margin: 12px 0;">
                         <div style="display: flex; gap: 8px; align-items: center; flex: 1; min-width: 260px;">
                             <input type="text" id="ball-search-input" placeholder="Filter ball skins (e.g. Champions, Cyber, Leather, Gold)..." style="flex: 1; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 12px;">
@@ -726,7 +741,7 @@
                 </div>
 
                 <div id="ball-custom-view" style="display: none;">
-                    <div class="card spoof-card" style="max-width: 680px; margin-top: 12px;">
+                    <div class="card spoof-card" style="max-width: 720px; margin-top: 12px;">
                         <div class="settings-group">
                             <label class="switch-row" for="custom-ball-enabled">
                                 <input type="checkbox" id="custom-ball-enabled" class="switch-input" role="switch">
@@ -742,6 +757,15 @@
                                     <span class="switch-hint">Replaces default Soccar ball texture in Park_P and match packages</span>
                                 </span>
                             </label>
+                        </div>
+
+                        <div class="settings-group" style="background: rgba(33, 150, 243, 0.04); border: 1px solid rgba(33, 150, 243, 0.2); padding: 12px; border-radius: 8px;">
+                            <label for="ball-url-input" style="color: var(--accent); font-weight: 600;">Download from AlphaConsole / VideoGameMods URL</label>
+                            <div style="display: flex; gap: 8px; margin-top: 6px;">
+                                <input type="text" id="ball-url-input" placeholder="https://videogamemods.com/rocketleague/mods/... or direct .zip/.png ball texture link" autocomplete="off" spellcheck="false" style="flex: 1;">
+                                <button type="button" id="ball-url-download-btn" class="action-btn" style="white-space: nowrap; padding: 6px 14px;">Fetch & Apply</button>
+                            </div>
+                            <span class="field-hint" style="margin-top: 4px;">Automatically downloads community ball package, unpacks textures, and prepares for game injection.</span>
                         </div>
 
                         <div class="settings-group">

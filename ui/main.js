@@ -6417,10 +6417,14 @@ let ballsTabReady = false;
 
 function initBallsTab() {
     const enabledEl = document.getElementById('custom-ball-enabled');
+    const tabVgmBtn = document.getElementById('ball-tab-vgm-btn');
     const tabBrowseBtn = document.getElementById('ball-tab-browse-btn');
     const tabCustomBtn = document.getElementById('ball-tab-custom-btn');
+    const vgmView = document.getElementById('ball-vgm-view');
     const browseView = document.getElementById('ball-browse-view');
     const customView = document.getElementById('ball-custom-view');
+    const vgmGrid = document.getElementById('ball-vgm-grid');
+    const vgmSearch = document.getElementById('ball-vgm-search');
     const browseGrid = document.getElementById('ball-browse-grid');
     const searchInput = document.getElementById('ball-search-input');
     const dropzone = document.getElementById('ball-dropzone');
@@ -6428,24 +6432,169 @@ function initBallsTab() {
     const dropLabel = document.getElementById('ball-dropzone-label');
     const applyBtn = document.getElementById('ball-apply-btn');
     const resetBtn = document.getElementById('ball-reset-btn');
+    const urlInput = document.getElementById('ball-url-input');
+    const urlDlBtn = document.getElementById('ball-url-download-btn');
 
     if (!browseGrid) return;
 
     let selectedBallId = 'default';
     let customBallFile = null;
+    let vgmBallPage = 1;
 
-    if (tabBrowseBtn && tabCustomBtn && browseView && customView) {
-        tabBrowseBtn.onclick = () => {
-            tabBrowseBtn.classList.add('active');
-            tabCustomBtn.classList.remove('active');
-            browseView.style.display = 'block';
-            customView.style.display = 'none';
+    const showTab = (tab) => {
+        [tabVgmBtn, tabBrowseBtn, tabCustomBtn].forEach(b => b?.classList.remove('active'));
+        if (vgmView) vgmView.style.display = 'none';
+        if (browseView) browseView.style.display = 'none';
+        if (customView) customView.style.display = 'none';
+
+        if (tab === 'vgm') {
+            tabVgmBtn?.classList.add('active');
+            if (vgmView) vgmView.style.display = 'block';
+            loadVgmBalls(vgmBallPage, vgmSearch?.value || 'ball');
+        } else if (tab === 'preset') {
+            tabBrowseBtn?.classList.add('active');
+            if (browseView) browseView.style.display = 'block';
+            renderBallCards(searchInput?.value || '');
+        } else if (tab === 'custom') {
+            tabCustomBtn?.classList.add('active');
+            if (customView) customView.style.display = 'block';
+        }
+    };
+
+    if (tabVgmBtn) tabVgmBtn.onclick = () => showTab('vgm');
+    if (tabBrowseBtn) tabBrowseBtn.onclick = () => showTab('preset');
+    if (tabCustomBtn) tabCustomBtn.onclick = () => showTab('custom');
+
+    const loadVgmBalls = async (page = 1, query = 'ball') => {
+        vgmBallPage = page;
+        if (!vgmGrid) return;
+        vgmGrid.innerHTML = `
+            <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--text-secondary);">
+                <div class="spinner" style="width:28px;height:28px;margin:0 auto 12px;border:3px solid rgba(255,255,255,0.1);border-top-color:var(--accent-blue);border-radius:50%;animation:spin 1s linear infinite;"></div>
+                <div>Loading VideoGameMods Ball Skins...</div>
+            </div>`;
+
+        try {
+            const data = await invoke('fetch_vgm_mods', {
+                page,
+                categoryIds: null,
+                search: query || 'ball',
+                sortBy: 'downloads',
+            });
+            const mods = data?.mods || [];
+            const prevBtn = document.getElementById('ball-vgm-prev-btn');
+            const nextBtn = document.getElementById('ball-vgm-next-btn');
+            const pageInfo = document.getElementById('ball-vgm-page-info');
+
+            if (pageInfo) pageInfo.textContent = `Page ${page}`;
+            if (prevBtn) prevBtn.disabled = page <= 1;
+            if (nextBtn) nextBtn.disabled = mods.length < 24;
+
+            if (mods.length === 0) {
+                vgmGrid.innerHTML = `
+                    <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--muted);">
+                        <p style="font-size: 14px;">No ball skins found on VideoGameMods matching "${escHtml(query)}".</p>
+                    </div>`;
+                return;
+            }
+
+            vgmGrid.innerHTML = mods.map(m => {
+                const thumb = m.thumbnail_url || m.images?.[0]?.url || '';
+                const author = m.user?.display_name || m.user?.username || 'Community';
+                const dlCount = m.download_count ?? 0;
+                const isSelected = selectedBallId === m.slug;
+
+                return `
+                    <div class="card ball-card" data-ball-slug="${m.slug}" style="background: rgba(255,255,255,0.02); border: 1px solid ${isSelected ? 'var(--accent)' : 'var(--border)'}; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; transition: border-color 0.2s;">
+                        <div style="height: 120px; width: 100%; background: rgba(0,0,0,0.5); position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+                            ${thumb ? `<img src="${thumb}" alt="${escHtml(m.title)}" style="height: 100%; width: 100%; object-fit: cover;" onerror="this.style.display='none';">` : `<div style="font-size: 13px; color: var(--muted); font-weight: 600;">Custom Ball</div>`}
+                            <span style="position: absolute; bottom: 6px; right: 8px; font-size: 10px; font-weight: 700; background: rgba(0,0,0,0.75); color: var(--accent); padding: 2px 6px; border-radius: 4px;">${dlCount} downloads</span>
+                        </div>
+                        <div style="padding: 12px; flex: 1; display: flex; flex-direction: column; justify-content: space-between;">
+                            <div>
+                                <strong style="display: block; font-size: 13px; color: var(--text);">${escHtml(m.title)}</strong>
+                                <span style="display: block; font-size: 11px; color: var(--muted); margin: 2px 0 8px;">by ${escHtml(author)}</span>
+                            </div>
+                            <div style="display: flex; gap: 6px; margin-top: 8px;">
+                                <button type="button" class="action-btn vgm-ball-apply-btn ${isSelected ? 'action-btn-secondary' : ''}" data-slug="${m.slug}" data-title="${escHtml(m.title)}" style="flex: 1; font-size: 12px; padding: 6px 10px;">
+                                    ${isSelected ? 'Active' : 'Download & Apply'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            vgmGrid.querySelectorAll('.vgm-ball-apply-btn').forEach(btn => {
+                btn.onclick = async () => {
+                    const slug = btn.dataset.slug;
+                    const title = btn.dataset.title;
+                    btn.disabled = true;
+                    btn.textContent = 'Applying...';
+                    try {
+                        selectedBallId = slug;
+                        if (enabledEl) enabledEl.checked = true;
+                        const payload = { enabled: true, selected_id: slug, name: title };
+                        localStorage.setItem(BALL_SPOOF_KEY, JSON.stringify({ ball_spoof: payload }));
+                        await runToolSave(btn, 'Ball skin', { ball_spoof: payload }, { enabled: true });
+                        showToast(`Downloaded and applied ball skin: "${title}"!`, 'success');
+                        btn.textContent = 'Active';
+                        loadVgmBalls(vgmBallPage, vgmSearch?.value || 'ball');
+                    } catch (err) {
+                        btn.disabled = false;
+                        btn.textContent = 'Download & Apply';
+                        showToast(String(err), 'error');
+                    }
+                };
+            });
+        } catch (e) {
+            console.warn('Failed to load VGM balls:', e);
+            if (vgmGrid) {
+                vgmGrid.innerHTML = `
+                    <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--danger);">
+                        <p style="font-size: 14px;">Failed to connect to VideoGameMods catalog.</p>
+                        <span style="font-size: 12px; color: var(--text-secondary);">${escHtml(String(e))}</span>
+                    </div>`;
+            }
+        }
+    };
+
+    if (vgmSearch) {
+        let vgmDebounce = null;
+        vgmSearch.oninput = () => {
+            clearTimeout(vgmDebounce);
+            vgmDebounce = setTimeout(() => loadVgmBalls(1, vgmSearch.value), 400);
         };
-        tabCustomBtn.onclick = () => {
-            tabCustomBtn.classList.add('active');
-            tabBrowseBtn.classList.remove('active');
-            browseView.style.display = 'none';
-            customView.style.display = 'block';
+    }
+
+    const prevBtn = document.getElementById('ball-vgm-prev-btn');
+    const nextBtn = document.getElementById('ball-vgm-next-btn');
+    if (prevBtn) prevBtn.onclick = () => { if (vgmBallPage > 1) loadVgmBalls(vgmBallPage - 1, vgmSearch?.value || 'ball'); };
+    if (nextBtn) nextBtn.onclick = () => { loadVgmBalls(vgmBallPage + 1, vgmSearch?.value || 'ball'); };
+
+    if (urlDlBtn && urlInput) {
+        urlDlBtn.onclick = async () => {
+            const url = urlInput.value.trim();
+            if (!url) {
+                showToast('Please enter an AlphaConsole or VideoGameMods ball link.', 'error');
+                return;
+            }
+            urlDlBtn.disabled = true;
+            urlDlBtn.textContent = 'Downloading...';
+            try {
+                const pkg = await invoke('download_decal_from_url', { url });
+                showToast(`Downloaded ball package "${pkg.name || 'custom_ball'}"!`, 'success');
+                if (enabledEl) enabledEl.checked = true;
+                const payload = { enabled: true, selected_id: 'custom_pkg', name: pkg.name };
+                localStorage.setItem(BALL_SPOOF_KEY, JSON.stringify({ ball_spoof: payload }));
+                await runToolSave(urlDlBtn, 'Ball skin URL', { ball_spoof: payload }, { enabled: true });
+                urlDlBtn.textContent = 'Applied!';
+            } catch (err) {
+                showToast(formatError(err), 'error');
+                urlDlBtn.textContent = 'Fetch & Apply';
+            } finally {
+                urlDlBtn.disabled = false;
+            }
         };
     }
 

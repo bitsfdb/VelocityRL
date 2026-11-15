@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VelocityRL Network & PsyNet Inspector</title>
+    <style>
+        :root {
+            --bg: #0c0d11;
+            --panel: #14171f;
+            --panel-border: #232838;
+            --accent: #00e5ff;
+            --accent-glow: rgba(0, 229, 255, 0.2);
+            --text: #f0f4fc;
+            --text-muted: #8b9bb4;
+            --success: #00e676;
+            --warning: #ffab00;
+            --danger: #ff1744;
+            --badge-c2s: #2979ff;
+            --badge-s2c: #aa00ff;
+            --badge-http: #00b0ff;
+            --badge-udp: #ff9100;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+        body { background: var(--bg); color: var(--text); padding: 24px; font-size: 13px; line-height: 1.5; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--panel-border); }
+        .logo-wrap { display: flex; align-items: center; gap: 12px; }
+        .logo-title { font-size: 18px; font-weight: 700; letter-spacing: 0.5px; color: #fff; }
+        .logo-subtitle { font-size: 11px; color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+        .status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; background: rgba(0, 230, 118, 0.12); color: var(--success); border: 1px solid rgba(0, 230, 118, 0.3); }
+        .status-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); box-shadow: 0 0 8px var(--success); }
+        
+        .grid-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 20px; }
+        .stat-card { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 8px; padding: 14px 18px; }
+        .stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+        .stat-val { font-size: 16px; font-weight: 700; margin-top: 4px; color: #fff; word-break: break-all; }
+        
+        .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+        .search-box { flex: 1; min-width: 240px; background: var(--panel); border: 1px solid var(--panel-border); border-radius: 6px; padding: 8px 12px; color: #fff; font-size: 12px; outline: none; }
+        .search-box:focus { border-color: var(--accent); }
+        .filter-btn { background: var(--panel); border: 1px solid var(--panel-border); color: var(--text-muted); border-radius: 6px; padding: 7px 12px; font-size: 11px; font-weight: 600; cursor: pointer; transition: 0.15s; }
+        .filter-btn:hover, .filter-btn.active { background: rgba(0, 229, 255, 0.1); color: var(--accent); border-color: var(--accent); }
+        .btn-clear { background: transparent; border: 1px solid var(--panel-border); color: var(--text-muted); border-radius: 6px; padding: 7px 12px; font-size: 11px; cursor: pointer; }
+        .btn-clear:hover { background: rgba(255, 23, 68, 0.1); color: var(--danger); border-color: var(--danger); }
+        
+        .layout-main { display: grid; grid-template-columns: 1fr 420px; gap: 16px; height: calc(100vh - 250px); min-height: 500px; }
+        @media (max-width: 980px) { .layout-main { grid-template-columns: 1fr; height: auto; } }
+        
+        .table-wrap { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 8px; overflow-y: auto; overflow-x: hidden; position: relative; }
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        thead { position: sticky; top: 0; background: #11141b; z-index: 10; border-bottom: 1px solid var(--panel-border); }
+        th { padding: 10px 12px; font-size: 11px; color: var(--text-muted); text-transform: uppercase; font-weight: 600; }
+        tbody tr { border-bottom: 1px solid rgba(255,255,255,0.04); cursor: pointer; transition: background 0.1s; }
+        tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
+        tbody tr.selected { background: rgba(0, 229, 255, 0.08); border-left: 3px solid var(--accent); }
+        td { padding: 9px 12px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px; }
+        
+        .badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+        .badge-http { background: rgba(0, 176, 255, 0.15); color: var(--badge-http); }
+        .badge-ws-c2s { background: rgba(41, 121, 255, 0.15); color: var(--badge-c2s); }
+        .badge-ws-s2c { background: rgba(170, 0, 255, 0.15); color: var(--badge-s2c); }
+        .badge-udp { background: rgba(255, 145, 0, 0.15); color: var(--badge-udp); }
+        .badge-intercepted { background: rgba(0, 230, 118, 0.15); color: var(--success); margin-left: 4px; }
+        
+        .details-panel { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
+        .details-header { padding: 12px 16px; border-bottom: 1px solid var(--panel-border); background: #11141b; font-weight: 600; font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
+        .details-body { flex: 1; padding: 16px; overflow-y: auto; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace; font-size: 11.5px; }
+        pre { background: #08090c; padding: 12px; border-radius: 6px; border: 1px solid #1c2130; overflow-x: auto; color: #a5d6a7; white-space: pre-wrap; word-break: break-all; }
+        .empty-state { color: var(--text-muted); text-align: center; margin-top: 100px; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo-wrap">
+            <div>
+                <div class="logo-title">VelocityRL <span style="font-weight: 300; opacity: 0.8;">Network Inspector</span></div>
+                <div class="logo-subtitle">Live PsyNet & Match UDP Traffic Monitor</div>
+            </div>
+        </div>
+        <div style="display: flex; gap: 12px; align-items: center;">
+            <div id="proxy-status" class="status-pill">
+                <span class="dot"></span>
+                <span>Proxy Listening</span>
+            </div>
+            <button class="filter-btn" id="btn-pause" onclick="togglePause()">Pause</button>
+        </div>
+    </header>
+
+    <div class="grid-stats">
+        <div class="stat-card">
+            <div class="stat-label">HTTP / WS Broker</div>
+            <div class="stat-val" id="stat-broker">127.0.0.1:15759</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Match UDP Proxy</div>
+            <div class="stat-val" id="stat-udp">Active (Local Ephemeral)</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Active Spoofed Name</div>
+            <div class="stat-val" id="stat-name">—</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Fake Rank & Ping</div>
+            <div class="stat-val" id="stat-rank-ping">—</div>
+        </div>
+    </div>
+
+    <div class="toolbar">
+        <input type="text" id="filter-search" class="search-box" placeholder="Filter by URL, service, RPC (e.g. AddReservation, GetPlayerSkill, Auth, Products)..." oninput="renderTable()">
+        <button class="filter-btn active" data-filter="all" onclick="setFilter('all')">All Events</button>
+        <button class="filter-btn" data-filter="intercepted" onclick="setFilter('intercepted')">Intercepted</button>
+        <button class="filter-btn" data-filter="HTTP" onclick="setFilter('HTTP')">HTTP / Services</button>
+        <button class="filter-btn" data-filter="WS" onclick="setFilter('WS')">WebSockets</button>
+        <button class="filter-btn" data-filter="UDP" onclick="setFilter('UDP')">Match UDP</button>
+        <button class="btn-clear" onclick="clearEvents()">Clear View</button>
+    </div>
+
+    <div class="layout-main">
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 70px;">Proto</th>
+                        <th style="width: 80px;">Time</th>
+                        <th style="width: 140px;">Service / RPC</th>
+                        <th>Summary</th>
+                        <th style="width: 80px;">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="events-tbody">
+                    <tr><td colspan="5" class="empty-state">Waiting for Rocket League PsyNet / WebSocket traffic...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="details-panel">
+            <div class="details-header">
+                <span id="detail-title">Message Inspector</span>
+                <span id="detail-proto" style="color: var(--accent);">No Selection</span>
+            </div>
+            <div class="details-body" id="detail-body">
+                <div class="empty-state">Click any row in the table to inspect full headers, decrypted payload, and patch modifications.</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allEvents = [];
+        let currentFilter = 'all';
+        let selectedEventId = null;
+        let isPaused = false;
+
+        async function fetchStatus() {
+            try {
+                const res = await fetch('/network/status');
+                if (res.ok) {
+                    const data = await res.json();
+                    document.getElementById('stat-broker').textContent = '127.0.0.1:' + (data.broker_port || '15759');
+                    document.getElementById('stat-udp').textContent = data.udp_match_proxy_port > 0 ? ('127.0.0.1:' + data.udp_match_proxy_port) : 'Idle (Starts on Match)';
+                    document.getElementById('stat-name').textContent = data.name_spoof || '(Vanilla)';
+                    const pingDesc = data.ping_spoof?.enabled ? (data.ping_spoof.min_ms + '-' + data.ping_spoof.max_ms + 'ms') : 'Off';
+                    const rankDesc = data.fake_rank_enabled ? 'Fake Rank: ON' : 'Rank: Vanilla';
+                    document.getElementById('stat-rank-ping').textContent = rankDesc + ' | Ping: ' + pingDesc;
+                }
+            } catch (e) {
+                console.warn('Status fetch error:', e);
+            }
+        }
+
+        async function pollEvents() {
+            if (isPaused) return;
+            try {
+                const res = await fetch('/network/events');
+                if (res.ok) {
+                    allEvents = await res.json();
+                    renderTable();
+                }
+            } catch (e) {
+                console.warn('Events poll error:', e);
+            }
+        }
+
+        function setFilter(flt) {
+            currentFilter = flt;
+            document.querySelectorAll('.filter-btn').forEach(b => {
+                if (b.dataset.filter === flt) b.classList.add('active');
+                else b.classList.remove('active');
+            });
+            renderTable();
+        }
+
+        function togglePause() {
+            isPaused = !isPaused;
+            document.getElementById('btn-pause').textContent = isPaused ? 'Resume' : 'Pause';
+            document.getElementById('btn-pause').classList.toggle('active', isPaused);
+        }
+
+        function clearEvents() {
+            allEvents = [];
+            selectedEventId = null;
+            renderTable();
+            document.getElementById('detail-body').innerHTML = '<div class="empty-state">Events view cleared. Waiting for new traffic...</div>';
+            document.getElementById('detail-title').textContent = 'Message Inspector';
+            document.getElementById('detail-proto').textContent = 'No Selection';
+        }
+
+        function getProtoBadge(proto) {
+            if (proto === 'HTTP') return '<span class="badge badge-http">HTTP</span>';
+            if (proto.includes('C2S')) return '<span class="badge badge-ws-c2s">WS C2S</span>';
+            if (proto.includes('S2C')) return '<span class="badge badge-ws-s2c">WS S2C</span>';
+            if (proto === 'UDP') return '<span class="badge badge-udp">UDP</span>';
+            return '<span class="badge">' + proto + '</span>';
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('events-tbody');
+            const search = document.getElementById('filter-search').value.toLowerCase().trim();
+
+            const filtered = allEvents.filter(ev => {
+                if (currentFilter === 'intercepted' && !ev.intercepted) return false;
+                if (currentFilter === 'HTTP' && ev.protocol !== 'HTTP') return false;
+                if (currentFilter === 'WS' && !ev.protocol.startsWith('WS')) return false;
+                if (currentFilter === 'UDP' && ev.protocol !== 'UDP') return false;
+
+                if (search) {
+                    const text = (ev.protocol + ' ' + ev.service_or_url + ' ' + ev.summary + ' ' + ev.payload_snippet).toLowerCase();
+                    if (!text.includes(search)) return false;
+                }
+                return true;
+            });
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No matching events found.</td></tr>';
+                return;
+            }
+
+            // Render reversed (newest first)
+            tbody.innerHTML = filtered.slice().reverse().map(ev => {
+                const isSel = ev.id === selectedEventId;
+                const timeStr = ev.timestamp ? ev.timestamp.split('T')[1].split('.')[0] : '';
+                return `
+                    <tr class="${isSel ? 'selected' : ''}" onclick="selectEvent(${ev.id})">
+                        <td>${getProtoBadge(ev.protocol)}${ev.intercepted ? '<span class="badge badge-intercepted">MOD</span>' : ''}</td>
+                        <td style="color: var(--text-muted);">${timeStr}</td>
+                        <td style="font-weight: 600; color: #fff;">${escapeHtml(ev.service_or_url)}</td>
+                        <td style="color: var(--text-muted);">${escapeHtml(ev.summary)}</td>
+                        <td><span style="font-weight: 600; color: ${ev.status_or_type.startsWith('2') ? 'var(--success)' : (ev.status_or_type.startsWith('4') || ev.status_or_type.startsWith('5') ? 'var(--danger)' : 'var(--text)')};">${escapeHtml(ev.status_or_type)}</span></td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function selectEvent(id) {
+            selectedEventId = id;
+            renderTable();
+            const ev = allEvents.find(e => e.id === id);
+            if (!ev) return;
+
+            document.getElementById('detail-title').textContent = ev.service_or_url || 'Event #' + ev.id;
+            document.getElementById('detail-proto').textContent = ev.protocol + ' • ' + ev.direction;
+
+            let formatted = ev.payload_snippet;
+            try {
+                const parsed = JSON.parse(ev.payload_snippet);
+                formatted = JSON.stringify(parsed, null, 2);
+            } catch (e) {}
+
+            document.getElementById('detail-body').innerHTML = `
+                <div style="margin-bottom: 12px; font-size: 12px;">
+                    <div><strong style="color:var(--text-muted);">Timestamp:</strong> ${ev.timestamp}</div>
+                    <div><strong style="color:var(--text-muted);">Direction:</strong> ${ev.direction}</div>
+                    <div><strong style="color:var(--text-muted);">Target:</strong> ${escapeHtml(ev.service_or_url)}</div>
+                    <div><strong style="color:var(--text-muted);">Status/Type:</strong> ${escapeHtml(ev.status_or_type)}</div>
+                    <div><strong style="color:var(--text-muted);">Intercepted & Modified:</strong> ${ev.intercepted ? '<span style="color:var(--success);font-weight:700;">YES</span>' : 'NO'}</div>
+                </div>
+                <div style="font-weight: 600; margin-bottom: 6px; color: var(--accent);">Payload Body:</div>
+                <pre>${escapeHtml(formatted)}</pre>
+            `;
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        fetchStatus();
+        pollEvents();
+        setInterval(fetchStatus, 3000);
+        setInterval(pollEvents, 1000);
+    </script>
+</body>
+</html>

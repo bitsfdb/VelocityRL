@@ -249,6 +249,16 @@ pub async fn set_active_reservation(target_addr_str: &str) -> Result<u16, String
         *client_lock = None;
     }
 
+    crate::proxy::record_network_event(
+        "UDP",
+        "LOOPBACK",
+        &format!("{resolved}"),
+        "RESERVATION",
+        &format!("Active Match Server Rerouted -> 127.0.0.1:{proxy_port}"),
+        &format!("Target Upstream Match Server: {resolved}\nLocal Bound UDP Port: {proxy_port}"),
+        true,
+    );
+
     Ok(proxy_port)
 }
 
