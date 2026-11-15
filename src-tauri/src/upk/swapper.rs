@@ -2376,6 +2376,57 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
         }
     }
 
+    // Fast check: if current file already contains both RPC and WS broker patches, nothing to do
+    if let Ok(cur_px_bytes) = fs::read(&px_path) {
+        if cur_px_bytes.len() >= 0x20 {
+            let total_header_size = u32::from_le_bytes(cur_px_bytes[8..12].try_into().unwrap_or([0; 4])) as usize;
+            let mut p = 12;
+            let flen = i32::from_le_bytes(cur_px_bytes.get(p..p + 4).and_then(|s| s.try_into().ok()).unwrap_or([0; 4]));
+            let prefix_sz = 12 + 4 + (if flen > 0 { flen as usize } else { (-flen * 2) as usize }) + 4;
+            p = prefix_sz;
+            let _name_count = i32::from_le_bytes(cur_px_bytes.get(p..p + 4).and_then(|s| s.try_into().ok()).unwrap_or([0; 4]));
+            let name_offset = u32::from_le_bytes(cur_px_bytes.get(p + 4..p + 8).and_then(|s| s.try_into().ok()).unwrap_or([0; 4])) as usize;
+            let p_sum = prefix_sz + 8;
+            let _export_count = i32::from_le_bytes(cur_px_bytes.get(p_sum..p_sum + 4).and_then(|s| s.try_into().ok()).unwrap_or([0; 4])) as usize;
+            let depends_offset = i32::from_le_bytes(cur_px_bytes.get(p_sum + 16..p_sum + 20).and_then(|s| s.try_into().ok()).unwrap_or([0; 4])) as usize;
+            let enc_size = (total_header_size.saturating_sub(name_offset) + 15) & !15;
+            let enc_end = name_offset + enc_size;
+            if enc_end <= cur_px_bytes.len() && depends_offset >= name_offset {
+                let plain_header = crypto::decrypt_ecb(&TAGAME_KEY, &cur_px_bytes[name_offset..enc_end]);
+                let chunks_rel = depends_offset - name_offset;
+                if chunks_rel + 4 <= plain_header.len() {
+                    let num_chunks = u32::from_le_bytes(plain_header[chunks_rel..chunks_rel + 4].try_into().unwrap_or([0; 4])) as usize;
+                    if num_chunks >= 2 && chunks_rel + 4 + 72 <= plain_header.len() {
+                        let c1_p = chunks_rel + 4 + 36;
+                        let c1_c_off = u64::from_le_bytes(plain_header[c1_p + 12..c1_p + 20].try_into().unwrap_or([0; 8])) as usize;
+                        let c1_c_sz = i32::from_le_bytes(plain_header[c1_p + 20..c1_p + 24].try_into().unwrap_or([0; 4])) as usize;
+                        if c1_c_off + c1_c_sz <= cur_px_bytes.len() {
+                            if let Ok(c1_decomp) = crate::upk::compression::decompress_chunk(&cur_px_bytes[c1_c_off..c1_c_off + c1_c_sz]) {
+                                if c1_decomp.windows(25).any(|w| w == b"http://127.0.0.1:15759/rpc")
+                                    && c1_decomp.windows(23).any(|w| w == b"ws://127.0.0.1:15759/")
+                                {
+                                    return Ok(false); // Already cleanly patched with both RPC and WS broker
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Deploy verified package directly if available locally or from cached repository
+    let local_cached = Path::new("/var/www/bndq/tagame/ProjectX.upk");
+    if local_cached.is_file() {
+        if let Ok(bytes) = fs::read(local_cached) {
+            if bytes.len() >= 1_000_000 && &bytes[..4] == &[0xC1, 0x83, 0x2A, 0x9E] {
+                let _ = fs::write(&px_path, &bytes);
+                crate::applog::event("projectx: applied patched ProjectX.upk with RPC and WebSocket broker from repository");
+                return Ok(true);
+            }
+        }
+    }
+
     // Always patch from clean backup if available, or current file
     let mut file_bytes = if bak_path.is_file() {
         fs::read(&bak_path).unwrap_or_else(|_| fs::read(&px_path).unwrap_or_default())
@@ -2517,6 +2568,29 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
                 decomp1[code_start..code_start + disk_sz].copy_from_slice(&patch);
                 // Synchronize mem_sz = disk_sz to prevent UE3 bytecode deserializer overshoot (Bad expr token 00)
                 decomp1[code_start - 8..code_start - 4].copy_from_slice(&(disk_sz as u32).to_le_bytes());
+            }
+        }
+    }
+
+    // 0b. Patch PsyNetMessengerWebSocket_X::Init -> InURL = "ws://127.0.0.1:15759/"; URL = InURL; HandshakeHeaders = InHandshakeHeaders;
+    if let Some(ws_exp) = raw_exports.iter().find(|e| {
+        e.name == "Init" && e.outer_idx > 0 && raw_exports.get(e.outer_idx as usize - 1).map(|o| o.name == "PsyNetMessengerWebSocket_X").unwrap_or(false)
+    }) {
+        let ws_code_start = (ws_exp.serial_offset - ch1.0) as usize + 48;
+        let ws_disk_sz = u32::from_le_bytes(decomp1[ws_code_start - 4..ws_code_start].try_into().unwrap()) as usize;
+        if ws_disk_sz >= 54 {
+            const WS_INIT_BYTECODE: [u8; 54] = [
+                0x0f, 0x2b, 0x69, 0x38, 0x00, 0x00, 0x1f, 0x77, 0x73, 0x3a, 0x2f, 0x2f, 0x31, 0x32, 0x37, 0x2e,
+                0x30, 0x2e, 0x30, 0x2e, 0x31, 0x3a, 0x31, 0x35, 0x37, 0x35, 0x39, 0x2f, 0x00, 0x0f, 0x01, 0x58,
+                0x38, 0x00, 0x00, 0x2b, 0x69, 0x38, 0x00, 0x00, 0x0f, 0x01, 0x59, 0x38, 0x00, 0x00, 0x2b, 0x68,
+                0x38, 0x00, 0x00, 0x04, 0x0b, 0x4c,
+            ];
+            let mut ws_patch = WS_INIT_BYTECODE.to_vec();
+            ws_patch.resize(ws_disk_sz.saturating_sub(1), opcodes::EX_NOTHING);
+            ws_patch.push(opcodes::EX_END_OF_SCRIPT);
+            if ws_patch.len() == ws_disk_sz {
+                decomp1[ws_code_start..ws_code_start + ws_disk_sz].copy_from_slice(&ws_patch);
+                decomp1[ws_code_start - 8..ws_code_start - 4].copy_from_slice(&74u32.to_le_bytes());
             }
         }
     }

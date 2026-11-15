@@ -27,12 +27,13 @@ use tokio_rustls::TlsAcceptor;
 pub struct NetworkEventEntry {
     pub id: u64,
     pub timestamp: String,
-    pub protocol: String, // "HTTP", "WS_C2S", "WS_S2C", "UDP", "RPC"
+    pub protocol: String, // "HTTP", "WS_C2S", "WS_S2C", "UDP", "CONFIG_CDN", "UPK"
     pub direction: String, // "INBOUND", "OUTBOUND", "LOOPBACK"
     pub service_or_url: String,
     pub status_or_type: String,
     pub summary: String,
     pub payload_snippet: String,
+    pub payload_len: usize,
     pub intercepted: bool,
 }
 
@@ -46,11 +47,12 @@ pub fn record_network_event(
     service_or_url: &str,
     status_or_type: &str,
     summary: &str,
-    payload_snippet: &str,
+    payload: &str,
     intercepted: bool,
 ) {
     let id = NETWORK_EVENT_COUNTER.fetch_add(1, Ordering::Relaxed);
     let now = chrono::Utc::now().to_rfc3339();
+    let payload_len = payload.len();
     let entry = NetworkEventEntry {
         id,
         timestamp: now,
@@ -59,12 +61,13 @@ pub fn record_network_event(
         service_or_url: service_or_url.to_string(),
         status_or_type: status_or_type.to_string(),
         summary: summary.to_string(),
-        payload_snippet: payload_snippet.chars().take(2048).collect(),
+        payload_snippet: payload.to_string(), // Store complete full payload without truncation
+        payload_len,
         intercepted,
     };
     if let Ok(mut lock) = NETWORK_EVENT_RING.lock() {
-        let deque = lock.get_or_insert_with(|| std::collections::VecDeque::with_capacity(256));
-        if deque.len() >= 250 {
+        let deque = lock.get_or_insert_with(|| std::collections::VecDeque::with_capacity(512));
+        if deque.len() >= 500 {
             deque.pop_front();
         }
         deque.push_back(entry);
@@ -2973,9 +2976,24 @@ async fn handle_broker_request(
             }
         }
 
-        // Note: Rocket League's UPsyNetUrl_X::ValidateURL rejects any non-HTTPS/non-WSS URLs.
-        // Never rewrite PerConURL/PerConURLv2 to plain http:// broker, as that triggers
-        // "UPsyNetUrl_X::ValidateURL rejected disallowed https URL" and forces the client offline.
+        // Rewrite PerConURL / PerConURLv2 so WebSocket connects to local broker (127.0.0.1:15759)
+        if let Some(http_base) = broker_http_base() {
+            let local_ws_v2 = format!("{http_base}/ws/gc2");
+            let local_ws_v1 = format!("{http_base}/ws/gc?PsyConnectionType=Player");
+            if let Some(next) = replace_json_string_field(&out_body, "PerConURLv2", &local_ws_v2) {
+                out_body = next;
+                patched = true;
+            }
+            if let Some(next) = replace_json_string_field(&out_body, "PerConURL", &local_ws_v1) {
+                out_body = next;
+                patched = true;
+            }
+            if patched {
+                crate::applog::event(&format!(
+                    "broker: AuthPlayer WS URL rewritten to local broker ({local_ws_v2})"
+                ));
+            }
+        }
     } else {
         let cfg_opt = match crate::psynet::load_active_spoof_from_disk() {
             Some(c) => Some(c),
