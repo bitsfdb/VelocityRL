@@ -5757,6 +5757,8 @@ pub fn patch_products_config(body: &[u8]) -> (Vec<u8>, bool) {
         ("SaveGameManager_TA", "bDisableSaveOSS", "False"),
         ("UIConfig_TA", "bCrateRouletteEnabled", "True"),
         ("GameplaySettingsSave_TA", "bQuickDropOpening", "False"),
+        ("UISavedValues_TA", "RLIM.Drops.v1.quick", "0"),
+        ("UISavedValues_TA", "RLIM.Drops.v1.roulette", "1"),
         ("UISavedValues_TA", "S.Drops.v1.quick", "0"),
         ("UISavedValues_TA", "S.Drops.v1.roulette", "1"),
     ];
