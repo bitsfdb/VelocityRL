@@ -2976,24 +2976,7 @@ async fn handle_broker_request(
             }
         }
 
-        // Rewrite PerConURL / PerConURLv2 so WebSocket connects to local broker (127.0.0.1:15759)
-        if let Some(http_base) = broker_http_base() {
-            let local_ws_v2 = format!("{http_base}/ws/gc2");
-            let local_ws_v1 = format!("{http_base}/ws/gc?PsyConnectionType=Player");
-            if let Some(next) = replace_json_string_field(&out_body, "PerConURLv2", &local_ws_v2) {
-                out_body = next;
-                patched = true;
-            }
-            if let Some(next) = replace_json_string_field(&out_body, "PerConURL", &local_ws_v1) {
-                out_body = next;
-                patched = true;
-            }
-            if patched {
-                crate::applog::event(&format!(
-                    "broker: AuthPlayer WS URL rewritten to local broker ({local_ws_v2})"
-                ));
-            }
-        }
+        // PerConURL / PerConURLv2 rewriting in AuthPlayer disabled; ProjectX.upk routes WebSocket directly.
     } else {
         let cfg_opt = match crate::psynet::load_active_spoof_from_disk() {
             Some(c) => Some(c),
