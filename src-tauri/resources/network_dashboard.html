@@ -112,6 +112,8 @@
         <button class="filter-btn" data-filter="HTTP" onclick="setFilter('HTTP')">HTTP / Services</button>
         <button class="filter-btn" data-filter="WS" onclick="setFilter('WS')">WebSockets</button>
         <button class="filter-btn" data-filter="UDP" onclick="setFilter('UDP')">Match UDP</button>
+        <button class="filter-btn" data-filter="UPK" onclick="setFilter('UPK')">Decrypted UPK</button>
+        <button class="filter-btn" data-filter="CONFIG" onclick="setFilter('CONFIG')">Config CDN</button>
         <button class="btn-clear" onclick="clearEvents()">Clear View</button>
     </div>
 
@@ -209,6 +211,8 @@
             if (proto.includes('C2S')) return '<span class="badge badge-ws-c2s">WS C2S</span>';
             if (proto.includes('S2C')) return '<span class="badge badge-ws-s2c">WS S2C</span>';
             if (proto === 'UDP') return '<span class="badge badge-udp">UDP</span>';
+            if (proto === 'UPK') return '<span class="badge" style="background:rgba(255,215,0,0.15);color:#ffd700;">UPK</span>';
+            if (proto === 'CONFIG_CDN') return '<span class="badge" style="background:rgba(0,229,255,0.15);color:#00e5ff;">CDN</span>';
             return '<span class="badge">' + proto + '</span>';
         }
 
@@ -221,6 +225,8 @@
                 if (currentFilter === 'HTTP' && ev.protocol !== 'HTTP') return false;
                 if (currentFilter === 'WS' && !ev.protocol.startsWith('WS')) return false;
                 if (currentFilter === 'UDP' && ev.protocol !== 'UDP') return false;
+                if (currentFilter === 'UPK' && ev.protocol !== 'UPK') return false;
+                if (currentFilter === 'CONFIG' && ev.protocol !== 'CONFIG_CDN') return false;
 
                 if (search) {
                     const text = (ev.protocol + ' ' + ev.service_or_url + ' ' + ev.summary + ' ' + ev.payload_snippet).toLowerCase();
@@ -288,10 +294,40 @@
                 .replace(/'/g, '&#039;');
         }
 
+        async function pollUpkInfo() {
+            try {
+                const res = await fetch('/network/upk');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data?.data && data.upk !== 'None') {
+                        // Check if UPK event already in allEvents
+                        if (!allEvents.some(e => e.service_or_url === data.upk)) {
+                            allEvents.push({
+                                id: 999999,
+                                timestamp: new Date().toISOString(),
+                                protocol: 'UPK',
+                                direction: 'LOCAL_DISK',
+                                service_or_url: data.upk,
+                                status_or_type: '200 DECRYPTED',
+                                summary: 'Decrypted UPK NameTable & Export Chunks (' + (data.data.name_count || 0) + ' names, ' + (data.data.export_count || 0) + ' exports)',
+                                payload_snippet: JSON.stringify(data.data, null, 2),
+                                intercepted: true,
+                            });
+                            renderTable();
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('UPK poll error:', e);
+            }
+        }
+
         fetchStatus();
         pollEvents();
+        pollUpkInfo();
         setInterval(fetchStatus, 3000);
         setInterval(pollEvents, 1000);
+        setInterval(pollUpkInfo, 10000);
     </script>
 </body>
 </html>

@@ -136,6 +136,7 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
 
     tokio::spawn(async move {
         let mut buf = vec![0u8; 65535];
+        let mut c2s_pkt_count = 0u64;
         while state_c2s.running.load(Ordering::Relaxed) {
             match cs_c2s.recv_from(&mut buf).await {
                 Ok((len, src)) => {
@@ -149,6 +150,7 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                     let target_opt = *state_c2s.target_server.read().await;
                     if let Some(target) = target_opt {
                         let mut effective_len = len;
+                        let mut was_patched = false;
                         if let Some(active_cfg) = crate::psynet::load_active_spoof_from_disk() {
                             let spoof_name = if let Some(ref ns) = active_cfg.name_spoof {
                                 if ns.enabled && !ns.display_name.trim().is_empty() {
@@ -163,9 +165,24 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                             };
 
                             if let Some(name) = spoof_name {
-                                patch_c2s_login_bunch(&mut buf, &mut effective_len, name);
+                                was_patched = patch_c2s_login_bunch(&mut buf, &mut effective_len, name);
                             }
                         }
+
+                        c2s_pkt_count += 1;
+                        if was_patched || c2s_pkt_count <= 5 || c2s_pkt_count % 120 == 0 {
+                            let (summary, decoded_info) = decode_udp_packet_summary(&buf[..effective_len], true);
+                            crate::proxy::record_network_event(
+                                "UDP",
+                                "OUTBOUND",
+                                &format!("{target}"),
+                                if was_patched { "C2S_PATCHED" } else { "C2S_PACKET" },
+                                &summary,
+                                &decoded_info,
+                                was_patched,
+                            );
+                        }
+
                         let _ = us_c2s.send_to(&buf[..effective_len], target).await;
                     }
                 }
@@ -183,9 +200,24 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
 
     tokio::spawn(async move {
         let mut buf = vec![0u8; 65535];
+        let mut s2c_pkt_count = 0u64;
         while state_s2c.running.load(Ordering::Relaxed) {
             match us_s2c.recv_from(&mut buf).await {
-                Ok((len, _from_server)) => {
+                Ok((len, from_server)) => {
+                    s2c_pkt_count += 1;
+                    if s2c_pkt_count <= 5 || s2c_pkt_count % 120 == 0 {
+                        let (summary, decoded_info) = decode_udp_packet_summary(&buf[..len], false);
+                        crate::proxy::record_network_event(
+                            "UDP",
+                            "INBOUND",
+                            &format!("{from_server}"),
+                            "S2C_PACKET",
+                            &summary,
+                            &decoded_info,
+                            false,
+                        );
+                    }
+
                     // Forward to client endpoint
                     let client_opt = *state_s2c.client_endpoint.read().await;
                     if let Some(client) = client_opt {
@@ -459,6 +491,75 @@ pub fn patch_c2s_login_bunch(buf: &mut [u8], len: &mut usize, target_name: &str)
     }
 
     false
+}
+
+/// Decode an Unreal Engine 3 UDP datagram into human-readable details and structure.
+pub fn decode_udp_packet_summary(buf: &[u8], is_c2s: bool) -> (String, String) {
+    if buf.is_empty() {
+        return ("Empty UDP Datagram".to_string(), "0 bytes".to_string());
+    }
+
+    let len = buf.len();
+    // In UE3, packets typically contain sequence numbers and bit-packed bunches.
+    // Scan unshifted and shifted needle matches for known Control channel strings:
+    let needles: &[(&[u8], &str)] = &[
+        (b"?Name=", "NMT_Login (Player Login Bunch)"),
+        (b"?Reservation=", "NMT_Login (Reservation Parameter)"),
+        (b"NMT_Hello", "NMT_Hello (Handshake Init)"),
+        (b"NMT_Challenge", "NMT_Challenge (Handshake Nonce)"),
+        (b"NMT_Welcome", "NMT_Welcome (Map Spawn Welcome)"),
+        (b"NMT_Netspeed", "NMT_Netspeed (Bandwidth Rate)"),
+        (b"NMT_Failure", "NMT_Failure (Connection Error)"),
+    ];
+
+    let mut detected_type = if is_c2s { "C2S Bunch Stream (Input / Cmds)" } else { "S2C Bunch Stream (State / Physics)" };
+    let mut details = format!("Direction: {}\nLength: {} bytes\n", if is_c2s { "Client -> Game Server" } else { "Game Server -> Client" }, len);
+
+    // Scan for needles across bit-shifts [0..8]
+    for &(needle, desc) in needles {
+        let nlen = needle.len();
+        for shift in 0..8 {
+            let mut found = false;
+            if shift == 0 {
+                if buf.windows(nlen).any(|w| w == needle) {
+                    found = true;
+                }
+            } else if len > 1 {
+                for i in 0..len - 1 {
+                    let mut matched = true;
+                    for (b_idx, &nb) in needle.iter().enumerate() {
+                        let c_idx = i + b_idx;
+                        if c_idx + 1 >= len {
+                            matched = false;
+                            break;
+                        }
+                        let unshifted_byte = (buf[c_idx] >> shift) | (buf[c_idx + 1] << (8 - shift));
+                        if unshifted_byte != nb {
+                            matched = false;
+                            break;
+                        }
+                    }
+                    if matched {
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if found {
+                detected_type = desc;
+                details.push_str(&format!("Matched Protocol Message: {desc} (shift={shift})\n"));
+                break;
+            }
+        }
+    }
+
+    // Hex snippet representation
+    let hex_view: String = buf.iter().take(48).map(|b| format!("{b:02x} ")).collect();
+    let ascii_view: String = buf.iter().take(48).map(|&b| if b >= 0x20 && b <= 0x7e { b as char } else { '.' }).collect();
+    details.push_str(&format!("Hex Preview:\n{}\nASCII Preview:\n{}\n", hex_view, ascii_view));
+
+    let summary = format!("{detected_type} ({len} bytes)");
+    (summary, details)
 }
 
 /// Get current bound local UDP proxy port if running.

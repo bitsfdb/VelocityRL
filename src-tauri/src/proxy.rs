@@ -2036,6 +2036,16 @@ async fn handle_forward_intercepted_request(
             resp_builder = resp_builder.header("Psysignature", &sig);
         }
 
+        record_network_event(
+            "HTTP",
+            "INBOUND",
+            &url,
+            &status.to_string(),
+            if body_modified { "Forward Intercepted RPC (Patched)" } else { "Forward Intercepted RPC" },
+            &String::from_utf8_lossy(&final_body),
+            body_modified,
+        );
+
         resp_builder = resp_builder.header("Content-Length", final_body.len().to_string());
         Ok(resp_builder.body(full_body(final_body)).unwrap())
     } else {
@@ -2789,6 +2799,22 @@ async fn handle_broker_request(
             "credits": cfg.credit_spoof,
         });
         let payload = serde_json::to_vec(&info).unwrap_or_default();
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json")
+            .header("Access-Control-Allow-Origin", "*")
+            .header("Content-Length", payload.len().to_string())
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body(payload))
+            .unwrap());
+    }
+
+    if path_str == "/network/upk" || path_str == "/api/network/upk" {
+        let (upk_name, parsed_info) = inspect_active_upk_payload();
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "upk": upk_name,
+            "data": parsed_info,
+        })).unwrap_or_default();
         return Ok(Response::builder()
             .status(StatusCode::OK)
             .header("Content-Type", "application/json")
@@ -4639,12 +4665,11 @@ async fn handle_http_config(
     req: Request<Incoming>,
     client: reqwest::Client,
 ) -> Result<Response<ResponseBoxBody>, hyper::Error> {
-    let uri = req.uri();
-    let path = uri.path();
-    let query = uri.query().map(|q| format!("?{q}")).unwrap_or_default();
+    let path = req.uri().path().to_string();
+    let query = req.uri().query().map(|q| format!("?{q}")).unwrap_or_default();
     let upstream_url = format!("https://config.psynet.gg{path}{query}");
 
-    if let Some(bid) = parse_build_id(path) {
+    if let Some(bid) = parse_build_id(&path) {
         let mut lock = LAST_GAME_BUILD_ID.lock().unwrap();
         if lock.as_deref() != Some(&bid) {
             crate::applog::event(&format!("proxy: detected game build ID: {bid}"));
@@ -4805,6 +4830,17 @@ async fn handle_http_config(
     let sig = resign_config_cdn(&out_body);
     resp_builder = resp_builder.header("Psysignature", &sig);
     resp_builder = resp_builder.header("PsySig", &sig);
+
+    // Record Config CDN event in Network Inspector (revealing decrypted JSON structure and patches)
+    record_network_event(
+        "CONFIG_CDN",
+        "INBOUND",
+        &path,
+        &status.to_string(),
+        if patched { "BattleCars PsyNet Config CDN (Patched)" } else { "BattleCars PsyNet Config CDN" },
+        &String::from_utf8_lossy(&out_body),
+        patched,
+    );
 
     resp_builder = resp_builder.header("Content-Length", out_body.len().to_string());
     let resp = resp_builder.body(full_body(out_body)).unwrap();
@@ -7326,6 +7362,89 @@ pub fn patch_users_can_show_avatar_json(body: &[u8]) -> (Vec<u8>, bool) {
     } else {
         (body.to_vec(), false)
     }
+}
+
+pub fn inspect_active_upk_payload() -> (String, serde_json::Value) {
+    let candidate_paths = [
+        std::path::PathBuf::from("/root/TAGame.upk"),
+        std::path::PathBuf::from("/root/ProjectX_rlim.upk"),
+        std::path::PathBuf::from("/root/velrlapi/games/rocketleague/TAGame/CookedPCConsole/TAGame.upk"),
+    ];
+
+    let mut found_path = None;
+    for p in &candidate_paths {
+        if p.is_file() {
+            found_path = Some(p.clone());
+            break;
+        }
+    }
+
+    let Some(upk_path) = found_path else {
+        return ("None".to_string(), serde_json::json!({ "error": "No local UPK found to inspect" }));
+    };
+
+    let filename = upk_path.file_name().unwrap_or_default().to_string_lossy().to_string();
+    let Ok(data) = std::fs::read(&upk_path) else {
+        return (filename, serde_json::json!({ "error": "Failed to read UPK file" }));
+    };
+
+    if data.len() < 64 {
+        return (filename, serde_json::json!({ "error": "File too small to be a valid UPK" }));
+    }
+
+    let Ok((summary, meta)) = crate::upk::parser::parse_prefix(&data) else {
+        return (filename, serde_json::json!({ "error": "Failed to parse UPK header prefix" }));
+    };
+
+    let name_offset = summary.name_offset as usize;
+    let enc_end = (summary.total_header_size - meta.garbage_size) as usize;
+    if name_offset >= enc_end || enc_end > data.len() {
+        return (filename, serde_json::json!({
+            "error": "Header bounds invalid",
+            "name_offset": name_offset,
+            "total_header_size": summary.total_header_size,
+        }));
+    }
+
+    let enc_len = (enc_end - name_offset) & !15;
+    let enc_block = &data[name_offset..name_offset + enc_len];
+    let plain_header = crate::upk::crypto::decrypt_ecb(&crate::upk::swapper::TAGAME_KEY, enc_block);
+
+    let chunks_rel = meta.compressed_chunks_offset as usize;
+    let chunks = if chunks_rel + 4 <= plain_header.len() {
+        crate::upk::parser::parse_chunks(&plain_header, meta.compressed_chunks_offset).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    let names = if summary.name_count > 0 && !plain_header.is_empty() {
+        crate::upk::palette::parse_names_in_block(&plain_header, summary.name_count.min(100)).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    (
+        filename,
+        serde_json::json!({
+            "status": "Decrypted Successfully",
+            "file_version": summary.file_version,
+            "licensee_version": summary.licensee_version,
+            "total_header_size": summary.total_header_size,
+            "name_count": summary.name_count,
+            "export_count": summary.export_count,
+            "import_count": summary.import_count,
+            "compressed_chunks_count": chunks.len(),
+            "first_chunks": chunks.iter().take(4).map(|c| {
+                serde_json::json!({
+                    "uncomp_offset": c.uncompressed_offset,
+                    "uncomp_size": c.uncompressed_size,
+                    "comp_offset": c.compressed_offset,
+                    "comp_size": c.compressed_size,
+                })
+            }).collect::<Vec<_>>(),
+            "sample_decrypted_names": names.iter().take(25).collect::<Vec<_>>(),
+        })
+    )
 }
 
 #[cfg(test)]
