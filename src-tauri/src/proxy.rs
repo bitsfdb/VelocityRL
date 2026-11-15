@@ -1797,6 +1797,26 @@ async fn handle_forward_intercepted_request(
         }
     };
 
+    let path_lower = path.to_ascii_lowercase();
+    if path_lower.contains("products/unlockcontainer") || path_lower.contains("unlockcontainer") {
+        if let Some(resp_json) = generate_simulated_unlock_container_payload(&req_body_bytes) {
+            let resp_bytes = serde_json::to_vec(&resp_json).unwrap_or_default();
+            let psy_time = format!("{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(1755399374));
+            let sig = resign_rpc_response(&psy_time, &resp_bytes);
+            crate::applog::event("proxy: intercepted forward HTTPS Products/UnlockContainer -> simulated crate open drop");
+            return Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", "application/json")
+                .header("PsyTime", &psy_time)
+                .header("PsySig", &sig)
+                .header("Psysignature", &sig)
+                .header("Content-Length", resp_bytes.len().to_string())
+                .header("Cache-Control", "no-cache, no-store")
+                .body(full_body(resp_bytes))
+                .unwrap());
+        }
+    }
+
     let mut up_req = client.request(method, &url);
     for (k, v) in headers.iter() {
         let k_lower = k.as_str().to_ascii_lowercase();
