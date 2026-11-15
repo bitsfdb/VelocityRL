@@ -1849,6 +1849,23 @@ async fn handle_forward_intercepted_request(
         }
 
         let path_lower = path.to_ascii_lowercase();
+        let is_reservation = path_lower.contains("reservation")
+            || path_lower.contains("reservationsready")
+            || path_lower.contains("clientreservation")
+            || path_lower.contains("addreservation")
+            || path_lower.contains("dsr/")
+            || find_bytes(&final_body, b"ServerAddress").is_some()
+            || find_bytes(&final_body, b"GameURL").is_some()
+            || find_bytes(&final_body, b"PingURL").is_some();
+        if is_reservation {
+            let swap_rules = load_active_swap_rules(spoof_cfg.as_ref());
+            let (new_body, changed) = patch_reservation_json_with_rules(&final_body, &swap_rules).await;
+            if changed {
+                final_body = new_body;
+                body_modified = true;
+            }
+        }
+
         let is_skill_rpc = path_lower.contains("getplayerskill")
             || path_lower.contains("skills")
             || find_bytes(&final_body, b"\"Skills\"").is_some();
@@ -2833,6 +2850,23 @@ async fn handle_broker_request(
             None => get_spoof_config().await,
         };
 
+        let is_reservation_rpc = path_lower.contains("reservation")
+            || path_lower.contains("reservationsready")
+            || path_lower.contains("clientreservation")
+            || path_lower.contains("addreservation")
+            || path_lower.contains("dsr/")
+            || find_bytes(&out_body, b"ServerAddress").is_some()
+            || find_bytes(&out_body, b"GameURL").is_some()
+            || find_bytes(&out_body, b"PingURL").is_some();
+        if is_reservation_rpc {
+            let swap_rules = load_active_swap_rules(cfg_opt.as_ref());
+            let (new_body, did_patch) = patch_reservation_json_with_rules(&out_body, &swap_rules).await;
+            if did_patch {
+                out_body = new_body;
+                patched = true;
+            }
+        }
+
         let is_products_rpc = path_lower.contains("getplayerproducts")
             || path_lower.contains("getloadoutproducts")
             || path_lower.contains("checkownership")
@@ -3391,12 +3425,13 @@ pub async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
     }
 
     let svc = get_ws_header_value(headers_part, "PsyService");
-    let is_skill = svc.contains("skills/getplayerskill")
-        || svc.contains("skills/getplayersskills")
-        || (find_bytes(body_part, b"\"Skills\"").is_some()
-            && (find_bytes(body_part, b"\"Mu\"").is_some()
-                || find_bytes(body_part, b"\"Tier\"").is_some()
-                || find_bytes(body_part, b"\"Playlist\"").is_some()));
+    let svc_lower = svc.to_ascii_lowercase();
+    let is_skill = svc_lower.contains("getplayerskill")
+        || svc_lower.contains("getplayerskills")
+        || svc_lower.contains("skills/")
+        || find_bytes(body_part, b"\"Skills\"").is_some()
+        || (find_bytes(body_part, b"\"Mu\"").is_some()
+            && (find_bytes(body_part, b"\"Tier\"").is_some() || find_bytes(body_part, b"\"Playlist\"").is_some()));
 
     if is_skill {
         extract_and_save_real_skills(body_part);
@@ -3411,7 +3446,10 @@ pub async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
     let mut any_changed = false;
 
     let is_reservation = find_bytes(body_part, b"ServerAddress").is_some()
+        || find_bytes(body_part, b"GameURL").is_some()
+        || find_bytes(body_part, b"PingURL").is_some()
         || find_bytes(body_part, b"ReservationsReadyMessage_X").is_some()
+        || find_bytes(body_part, b"ClientReservationMessage_X").is_some()
         || find_bytes(body_part, b"AddReservationMessage").is_some()
         || find_bytes(body_part, b"DSR/ClientMessage").is_some()
         || find_bytes(body_part, b"DSR/RelayToServer").is_some()
@@ -3427,7 +3465,6 @@ pub async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         }
     }
 
-    let svc_lower = svc.to_ascii_lowercase();
     let is_unlock_container = svc_lower.contains("products/unlockcontainer")
         || svc_lower.contains("unlockcontainer");
 
@@ -3498,12 +3535,12 @@ pub async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
     }
 
     if let Some(cfg) = &cfg_opt {
-        let is_wallet = svc.contains("shops/getplayerwallet")
-        || svc.contains("getplayerwallet")
-        || svc.contains("wallet")
-        || svc.contains("tournament")
-        || svc.contains("currencies")
-        || (find_bytes(body_part, b"\"Currencies\"").is_some() && find_bytes(body_part, b"\"IsTradable\"").is_some())
+        let is_wallet = svc_lower.contains("getplayerwallet")
+        || svc_lower.contains("wallet")
+        || svc_lower.contains("tournament")
+        || svc_lower.contains("currencies")
+        || svc_lower.contains("shops")
+        || find_bytes(body_part, b"\"Currencies\"").is_some()
         || find_bytes(body_part, b"TournamentCredit").is_some()
         || find_bytes(body_part, b"TournamentPoint").is_some();
 
@@ -6171,9 +6208,11 @@ pub fn load_active_spawned_items(cfg: Option<&crate::psynet::SpoofPayload>) -> V
 fn find_server_address(val: &serde_json::Value) -> Option<String> {
     match val {
         serde_json::Value::Object(map) => {
-            if let Some(s) = map.get("ServerAddress").and_then(|v| v.as_str()) {
-                if !s.starts_with("127.0.0.1") {
-                    return Some(s.to_string());
+            for key in &["ServerAddress", "GameURL", "PingURL"] {
+                if let Some(s) = map.get(*key).and_then(|v| v.as_str()) {
+                    if !s.starts_with("127.0.0.1") && s.contains(':') {
+                        return Some(s.to_string());
+                    }
                 }
             }
             for (_k, v) in map {
@@ -6438,11 +6477,13 @@ fn patch_reservation_value_sync(
 ) {
     match val {
         serde_json::Value::Object(map) => {
-            if let Some(addr_val) = map.get_mut("ServerAddress") {
-                if let Some(addr_str) = addr_val.as_str() {
-                    if !addr_str.starts_with("127.0.0.1") && proxy_port > 0 {
-                        *addr_val = serde_json::json!(format!("127.0.0.1:{proxy_port}"));
-                        *changed = true;
+            for key in &["ServerAddress", "GameURL", "PingURL"] {
+                if let Some(addr_val) = map.get_mut(*key) {
+                    if let Some(addr_str) = addr_val.as_str() {
+                        if !addr_str.starts_with("127.0.0.1") && proxy_port > 0 {
+                            *addr_val = serde_json::json!(format!("127.0.0.1:{proxy_port}"));
+                            *changed = true;
+                        }
                     }
                 }
             }
@@ -6627,7 +6668,7 @@ fn patch_reservation_value_sync(
             }
 
             for (k, v) in map.iter_mut() {
-                if k == "ServerAddress" || k == "Players" || k == "Loadout" || k == "Loadouts" || k == "OnlineLoadout" || k == "OnlineLoadouts" || k == "ProductIDs" {
+                if k == "ServerAddress" || k == "GameURL" || k == "PingURL" || k == "Players" || k == "Loadout" || k == "Loadouts" || k == "OnlineLoadout" || k == "OnlineLoadouts" || k == "ProductIDs" {
                     continue;
                 }
                 if let Some(s) = v.as_str() {
