@@ -804,6 +804,7 @@ async function init() {
             if (btn.dataset.tab === 'customization-tab' || btn.dataset.tab === 'names-tab') initCustomizationTab();
             if (btn.dataset.tab === 'ranks-tab') initRanksTab();
             if (btn.dataset.tab === 'tracker-tab') initTrackerTab();
+            if (btn.dataset.tab === 'network-tab') initNetworkTab();
             if (btn.dataset.tab === 'camera-tab') initCameraTab();
             if (btn.dataset.tab === 'maps-tab') initWorkshopTab();
             if (btn.dataset.tab === 'misc-tab') initMiscTab();
@@ -9866,6 +9867,248 @@ function showOutdatedBuildModal(feat) {
         };
     }
 }
+
+// ---------------------------------------------------------------------------
+// Network & UDP Packet Inspector
+// ---------------------------------------------------------------------------
+let netEvents = [];
+let netCurrentFilter = 'all';
+let netSelectedEventId = null;
+let netPollInterval = null;
+let netInspectorInitialized = false;
+
+function initNetworkTab() {
+    if (!netInspectorInitialized) {
+        netInspectorInitialized = true;
+        setupNetworkInspectorListeners();
+    }
+    refreshNetworkStatus();
+    pollNetworkEvents();
+    if (netPollInterval) clearInterval(netPollInterval);
+    netPollInterval = setInterval(pollNetworkEvents, 1200);
+}
+
+function setupNetworkInspectorListeners() {
+    const clearBtn = document.getElementById('net-clear-btn');
+    if (clearBtn) {
+        clearBtn.onclick = async () => {
+            try {
+                await invoke('clear_network_events');
+            } catch (e) {
+                try {
+                    await fetch('http://127.0.0.1:15759/network/clear', { method: 'POST' });
+                } catch (_) {}
+            }
+            netEvents = [];
+            netSelectedEventId = null;
+            renderNetworkEventsTable();
+            resetNetworkDetailPane();
+        };
+    }
+
+    const searchInput = document.getElementById('net-search-input');
+    if (searchInput) {
+        searchInput.oninput = () => renderNetworkEventsTable();
+    }
+
+    document.querySelectorAll('.net-filter-btn').forEach(btn => {
+        btn.onclick = () => {
+            document.querySelectorAll('.net-filter-btn').forEach(b => {
+                b.classList.remove('active');
+                b.style.background = 'var(--panel-hover)';
+                b.style.borderColor = 'var(--border)';
+                b.style.color = 'var(--text-secondary)';
+            });
+            btn.classList.add('active');
+            btn.style.background = 'rgba(0,229,255,0.1)';
+            btn.style.borderColor = 'var(--accent)';
+            btn.style.color = 'var(--accent)';
+            netCurrentFilter = btn.dataset.filter || 'all';
+            renderNetworkEventsTable();
+        };
+    });
+}
+
+async function refreshNetworkStatus() {
+    try {
+        let status = null;
+        try {
+            status = await invoke('get_network_status');
+        } catch (e) {
+            const resp = await fetch('http://127.0.0.1:15759/network/status');
+            status = await resp.json();
+        }
+        if (status) {
+            const brokerEl = document.getElementById('net-stat-broker');
+            const udpEl = document.getElementById('net-stat-udp');
+            const spoofEl = document.getElementById('net-stat-spoof');
+            const pillEl = document.getElementById('net-status-text');
+
+            if (brokerEl) {
+                brokerEl.textContent = status.broker_port ? `127.0.0.1:${status.broker_port}` : '127.0.0.1:443';
+            }
+            if (udpEl) {
+                udpEl.textContent = status.udp_match_proxy_port ? `Active (Port ${status.udp_match_proxy_port})` : 'Listening (Auto)';
+            }
+            if (spoofEl) {
+                spoofEl.textContent = status.spoof_active ? 'Active' : 'Standby';
+                spoofEl.style.color = status.spoof_active ? '#00e676' : 'var(--text-secondary)';
+            }
+            if (pillEl) {
+                pillEl.textContent = status.proxy_running ? 'PSYNET PROXY RUNNING' : 'SYSTEM READY';
+            }
+        }
+    } catch (_) {}
+}
+
+async function pollNetworkEvents() {
+    // Only poll if network tab is currently visible
+    const tab = document.getElementById('network-tab');
+    if (!tab || !tab.classList.contains('active')) return;
+
+    try {
+        let events = null;
+        try {
+            events = await invoke('get_network_events');
+        } catch (e) {
+            const resp = await fetch('http://127.0.0.1:15759/network/events');
+            events = await resp.json();
+        }
+        if (Array.isArray(events)) {
+            netEvents = events;
+            const countEl = document.getElementById('net-stat-count');
+            if (countEl) countEl.textContent = events.length;
+            renderNetworkEventsTable();
+        }
+    } catch (_) {}
+}
+
+function renderNetworkEventsTable() {
+    const tbody = document.getElementById('net-events-tbody');
+    if (!tbody) return;
+
+    const search = (document.getElementById('net-search-input')?.value || '').toLowerCase().trim();
+
+    const filtered = netEvents.filter(ev => {
+        if (netCurrentFilter === 'intercepted' && !ev.intercepted) return false;
+        if (netCurrentFilter === 'HTTP' && ev.protocol !== 'HTTP') return false;
+        if (netCurrentFilter === 'WS' && !ev.protocol.startsWith('WS')) return false;
+        if (netCurrentFilter === 'UDP' && ev.protocol !== 'UDP') return false;
+
+        if (search) {
+            const text = (ev.protocol + ' ' + ev.service_or_url + ' ' + ev.summary + ' ' + ev.payload_snippet).toLowerCase();
+            if (!text.includes(search)) return false;
+        }
+        return true;
+    });
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:36px; color:var(--text-secondary); font-size:12px;">No matching network packets or RPC events.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = filtered.slice().reverse().map(ev => {
+        const isSel = ev.id === netSelectedEventId;
+        const timeStr = ev.timestamp ? (ev.timestamp.includes('T') ? ev.timestamp.split('T')[1].split('.')[0] : ev.timestamp) : '';
+        let protoBadge = '';
+        if (ev.protocol === 'UDP') {
+            protoBadge = '<span style="background:rgba(255,145,0,0.15); color:#ff9100; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:700;">UDP</span>';
+        } else if (ev.protocol === 'HTTP') {
+            protoBadge = '<span style="background:rgba(0,176,255,0.15); color:#00b0ff; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:700;">HTTP</span>';
+        } else if (ev.protocol.includes('C2S')) {
+            protoBadge = '<span style="background:rgba(41,121,255,0.15); color:#2979ff; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:700;">WS C2S</span>';
+        } else if (ev.protocol.includes('S2C')) {
+            protoBadge = '<span style="background:rgba(170,0,255,0.15); color:#aa00ff; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:700;">WS S2C</span>';
+        } else {
+            protoBadge = `<span style="background:rgba(255,255,255,0.1); color:#fff; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:700;">${escapeHtmlStr(ev.protocol)}</span>`;
+        }
+
+        const modBadge = ev.intercepted ? '<span style="margin-left:4px; background:rgba(0,230,118,0.15); color:#00e676; padding:1px 4px; border-radius:3px; font-size:9px; font-weight:700;">MOD</span>' : '';
+
+        const statusColor = ev.status_or_type.startsWith('2') ? '#00e676' : (ev.status_or_type.startsWith('4') || ev.status_or_type.startsWith('5') ? '#ff1744' : 'var(--text-secondary)');
+
+        return `
+            <tr style="border-bottom:1px solid rgba(255,255,255,0.04); cursor:pointer; background:${isSel ? 'rgba(0,229,255,0.08)' : 'transparent'}; border-left:${isSel ? '3px solid var(--accent)' : 'none'};" onclick="selectNetworkEvent(${ev.id})">
+                <td style="padding:7px 10px; white-space:nowrap;">${protoBadge}${modBadge}</td>
+                <td style="padding:7px 10px; font-size:11px; color:var(--text-secondary); white-space:nowrap;">${escapeHtmlStr(timeStr)}</td>
+                <td style="padding:7px 10px; font-size:12px; font-weight:600; color:#fff; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtmlStr(ev.service_or_url)}">${escapeHtmlStr(ev.service_or_url)}</td>
+                <td style="padding:7px 10px; font-size:11px; color:var(--text-secondary); max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escapeHtmlStr(ev.summary)}">${escapeHtmlStr(ev.summary)}</td>
+                <td style="padding:7px 10px; font-size:11px; font-weight:600; color:${statusColor}; white-space:nowrap;">${escapeHtmlStr(ev.status_or_type)}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+window.selectNetworkEvent = function(id) {
+    netSelectedEventId = id;
+    renderNetworkEventsTable();
+    const ev = netEvents.find(e => e.id === id);
+    if (!ev) return;
+
+    const titleEl = document.getElementById('net-detail-title');
+    const protoEl = document.getElementById('net-detail-proto');
+    const bodyEl = document.getElementById('net-detail-body');
+
+    if (titleEl) titleEl.textContent = ev.service_or_url || `Event #${ev.id}`;
+    if (protoEl) protoEl.textContent = `${ev.protocol} • ${ev.direction} • ${ev.status_or_type}`;
+
+    let formatted = ev.payload_snippet || '';
+    if (formatted.trim().startsWith('{') || formatted.trim().startsWith('[')) {
+        try {
+            const parsed = JSON.parse(formatted);
+            formatted = JSON.stringify(parsed, null, 2);
+        } catch (_) {}
+    }
+
+    if (bodyEl) {
+        bodyEl.innerHTML = `
+            <div style="margin-bottom:12px; font-size:11px; background:var(--input-bg); border:1px solid var(--border); border-radius:6px; padding:10px;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                    <span style="color:var(--text-secondary); font-weight:600;">Timestamp:</span>
+                    <span style="color:#fff; font-family:monospace;">${escapeHtmlStr(ev.timestamp)}</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                    <span style="color:var(--text-secondary); font-weight:600;">Direction:</span>
+                    <span style="color:#fff; font-weight:600;">${escapeHtmlStr(ev.direction)}</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                    <span style="color:var(--text-secondary); font-weight:600;">Target / Service:</span>
+                    <span style="color:var(--accent); font-family:monospace;">${escapeHtmlStr(ev.service_or_url)}</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                    <span style="color:var(--text-secondary); font-weight:600;">Payload Size:</span>
+                    <span style="color:#fff;">${ev.payload_len} bytes</span>
+                </div>
+                <div style="display:flex; justify-content:space-between;">
+                    <span style="color:var(--text-secondary); font-weight:600;">Intercepted & Injected:</span>
+                    <span style="color:${ev.intercepted ? '#00e676' : 'var(--text-secondary)'}; font-weight:700;">${ev.intercepted ? 'YES (MODIFIED)' : 'NO (PASSTHROUGH)'}</span>
+                </div>
+            </div>
+            <div style="font-size:11px; font-weight:700; color:var(--accent); text-transform:uppercase; margin-bottom:6px; letter-spacing:0.5px;">Payload / Packet Dissection:</div>
+            <pre style="background:var(--input-bg); border:1px solid var(--border); border-radius:6px; padding:10px; font-size:11px; color:#e0e6ed; font-family:Consolas, 'Courier New', monospace; line-height:1.45; max-height:calc(100vh - 480px); overflow-y:auto; white-space:pre-wrap; word-break:break-all;">${escapeHtmlStr(formatted)}</pre>
+        `;
+    }
+};
+
+function resetNetworkDetailPane() {
+    const titleEl = document.getElementById('net-detail-title');
+    const protoEl = document.getElementById('net-detail-proto');
+    const bodyEl = document.getElementById('net-detail-body');
+    if (titleEl) titleEl.textContent = 'Select a packet or RPC event';
+    if (protoEl) protoEl.textContent = 'No Selection';
+    if (bodyEl) bodyEl.innerHTML = '<p style="color:var(--text-secondary); font-size:12px;">Click any network row on the left to inspect its decrypted payload, headers, JSON tree, or Wireshark-style UDP bunch hexdump.</p>';
+}
+
+function escapeHtmlStr(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 // Dedicated capture handlers for version-btn so click and shift-click always work
 document.addEventListener('click', (e) => {
     const btn = e.target?.closest?.('#version-btn');

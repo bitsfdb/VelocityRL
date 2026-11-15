@@ -83,6 +83,14 @@ pub fn get_network_events() -> Vec<NetworkEventEntry> {
     Vec::new()
 }
 
+pub fn clear_network_events() {
+    if let Ok(mut lock) = NETWORK_EVENT_RING.lock() {
+        if let Some(deque) = lock.as_mut() {
+            deque.clear();
+        }
+    }
+}
+
 const LEAF_CONFIG_CERT_PEM: &[u8] =
     include_bytes!("../resources/certs/leaf_config.psynet.gg.crt");
 const LEAF_CONFIG_KEY_PEM: &[u8] =
@@ -2015,6 +2023,12 @@ async fn handle_forward_intercepted_request(
             }
         }
 
+        let (new_body_sync, did_patch_sync) = neutralize_inventory_out_of_sync_json(&final_body);
+        if did_patch_sync {
+            final_body = new_body_sync;
+            body_modified = true;
+        }
+
         let is_avatar_rpc = path_lower.contains("canshowavatar")
             || find_bytes(&final_body, b"\"AllowedPlayerIDs\"").is_some()
             || find_bytes(&final_body, b"\"HiddenPlayerIDs\"").is_some();
@@ -2303,12 +2317,14 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
     let container_ids: Vec<String> = req_val.get("InstanceIDs")
         .or_else(|| req_val.get("instance_ids"))
         .or_else(|| req_val.get("ContainerIDs"))
+        .or_else(|| req_val.get("Result").and_then(|r| r.get("InstanceIDs")))
         .and_then(|v| v.as_array())
         .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
         .unwrap_or_default();
     let key_ids: Vec<String> = req_val.get("KeyInstanceIDs")
         .or_else(|| req_val.get("key_instance_ids"))
         .or_else(|| req_val.get("KeyIDs"))
+        .or_else(|| req_val.get("Result").and_then(|r| r.get("KeyInstanceIDs")))
         .and_then(|v| v.as_array())
         .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
         .unwrap_or_default();
@@ -2364,10 +2380,18 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
     }
 
     let resp_obj = serde_json::json!({
+        "Result": {
+            "Drops": [drop_obj.clone()],
+            "ContainerDrops": [drop_obj.clone()],
+            "InstanceIDs": container_ids.clone(),
+            "KeyInstanceIDs": key_ids.clone(),
+        },
         "Drops": [drop_obj.clone()],
         "ContainerDrops": [drop_obj],
         "InstanceIDs": container_ids,
         "KeyInstanceIDs": key_ids,
+        "bSuccess": true,
+        "Success": true,
         "Error": serde_json::Value::Null,
     });
 
@@ -2489,6 +2513,57 @@ async fn handle_broker_request(
             .header("Cache-Control", "no-store")
             .header("Connection", "close")
             .body(full_body(ping_val.into_bytes()))
+            .unwrap());
+    }
+
+    if path_str == "/network/events" || path_str == "/api/network/events" {
+        let events = get_network_events();
+        let payload = serde_json::to_vec(&events).unwrap_or_default();
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json")
+            .header("Access-Control-Allow-Origin", "*")
+            .header("Content-Length", payload.len().to_string())
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body(payload))
+            .unwrap());
+    }
+
+    if path_str == "/network/clear" || path_str == "/api/network/clear" {
+        clear_network_events();
+        let payload = b"{\"success\":true}";
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json")
+            .header("Access-Control-Allow-Origin", "*")
+            .header("Content-Length", payload.len().to_string())
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body(payload.to_vec()))
+            .unwrap());
+    }
+
+    if path_str == "/network/status" || path_str == "/api/network/status" {
+        let cfg = crate::psynet::load_active_spoof_from_disk().unwrap_or_default();
+        let udp_port = crate::udp_proxy::get_local_port().unwrap_or(0);
+        let broker_port = BROKER_PORT.load(Ordering::Relaxed);
+        let info = serde_json::json!({
+            "broker_port": broker_port,
+            "udp_match_proxy_port": udp_port,
+            "spoof_active": cfg.enabled,
+            "name_spoof": cfg.name_spoof.as_ref().map(|n| n.display_name.clone()).unwrap_or_default(),
+            "fake_rank_enabled": cfg.fake_ranks.as_ref().map(|s| s.enabled).unwrap_or(false),
+            "ping_spoof": cfg.ping_spoof,
+            "title_id": cfg.equip_title_id,
+            "credits": cfg.credit_spoof,
+        });
+        let payload = serde_json::to_vec(&info).unwrap_or_default();
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json")
+            .header("Access-Control-Allow-Origin", "*")
+            .header("Content-Length", payload.len().to_string())
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body(payload))
             .unwrap());
     }
 
@@ -2991,6 +3066,12 @@ async fn handle_broker_request(
                 out_body = new_body_own;
                 patched = true;
             }
+        }
+
+        let (new_body_sync, did_patch_sync) = neutralize_inventory_out_of_sync_json(&out_body);
+        if did_patch_sync {
+            out_body = new_body_sync;
+            patched = true;
         }
 
         let is_skill_rpc = path_lower.contains("getplayerskill")
@@ -6590,11 +6671,15 @@ fn patch_loadout_int_array(
         if !replaced {
             if let Some(idx) = slot_idx {
                 if idx < arr.len() {
-                    if arr[idx].as_i64().map(|n| n as i32) != Some(r.wanted_id) {
-                        arr[idx] = serde_json::json!(r.wanted_id);
-                        *changed = true;
+                    let cur_id = arr[idx].as_i64().map(|n| n as i32).unwrap_or(0);
+                    // For body slot (idx 0), always replace if rule targets a body
+                    if is_body || cur_id != r.wanted_id {
+                        if cur_id != r.wanted_id {
+                            arr[idx] = serde_json::json!(r.wanted_id);
+                            *changed = true;
+                        }
+                        replaced = true;
                     }
-                    replaced = true;
                 }
             }
         }
@@ -6639,8 +6724,7 @@ fn patch_loadout_node(
                                 .map(|n| n as i32);
                             let slot_idx = obj.get("SlotIndex").and_then(|v| v.as_i64()).map(|n| n as u8);
 
-                            let is_body_rule = r.owned_id > 0
-                                && (r.slot_idx == 0 || r.slot.eq_ignore_ascii_case("Body"))
+                            let is_body_rule = (r.slot_idx == 0 || r.slot.eq_ignore_ascii_case("Body"))
                                 && is_known_body_id(r.wanted_id);
                             let is_body_slot = is_body_rule
                                 && (slot_idx == Some(0) || is_known_body_id(pid.unwrap_or(0)));
@@ -6648,7 +6732,15 @@ fn patch_loadout_node(
                             let is_matching_slot = r.owned_id > 0 && r.slot_idx < 255 && slot_idx == Some(r.slot_idx);
                             let is_matching_wanted = pid == Some(r.wanted_id);
 
-                            if is_body_slot || is_matching_owned || is_matching_slot || is_matching_wanted {
+                            // When replacing a body slot, ensure we only replace if slot_idx == Some(0) or target/source is a body,
+                            // never accidentally replace non-body slots unless slot index matches.
+                            let should_replace = if is_body_rule {
+                                is_body_slot
+                            } else {
+                                is_matching_owned || is_matching_slot || is_matching_wanted
+                            };
+
+                            if should_replace {
                                 if pid != Some(r.wanted_id) {
                                     obj["ProductID"] = serde_json::json!(r.wanted_id);
                                     *changed = true;
@@ -7286,6 +7378,19 @@ fn patch_ownership_value_recursive(val: &mut serde_json::Value, changed: &mut bo
                         if s.eq_ignore_ascii_case("NOT_OWNED") || s.eq_ignore_ascii_case("EXPIRED") {
                             *v = serde_json::Value::String("ACTIVE".to_string());
                             *changed = true;
+                        } else if s.eq_ignore_ascii_case("InventoryOutOfSync") {
+                            *v = serde_json::Value::String("OK".to_string());
+                            *changed = true;
+                        }
+                    }
+                }
+            }
+            for key in ["Error", "error"] {
+                if let Some(err_val) = obj.get_mut(key) {
+                    if let Some(s) = err_val.as_str() {
+                        if s.contains("InventoryOutOfSync") {
+                            *err_val = serde_json::Value::Null;
+                            *changed = true;
                         }
                     }
                 }
@@ -7365,6 +7470,70 @@ pub fn patch_cross_entitlement_json(
         }
     } else {
         (body.to_vec(), false)
+    }
+}
+
+/// Neutralize "InventoryOutOfSync" error states from PsyNet JSON responses
+/// preventing client popup/notification "Inventory out of sync, resyncing..."
+/// (Replicates RL rewrite_datagram_payload logic)
+pub fn neutralize_inventory_out_of_sync_json(body: &[u8]) -> (Vec<u8>, bool) {
+    if !body.windows(18).any(|w| w == b"InventoryOutOfSync") {
+        return (body.to_vec(), false);
+    }
+
+    let mut root: serde_json::Value = match serde_json::from_slice(body) {
+        Ok(v) => v,
+        Err(_) => return (body.to_vec(), false),
+    };
+
+    let mut changed = false;
+    neutralize_inventory_out_of_sync_value(&mut root, &mut changed);
+
+    if changed {
+        match serde_json::to_vec(&root) {
+            Ok(bytes) => (bytes, true),
+            Err(_) => (body.to_vec(), false),
+        }
+    } else {
+        (body.to_vec(), false)
+    }
+}
+
+fn neutralize_inventory_out_of_sync_value(val: &mut serde_json::Value, changed: &mut bool) {
+    match val {
+        serde_json::Value::Object(map) => {
+            for key in ["status", "Status", "Message", "message", "Error", "error", "ErrorCode", "errorCode"] {
+                if let Some(v) = map.get_mut(key) {
+                    if let Some(s) = v.as_str() {
+                        if s.contains("InventoryOutOfSync") {
+                            *v = if key.eq_ignore_ascii_case("status") {
+                                serde_json::Value::String("OK".to_string())
+                            } else {
+                                serde_json::Value::Null
+                            };
+                            *changed = true;
+                        }
+                    }
+                }
+            }
+            for key in ["bSuccess", "Success", "success"] {
+                if let Some(v) = map.get_mut(key) {
+                    if v.as_bool() == Some(false) {
+                        *v = serde_json::Value::Bool(true);
+                        *changed = true;
+                    }
+                }
+            }
+            for (_k, v) in map.iter_mut() {
+                neutralize_inventory_out_of_sync_value(v, changed);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr.iter_mut() {
+                neutralize_inventory_out_of_sync_value(v, changed);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -7930,7 +8099,8 @@ mod tests {
         assert!(server_addr.starts_with("127.0.0.1:"));
 
         let prods = val["Players"][0]["Loadout"]["Products"].as_array().unwrap();
-        assert_eq!(prods.len(), 2);
+        // Since both 23 and 803 are Body items (Slot 0), 803 replaces 23 in-place
+        assert_eq!(prods.len(), 1);
         let injected = prods.iter().find(|p| p["ProductID"] == 803).unwrap();
         assert_eq!(injected["PaintID"], 1);
     }

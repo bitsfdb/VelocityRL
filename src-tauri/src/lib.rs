@@ -3619,6 +3619,34 @@ fn create_main_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[tauri::command]
+fn get_network_events() -> Vec<proxy::NetworkEventEntry> {
+    proxy::get_network_events()
+}
+
+#[tauri::command]
+fn clear_network_events() {
+    proxy::clear_network_events();
+}
+
+#[tauri::command]
+async fn get_network_status() -> Result<serde_json::Value, String> {
+    let cfg = psynet::load_active_spoof_from_disk().unwrap_or_default();
+    let udp_port = udp_proxy::get_local_port().unwrap_or(0);
+    let broker_port = proxy::broker_port().unwrap_or(0);
+    Ok(serde_json::json!({
+        "broker_port": broker_port,
+        "udp_match_proxy_port": udp_port,
+        "proxy_running": proxy::is_proxy_running(),
+        "spoof_active": cfg.enabled,
+        "name_spoof": cfg.name_spoof.as_ref().map(|n| n.display_name.clone()).unwrap_or_default(),
+        "fake_rank_enabled": cfg.fake_ranks.as_ref().map(|s| s.enabled).unwrap_or(false),
+        "ping_spoof": cfg.ping_spoof,
+        "title_id": cfg.equip_title_id,
+        "credits": cfg.credit_spoof,
+    }))
+}
+
 pub fn run() {
     #[cfg(target_os = "linux")]
     {
@@ -3797,7 +3825,8 @@ pub fn run() {
                         if let Ok(cooked) = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
                             // On startup, patch ProjectX and ensure game packages are clean
                             let _ = upk::ensure_projectx_patched(&cooked);
-                            let _ = sync_all_swaps_to_tagame(&boot_app, &cooked, &[]).await;
+                            let swaps = load_swaps(&boot_app);
+                            let _ = sync_all_swaps_to_tagame(&boot_app, &cooked, &swaps).await;
                         }
                     }
                 }
@@ -4151,6 +4180,9 @@ pub fn run() {
             apply_rlim_modifications,
             get_rlim_config,
             save_rlim_config,
+            get_network_events,
+            clear_network_events,
+            get_network_status,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

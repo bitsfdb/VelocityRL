@@ -45,6 +45,10 @@
                 <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
                 <span>Tracker Overlay</span>
             </div>
+            <div class="nav-item" data-tab="network-tab">
+                <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+                <span>Network Inspector</span>
+            </div>
         </nav>
 
         <div class="sidebar-footer">
@@ -1267,6 +1271,81 @@
                         <button type="button" id="tracker-center-overlay-btn" class="action-btn action-btn-secondary" style="font-size:12px; padding:8px 16px;" data-i18n="tracker.center_btn">Center Overlay on Screen</button>
                         <button type="button" id="tracker-close-overlay-btn" class="action-btn action-btn-secondary" style="font-size:12px; padding:8px 16px;" data-i18n="tracker.hide_btn">Hide Overlay</button>
                         <button type="button" id="tracker-reset-session-btn" class="action-btn action-btn-secondary" style="font-size:12px; padding:8px 16px; color:#ff6b6b; border-color:rgba(255,107,107,0.3);" data-i18n="tracker.reset_btn">Reset Session Stats</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="network-tab" class="tab-content">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                    <div>
+                        <h2 class="section-title">Network & UDP Inspector</h2>
+                        <p class="section-desc">Live capture and dissection of PsyNet RPCs, WebSockets, CDN configs, and UDP match packets.</p>
+                    </div>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <span id="net-status-pill" class="status-pill" style="display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600; background:rgba(0,230,118,0.12); color:#00e676; border:1px solid rgba(0,230,118,0.3);">
+                            <span class="dot" style="width:7px; height:7px; border-radius:50%; background:#00e676; box-shadow:0 0 6px #00e676;"></span>
+                            <span id="net-status-text">MITM ACTIVE</span>
+                        </span>
+                        <button type="button" id="net-clear-btn" class="action-btn action-btn-secondary" style="font-size:11px; padding:5px 12px; height:28px;">Clear Stream</button>
+                    </div>
+                </div>
+
+                <div class="grid-stats" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px; margin-bottom:14px;">
+                    <div class="stat-card card spoof-card" style="padding:10px 14px; margin:0;">
+                        <div class="stat-label" style="font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:700; letter-spacing:0.5px;">Broker / RPC Port</div>
+                        <div id="net-stat-broker" class="stat-val" style="font-size:15px; font-weight:700; color:var(--accent); margin-top:3px;">127.0.0.1:443</div>
+                    </div>
+                    <div class="stat-card card spoof-card" style="padding:10px 14px; margin:0;">
+                        <div class="stat-label" style="font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:700; letter-spacing:0.5px;">UDP Match Proxy Port</div>
+                        <div id="net-stat-udp" class="stat-val" style="font-size:15px; font-weight:700; color:#ff9f43; margin-top:3px;">Listening (Auto)</div>
+                    </div>
+                    <div class="stat-card card spoof-card" style="padding:10px 14px; margin:0;">
+                        <div class="stat-label" style="font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:700; letter-spacing:0.5px;">Packets & RPCs Captured</div>
+                        <div id="net-stat-count" class="stat-val" style="font-size:15px; font-weight:700; color:#fff; margin-top:3px;">0</div>
+                    </div>
+                    <div class="stat-card card spoof-card" style="padding:10px 14px; margin:0;">
+                        <div class="stat-label" style="font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:700; letter-spacing:0.5px;">Active Spoofs</div>
+                        <div id="net-stat-spoof" class="stat-val" style="font-size:15px; font-weight:700; color:#00e676; margin-top:3px;">Enabled</div>
+                    </div>
+                </div>
+
+                <div class="toolbar" style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
+                    <input type="text" id="net-search-input" placeholder="Search service, RPC, payload text..." style="flex:1; min-width:200px; background:var(--input-bg); border:1px solid var(--border); border-radius:6px; padding:6px 12px; color:#fff; font-size:12px; outline:none;">
+                    <div style="display:flex; gap:6px;">
+                        <button type="button" class="net-filter-btn active" data-filter="all" style="background:rgba(0,229,255,0.1); border:1px solid var(--accent); color:var(--accent); border-radius:6px; padding:6px 12px; font-size:11px; font-weight:600; cursor:pointer;">ALL</button>
+                        <button type="button" class="net-filter-btn" data-filter="UDP" style="background:var(--panel-hover); border:1px solid var(--border); color:var(--text-secondary); border-radius:6px; padding:6px 12px; font-size:11px; font-weight:600; cursor:pointer;">UDP</button>
+                        <button type="button" class="net-filter-btn" data-filter="HTTP" style="background:var(--panel-hover); border:1px solid var(--border); color:var(--text-secondary); border-radius:6px; padding:6px 12px; font-size:11px; font-weight:600; cursor:pointer;">HTTP RPC</button>
+                        <button type="button" class="net-filter-btn" data-filter="WS" style="background:var(--panel-hover); border:1px solid var(--border); color:var(--text-secondary); border-radius:6px; padding:6px 12px; font-size:11px; font-weight:600; cursor:pointer;">WEBSOCKET</button>
+                        <button type="button" class="net-filter-btn" data-filter="intercepted" style="background:var(--panel-hover); border:1px solid var(--border); color:var(--text-secondary); border-radius:6px; padding:6px 12px; font-size:11px; font-weight:600; cursor:pointer;">MODIFIED</button>
+                    </div>
+                </div>
+
+                <div class="layout-main" style="display:grid; grid-template-columns:1fr 460px; gap:14px; height:calc(100vh - 310px); min-height:480px;">
+                    <div class="table-wrap card spoof-card" style="padding:0; overflow-y:auto; overflow-x:hidden; position:relative; margin:0;">
+                        <table style="width:100%; border-collapse:collapse; text-align:left;">
+                            <thead style="position:sticky; top:0; background:#11141b; z-index:10; border-bottom:1px solid var(--border);">
+                                <tr>
+                                    <th style="padding:8px 10px; font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:700; width:75px;">Proto</th>
+                                    <th style="padding:8px 10px; font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:700; width:70px;">Time</th>
+                                    <th style="padding:8px 10px; font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:700;">Service / Target</th>
+                                    <th style="padding:8px 10px; font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:700;">Summary</th>
+                                    <th style="padding:8px 10px; font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:700; width:65px;">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="net-events-tbody">
+                                <tr><td colspan="5" style="text-align:center; padding:40px; color:var(--text-secondary);">Waiting for Rocket League network traffic...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="detail-pane card spoof-card" style="padding:14px; overflow-y:auto; display:flex; flex-direction:column; margin:0;">
+                        <div style="border-bottom:1px solid var(--border); padding-bottom:10px; margin-bottom:12px;">
+                            <div id="net-detail-title" style="font-size:14px; font-weight:700; color:#fff; word-break:break-all;">Select a packet or RPC event</div>
+                            <div id="net-detail-proto" style="font-size:11px; color:var(--accent); font-weight:600; text-transform:uppercase; margin-top:2px;">No Selection</div>
+                        </div>
+                        <div id="net-detail-body" style="flex:1; overflow-y:auto;">
+                            <p style="color:var(--text-secondary); font-size:12px;">Click any network row on the left to inspect its decrypted payload, headers, JSON tree, or Wireshark-style UDP bunch hexdump.</p>
+                        </div>
                     </div>
                 </div>
             </div>

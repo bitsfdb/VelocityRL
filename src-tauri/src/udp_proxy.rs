@@ -654,6 +654,61 @@ pub fn patch_c2s_login_bunch(buf: &mut [u8], len: &mut usize, target_name: &str)
     false
 }
 
+/// Decrypt an encrypted datagram using modern AES-256-CBC and return the plaintext bunch payload.
+pub fn decrypt_datagram_payload(packet: &[u8], crypto: &ReservationCrypto) -> Option<Vec<u8>> {
+    if packet.len() < 48 || packet.len() % 16 != 0 {
+        return None;
+    }
+    let mut dec_buf = packet.to_vec();
+    let decryptor = Aes256CbcDec::new_from_slices(&crypto.aes_key, &crypto.aes_iv).ok()?;
+    let pt = decryptor.decrypt_padded_mut::<Pkcs7>(&mut dec_buf).ok()?;
+    if pt.len() < 32 {
+        return None;
+    }
+    let payload_len = pt.len() - 32;
+    Some(pt[..payload_len].to_vec())
+}
+
+/// Format bytes as a clean, aligned Wireshark/Hex-view table (hex bytes on left, ASCII on right)
+pub fn format_payload_hexdump(data: &[u8], max_bytes: usize) -> String {
+    let slice = if data.len() > max_bytes {
+        &data[..max_bytes]
+    } else {
+        data
+    };
+    let mut out = String::new();
+    for (i, chunk) in slice.chunks(16).enumerate() {
+        let offset = i * 16;
+        let mut hex_part = String::new();
+        let mut ascii_part = String::new();
+        for (j, &b) in chunk.iter().enumerate() {
+            hex_part.push_str(&format!("{b:02x} "));
+            if j == 7 {
+                hex_part.push(' ');
+            }
+            if b >= 0x20 && b <= 0x7e {
+                ascii_part.push(b as char);
+            } else {
+                ascii_part.push('.');
+            }
+        }
+        let padding = 16 - chunk.len();
+        if padding > 0 {
+            for j in 0..padding {
+                hex_part.push_str("   ");
+                if chunk.len() + j == 7 {
+                    hex_part.push(' ');
+                }
+            }
+        }
+        out.push_str(&format!("{offset:04x}   {hex_part:<49}  |{ascii_part}|\n"));
+    }
+    if data.len() > max_bytes {
+        out.push_str(&format!("... [{} more bytes truncated]\n", data.len() - max_bytes));
+    }
+    out
+}
+
 /// Decode an Unreal Engine 3 UDP datagram into human-readable details and structure.
 pub fn decode_udp_packet_summary(buf: &[u8], is_c2s: bool) -> (String, String) {
     if buf.is_empty() {
@@ -714,10 +769,9 @@ pub fn decode_udp_packet_summary(buf: &[u8], is_c2s: bool) -> (String, String) {
         }
     }
 
-    // Hex snippet representation
-    let hex_view: String = buf.iter().take(48).map(|b| format!("{b:02x} ")).collect();
-    let ascii_view: String = buf.iter().take(48).map(|&b| if b >= 0x20 && b <= 0x7e { b as char } else { '.' }).collect();
-    details.push_str(&format!("Hex Preview:\n{}\nASCII Preview:\n{}\n", hex_view, ascii_view));
+    // Full aligned hex dump of the payload (up to 512 bytes)
+    details.push_str("\nPayload Hexdump:\n");
+    details.push_str(&format_payload_hexdump(buf, 512));
 
     let summary = format!("{detected_type} ({len} bytes)");
     (summary, details)
