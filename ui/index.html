@@ -1290,27 +1290,16 @@
                     </div>
                 </div>
 
-                <div class="grid-stats" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:10px; margin-bottom:14px;">
-                    <div class="stat-card card spoof-card" style="padding:10px 14px; margin:0;">
-                        <div class="stat-label" style="font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:700; letter-spacing:0.5px;">Broker / RPC Port</div>
-                        <div id="net-stat-broker" class="stat-val" style="font-size:15px; font-weight:700; color:var(--accent); margin-top:3px;">127.0.0.1:443</div>
-                    </div>
-                    <div class="stat-card card spoof-card" style="padding:10px 14px; margin:0;">
-                        <div class="stat-label" style="font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:700; letter-spacing:0.5px;">UDP Match Proxy Port</div>
-                        <div id="net-stat-udp" class="stat-val" style="font-size:15px; font-weight:700; color:#ff9f43; margin-top:3px;">Listening (Auto)</div>
-                    </div>
-                    <div class="stat-card card spoof-card" style="padding:10px 14px; margin:0;">
-                        <div class="stat-label" style="font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:700; letter-spacing:0.5px;">Packets & RPCs Captured</div>
-                        <div id="net-stat-count" class="stat-val" style="font-size:15px; font-weight:700; color:#fff; margin-top:3px;">0</div>
-                    </div>
-                    <div class="stat-card card spoof-card" style="padding:10px 14px; margin:0;">
-                        <div class="stat-label" style="font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:700; letter-spacing:0.5px;">ProjectX UPK Patch</div>
-                        <div id="net-stat-patch" class="stat-val" style="font-size:14px; font-weight:700; color:#00e676; margin-top:3px; display:flex; align-items:center; gap:6px;">Checking...</div>
-                    </div>
-                    <div class="stat-card card spoof-card" style="padding:10px 14px; margin:0;">
-                        <div class="stat-label" style="font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:700; letter-spacing:0.5px;">TAGame UPK Stock</div>
-                        <div id="net-stat-tagame" class="stat-val" style="font-size:14px; font-weight:700; color:#00e676; margin-top:3px; display:flex; align-items:center; gap:6px;">Checking...</div>
-                    </div>
+                <div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap; padding:8px 14px; margin-bottom:12px; background:var(--panel); border:1px solid var(--border); border-radius:6px; font-size:11px;">
+                    <div><span style="color:var(--text-secondary);">Broker:</span> <strong id="net-stat-broker" style="color:var(--accent);">127.0.0.1:443</strong></div>
+                    <span style="color:var(--border);">|</span>
+                    <div><span style="color:var(--text-secondary);">UDP Match Proxy:</span> <strong id="net-stat-udp" style="color:#ff9f43;">Listening (Auto)</strong></div>
+                    <span style="color:var(--border);">|</span>
+                    <div><span style="color:var(--text-secondary);">Packets:</span> <strong id="net-stat-count" style="color:#fff;">0</strong></div>
+                    <span style="color:var(--border);">|</span>
+                    <div><span style="color:var(--text-secondary);">ProjectX Patch:</span> <strong id="net-stat-patch" style="color:#00e676;">Checking...</strong></div>
+                    <span style="color:var(--border);">|</span>
+                    <div><span style="color:var(--text-secondary);">TAGame Stock:</span> <strong id="net-stat-tagame" style="color:#00e676;">Checking...</strong></div>
                 </div>
 
                 <div class="toolbar" style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
