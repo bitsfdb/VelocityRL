@@ -6611,12 +6611,18 @@ fn patch_product_ids_node(
             }
             let is_body = r.slot_idx == 0 || r.slot.eq_ignore_ascii_case("Body") || is_known_body_id(r.wanted_id);
             if is_body {
+                let mut body_replaced = false;
                 for v in arr.iter_mut() {
                     let id = v.as_i64().map(|n| n as i32).unwrap_or(0);
-                    if (id == 11603 || (r.owned_id == 23 && id == 23)) && id != r.wanted_id {
+                    if (id == 11603 || is_known_body_id(id) || (r.owned_id == 23 && id == 23)) && id != r.wanted_id {
                         *v = serde_json::json!(r.wanted_id);
                         *changed = true;
+                        body_replaced = true;
+                        break;
                     }
+                }
+                if body_replaced {
+                    continue;
                 }
             }
             let already = arr.iter().any(|v| v.as_i64().map(|n| n as i32) == Some(r.wanted_id));
@@ -6680,6 +6686,11 @@ fn patch_loadout_int_array(
                         }
                         replaced = true;
                     }
+                } else if idx == arr.len() {
+                    // Exact next slot index: push to maintain correct slot alignment
+                    arr.push(serde_json::json!(r.wanted_id));
+                    *changed = true;
+                    replaced = true;
                 }
             }
         }
@@ -6836,9 +6847,8 @@ fn patch_reservation_value_sync(
     match val {
         serde_json::Value::Object(map) => {
             // Reroute match server addresses to local UDP proxy (127.0.0.1:{proxy_port})
-            // Replicates RL UDP Proxy architecture:
             // Intercepts UDP traffic, decrypts AES-256-CBC with reservation keys,
-            // patches login bunches, recomputes HMAC-SHA256, and relays upstream.
+            // patches bunches, recomputes HMAC-SHA256, and relays upstream.
             if proxy_port > 0 {
                 let target_loopback = format!("127.0.0.1:{proxy_port}");
                 for key in &["ServerAddress", "GameURL"] {
@@ -7003,10 +7013,34 @@ fn patch_reservation_value_sync(
                         if let Some(prods_val) = event_data.get_mut("Products") {
                             patch_loadout_node(prods_val, rules, changed);
                         }
+                        if let Some(prod_ids_val) = event_data.get_mut("ProductIDs") {
+                            patch_product_ids_node(prod_ids_val, rules, changed);
+                        }
 
-                        // Also patch PlayerName in PlayWithLoadout event if name spoofing
+                        // Also patch TitleID and Title text in PlayWithLoadout event if title spoofing
                         if let Some(spoof) = crate::psynet::load_active_spoof_from_disk() {
                             if spoof.enabled {
+                                let equip_id = if !spoof.equip_title_id.trim().is_empty() {
+                                    spoof.equip_title_id.trim()
+                                } else {
+                                    spoof.display_title_id.trim()
+                                };
+                                if !equip_id.is_empty() {
+                                    event_data.insert("TitleID".to_string(), serde_json::json!(equip_id));
+                                    event_data.insert("TitleId".to_string(), serde_json::json!(equip_id));
+                                    *changed = true;
+                                }
+                                let mut custom_text = spoof.custom_text.trim();
+                                if custom_text.is_empty() {
+                                    custom_text = spoof.custom_name.trim();
+                                }
+                                if !custom_text.is_empty() {
+                                    event_data.insert("PlayerTitle".to_string(), serde_json::json!(custom_text));
+                                    event_data.insert("Title".to_string(), serde_json::json!(custom_text));
+                                    *changed = true;
+                                }
+
+                                // Also patch PlayerName in PlayWithLoadout event if name spoofing
                                 let spoof_name = spoof.name_spoof.as_ref()
                                     .filter(|ns| ns.enabled && !ns.display_name.trim().is_empty())
                                     .map(|ns| ns.display_name.trim())
@@ -7475,7 +7509,6 @@ pub fn patch_cross_entitlement_json(
 
 /// Neutralize "InventoryOutOfSync" error states from PsyNet JSON responses
 /// preventing client popup/notification "Inventory out of sync, resyncing..."
-/// (Replicates RL rewrite_datagram_payload logic)
 pub fn neutralize_inventory_out_of_sync_json(body: &[u8]) -> (Vec<u8>, bool) {
     if !body.windows(18).any(|w| w == b"InventoryOutOfSync") {
         return (body.to_vec(), false);

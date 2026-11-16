@@ -348,7 +348,7 @@ pub async fn set_active_reservation_with_crypto(
         &format!("Active Match Server Rerouted -> 127.0.0.1:{proxy_port}"),
         &format!(
             "Target Upstream Match Server: {resolved}\nLocal Bound UDP Port: {proxy_port}\nCrypto Mode: {}",
-            if crypto.is_some() { "AES-256-CBC + HMAC-SHA256 (RL Replicated)" } else { "Plaintext Passthrough" }
+            if crypto.is_some() { "AES-256-CBC + HMAC-SHA256" } else { "Plaintext Passthrough" }
         ),
         true,
     );
@@ -356,7 +356,7 @@ pub async fn set_active_reservation_with_crypto(
     Ok(proxy_port)
 }
 
-/// Replicate RL `rewrite_datagram_payload`:
+/// UDP packet decrypt & rewrite routine:
 /// 1. Decrypt AES-256-CBC datagram using reservation AES key and IV
 /// 2. Unpad PKCS#7 (and verify block padding)
 /// 3. Verify payload contains 32-byte HMAC-SHA256 digest at end
@@ -421,7 +421,7 @@ pub fn process_c2s_encrypted_datagram(
     }
 
     if !was_patched {
-        // If not patched, pass original packet through directly (rewrite_datagram_payload parity)
+        // If not patched, pass original packet through directly
         return (packet.to_vec(), false);
     }
 
@@ -456,7 +456,7 @@ pub fn process_c2s_encrypted_datagram(
 }
 
 /// Rewrite C2S Login bunch packet (`?Name=...`) if a spoofed name is active.
-/// Implements bit-aligned UE bunch patching matching decompiled `rewrite_datagram_payload`.
+/// Implements bit-aligned UE bunch patching.
 pub fn patch_c2s_login_bunch(buf: &mut [u8], len: &mut usize, target_name: &str) -> bool {
     let old_len = *len;
     if old_len < 16 || target_name.is_empty() {
@@ -557,7 +557,7 @@ pub fn patch_c2s_login_bunch(buf: &mut [u8], len: &mut usize, target_name: &str)
                     shifted[i] |= patched_unshifted[i] << shift;
                     shifted[i + 1] |= patched_unshifted[i] >> (8 - shift);
                 }
-                // Preserve lower bits of byte 0 from the original buffer (rewrite_datagram_payload parity)
+                // Preserve lower bits of byte 0 from the original buffer
                 let mask = (1u8 << shift) - 1;
                 shifted[0] = (orig_buf[0] & mask) | (shifted[0] & !mask);
             }
@@ -572,7 +572,7 @@ pub fn patch_c2s_login_bunch(buf: &mut [u8], len: &mut usize, target_name: &str)
                 return false;
             }
 
-            // Find highest set bit in the original packet (rewrite_datagram_payload parity)
+            // Find highest set bit in the original packet
             let mut highest_bit: isize = -1;
             for byte_idx in (0..old_len).rev() {
                 let b = orig_buf[byte_idx];
