@@ -1467,222 +1467,39 @@ pub fn apply_tagame_modifications(
 
         let mut upk_modified = false;
 
-        // 1. Patch Chunk 0: Car_TA::SetLoadout strictly within vanilla allocation (186 bytes)
-        if !chunks.is_empty() {
-            let c0_uncomp_offset = chunks[0].uncomp_offset;
-            let c0_comp_offset = chunks[0].comp_offset;
-            let c0_comp_size = chunks[0].comp_size;
-            let c0_start = c0_comp_offset as usize;
-            let c0_end = c0_start + c0_comp_size as usize;
-            if c0_end <= file_bytes.len() {
-                if let Ok(mut decomp0) = crate::upk::compression::decompress_chunk(&file_bytes[c0_start..c0_end]) {
-                    let mut c0_modified = false;
-                    let delta = 0usize;
-                    let mut car_set_loadout_orig_off = 0i64;
-
-                    // Patch Car_TA::SetLoadout in Chunk 0 for vehicle spawn (expanded up to 4,000 bytes for 50+ swaps)
-                    if let Some(exp) = exports.iter().find(|e| e.name == "SetLoadout" && e.outer_name == "Car_TA") {
-                        car_set_loadout_orig_off = exp.serial_offset;
-                        let func_off = (exp.serial_offset - c0_uncomp_offset) as usize;
-                        if func_off + 48 <= decomp0.len() {
-                            let orig_disk_sz = u32::from_le_bytes(decomp0[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                            if orig_disk_sz >= 97 && func_off + 48 + orig_disk_sz <= decomp0.len() {
-                                let target_disk_sz = orig_disk_sz;
-
-                                // Dynamically resolve Data, ClientLoadoutData, and Products export indices
-                                let set_loadout_idx = exp.idx as i32;
-                                let data_var_idx = exports.iter()
-                                    .find(|e| e.name == "Data" && e.outer_idx == set_loadout_idx)
-                                    .map(|e| e.idx as i32)
-                                    .unwrap_or(16586);
-                                let cld_idx = exports.iter()
-                                    .find(|e| e.name == "ClientLoadoutData")
-                                    .map(|e| e.idx as i32)
-                                    .unwrap_or(1872);
-                                let products_idx = exports.iter()
-                                    .find(|e| e.name == "Products" && e.outer_idx == cld_idx)
-                                    .map(|e| e.idx as i32)
-                                    .unwrap_or(1871);
-
-                                // Dynamically extract vanilla body if present in orig_script
-                                let orig_script = &decomp0[func_off + 48..func_off + 48 + target_disk_sz];
-                                let vanilla_tail = if let Some(start_pos) = orig_script.windows(2).position(|w| w == [0x14, 0x2D]) {
-                                    if let Some(end_rel) = orig_script[start_pos..].windows(3).position(|w| w == [0x04, 0x0B, 0x4C]) {
-                                        let tail_len = end_rel + 3;
-                                        if tail_len >= 90 && tail_len <= 110 {
-                                            Some(&orig_script[start_pos..start_pos + tail_len])
-                                        } else {
-                                            None
-                                        }
-                                    } else {
-                                        None
-                                    }
-                                } else {
-                                    None
-                                };
-
-                                if let Ok((payload, mem_sz)) = emit_car_set_loadout_bytecode(
-                                    &slot_overrides,
-                                    target_disk_sz,
-                                    Some(products_idx),
-                                    Some(cld_idx),
-                                    Some(data_var_idx),
-                                    vanilla_tail,
-                                ) {
-                                    if &decomp0[func_off + 48..func_off + 48 + target_disk_sz] != payload.as_slice() {
-                                        decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                        decomp0[func_off + 48..func_off + 48 + target_disk_sz].copy_from_slice(&payload);
-                                        c0_modified = true;
+        // 5. Patch Chunk 78: BinaryUploader_TA::Upload telemetry killer
+        if chunks.len() > 78 {
+            let c78_uncomp_offset = chunks[78].uncomp_offset;
+            let c78_comp_offset = chunks[78].comp_offset;
+            let c78_comp_size = chunks[78].comp_size;
+            let c78_start = c78_comp_offset as usize;
+            let c78_end = c78_start + c78_comp_size as usize;
+            if c78_end <= file_bytes.len() {
+                if let Ok(mut decomp78) = crate::upk::compression::decompress_chunk(&file_bytes[c78_start..c78_end]) {
+                    let mut c78_modified = false;
+                    if let Some(exp) = exports.iter().find(|e| e.name == "Upload" && e.outer_name == "BinaryUploader_TA") {
+                        if exp.serial_offset >= c78_uncomp_offset && exp.serial_offset < (c78_uncomp_offset + chunks[78].uncomp_size as i64) {
+                            let func_off = (exp.serial_offset - c78_uncomp_offset) as usize;
+                            if func_off + 48 <= decomp78.len() {
+                                let orig_disk_sz = u32::from_le_bytes(decomp78[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                                if orig_disk_sz >= 2 && func_off + 48 + orig_disk_sz <= decomp78.len() {
+                                    let (payload, mem_sz) = emit_noop_void_function_bytecode(orig_disk_sz);
+                                    if &decomp78[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
+                                        decomp78[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                        decomp78[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                        c78_modified = true;
                                     }
                                 }
                             }
                         }
                     }
-
-                    // Patch CarPreviewActor_TA::SetLoadout (230 bytes) in Chunk 0 for garage pedestal preview
-                    if let Some(exp) = exports.iter().find(|e| e.name == "SetLoadout" && e.outer_name == "CarPreviewActor_TA") {
-                        let cur_serial_offset = exp.serial_offset + if exp.serial_offset > car_set_loadout_orig_off { delta as i64 } else { 0 };
-                        let func_off = (cur_serial_offset - c0_uncomp_offset) as usize;
-                        if func_off + 48 <= decomp0.len() {
-                            let orig_disk_sz = u32::from_le_bytes(decomp0[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                            if orig_disk_sz >= 30 && func_off + 48 + orig_disk_sz <= decomp0.len() {
-                                let set_loadout_idx = exp.idx as i32;
-                                let new_loadout_idx = exports.iter()
-                                    .find(|e| e.name == "NewLoadout" && e.outer_idx == set_loadout_idx)
-                                    .map(|e| e.idx as i32)
-                                    .unwrap_or(18093);
-                                let in_loadout_idx = exports.iter()
-                                    .find(|e| e.name == "InLoadout" && e.outer_idx == set_loadout_idx)
-                                    .map(|e| e.idx as i32)
-                                    .unwrap_or(18094);
-                                let loadout_data_idx = exports.iter()
-                                    .find(|e| e.name == "LoadoutData")
-                                    .map(|e| e.idx as i32)
-                                    .unwrap_or(2364);
-                                let products_idx = exports.iter()
-                                    .find(|e| e.name == "Products")
-                                    .map(|e| e.idx as i32)
-                                    .unwrap_or(1871);
-                                let force_set_idx = names.iter()
-                                    .position(|n| n == "ForceSetLoadout")
-                                    .map(|i| i as i32)
-                                    .unwrap_or(20264);
-
-                                if let Ok((payload, mem_sz)) = emit_car_preview_set_loadout_bytecode(
-                                    &slot_overrides,
-                                    orig_disk_sz,
-                                    Some(products_idx),
-                                    Some(loadout_data_idx),
-                                    Some(new_loadout_idx),
-                                    Some(in_loadout_idx),
-                                    Some(force_set_idx),
-                                ) {
-                                    if &decomp0[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
-                                        decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                        decomp0[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
-                                        c0_modified = true;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Patch CarPreviewActor_TA::ChangeCarPart (230 bytes) in Chunk 0 for live garage item clicks
-                    if let Some(exp_ccp) = exports.iter().find(|e| e.name == "ChangeCarPart" && e.outer_name == "CarPreviewActor_TA") {
-                        let cur_serial_offset = exp_ccp.serial_offset + if exp_ccp.serial_offset > car_set_loadout_orig_off { delta as i64 } else { 0 };
-                        let func_off = (cur_serial_offset - c0_uncomp_offset) as usize;
-                        if func_off + 48 <= decomp0.len() {
-                            let orig_disk_sz = u32::from_le_bytes(decomp0[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                            if orig_disk_sz >= 30 && func_off + 48 + orig_disk_sz <= decomp0.len() {
-                                let ccp_idx = exp_ccp.idx as i32;
-                                let product_id_idx = exports.iter()
-                                    .find(|e| e.name == "ProductID" && e.outer_idx == ccp_idx)
-                                    .map(|e| e.idx as i32)
-                                    .unwrap_or(18109);
-                                let slot_index_idx = exports.iter()
-                                    .find(|e| e.name == "SlotIndex" && e.outer_idx == ccp_idx)
-                                    .map(|e| e.idx as i32)
-                                    .unwrap_or(18110);
-                                let cpa_idx = exp_ccp.outer_idx;
-                                let loadout_idx = exports.iter()
-                                    .find(|e| e.name == "Loadout" && e.outer_idx == cpa_idx)
-                                    .map(|e| e.idx as i32)
-                                    .unwrap_or(18067);
-                                let loadout_data_idx = exports.iter()
-                                    .find(|e| e.name == "LoadoutData")
-                                    .map(|e| e.idx as i32)
-                                    .unwrap_or(2364);
-                                let products_idx = exports.iter()
-                                    .find(|e| e.name == "Products")
-                                    .map(|e| e.idx as i32)
-                                    .unwrap_or(1871);
-                                let force_set_idx = names.iter()
-                                    .position(|n| n == "ForceSetLoadout")
-                                    .map(|i| i as i32)
-                                    .unwrap_or(20264);
-
-                                if let Ok((payload, mem_sz)) = emit_car_preview_change_car_part_bytecode(
-                                    &slot_overrides,
-                                    orig_disk_sz,
-                                    Some(product_id_idx),
-                                    Some(slot_index_idx),
-                                    Some(loadout_idx),
-                                    Some(products_idx),
-                                    Some(loadout_data_idx),
-                                    Some(force_set_idx),
-                                ) {
-                                    if &decomp0[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
-                                        decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                        decomp0[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
-                                        c0_modified = true;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // ProductLoader_TA::GetAssetByID is kept 100% vanilla to guarantee reliable asset resolution across maps and modes
-
-                    // Patch CarMeshComponentBase_TA::ApplyPaintSettings in Chunk 0 if custom car paint is requested
-                    let car_paint_override = swaps.iter().find(|s| {
-                        let slot_idx = s.slot_index.map(|i| i as u8).unwrap_or_else(|| crate::presets::upk_slot_index_from_str(&s.slot));
-                        slot_idx == 0 && (s.paint_id.is_some() || s.custom_paint_hex.is_some())
-                    });
-                    if let Some(s) = car_paint_override {
-                        if let Some(exp_cm) = exports.iter().find(|e| e.name == "ApplyPaintSettings" && e.outer_name == "CarMeshComponentBase_TA") {
-                            let cur_serial_offset = exp_cm.serial_offset + if exp_cm.serial_offset > car_set_loadout_orig_off { delta as i64 } else { 0 };
-                            let func_off = (cur_serial_offset - c0_uncomp_offset) as usize;
-                            if func_off + 48 <= decomp0.len() {
-                                let orig_disk_sz = u32::from_le_bytes(decomp0[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                                let rgba = if let Some(hex) = s.custom_paint_hex.as_deref().filter(|h| !h.trim().is_empty()) {
-                                    hex_to_linear_rgba(hex)
-                                } else {
-                                    get_paint_rgba(s.paint_id.unwrap_or(0))
-                                };
-                                if let Ok((payload, mem_sz)) = emit_car_mesh_apply_paint_settings_bytecode(rgba, orig_disk_sz) {
-                                    if &decomp0[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
-                                        decomp0[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                        decomp0[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
-                                        c0_modified = true;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if c0_modified {
-                        if let Ok(mut recomp0) = crate::upk::compression::compress_chunk(&decomp0) {
-                            let orig_c0_sz = c0_comp_size as usize;
-                            if recomp0.len() <= orig_c0_sz {
-                                recomp0.resize(orig_c0_sz, 0);
-                                file_bytes[c0_start..c0_start + orig_c0_sz].copy_from_slice(&recomp0);
+                    if c78_modified {
+                        if let Ok(mut recomp78) = crate::upk::compression::compress_chunk(&decomp78) {
+                            let orig_c78_sz = c78_comp_size as usize;
+                            if recomp78.len() <= orig_c78_sz {
+                                recomp78.resize(orig_c78_sz, 0);
+                                file_bytes[c78_start..c78_start + orig_c78_sz].copy_from_slice(&recomp78);
                                 upk_modified = true;
-                            } else {
-                                return Err(TagameSwapError::Msg(format!(
-                                    "Recompressed Chunk 0 ({} bytes) exceeds allocation ({} bytes)",
-                                    recomp0.len(),
-                                    orig_c0_sz
-                                )));
                             }
                         }
                     }
@@ -1690,112 +1507,63 @@ pub fn apply_tagame_modifications(
             }
         }
 
-        // 2. Patch Chunk 1: ExplosionPreviewer_TA::SetLoadout (115 bytes) & SetProduct (273 bytes) if a goal explosion swap is present
-        let goal_explosion_target = swaps.iter().find_map(|s| {
-            let slot_idx = s.slot_index.map(|i| i as u8).unwrap_or_else(|| crate::presets::upk_slot_index_from_str(&s.slot));
-            if slot_idx == 15 || s.slot.to_lowercase().contains("goal") || s.slot.to_lowercase().contains("explosion") {
-                Some(if s.product_id > 0 { s.product_id } else { 2044 })
-            } else {
-                None
-            }
-        });
-
-        // 2. Patch Chunk 1:
-        //    a) ExplosionPreviewer_TA::SetProduct (273 bytes) if a goal explosion swap is present
-        //    b) ProductDatabase_TA::DoesPlayerOwnProduct -> return true; (260 bytes, unlocks client loadout validation without inventory reversion)
-        if chunks.len() > 1 {
-            let c1_uncomp_offset = chunks[1].uncomp_offset;
-            let c1_comp_offset = chunks[1].comp_offset;
-            let c1_comp_size = chunks[1].comp_size;
-            let c1_start = c1_comp_offset as usize;
-            let c1_end = c1_start + c1_comp_size as usize;
-            if c1_end <= file_bytes.len() {
-                if let Ok(mut decomp1) = crate::upk::compression::decompress_chunk(&file_bytes[c1_start..c1_end]) {
-                    let mut c1_modified = false;
-                    if let Some(target_ge) = goal_explosion_target {
-                        if let Some(exp_sp) = exports.iter().find(|e| e.name == "SetProduct" && e.outer_name == "ExplosionPreviewer_TA") {
-                            let func_off = (exp_sp.serial_offset - c1_uncomp_offset) as usize;
-                            if func_off + 48 <= decomp1.len() {
-                                let orig_disk_sz = u32::from_le_bytes(decomp1[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                                if orig_disk_sz >= 30 && func_off + 48 + orig_disk_sz <= decomp1.len() {
-                                    let owned_ge = swaps.iter().find_map(|s| {
-                                        let slot_idx = s.slot_index.map(|i| i as u8).unwrap_or_else(|| crate::presets::upk_slot_index_from_str(&s.slot));
-                                        if slot_idx == 15 || s.slot.to_lowercase().contains("goal") || s.slot.to_lowercase().contains("explosion") {
-                                            s.owned_id
-                                        } else {
-                                            None
-                                        }
-                                    });
-                                    if let Ok((payload, mem_sz)) = emit_explosion_previewer_set_product_bytecode(
-                                        owned_ge,
-                                        target_ge,
-                                        orig_disk_sz,
-                                    ) {
-                                        if &decomp1[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
-                                            decomp1[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                            decomp1[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
-                                            c1_modified = true;
-                                        }
+        // 6. Patch Chunk 81: SaveData_TA series queries
+        if chunks.len() > 81 {
+            let c81_uncomp_offset = chunks[81].uncomp_offset;
+            let c81_comp_offset = chunks[81].comp_offset;
+            let c81_comp_size = chunks[81].comp_size;
+            let c81_start = c81_comp_offset as usize;
+            let c81_end = c81_start + c81_comp_size as usize;
+            if c81_end <= file_bytes.len() {
+                if let Ok(mut decomp81) = crate::upk::compression::decompress_chunk(&file_bytes[c81_start..c81_end]) {
+                    let mut c81_modified = false;
+                    // GetUniqueSeriesIDs -> return ReturnValue (empty array)
+                    if let Some(exp) = exports.iter().find(|e| e.name == "GetUniqueSeriesIDs" && e.outer_name == "SaveData_TA") {
+                        if exp.serial_offset >= c81_uncomp_offset && exp.serial_offset < (c81_uncomp_offset + chunks[81].uncomp_size as i64) {
+                            let func_off = (exp.serial_offset - c81_uncomp_offset) as usize;
+                            if func_off + 48 <= decomp81.len() {
+                                let orig_disk_sz = u32::from_le_bytes(decomp81[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                                if orig_disk_sz >= 7 && func_off + 48 + orig_disk_sz <= decomp81.len() {
+                                    let mut payload = vec![opcodes::EX_RETURN, opcodes::EX_RETURN_VALUE, 0x66, 0x00, 0x01, 0x00];
+                                    while payload.len() + 1 < orig_disk_sz {
+                                        payload.push(opcodes::EX_NOTHING);
+                                    }
+                                    payload.push(opcodes::EX_END_OF_SCRIPT);
+                                    if &decomp81[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
+                                        decomp81[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                        c81_modified = true;
                                     }
                                 }
                             }
                         }
                     }
-
-                    // Chunk 1: ExplosionPreviewer_TA::SetProduct (273 bytes) if goal explosion swap is present
-                    // ProductDatabase_TA & MTXGarage validations
-                    let c1_bool_funcs = [
-                        ("DoesPlayerOwnProduct", "ProductDatabase_TA", true),
-                        ("CanEquip", "ProductDatabase_TA", true),
-                        ("IsProductIDInDLCPack", "ProductDatabase_TA", false),
-                        ("ValidatePricingTable", "GFxData_MTXGarage_TA", true),
-                        ("ForceValidatePricingTable", "GFxData_MTXGarage_TA", true),
-                    ];
-                    for &(f_name, o_name, ret_val) in &c1_bool_funcs {
-                        if let Some(exp) = exports.iter().find(|e| e.name == f_name && e.outer_name == o_name) {
-                            let func_off = (exp.serial_offset - c1_uncomp_offset) as usize;
-                            if func_off + 48 <= decomp1.len() {
-                                let orig_disk_sz = u32::from_le_bytes(decomp1[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                                if orig_disk_sz >= 3 && func_off + 48 + orig_disk_sz <= decomp1.len() {
-                                    let (payload, mem_sz) = emit_noop_bool_function_bytecode(ret_val, orig_disk_sz);
-                                    if &decomp1[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
-                                        decomp1[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                        decomp1[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
-                                        c1_modified = true;
+                    // __SaveData_TA__GetUniqueSeriesIDs_0x1 -> return ReturnValue
+                    if let Some(exp) = exports.iter().find(|e| e.name == "__SaveData_TA__GetUniqueSeriesIDs_0x1" && e.outer_name == "SaveData_TA") {
+                        if exp.serial_offset >= c81_uncomp_offset && exp.serial_offset < (c81_uncomp_offset + chunks[81].uncomp_size as i64) {
+                            let func_off = (exp.serial_offset - c81_uncomp_offset) as usize;
+                            if func_off + 48 <= decomp81.len() {
+                                let orig_disk_sz = u32::from_le_bytes(decomp81[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                                if orig_disk_sz >= 7 && func_off + 48 + orig_disk_sz <= decomp81.len() {
+                                    let mut payload = vec![opcodes::EX_RETURN, opcodes::EX_RETURN_VALUE, 0xAC, 0x00, 0x01, 0x00];
+                                    while payload.len() + 1 < orig_disk_sz {
+                                        payload.push(opcodes::EX_NOTHING);
+                                    }
+                                    payload.push(opcodes::EX_END_OF_SCRIPT);
+                                    if &decomp81[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
+                                        decomp81[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                        c81_modified = true;
                                     }
                                 }
                             }
                         }
                     }
-
-                    if let Some(exp_rip) = exports.iter().find(|e| e.name == "RemoveIncompatibleProducts" && e.outer_name == "ProductDatabase_TA") {
-                        let func_off = (exp_rip.serial_offset - c1_uncomp_offset) as usize;
-                        if func_off + 48 <= decomp1.len() {
-                            let orig_disk_sz = u32::from_le_bytes(decomp1[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                            if orig_disk_sz >= 2 && func_off + 48 + orig_disk_sz <= decomp1.len() {
-                                let (payload, mem_sz) = emit_noop_void_function_bytecode(orig_disk_sz);
-                                if &decomp1[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
-                                    decomp1[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                    decomp1[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
-                                    c1_modified = true;
-                                }
-                            }
-                        }
-                    }
-
-                    if c1_modified {
-                        if let Ok(mut recomp1) = crate::upk::compression::compress_chunk(&decomp1) {
-                            let orig_c1_sz = c1_comp_size as usize;
-                            if recomp1.len() <= orig_c1_sz {
-                                recomp1.resize(orig_c1_sz, 0);
-                                file_bytes[c1_start..c1_start + orig_c1_sz].copy_from_slice(&recomp1);
+                    if c81_modified {
+                        if let Ok(mut recomp81) = crate::upk::compression::compress_chunk(&decomp81) {
+                            let orig_c81_sz = c81_comp_size as usize;
+                            if recomp81.len() <= orig_c81_sz {
+                                recomp81.resize(orig_c81_sz, 0);
+                                file_bytes[c81_start..c81_start + orig_c81_sz].copy_from_slice(&recomp81);
                                 upk_modified = true;
-                            } else {
-                                return Err(TagameSwapError::Msg(format!(
-                                    "Recompressed Chunk 1 ({} bytes) exceeds allocation ({} bytes)",
-                                    recomp1.len(),
-                                    orig_c1_sz
-                                )));
                             }
                         }
                     }
@@ -1803,302 +1571,39 @@ pub fn apply_tagame_modifications(
             }
         }
 
-        // 3. Patch Chunk 2:
-        //    a) LoadoutValidation_TA::ValidatePaintedAttribute -> return true (prevents stripping painted attributes)
-        //    b) PRI_TA::GetPing if ping spoof is active
-        //    Note: ProductAttribute_TA::ModifyLoadout and all other validators are kept 100% vanilla.
-        if chunks.len() > 2 {
-            let c2_uncomp_offset = chunks[2].uncomp_offset;
-            let c2_comp_offset = chunks[2].comp_offset;
-            let c2_comp_size = chunks[2].comp_size;
-            let c2_start = c2_comp_offset as usize;
-            let c2_end = c2_start + c2_comp_size as usize;
-            if c2_end <= file_bytes.len() {
-                if let Ok(mut decomp2) = crate::upk::compression::decompress_chunk(&file_bytes[c2_start..c2_end]) {
-                    let mut c2_modified = false;
-
-                    // Patch ProductAttribute_TA::ModifyLoadout to pass through LoadoutProductIDs directly
-                    if let Some(exp_ml) = exports.iter().find(|e| e.name == "ModifyLoadout" && e.outer_name == "ProductAttribute_TA") {
-                        if exp_ml.serial_offset >= c2_uncomp_offset && exp_ml.serial_offset < (c2_uncomp_offset + chunks[2].uncomp_size as i64) {
-                            let func_off = (exp_ml.serial_offset - c2_uncomp_offset) as usize;
-                            if func_off + 48 <= decomp2.len() {
-                                let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                                if orig_disk_sz >= 24 && func_off + 48 + orig_disk_sz <= decomp2.len() {
-                                    let ml_idx = exp_ml.idx as i32;
-                                    let new_product_ids_idx = exports.iter()
-                                        .find(|e| e.name == "NewProductIDs" && e.outer_idx == ml_idx)
-                                        .map(|e| e.idx as i32)
-                                        .unwrap_or(59196);
-                                    let loadout_product_ids_idx = exports.iter()
-                                        .find(|e| e.name == "LoadoutProductIDs" && e.outer_idx == ml_idx)
-                                        .map(|e| e.idx as i32)
-                                        .unwrap_or(59200);
-                                    let return_val_idx = exports.iter()
-                                        .find(|e| e.name == "ReturnValue" && e.outer_idx == ml_idx)
-                                        .map(|e| e.idx as i32)
-                                        .unwrap_or(59197);
-
-                                    let (payload, mem_sz) = emit_modify_loadout_passthrough_bytecode(
-                                        new_product_ids_idx,
-                                        loadout_product_ids_idx,
-                                        return_val_idx,
-                                        orig_disk_sz,
-                                    );
-                                    if &decomp2[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
-                                        decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                        decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
-                                        c2_modified = true;
+        // 7. Patch Chunk 83: BinaryUploader_TA::UploadData telemetry killer
+        if chunks.len() > 83 {
+            let c83_uncomp_offset = chunks[83].uncomp_offset;
+            let c83_comp_offset = chunks[83].comp_offset;
+            let c83_comp_size = chunks[83].comp_size;
+            let c83_start = c83_comp_offset as usize;
+            let c83_end = c83_start + c83_comp_size as usize;
+            if c83_end <= file_bytes.len() {
+                if let Ok(mut decomp83) = crate::upk::compression::decompress_chunk(&file_bytes[c83_start..c83_end]) {
+                    let mut c83_modified = false;
+                    if let Some(exp) = exports.iter().find(|e| e.name == "UploadData" && e.outer_name == "BinaryUploader_TA") {
+                        if exp.serial_offset >= c83_uncomp_offset && exp.serial_offset < (c83_uncomp_offset + chunks[83].uncomp_size as i64) {
+                            let func_off = (exp.serial_offset - c83_uncomp_offset) as usize;
+                            if func_off + 48 <= decomp83.len() {
+                                let orig_disk_sz = u32::from_le_bytes(decomp83[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                                if orig_disk_sz >= 2 && func_off + 48 + orig_disk_sz <= decomp83.len() {
+                                    let (payload, mem_sz) = emit_noop_void_function_bytecode(orig_disk_sz);
+                                    if &decomp83[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
+                                        decomp83[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
+                                        decomp83[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                        c83_modified = true;
                                     }
                                 }
                             }
                         }
                     }
-
-
-
-                    // Prevent in-game loadout reversion across online/offline matches:
-                    // A. Neutralize all void validation/correction functions by returning immediately:
-                    let void_funcs_to_noop = [
-                        ("CorrectLoadoutData", "PRI_TA"),
-                        ("SetLoadoutSlotToDefaultID", "LoadoutValidation_TA"),
-                        ("SetLoadoutSlotToDefaultID", "PRI_TA"),
-                        ("CorrectLoadoutFromValidationError", "LoadoutValidation_TA"),
-                        ("CorrectDLCOwnership", "LoadoutValidation_TA"),
-                        ("StaticValidate", "Loadout_TA"),
-                        ("Validate", "Loadout_TA"),
-                        ("ValidateReplicatedLoadout", "PRI_TA"),
-                        ("ValidateLoadout", "PRI_TA"),
-                        ("Validate", "PlayerVanitySave_TA"),
-                        ("ValidateVanityObjects", "Profile_TA"),
-                        ("ValidateLoadouts", "Profile_TA"),
-                        ("ValidateLoadoutsWithProduct", "Profile_TA"),
-                        ("ValidateLoadoutSet", "Profile_TA"),
-                        ("Validate", "LoadoutSet_TA"),
-                        ("ValidateProductID", "Loadout_TA"),
-                        ("ValidateForcedProducts", "Loadout_TA"),
-                        ("SetBodyProductAndValidate", "Loadout_TA"),
-                        ("ResetInvalidAssets", "PostMatchCelebrationPreviewer_TA"),
-                        ("ResetInvalidAssets", "PremiumGaragePreviewSet_TA"),
-                        ("OnLoadoutValidationError", "PRI_TA"),
-                        ("OnLoadoutCorrected", "PRI_TA"),
-                        ("ShowConnectionError", "JoinGameConnectionChecker_TA"),
-                        ("ShowConnectionErrorIfWaiting", "JoinGameConnectionChecker_TA"),
-                        ("HandleDisconnected", "JoinGameConnectionChecker_TA"),
-                    ];
-                    for &(f_name, o_name) in &void_funcs_to_noop {
-                        if let Some(exp) = exports.iter().find(|e| e.name == f_name && e.outer_name == o_name) {
-                            if exp.serial_offset >= c2_uncomp_offset && exp.serial_offset < (c2_uncomp_offset + chunks[2].uncomp_size as i64) {
-                                let func_off = (exp.serial_offset - c2_uncomp_offset) as usize;
-                                if func_off + 48 <= decomp2.len() {
-                                    let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                                    if orig_disk_sz >= 2 && func_off + 48 + orig_disk_sz <= decomp2.len() {
-                                        let (payload, mem_sz) = emit_noop_void_function_bytecode(orig_disk_sz);
-                                        if &decomp2[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
-                                            decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                            decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
-                                            c2_modified = true;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // B. Patch boolean validation bypasses without out parameters:
-                    // Note: CorrectOnlineData, CorrectOfflineData, ValidateLoadoutSlots, ValidateLoadoutTeamPaints,
-                    // and ValidateDataProducts MUST remain vanilla because they populate out parameters
-                    // (OutLoadout, TeamLoadouts, OutDataProducts). Overwriting them with a blind return wiped out
-                    // the loadout arrays, causing the engine to revert everything to stock Octane.
-                    // Instead, ValidateOnlineProductWithLoadoutProduct -> return true and ValidatePaintedAttribute -> return true
-                    // inform vanilla CorrectOnlineData that all spawned items and paints are 100% valid.
-                    let bool_funcs_to_patch = [
-                        ("ValidatePaintedAttribute", "LoadoutValidation_TA", true),
-                        ("ValidateCertifiedAttribute", "LoadoutValidation_TA", true),
-                        ("ValidateTitleIDAttribute", "LoadoutValidation_TA", true),
-                        ("ValidateOnlineProductWithLoadoutProduct", "LoadoutValidation_TA", true),
-                        ("ShouldValidateOnlineProducts", "LoadoutValidation_TA", false),
-                        ("ValidateLoadoutDLC", "LoadoutValidation_TA", true),
-                        ("IsProductIDProhibited", "ProductsConfig_TA", false),
-                        ("IsPlayerTradeProhibited", "ProductsConfig_TA", false),
-                        ("CanShowForOwningClient", "ProductsConfig_TA", true),
-                        ("ValidateProduct", "ProductAttribute_TeamForcedProduct_TA", true),
-                        ("IsInMainMenu", "JoinGameConnectionChecker_TA", true),
-                        ("IsPlayerWaiting", "JoinGameConnectionChecker_TA", false),
-                        ("HandleLockForGatedPlaylists", "MenuTreeNode_Playlist_TA", false),
-                    ];
-                    for &(f_name, o_name, ret_val) in &bool_funcs_to_patch {
-                        if let Some(exp) = exports.iter().find(|e| e.name == f_name && e.outer_name == o_name) {
-                            if exp.serial_offset >= c2_uncomp_offset && exp.serial_offset < (c2_uncomp_offset + chunks[2].uncomp_size as i64) {
-                                let func_off = (exp.serial_offset - c2_uncomp_offset) as usize;
-                                if func_off + 48 <= decomp2.len() {
-                                    let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                                    if orig_disk_sz >= 3 && func_off + 48 + orig_disk_sz <= decomp2.len() {
-                                        let (payload, mem_sz) = emit_noop_bool_function_bytecode(ret_val, orig_disk_sz);
-                                        if &decomp2[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
-                                            decomp2[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                            decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
-                                            c2_modified = true;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // C. Patch MenuTreeNode_Playlist_TA::UpdateLock to immediately enable node and clear lock banner
-                    if let Some(exp) = exports.iter().find(|e| e.name == "UpdateLock" && e.outer_name == "MenuTreeNode_Playlist_TA") {
-                        if exp.serial_offset >= c2_uncomp_offset && exp.serial_offset < (c2_uncomp_offset + chunks[2].uncomp_size as i64) {
-                            let func_off = (exp.serial_offset - c2_uncomp_offset) as usize;
-                            if func_off + 48 <= decomp2.len() {
-                                let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                                if orig_disk_sz >= 0x0080 && func_off + 48 + orig_disk_sz <= decomp2.len() {
-                                    let action = [
-                                        0x1c, 0x1f, 0x7e, 0x01, 0x00, 0x27, 0x16, // SetEnabled(true)
-                                        0x5e, 0x19, 0x00, 0x01, 0xc9, 0xc2, 0x00, 0x00, 0x0e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // GFxNode.
-                                        0x1c, 0xb5, 0x89, 0x00, 0x00, 0x24, 0x00, 0x48, 0x48, 0x16, // SetBanner(0, "", "")
-                                        0x04, 0x0b, // return;
-                                    ];
-                                    let patch_start = func_off + 48 + 0x0062;
-                                    let patch_end = func_off + 48 + orig_disk_sz;
-                                    if patch_start + action.len() < patch_end {
-                                        decomp2[patch_start..patch_start + action.len()].copy_from_slice(&action);
-                                        for b in &mut decomp2[patch_start + action.len()..patch_end - 1] {
-                                            *b = opcodes::EX_NOTHING;
-                                        }
-                                        decomp2[patch_end - 1] = opcodes::EX_END_OF_SCRIPT;
-                                        c2_modified = true;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // 7. PaintedFXSelector_TA::PickFXActor is left 100% clean vanilla
-                    // (Native logic already checks PaintedFXActor != None && HasPaint(), avoiding jump misalignments)
-
-                    // Patch PRI_TA::GetPing if ping spoof is active
-                    if ping_active {
-                        if let Some(ps) = &ping_cfg {
-                            if let Some(exp_ping) = exports.iter().find(|e| e.name == "GetPing" && e.outer_name == "PRI_TA") {
-                                if exp_ping.serial_offset >= c2_uncomp_offset && exp_ping.serial_offset < (c2_uncomp_offset + chunks[2].uncomp_size as i64) {
-                                    let func_off = (exp_ping.serial_offset - c2_uncomp_offset) as usize;
-                                    if func_off + 48 <= decomp2.len() {
-                                        let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                                        if orig_disk_sz >= 22 && func_off + 48 + orig_disk_sz <= decomp2.len() {
-                                            let payload = emit_pri_get_ping_bytecode(ps.min_ms, ps.max_ms, orig_disk_sz);
-                                            if &decomp2[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
-                                                decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
-                                                c2_modified = true;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if c2_modified {
-                        if let Ok(mut recomp2) = crate::upk::compression::compress_chunk(&decomp2) {
-                            let orig_c2_sz = c2_comp_size as usize;
-                            if recomp2.len() <= orig_c2_sz {
-                                recomp2.resize(orig_c2_sz, 0);
-                                file_bytes[c2_start..c2_start + orig_c2_sz].copy_from_slice(&recomp2);
+                    if c83_modified {
+                        if let Ok(mut recomp83) = crate::upk::compression::compress_chunk(&decomp83) {
+                            let orig_c83_sz = c83_comp_size as usize;
+                            if recomp83.len() <= orig_c83_sz {
+                                recomp83.resize(orig_c83_sz, 0);
+                                file_bytes[c83_start..c83_start + orig_c83_sz].copy_from_slice(&recomp83);
                                 upk_modified = true;
-                            } else {
-                                crate::applog::event(&format!(
-                                    "swapper: Recompressed Chunk 2 ({} bytes) exceeds allocation ({} bytes)",
-                                    recomp2.len(),
-                                    orig_c2_sz
-                                ));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 4. Patch Chunk 3: SaveData_TA & ShopTabsConfig_TA validations
-        if chunks.len() > 3 {
-            let c3_uncomp_offset = chunks[3].uncomp_offset;
-            let c3_comp_offset = chunks[3].comp_offset;
-            let c3_comp_size = chunks[3].comp_size;
-            let c3_start = c3_comp_offset as usize;
-            let c3_end = c3_start + c3_comp_size as usize;
-            if c3_end <= file_bytes.len() {
-                if let Ok(mut decomp3) = crate::upk::compression::decompress_chunk(&file_bytes[c3_start..c3_end]) {
-                    let mut c3_modified = false;
-
-                    let c3_void_noops = [
-                        ("ValidateProfiles", "SaveData_TA"),
-                        ("ValidateLoadouts", "SaveData_TA"),
-                        ("ValidateLoadoutsWithProduct", "SaveData_TA"),
-                        ("ValidateLastUnlockDisplayId", "SaveData_TA"),
-                        ("ClearOnlineProducts", "SaveData_TA"),
-                        ("ClearOfflineProducts", "SaveData_TA"),
-                        ("RemoveDuplicateGeneratedItems", "SaveData_TA"),
-                        ("RemoveOnlineProductId", "SaveData_TA"),
-                        ("RemoveOnlineProductIdNoNotify", "SaveData_TA"),
-                        ("LockProducts", "SaveData_TA"),
-                        ("RemoveNewProducts", "SaveData_TA"),
-                        ("DisableSaving", "SaveGameManager_TA"),
-                    ];
-                    for &(f_name, o_name) in &c3_void_noops {
-                        if let Some(exp) = exports.iter().find(|e| e.name == f_name && e.outer_name == o_name) {
-                            if exp.serial_offset >= c3_uncomp_offset && exp.serial_offset < (c3_uncomp_offset + chunks[3].uncomp_size as i64) {
-                                let func_off = (exp.serial_offset - c3_uncomp_offset) as usize;
-                                if func_off + 48 <= decomp3.len() {
-                                    let orig_disk_sz = u32::from_le_bytes(decomp3[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                                    if orig_disk_sz >= 2 && func_off + 48 + orig_disk_sz <= decomp3.len() {
-                                        let (payload, mem_sz) = emit_noop_void_function_bytecode(orig_disk_sz);
-                                        if &decomp3[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
-                                            decomp3[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                            decomp3[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
-                                            c3_modified = true;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    let c3_bool_funcs = [
-                        ("IsProductOwned", "SaveData_TA", true),
-                        ("ValidateShop", "ShopTabsConfig_TA", true),
-                        ("CanUseOnlineData", "SaveData_TA", true),
-                        ("CanSave", "SaveGameManager_TA", true),
-                    ];
-                    for &(f_name, o_name, ret_val) in &c3_bool_funcs {
-                        if let Some(exp) = exports.iter().find(|e| e.name == f_name && e.outer_name == o_name) {
-                            if exp.serial_offset >= c3_uncomp_offset && exp.serial_offset < (c3_uncomp_offset + chunks[3].uncomp_size as i64) {
-                                let func_off = (exp.serial_offset - c3_uncomp_offset) as usize;
-                                if func_off + 48 <= decomp3.len() {
-                                    let orig_disk_sz = u32::from_le_bytes(decomp3[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
-                                    if orig_disk_sz >= 3 && func_off + 48 + orig_disk_sz <= decomp3.len() {
-                                        let (payload, mem_sz) = emit_noop_bool_function_bytecode(ret_val, orig_disk_sz);
-                                        if &decomp3[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
-                                            decomp3[func_off + 40..func_off + 44].copy_from_slice(&mem_sz.to_le_bytes());
-                                            decomp3[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
-                                            c3_modified = true;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if c3_modified {
-                        if let Ok(mut recomp3) = crate::upk::compression::compress_chunk(&decomp3) {
-                            let orig_c3_sz = c3_comp_size as usize;
-                            if recomp3.len() <= orig_c3_sz {
-                                recomp3.resize(orig_c3_sz, 0);
-                                file_bytes[c3_start..c3_start + orig_c3_sz].copy_from_slice(&recomp3);
-                                upk_modified = true;
-                            } else {
-                                crate::applog::event(&format!(
-                                    "swapper: Recompressed Chunk 3 ({} bytes) exceeds allocation ({} bytes)",
-                                    recomp3.len(),
-                                    orig_c3_sz
-                                ));
                             }
                         }
                     }

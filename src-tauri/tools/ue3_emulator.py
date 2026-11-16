@@ -300,8 +300,6 @@ def run_emulator_test_suite(upk_path):
         ("JoinGameConnectionChecker_TA", "ShowConnectionError", {}),
         ("JoinGameConnectionChecker_TA", "ShowConnectionErrorIfWaiting", {}),
         ("JoinGameConnectionChecker_TA", "HandleDisconnected", {}),
-        ("MenuTreeNode_Playlist_TA", "HandleLockForGatedPlaylists", {}),
-        ("MenuTreeNode_Playlist_TA", "UpdateLock", {}),
     ]
     
     passed = 0

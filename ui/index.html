@@ -555,38 +555,16 @@
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 6px;">
                     <div>
                         <h2 class="section-title">Custom Car Decals</h2>
-                        <p class="section-desc" style="margin-bottom: 0;">Browse VideoGameMods AlphaConsole decals or download and swap custom textures.</p>
+                        <p class="section-desc" style="margin-bottom: 0;">Apply and manage custom AlphaConsole compatible car decal textures.</p>
                     </div>
                     <div class="subtab-strip" style="margin-bottom: 0; padding-bottom: 0; border-bottom: none;">
-                        <button type="button" class="subtab-btn active" id="decal-tab-catalog-btn">Browse</button>
-                        <button type="button" class="subtab-btn" id="decal-tab-import-btn">Library</button>
+                        <button type="button" class="subtab-btn active" id="decal-tab-library-btn">Library</button>
+                        <button type="button" class="subtab-btn" id="decal-tab-import-btn">Import</button>
                     </div>
                 </div>
 
-                <div id="decal-catalog-view">
-                    <div class="browser-toolbar" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: space-between; margin: 12px 0;">
-                        <div style="display: flex; gap: 8px; align-items: center; flex: 1; min-width: 260px;">
-                            <input type="text" id="decal-catalog-search" placeholder="Search VideoGameMods decals (e.g. Barcelona, Vitality, G2, Clean)..." style="flex: 1; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 12px;">
-                            <select id="decal-catalog-car-filter" style="background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 12px;">
-                                <option value="all">All Cars</option>
-                                <option value="Octane">Octane</option>
-                                <option value="Dominus">Dominus</option>
-                                <option value="Fennec">Fennec</option>
-                                <option value="Nissan Skyline">Nissan Skyline</option>
-                            </select>
-                        </div>
-                        <div style="display: flex; gap: 8px; align-items: center;">
-                            <label for="decal-catalog-donor-select" style="font-size: 12px; color: var(--muted); white-space: nowrap;">Swap Over:</label>
-                            <select id="decal-catalog-donor-select" style="background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-size: 12px; min-width: 170px;">
-                                <option value="">Loading donor decals...</option>
-                            </select>
-                            <button id="decal-catalog-prev-btn" class="action-btn action-btn-secondary" type="button" disabled style="padding: 6px 10px; font-size: 11px;">←</button>
-                            <span id="decal-catalog-page-info" style="font-size: 11px; color: var(--text-secondary); font-weight: 600;">Page 1</span>
-                            <button id="decal-catalog-next-btn" class="action-btn action-btn-secondary" type="button" style="padding: 6px 10px; font-size: 11px;">→</button>
-                        </div>
-                    </div>
-
-                    <div id="decal-catalog-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; max-height: calc(100vh - 280px); overflow-y: auto; padding-right: 6px;"></div>
+                <div id="decal-library-view">
+                    <div id="decal-library-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; max-height: calc(100vh - 280px); overflow-y: auto; padding-right: 6px; margin-top: 12px;"></div>
                 </div>
 
                 <div id="decal-import-view" style="display: none;">
@@ -674,30 +652,15 @@
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 6px;">
                     <div>
                         <h2 class="section-title">Custom Boost Meters</h2>
-                        <p class="section-desc" style="margin-bottom: 0;">Browse VideoGameMods boost gauges or view downloaded meters.</p>
+                        <p class="section-desc" style="margin-bottom: 0;">Apply and manage custom AlphaConsole compatible boost meter HUDs.</p>
                     </div>
                     <div class="subtab-strip" style="margin-bottom: 0; padding-bottom: 0; border-bottom: none;">
-                        <button type="button" class="subtab-btn active" id="boost-tab-browse-btn">Browse</button>
-                        <button type="button" class="subtab-btn" id="boost-tab-library-btn">Library</button>
-                        <button type="button" class="subtab-btn" id="boost-tab-custom-btn">Custom / Import</button>
+                        <button type="button" class="subtab-btn active" id="boost-tab-library-btn">Library</button>
+                        <button type="button" class="subtab-btn" id="boost-tab-custom-btn">Import</button>
                     </div>
                 </div>
 
-                <div id="boost-browse-view">
-                    <div class="browser-toolbar" style="display: flex; gap: 10px; align-items: center; justify-content: space-between; margin: 12px 0;">
-                        <div style="display: flex; gap: 8px; align-items: center; flex: 1; min-width: 260px;">
-                            <input type="text" id="boost-catalog-search" placeholder="Search VideoGameMods boost meters (e.g. Neon, Ring, Alpha, Gauge)..." style="flex: 1; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 12px;">
-                        </div>
-                        <div style="display: flex; gap: 8px; align-items: center;">
-                            <button id="boost-catalog-prev-btn" class="action-btn action-btn-secondary" type="button" disabled style="padding: 6px 10px; font-size: 11px;">←</button>
-                            <span id="boost-catalog-page-info" style="font-size: 11px; color: var(--text-secondary); font-weight: 600;">Page 1</span>
-                            <button id="boost-catalog-next-btn" class="action-btn action-btn-secondary" type="button" style="padding: 6px 10px; font-size: 11px;">→</button>
-                        </div>
-                    </div>
-                    <div id="boost-browse-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; max-height: calc(100vh - 280px); overflow-y: auto; padding-right: 6px;"></div>
-                </div>
-
-                <div id="boost-library-view" style="display: none;">
+                <div id="boost-library-view">
                     <div id="boost-library-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; max-height: calc(100vh - 280px); overflow-y: auto; padding-right: 6px; margin-top: 12px;"></div>
                 </div>
 
@@ -741,36 +704,16 @@
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 6px;">
                     <div>
                         <h2 class="section-title">Custom Ball Skins</h2>
-                        <p class="section-desc" style="margin-bottom: 0;">Apply custom match ball textures and explore community ball skins.</p>
+                        <p class="section-desc" style="margin-bottom: 0;">Apply and manage custom AlphaConsole compatible match ball textures.</p>
                     </div>
                     <div class="subtab-strip" style="margin-bottom: 0; padding-bottom: 0; border-bottom: none;">
-                        <button type="button" class="subtab-btn active" id="ball-tab-vgm-btn">Browse VideoGameMods</button>
-                        <button type="button" class="subtab-btn" id="ball-tab-browse-btn">Preset Balls</button>
-                        <button type="button" class="subtab-btn" id="ball-tab-custom-btn">Download / Custom</button>
+                        <button type="button" class="subtab-btn active" id="ball-tab-library-btn">Library</button>
+                        <button type="button" class="subtab-btn" id="ball-tab-custom-btn">Import</button>
                     </div>
                 </div>
 
-                <div id="ball-vgm-view">
-                    <div class="browser-toolbar" style="display: flex; gap: 10px; align-items: center; justify-content: space-between; margin: 12px 0;">
-                        <div style="display: flex; gap: 8px; align-items: center; flex: 1; min-width: 260px;">
-                            <input type="text" id="ball-vgm-search" placeholder="Search VideoGameMods balls (e.g. Champions, Gold, Dragon, Star, Neon)..." style="flex: 1; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 12px;">
-                        </div>
-                        <div style="display: flex; gap: 8px; align-items: center;">
-                            <button id="ball-vgm-prev-btn" class="action-btn action-btn-secondary" type="button" disabled style="padding: 6px 10px; font-size: 11px;">←</button>
-                            <span id="ball-vgm-page-info" style="font-size: 11px; color: var(--text-secondary); font-weight: 600;">Page 1</span>
-                            <button id="ball-vgm-next-btn" class="action-btn action-btn-secondary" type="button" style="padding: 6px 10px; font-size: 11px;">→</button>
-                        </div>
-                    </div>
-                    <div id="ball-vgm-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; max-height: calc(100vh - 280px); overflow-y: auto; padding-right: 6px;"></div>
-                </div>
-
-                <div id="ball-browse-view" style="display: none;">
-                    <div class="browser-toolbar" style="display: flex; gap: 10px; align-items: center; justify-content: space-between; margin: 12px 0;">
-                        <div style="display: flex; gap: 8px; align-items: center; flex: 1; min-width: 260px;">
-                            <input type="text" id="ball-search-input" placeholder="Filter ball skins (e.g. Champions, Cyber, Leather, Gold)..." style="flex: 1; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font-size: 12px;">
-                        </div>
-                    </div>
-                    <div id="ball-browse-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; max-height: calc(100vh - 280px); overflow-y: auto; padding-right: 6px;"></div>
+                <div id="ball-library-view">
+                    <div id="ball-library-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; max-height: calc(100vh - 280px); overflow-y: auto; padding-right: 6px; margin-top: 12px;"></div>
                 </div>
 
                 <div id="ball-custom-view" style="display: none;">

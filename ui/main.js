@@ -5675,35 +5675,44 @@ function initDecalsTab() {
     const urlInput = document.getElementById('decal-url-input');
     const urlDownloadBtn = document.getElementById('decal-url-download-btn');
 
-    const tabCatalogBtn = document.getElementById('decal-tab-catalog-btn');
+    const tabLibraryBtn = document.getElementById('decal-tab-library-btn');
     const tabImportBtn = document.getElementById('decal-tab-import-btn');
-    const catalogView = document.getElementById('decal-catalog-view');
+    const libraryView = document.getElementById('decal-library-view');
     const importView = document.getElementById('decal-import-view');
-    const catalogGrid = document.getElementById('decal-catalog-grid');
-    const catalogSearch = document.getElementById('decal-catalog-search');
-    const catalogCarFilter = document.getElementById('decal-catalog-car-filter');
-    const catalogDonorSelect = document.getElementById('decal-catalog-donor-select');
+    const libraryGrid = document.getElementById('decal-library-grid');
 
-    if (!enabledEl || !swapBtn) return;
+    if (!enabledEl) return;
 
     let catalogItems = [];
     let currentCarDecals = [];
 
-    // View Switching
-    if (tabCatalogBtn && tabImportBtn && catalogView && importView) {
-        tabCatalogBtn.onclick = () => {
-            tabCatalogBtn.classList.add('active');
-            tabImportBtn.classList.remove('active');
-            catalogView.style.display = 'block';
-            importView.style.display = 'none';
-        };
-        tabImportBtn.onclick = () => {
-            tabImportBtn.classList.add('active');
-            tabCatalogBtn.classList.remove('active');
-            catalogView.style.display = 'none';
-            importView.style.display = 'block';
-        };
-    }
+    const switchSubTab = (tab) => {
+        if (tab === 'library') {
+            tabLibraryBtn?.classList.add('active');
+            tabImportBtn?.classList.remove('active');
+            if (libraryView) libraryView.style.display = 'block';
+            if (importView) importView.style.display = 'none';
+            renderDecalLibrary();
+        } else {
+            tabImportBtn?.classList.add('active');
+            tabLibraryBtn?.classList.remove('active');
+            if (libraryView) libraryView.style.display = 'none';
+            if (importView) importView.style.display = 'block';
+        }
+    };
+
+    if (tabLibraryBtn) tabLibraryBtn.onclick = () => switchSubTab('library');
+    if (tabImportBtn) tabImportBtn.onclick = () => switchSubTab('import');
+
+    const renderDecalLibrary = () => {
+        if (!libraryGrid) return;
+        libraryGrid.innerHTML = `
+            <div style="grid-column: 1 / -1; text-align: center; padding: 48px 20px; color: var(--muted); background: rgba(255,255,255,0.015); border: 1px dashed var(--border); border-radius: 8px;">
+                <div style="font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px;">No custom Decals installed</div>
+                <div style="font-size: 12.5px; color: var(--text-secondary);">Go to the Import tab to install a custom decal. Compatible with AlphaConsole (.zip, .json, or .png).</div>
+            </div>
+        `;
+    };
 
     const renderDonorOptions = (filterQuery = '') => {
         const q = filterQuery.toLowerCase().trim();
@@ -5724,7 +5733,6 @@ function initDecalsTab() {
             }).join('');
 
         if (donorSelect) donorSelect.innerHTML = optionsHtml;
-        if (catalogDonorSelect) catalogDonorSelect.innerHTML = optionsHtml;
     };
 
     const loadDonorDecals = async (carId) => {
@@ -5745,204 +5753,11 @@ function initDecalsTab() {
                 return p.includes(carName) || l.includes(carName) || pkg.includes(carName) || (carName === 'fennec' && pkg.includes('grain')) || (carName === 'dominus' && pkg.includes('musclecar')) || (carName === 'octane' && (pkg.includes('octane') || !pkg.includes('_')));
             });
 
-            const currentQuery = donorSearchInput?.value || '';
-            renderDonorOptions(currentQuery);
+            renderDonorOptions(donorSearchInput?.value || '');
         } catch (err) {
             console.error('Failed to load donor decals:', err);
         }
     };
-
-    let vgmDecalPage = 1;
-    let vgmDecalQuery = '';
-
-    const loadVgmDecals = async (page = 1, query = '', carFilter = 'all') => {
-        vgmDecalPage = page;
-        vgmDecalQuery = query;
-        if (!catalogGrid) return;
-        catalogGrid.innerHTML = `
-            <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--text-secondary);">
-                <div class="spinner" style="width:28px;height:28px;margin:0 auto 12px;border:3px solid rgba(255,255,255,0.1);border-top-color:var(--accent-blue);border-radius:50%;animation:spin 1s linear infinite;"></div>
-                <div>Loading VideoGameMods Decals...</div>
-            </div>`;
-
-        try {
-            let searchParam = query.trim();
-            if (carFilter !== 'all') {
-                searchParam = searchParam ? `${searchParam} ${carFilter}` : carFilter;
-            }
-            const data = await invoke('fetch_vgm_mods', {
-                page,
-                categoryIds: 'b6adb156-e86f-497b-9cd7-5c5bf0af53e8', // VideoGameMods Decals UUID
-                search: searchParam || null,
-                sortBy: 'downloads',
-            });
-            const mods = data?.mods || [];
-            const prevBtn = document.getElementById('decal-catalog-prev-btn');
-            const nextBtn = document.getElementById('decal-catalog-next-btn');
-            const pageInfo = document.getElementById('decal-catalog-page-info');
-
-            if (pageInfo) pageInfo.textContent = `Page ${page}`;
-            if (prevBtn) prevBtn.disabled = page <= 1;
-            if (nextBtn) nextBtn.disabled = mods.length < 24;
-
-            if (mods.length === 0) {
-                catalogGrid.innerHTML = `
-                    <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--muted);">
-                        <p style="font-size: 14px;">No decals found on VideoGameMods matching your search.</p>
-                    </div>`;
-                return;
-            }
-
-            catalogGrid.innerHTML = mods.map(m => {
-                const thumb = m.thumbnail_url || m.images?.[0]?.url || '';
-                const author = m.user?.display_name || m.user?.username || 'Community';
-                const dlCount = m.download_count ?? 0;
-                return `
-                    <div class="card decal-card" style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; transition: border-color 0.2s;">
-                        <div style="height: 120px; width: 100%; background: rgba(0,0,0,0.5); position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden;">
-                            ${thumb ? `<img src="${thumb}" alt="${escHtml(m.title)}" style="height: 100%; width: 100%; object-fit: cover;" onerror="this.style.display='none';">` : `<div style="font-size: 13px; color: var(--muted); font-weight: 600;">Custom Decal</div>`}
-                            <span style="position: absolute; bottom: 6px; right: 8px; font-size: 10px; font-weight: 700; background: rgba(0,0,0,0.75); color: var(--accent); padding: 2px 6px; border-radius: 4px;">${dlCount} downloads</span>
-                        </div>
-                        <div style="padding: 12px; flex: 1; display: flex; flex-direction: column; justify-content: space-between;">
-                            <div>
-                                <strong style="display: block; font-size: 13px; color: var(--text);">${escHtml(m.title)}</strong>
-                                <span style="display: block; font-size: 11px; color: var(--muted); margin: 2px 0 8px;">by ${escHtml(author)}</span>
-                            </div>
-                            <button type="button" class="action-btn vgm-decal-install-btn" data-slug="${m.slug}" data-title="${escHtml(m.title)}" style="width: 100%; font-size: 12px; padding: 6px 10px;">
-                                1-Click Swap
-                            </button>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-
-            catalogGrid.querySelectorAll('.vgm-decal-install-btn').forEach(btn => {
-                btn.onclick = async () => {
-                    const slug = btn.dataset.slug;
-                    const decalTitle = btn.dataset.title;
-                    let donorId = parseInt(catalogDonorSelect?.value || donorSelect?.value || '0', 10);
-                    if (!donorId && catalogDonorSelect && catalogDonorSelect.options.length > 0) {
-                        for (let i = 0; i < catalogDonorSelect.options.length; i++) {
-                            const optVal = parseInt(catalogDonorSelect.options[i].value, 10);
-                            if (optVal) {
-                                donorId = optVal;
-                                catalogDonorSelect.selectedIndex = i;
-                                break;
-                            }
-                        }
-                    }
-                    if (!donorId) {
-                        showToast('Please select a donor decal to swap over.', 'error');
-                        return;
-                    }
-
-                    btn.disabled = true;
-                    const originalText = btn.textContent;
-                    btn.textContent = 'Installing...';
-                    showProgress(true, 30);
-                    updateStatus(`Fetching ${decalTitle}...`, false);
-
-                    try {
-                        const url = `https://videogamemods.com/vgm/rocketleague/mods/${slug}`;
-                        showProgress(true, 60);
-                        const parsed = await invoke('download_decal_from_url', { url });
-                        showProgress(true, 85);
-                        await invoke('swap_custom_decal_to_donor', {
-                            donorItemId: donorId,
-                            decalName: parsed.decal_name || decalTitle,
-                            diffuseBase64: parsed.diffuse_base64 || null,
-                            skinBase64: parsed.skin_base64 || null,
-                            roughnessBase64: parsed.roughness_base64 || null,
-                            metallicBase64: parsed.metallic_base64 || null,
-                            normalBase64: null,
-                        });
-                        showProgress(true, 100);
-                        btn.textContent = 'Swapped';
-                        showToast(`Successfully installed "${decalTitle}" into Rocket League!`, 'success');
-                        refreshBackups();
-                        setTimeout(() => {
-                            btn.textContent = originalText;
-                            btn.disabled = false;
-                        }, 2500);
-                    } catch (err) {
-                        btn.textContent = originalText;
-                        btn.disabled = false;
-                        showToast('Install failed: ' + String(err), 'error');
-                    } finally {
-                        setTimeout(() => {
-                            showProgress(false);
-                            updateStatus('bitsfdb', false);
-                        }, 1000);
-                    }
-                };
-            });
-        } catch (e) {
-            console.warn('Failed to fetch VGM decals, using offline community list:', e);
-            renderCommunityDecals();
-        }
-    };
-
-    const renderCommunityDecals = () => {
-        if (!catalogGrid) return;
-        const q = (catalogSearch?.value || '').toLowerCase().trim();
-        const carFilter = catalogCarFilter?.value || 'all';
-
-        const filtered = COMMUNITY_ALPHACONSOLE_DECALS.filter(item => {
-            if (carFilter !== 'all' && item.car.toLowerCase() !== carFilter.toLowerCase()) return false;
-            if (q) {
-                const str = `${item.name} ${item.car} ${item.author} ${item.description}`.toLowerCase();
-                if (!str.includes(q)) return false;
-            }
-            return true;
-        });
-
-        if (filtered.length === 0) {
-            catalogGrid.innerHTML = `
-                <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--muted);">
-                    <p style="font-size: 14px;">No community decals match your filter.</p>
-                </div>`;
-            return;
-        }
-
-        catalogGrid.innerHTML = filtered.map(d => `
-            <div class="card" style="background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; transition: transform 0.15s, border-color 0.15s;">
-                <div style="height: 110px; width: 100%; background: ${d.previewColor}; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden;">
-                    <img src="${d.thumbnail}" alt="${escHtml(d.name)}" style="height: 70px; object-fit: contain; filter: drop-shadow(0 4px 10px rgba(0,0,0,0.5));" onerror="this.style.display='none';">
-                    <span style="position: absolute; top: 8px; right: 8px; font-size: 10px; font-weight: 700; background: rgba(0,0,0,0.7); color: var(--accent); padding: 3px 8px; border-radius: 4px; text-transform: uppercase;">${d.car}</span>
-                </div>
-                <div style="padding: 12px; flex: 1; display: flex; flex-direction: column; justify-content: space-between;">
-                    <div>
-                        <strong style="display: block; font-size: 13.5px; color: var(--text);">${escHtml(d.name)}</strong>
-                        <span style="display: block; font-size: 11px; color: var(--muted); margin: 2px 0 6px;">by ${escHtml(d.author)}</span>
-                        <p style="font-size: 11.5px; color: var(--muted); line-height: 1.35; margin: 0 0 10px;">${escHtml(d.description)}</p>
-                    </div>
-                    <button type="button" class="action-btn community-swap-btn" data-decal-id="${d.id}" data-wanted-id="${d.wanted_id || d.id}" data-car-id="${d.carId}" data-name="${escHtml(d.name)}" style="width: 100%; font-size: 12px; padding: 6px 10px;">
-                        1-Click Swap
-                    </button>
-                </div>
-            </div>
-        `).join('');
-    };
-
-    let decalSearchTimer = null;
-    catalogSearch?.addEventListener('input', () => {
-        clearTimeout(decalSearchTimer);
-        decalSearchTimer = setTimeout(() => {
-            loadVgmDecals(1, catalogSearch.value, catalogCarFilter?.value || 'all');
-        }, 350);
-    });
-    catalogCarFilter?.addEventListener('change', () => {
-        loadVgmDecals(1, catalogSearch?.value || '', catalogCarFilter.value);
-    });
-
-    document.getElementById('decal-catalog-prev-btn')?.addEventListener('click', () => {
-        if (vgmDecalPage > 1) {
-            loadVgmDecals(vgmDecalPage - 1, catalogSearch?.value || '', catalogCarFilter?.value || 'all');
-        }
-    });
-    document.getElementById('decal-catalog-next-btn')?.addEventListener('click', () => {
-        loadVgmDecals(vgmDecalPage + 1, catalogSearch?.value || '', catalogCarFilter?.value || 'all');
-    });
 
     const refreshDetectedCar = async () => {
         try {
@@ -5961,9 +5776,7 @@ function initDecalsTab() {
             if (cfg) {
                 enabledEl.checked = !!cfg.enabled;
                 syncNameSpoofSwitchAria(enabledEl);
-                if (cfg.decal_name && nameInput) {
-                    nameInput.value = cfg.decal_name;
-                }
+                if (cfg.decal_name && nameInput) nameInput.value = cfg.decal_name;
                 if (cfg.car_id && carSelect) {
                     carSelect.value = String(cfg.car_id);
                     loadDonorDecals(cfg.car_id);
@@ -5977,21 +5790,16 @@ function initDecalsTab() {
 
     refreshDetectedCar();
     loadDecalConfig();
-    loadVgmDecals(1);
+    renderDecalLibrary();
 
     enabledEl.addEventListener('change', () => syncNameSpoofSwitchAria(enabledEl));
-
-    donorSearchInput?.addEventListener('input', (e) => {
-        renderDonorOptions(e.target.value);
-    });
-
+    donorSearchInput?.addEventListener('input', (e) => renderDonorOptions(e.target.value));
     carSelect?.addEventListener('change', (e) => {
         const val = e.target.value;
         const carId = val === 'auto' ? 23 : parseInt(val, 10);
         loadDonorDecals(carId);
     });
 
-    // URL Download Handler
     if (urlDownloadBtn && urlInput) {
         urlDownloadBtn.addEventListener('click', async () => {
             const url = urlInput.value.trim();
@@ -5999,161 +5807,91 @@ function initDecalsTab() {
                 showToast('Please enter an AlphaConsole package URL (.zip or .json)', 'error');
                 return;
             }
-
             urlDownloadBtn.disabled = true;
-            const originalText = urlDownloadBtn.textContent;
             urlDownloadBtn.textContent = 'Fetching…';
             showToast('Downloading and parsing AlphaConsole package…', 'success');
-
             try {
                 const parsed = await invoke('download_decal_from_url', { url });
                 if (nameInput && parsed.decal_name) nameInput.value = parsed.decal_name;
                 if (carBadge && parsed.car_name) carBadge.textContent = parsed.car_name;
-                if (carSelect && parsed.car_id) carSelect.value = String(parsed.car_id);
-                loadDonorDecals(parsed.car_id);
+                if (carSelect && parsed.car_id) {
+                    carSelect.value = String(parsed.car_id);
+                    loadDonorDecals(parsed.car_id);
+                }
                 enabledEl.checked = true;
                 syncNameSpoofSwitchAria(enabledEl);
-                showToast(`Successfully loaded "${parsed.decal_name}" for ${parsed.car_name}! Select donor decal to swap over.`, 'success');
-            } catch (e) {
-                showToast('Download/parse failed: ' + String(e), 'error');
+                showToast(`Loaded AlphaConsole decal: ${parsed.decal_name || 'Custom Decal'}`, 'success');
+            } catch (err) {
+                showToast(`URL Import Failed: ${err}`, 'error');
             } finally {
-                urlDownloadBtn.textContent = originalText;
                 urlDownloadBtn.disabled = false;
+                urlDownloadBtn.textContent = 'Fetch & Apply';
             }
         });
     }
 
-    const handleDecalPackageFile = async (file) => {
-        if (!file) return;
-        flashButtonLabel(swapBtn, 'Analyzing…', 10000);
-
-        if (file.path) {
-            try {
-                const isZip = file.name.toLowerCase().endsWith('.zip');
-                const parsed = isZip
-                    ? await invoke('import_decal_zip_path', { zipFilePath: file.path })
-                    : await invoke('import_decal_json_path', { jsonFilePath: file.path });
-
-                if (nameInput && parsed.decal_name) nameInput.value = parsed.decal_name;
-                if (carBadge && parsed.car_name) carBadge.textContent = parsed.car_name;
-                if (carSelect && parsed.car_id) carSelect.value = String(parsed.car_id);
-                loadDonorDecals(parsed.car_id);
-                enabledEl.checked = true;
-                syncNameSpoofSwitchAria(enabledEl);
-                showToast(`Loaded ${parsed.decal_name} for ${parsed.car_name}! Select a donor decal to swap over.`, 'success');
-                return;
-            } catch (err) {
-                console.warn('Path import failed, falling back to bytes:', err);
-            }
-        }
-
-        const reader = new FileReader();
-        reader.onload = async (ev) => {
-            const dataUrl = ev.target?.result;
-            if (!dataUrl) return;
-            try {
-                const parsed = await invoke('upload_decal_package_bytes', {
-                    filename: file.name,
-                    base64Data: String(dataUrl),
-                });
-                if (nameInput && parsed.decal_name) nameInput.value = parsed.decal_name;
-                if (carBadge && parsed.car_name) carBadge.textContent = parsed.car_name;
-                if (carSelect && parsed.car_id) carSelect.value = String(parsed.car_id);
-                loadDonorDecals(parsed.car_id);
-                enabledEl.checked = true;
-                syncNameSpoofSwitchAria(enabledEl);
-                showToast(`Loaded ${parsed.decal_name} for ${parsed.car_name}! Select donor decal to swap over.`, 'success');
-            } catch (e) {
-                showToast('Failed to import decal package: ' + String(e), 'error');
-            }
-        };
-        reader.readAsDataURL(file);
-    };
-
     if (dropzone && jsonInput) {
         dropzone.addEventListener('click', () => jsonInput.click());
-        jsonInput.addEventListener('change', (e) => {
+        jsonInput.addEventListener('change', async (e) => {
             const file = e.target.files?.[0];
-            if (file) handleDecalPackageFile(file);
+            if (file) {
+                if (nameInput) nameInput.value = file.name.replace(/\.[^/.]+$/, '');
+                showToast(`Selected "${file.name}"`, 'success');
+            }
         });
-
-        dropzone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropzone.classList.add('drag-over');
-        });
-        dropzone.addEventListener('dragleave', () => {
-            dropzone.classList.remove('drag-over');
-        });
+        dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag-over'); });
+        dropzone.addEventListener('dragleave', () => { dropzone.classList.remove('drag-over'); });
         dropzone.addEventListener('drop', (e) => {
             e.preventDefault();
             dropzone.classList.remove('drag-over');
             const file = e.dataTransfer?.files?.[0];
-            if (file) handleDecalPackageFile(file);
+            if (file) {
+                if (nameInput) nameInput.value = file.name.replace(/\.[^/.]+$/, '');
+                showToast(`Dropped "${file.name}"`, 'success');
+            }
         });
     }
 
-    // Swap Custom Decal over Donor Decal
-    swapBtn.addEventListener('click', async () => {
-        const donorId = parseInt(donorSelect?.value || '0', 10);
-        if (!donorId) {
-            showToast('Please select a donor decal to swap over.', 'error');
-            return;
-        }
-
-        const decalName = nameInput?.value?.trim() || 'Custom Decal';
-        const originalText = swapBtn.dataset.originalText || swapBtn.textContent || 'Swap Decal';
-        swapBtn.dataset.originalText = originalText;
-        swapBtn.disabled = true;
-        swapBtn.textContent = 'Swapping…';
-        showProgress(true, 35);
-        updateStatus('Swapping custom decal...', false);
-
-        try {
-            showProgress(true, 75);
-            await invoke('swap_custom_decal_to_donor', {
-                donorItemId: donorId,
-                decalName,
-                diffuseBase64: null,
-                skinBase64: null,
-                roughnessBase64: null,
-                metallicBase64: null,
-                normalBase64: null,
-            });
-
-            showProgress(true, 100);
-            swapBtn.textContent = 'Swapped!';
-            refreshBackups();
-            setTimeout(() => {
-                swapBtn.textContent = originalText;
+    if (swapBtn) {
+        swapBtn.addEventListener('click', async () => {
+            const donorId = parseInt(donorSelect?.value || '0', 10);
+            if (!donorId) {
+                showToast('Please select a donor decal from the list.', 'error');
+                return;
+            }
+            swapBtn.disabled = true;
+            swapBtn.textContent = 'Swapping Decal…';
+            try {
+                await invoke('swap_custom_decal_to_donor', {
+                    donorItemId: donorId,
+                    decalName: nameInput?.value?.trim() || 'Custom Decal',
+                    diffuseBase64: null,
+                    skinBase64: null,
+                    roughnessBase64: null,
+                    metallicBase64: null,
+                    normalBase64: null,
+                });
+                showToast('Custom decal swapped successfully!', 'success');
+            } catch (err) {
+                showToast(`Swap failed: ${err}`, 'error');
+            } finally {
                 swapBtn.disabled = false;
-            }, 2500);
-        } catch (e) {
-            swapBtn.textContent = originalText;
-            swapBtn.disabled = false;
-            showToast(String(e), 'error');
-        } finally {
-            setTimeout(() => {
-                showProgress(false);
-                updateStatus('bitsfdb', false);
-            }, 1000);
-        }
-    });
+                swapBtn.textContent = 'Swap Custom Decal';
+            }
+        });
+    }
 }
 
+const BOOST_METER_SPOOF_KEY = 'velocityrl_boost_meter_spoof';
 let boostMeterTabReady = false;
 
 function initBoostMeterTab() {
     const enabledEl = document.getElementById('boost-meter-enabled');
-    const styleSelect = document.getElementById('boost-meter-style-select');
-    const browseGrid = document.getElementById('boost-browse-grid');
     const libraryGrid = document.getElementById('boost-library-grid');
-    const browseView = document.getElementById('boost-browse-view');
     const libraryView = document.getElementById('boost-library-view');
-    const tabBrowseBtn = document.getElementById('boost-tab-browse-btn');
+    const customView = document.getElementById('boost-custom-view');
     const tabLibraryBtn = document.getElementById('boost-tab-library-btn');
     const tabCustomBtn = document.getElementById('boost-tab-custom-btn');
-    const searchInput = document.getElementById('boost-catalog-search');
-    const customView = document.getElementById('boost-custom-view');
     const boostDropzone = document.getElementById('boost-dropzone');
     const boostFileInput = document.getElementById('boost-file-input');
     const boostNameInput = document.getElementById('boost-name-input');
@@ -6162,34 +5900,35 @@ function initBoostMeterTab() {
 
     if (!enabledEl) return;
 
-    let activeStyle = 'default';
     let customBoostFile = null;
 
-    // Subtab switching between Browse, Library & Custom Import
-    if (browseView && libraryView) {
-        const switchSubTab = (which) => {
-            [tabBrowseBtn, tabLibraryBtn, tabCustomBtn].forEach(b => b?.classList.remove('active'));
-            browseView.style.display = 'none';
-            libraryView.style.display = 'none';
+    const switchSubTab = (which) => {
+        if (which === 'library') {
+            tabLibraryBtn?.classList.add('active');
+            tabCustomBtn?.classList.remove('active');
+            if (libraryView) libraryView.style.display = 'block';
             if (customView) customView.style.display = 'none';
+            renderDownloadedBoostMeters();
+        } else {
+            tabCustomBtn?.classList.add('active');
+            tabLibraryBtn?.classList.remove('active');
+            if (libraryView) libraryView.style.display = 'none';
+            if (customView) customView.style.display = 'block';
+        }
+    };
 
-            if (which === 'browse') {
-                tabBrowseBtn?.classList.add('active');
-                browseView.style.display = 'block';
-            } else if (which === 'library') {
-                tabLibraryBtn?.classList.add('active');
-                libraryView.style.display = 'block';
-                renderDownloadedBoostMeters();
-            } else if (which === 'custom') {
-                tabCustomBtn?.classList.add('active');
-                if (customView) customView.style.display = 'block';
-            }
-        };
+    if (tabLibraryBtn) tabLibraryBtn.onclick = () => switchSubTab('library');
+    if (tabCustomBtn) tabCustomBtn.onclick = () => switchSubTab('custom');
 
-        if (tabBrowseBtn) tabBrowseBtn.onclick = () => switchSubTab('browse');
-        if (tabLibraryBtn) tabLibraryBtn.onclick = () => switchSubTab('library');
-        if (tabCustomBtn) tabCustomBtn.onclick = () => switchSubTab('custom');
-    }
+    const renderDownloadedBoostMeters = () => {
+        if (!libraryGrid) return;
+        libraryGrid.innerHTML = `
+            <div style="grid-column: 1 / -1; text-align: center; padding: 48px 20px; color: var(--muted); background: rgba(255,255,255,0.015); border: 1px dashed var(--border); border-radius: 8px;">
+                <div style="font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px;">No custom Boost Meters installed</div>
+                <div style="font-size: 12.5px; color: var(--text-secondary);">Go to the Import tab to install a boost meter. Compatible with AlphaConsole (.zip, .json, or .png).</div>
+            </div>
+        `;
+    };
 
     if (boostDropzone && boostFileInput) {
         boostDropzone.addEventListener('click', () => boostFileInput.click());
@@ -6203,13 +5942,8 @@ function initBoostMeterTab() {
                 }
             }
         });
-        boostDropzone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            boostDropzone.classList.add('drag-over');
-        });
-        boostDropzone.addEventListener('dragleave', () => {
-            boostDropzone.classList.remove('drag-over');
-        });
+        boostDropzone.addEventListener('dragover', (e) => { e.preventDefault(); boostDropzone.classList.add('drag-over'); });
+        boostDropzone.addEventListener('dragleave', () => { boostDropzone.classList.remove('drag-over'); });
         boostDropzone.addEventListener('drop', (e) => {
             e.preventDefault();
             boostDropzone.classList.remove('drag-over');
@@ -6235,29 +5969,10 @@ function initBoostMeterTab() {
             boostApplyCustomBtn.textContent = 'Applying...';
             try {
                 const slug = 'custom_' + rename.toLowerCase().replace(/[^a-z0-9]/g, '_');
-                const payload = {
-                    enabled: true,
-                    style: slug,
-                    name: rename,
-                    filename: customBoostFile.name
-                };
-                activeStyle = slug;
+                const payload = { enabled: true, style: slug, name: rename, filename: customBoostFile.name };
                 if (enabledEl) enabledEl.checked = true;
                 localStorage.setItem(BOOST_METER_SPOOF_KEY, JSON.stringify({ boost_meter_spoof: payload }));
                 await runToolSave(boostApplyCustomBtn, 'Boost meter custom', { boost_meter_spoof: payload }, { enabled: true });
-
-                if (!COMMUNITY_BOOST_METERS.some(item => item.id === slug)) {
-                    COMMUNITY_BOOST_METERS.push({
-                        id: slug,
-                        name: rename,
-                        author: 'User Imported',
-                        type: 'Custom HUD',
-                        gradient: 'linear-gradient(90deg, #38ef7d, #11998e)',
-                        accent: '#38ef7d',
-                        description: `Custom AlphaConsole boost gauge: ${rename}`
-                    });
-                }
-
                 showToast(`Applied custom boost meter "${rename}"!`, 'success');
             } catch (err) {
                 showToast(String(err), 'error');
@@ -6268,498 +5983,62 @@ function initBoostMeterTab() {
         };
     }
 
-    let vgmBoostPage = 1;
-    let vgmBoostQuery = 'boost';
-
-    const renderDownloadedBoostMeters = () => {
-        if (!libraryGrid) return;
-        const stored = readLocalJson(BOOST_METER_SPOOF_KEY).boost_meter_spoof || { enabled: false, style: 'default' };
-        const activeId = stored.style || activeStyle;
-
-        if (COMMUNITY_BOOST_METERS.length === 0) {
-            libraryGrid.innerHTML = `
-                <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--muted);">
-                    <p style="font-size: 14px;">No downloaded boost meters found in your library.</p>
-                    <span style="font-size: 12px; color: var(--text-secondary); display: block; margin-top: 4px;">Browse VideoGameMods to download and install boost gauges.</span>
-                </div>
-            `;
-            return;
-        }
-
-        libraryGrid.innerHTML = COMMUNITY_BOOST_METERS.map(m => {
-            const isSelected = m.id === activeId;
-            return `
-                <div class="card boost-meter-card" data-style-id="${m.id}" style="background: rgba(255,255,255,0.02); border: 1px solid ${isSelected ? 'var(--accent)' : 'var(--border)'}; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between; transition: border-color 0.2s;">
-                    <div>
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-                            <strong style="font-size: 13.5px; color: var(--text);">${escHtml(m.name)}</strong>
-                            <span style="font-size: 10px; font-weight: 700; background: rgba(255,255,255,0.06); color: var(--accent); padding: 2px 6px; border-radius: 4px;">${escHtml(m.type || 'Installed')}</span>
-                        </div>
-                        <div style="height: 8px; width: 100%; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden; margin: 8px 0;">
-                            <div style="height: 100%; width: 100%; background: ${m.gradient || 'var(--accent)'}; border-radius: 4px;"></div>
-                        </div>
-                        <p style="font-size: 11.5px; color: var(--muted); margin: 6px 0 12px; line-height: 1.35;">${escHtml(m.description || 'Downloaded boost gauge')}</p>
-                    </div>
-                    <button type="button" class="action-btn boost-lib-apply-btn ${isSelected ? 'action-btn-secondary' : ''}" data-style-id="${m.id}" style="width: 100%; font-size: 12px; padding: 6px 10px;">
-                        ${isSelected ? 'Active' : 'Apply Meter'}
-                    </button>
-                </div>
-            `;
-        }).join('');
-
-        libraryGrid.querySelectorAll('.boost-lib-apply-btn').forEach(btn => {
-            btn.onclick = async () => {
-                const sId = btn.dataset.styleId;
-                activeStyle = sId;
-                if (enabledEl) enabledEl.checked = true;
-                const payload = {
-                    enabled: true,
-                    style: sId,
-                };
-                localStorage.setItem(BOOST_METER_SPOOF_KEY, JSON.stringify({ boost_meter_spoof: payload }));
-                await runToolSave(btn, 'Boost meter', { boost_meter_spoof: payload }, { enabled: true });
-                renderDownloadedBoostMeters();
-                showToast(`Applied ${COMMUNITY_BOOST_METERS.find(x => x.id === sId)?.name || sId}`, 'success');
-            };
-        });
-    };
-
-    const loadVgmBoostMeters = async (page = 1, query = 'boost') => {
-        vgmBoostPage = page;
-        vgmBoostQuery = query;
-        if (!browseGrid) return;
-        browseGrid.innerHTML = `
-            <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--text-secondary);">
-                <div class="spinner" style="width:28px;height:28px;margin:0 auto 12px;border:3px solid rgba(255,255,255,0.1);border-top-color:var(--accent-blue);border-radius:50%;animation:spin 1s linear infinite;"></div>
-                <div>Loading VideoGameMods Boost Meters...</div>
-            </div>`;
-
-        try {
-            const data = await invoke('fetch_vgm_mods', {
-                page,
-                categoryIds: null,
-                search: query || 'boost',
-                sortBy: 'downloads',
-            });
-            const mods = data?.mods || [];
-            const prevBtn = document.getElementById('boost-catalog-prev-btn');
-            const nextBtn = document.getElementById('boost-catalog-next-btn');
-            const pageInfo = document.getElementById('boost-catalog-page-info');
-
-            if (pageInfo) pageInfo.textContent = `Page ${page}`;
-            if (prevBtn) prevBtn.disabled = page <= 1;
-            if (nextBtn) nextBtn.disabled = mods.length < 24;
-
-            if (mods.length === 0) {
-                browseGrid.innerHTML = `
-                    <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--muted);">
-                        <p style="font-size: 14px;">No boost meters found on VideoGameMods matching "${escHtml(query)}".</p>
-                    </div>`;
-                return;
-            }
-
-            browseGrid.innerHTML = mods.map(m => {
-                const thumb = m.thumbnail_url || m.images?.[0]?.url || '';
-                const author = m.user?.display_name || m.user?.username || 'Community';
-                const dlCount = m.download_count ?? 0;
-                const isSelected = activeStyle === m.slug;
-                const inLibrary = COMMUNITY_BOOST_METERS.some(item => item.id === m.slug);
-
-                return `
-                    <div class="card boost-meter-card" data-style-id="${m.slug}" style="background: rgba(255,255,255,0.02); border: 1px solid ${isSelected ? 'var(--accent)' : 'var(--border)'}; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; transition: border-color 0.2s;">
-                        <div style="height: 120px; width: 100%; background: rgba(0,0,0,0.5); position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden;">
-                            ${thumb ? `<img src="${thumb}" alt="${escHtml(m.title)}" style="height: 100%; width: 100%; object-fit: cover;" onerror="this.style.display='none';">` : `<div style="font-size: 13px; color: var(--muted); font-weight: 600;">Custom Boost Gauge</div>`}
-                            <span style="position: absolute; bottom: 6px; right: 8px; font-size: 10px; font-weight: 700; background: rgba(0,0,0,0.75); color: var(--accent); padding: 2px 6px; border-radius: 4px;">${dlCount} downloads</span>
-                        </div>
-                        <div style="padding: 12px; flex: 1; display: flex; flex-direction: column; justify-content: space-between;">
-                            <div>
-                                <strong style="display: block; font-size: 13px; color: var(--text);">${escHtml(m.title)}</strong>
-                                <span style="display: block; font-size: 11px; color: var(--muted); margin: 2px 0 8px;">by ${escHtml(author)}</span>
-                            </div>
-                            <div style="display: flex; gap: 6px; margin-top: 8px;">
-                                <button type="button" class="action-btn vgm-boost-apply-btn ${isSelected ? 'action-btn-secondary' : ''}" data-slug="${m.slug}" data-title="${escHtml(m.title)}" style="flex: 1; font-size: 12px; padding: 6px 10px;">
-                                    ${isSelected ? 'Active' : (inLibrary ? 'Apply Meter' : 'Download & Apply')}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-
-            browseGrid.querySelectorAll('.vgm-boost-apply-btn').forEach(btn => {
-                btn.onclick = async () => {
-                    const slug = btn.dataset.slug;
-                    const title = btn.dataset.title;
-                    btn.disabled = true;
-                    const orig = btn.textContent;
-                    btn.textContent = 'Applying...';
-                    try {
-                        const payload = {
-                            enabled: true,
-                            style: slug,
-                        };
-                        activeStyle = slug;
-                        if (enabledEl) enabledEl.checked = true;
-                        syncNameSpoofSwitchAria(enabledEl);
-                        localStorage.setItem(BOOST_METER_SPOOF_KEY, JSON.stringify({ boost_meter_spoof: payload }));
-                        await runToolSave(btn, 'Boost meter style', { boost_meter_spoof: payload }, { enabled: true });
-
-                        if (!COMMUNITY_BOOST_METERS.some(item => item.id === slug)) {
-                            COMMUNITY_BOOST_METERS.push({
-                                id: slug,
-                                name: title,
-                                author: 'VideoGameMods',
-                                type: 'Custom HUD',
-                                gradient: 'linear-gradient(90deg, #00f2fe, #4facfe)',
-                                accent: '#00f2fe',
-                                description: `Downloaded from VideoGameMods: ${title}`
-                            });
-                        }
-
-                        btn.textContent = 'Active';
-                        showToast(`Applied boost meter "${title}"!`, 'success');
-                    } catch (err) {
-                        btn.textContent = orig;
-                        btn.disabled = false;
-                        showToast(String(err), 'error');
-                    }
-                };
-            });
-        } catch (e) {
-            console.warn('Failed to load VGM boost meters:', e);
-            if (browseGrid) {
-                browseGrid.innerHTML = `
-                    <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--muted);">
-                        <p style="font-size: 14px;">Unable to fetch VideoGameMods catalog. Showing downloaded library instead.</p>
-                    </div>`;
-            }
-        }
-    };
-
-    let searchTimer = null;
-    if (searchInput) {
-        searchInput.addEventListener('input', () => {
-            clearTimeout(searchTimer);
-            searchTimer = setTimeout(() => {
-                const q = searchInput.value.trim() || 'boost';
-                loadVgmBoostMeters(1, q);
-            }, 400);
-        });
-    }
-
-    document.getElementById('boost-catalog-prev-btn')?.addEventListener('click', () => {
-        if (vgmBoostPage > 1) {
-            loadVgmBoostMeters(vgmBoostPage - 1, vgmBoostQuery);
-        }
-    });
-    document.getElementById('boost-catalog-next-btn')?.addEventListener('click', () => {
-        loadVgmBoostMeters(vgmBoostPage + 1, vgmBoostQuery);
-    });
-
-    const loadBoostConfig = () => {
-        const stored = readLocalJson(BOOST_METER_SPOOF_KEY).boost_meter_spoof || { enabled: false, style: 'default' };
-        if (enabledEl) enabledEl.checked = !!stored.enabled;
-        activeStyle = stored.style || 'default';
-        if (styleSelect) styleSelect.value = activeStyle;
-    };
-
     if (boostMeterTabReady) return;
     boostMeterTabReady = true;
 
-    loadBoostConfig();
-    loadVgmBoostMeters(1, 'boost');
+    renderDownloadedBoostMeters();
 }
-
-
-const BALL_SKINS = [
-    {
-        id: 'ball_champions',
-        name: 'Classic Champions Edition',
-        author: 'RLCS Archive',
-        accent: '#3b82f6',
-        description: 'Iconic RLCS blue and gold high-visibility match ball.',
-        gradient: 'radial-gradient(circle at 35% 35%, #60a5fa, #1e3a8a)'
-    },
-    {
-        id: 'ball_leather_retro',
-        name: '1970 Vintage Leather',
-        author: 'HeritageRL',
-        accent: '#d97706',
-        description: 'Distressed classic stitched leather panels with realistic grain.',
-        gradient: 'radial-gradient(circle at 35% 35%, #fbbf24, #78350f)'
-    },
-    {
-        id: 'ball_cyber_glow',
-        name: 'Cyberpunk Neon Hex',
-        author: 'Pulse Modding',
-        accent: '#06b6d4',
-        description: 'Futuristic illuminated cyan circuit lines with high-contrast seams.',
-        gradient: 'radial-gradient(circle at 35% 35%, #22d3ee, #0f172a)'
-    },
-    {
-        id: 'ball_golden_trophy',
-        name: 'Golden Champion Sovereign',
-        author: 'CrownRL',
-        accent: '#eab308',
-        description: 'Polished mirrored gold surface designed for championship lobbies.',
-        gradient: 'radial-gradient(circle at 35% 35%, #fde047, #a16207)'
-    },
-    {
-        id: 'ball_matrix_green',
-        name: 'Terminal Grid Matrix',
-        author: 'CodeZero',
-        accent: '#10b981',
-        description: 'Sub-surface phosphor green digital binary code pattern.',
-        gradient: 'radial-gradient(circle at 35% 35%, #34d399, #064e3b)'
-    },
-    {
-        id: 'ball_void_dark',
-        name: 'Abyssal Matte Obsidian',
-        author: 'MinimalistRL',
-        accent: '#8b5cf6',
-        description: 'Ultra clean matte black sphere with ambient violet seam glow.',
-        gradient: 'radial-gradient(circle at 35% 35%, #a78bfa, #18181b)'
-    }
-];
 
 const BALL_SPOOF_KEY = 'velocityrl_ball_spoof';
 let ballsTabReady = false;
 
 function initBallsTab() {
     const enabledEl = document.getElementById('custom-ball-enabled');
-    const tabVgmBtn = document.getElementById('ball-tab-vgm-btn');
-    const tabBrowseBtn = document.getElementById('ball-tab-browse-btn');
+    const tabLibraryBtn = document.getElementById('ball-tab-library-btn');
     const tabCustomBtn = document.getElementById('ball-tab-custom-btn');
-    const vgmView = document.getElementById('ball-vgm-view');
-    const browseView = document.getElementById('ball-browse-view');
+    const libraryView = document.getElementById('ball-library-view');
     const customView = document.getElementById('ball-custom-view');
-    const vgmGrid = document.getElementById('ball-vgm-grid');
-    const vgmSearch = document.getElementById('ball-vgm-search');
-    const browseGrid = document.getElementById('ball-browse-grid');
-    const searchInput = document.getElementById('ball-search-input');
+    const libraryGrid = document.getElementById('ball-library-grid');
     const dropzone = document.getElementById('ball-dropzone');
     const fileInput = document.getElementById('ball-file-input');
     const dropLabel = document.getElementById('ball-dropzone-label');
     const applyBtn = document.getElementById('ball-apply-btn');
     const resetBtn = document.getElementById('ball-reset-btn');
+    const ballNameInput = document.getElementById('ball-name-input');
     const urlInput = document.getElementById('ball-url-input');
     const urlDlBtn = document.getElementById('ball-url-download-btn');
 
-    if (!browseGrid) return;
+    if (!enabledEl) return;
 
-    let selectedBallId = 'default';
     let customBallFile = null;
-    let vgmBallPage = 1;
 
-    const showTab = (tab) => {
-        [tabVgmBtn, tabBrowseBtn, tabCustomBtn].forEach(b => b?.classList.remove('active'));
-        if (vgmView) vgmView.style.display = 'none';
-        if (browseView) browseView.style.display = 'none';
-        if (customView) customView.style.display = 'none';
-
-        if (tab === 'vgm') {
-            tabVgmBtn?.classList.add('active');
-            if (vgmView) vgmView.style.display = 'block';
-            loadVgmBalls(vgmBallPage, vgmSearch?.value || 'ball');
-        } else if (tab === 'preset') {
-            tabBrowseBtn?.classList.add('active');
-            if (browseView) browseView.style.display = 'block';
-            renderBallCards(searchInput?.value || '');
-        } else if (tab === 'custom') {
+    const switchSubTab = (tab) => {
+        if (tab === 'library') {
+            tabLibraryBtn?.classList.add('active');
+            tabCustomBtn?.classList.remove('active');
+            if (libraryView) libraryView.style.display = 'block';
+            if (customView) customView.style.display = 'none';
+            renderBallLibrary();
+        } else {
             tabCustomBtn?.classList.add('active');
+            tabLibraryBtn?.classList.remove('active');
+            if (libraryView) libraryView.style.display = 'none';
             if (customView) customView.style.display = 'block';
         }
     };
 
-    if (tabVgmBtn) tabVgmBtn.onclick = () => showTab('vgm');
-    if (tabBrowseBtn) tabBrowseBtn.onclick = () => showTab('preset');
-    if (tabCustomBtn) tabCustomBtn.onclick = () => showTab('custom');
+    if (tabLibraryBtn) tabLibraryBtn.onclick = () => switchSubTab('library');
+    if (tabCustomBtn) tabCustomBtn.onclick = () => switchSubTab('custom');
 
-    const loadVgmBalls = async (page = 1, query = 'ball') => {
-        vgmBallPage = page;
-        if (!vgmGrid) return;
-        vgmGrid.innerHTML = `
-            <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--text-secondary);">
-                <div class="spinner" style="width:28px;height:28px;margin:0 auto 12px;border:3px solid rgba(255,255,255,0.1);border-top-color:var(--accent-blue);border-radius:50%;animation:spin 1s linear infinite;"></div>
-                <div>Loading VideoGameMods Ball Skins...</div>
-            </div>`;
-
-        try {
-            const data = await invoke('fetch_vgm_mods', {
-                page,
-                categoryIds: null,
-                search: query || 'ball',
-                sortBy: 'downloads',
-            });
-            const mods = data?.mods || [];
-            const prevBtn = document.getElementById('ball-vgm-prev-btn');
-            const nextBtn = document.getElementById('ball-vgm-next-btn');
-            const pageInfo = document.getElementById('ball-vgm-page-info');
-
-            if (pageInfo) pageInfo.textContent = `Page ${page}`;
-            if (prevBtn) prevBtn.disabled = page <= 1;
-            if (nextBtn) nextBtn.disabled = mods.length < 24;
-
-            if (mods.length === 0) {
-                vgmGrid.innerHTML = `
-                    <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--muted);">
-                        <p style="font-size: 14px;">No ball skins found on VideoGameMods matching "${escHtml(query)}".</p>
-                    </div>`;
-                return;
-            }
-
-            vgmGrid.innerHTML = mods.map(m => {
-                const thumb = m.thumbnail_url || m.images?.[0]?.url || '';
-                const author = m.user?.display_name || m.user?.username || 'Community';
-                const dlCount = m.download_count ?? 0;
-                const isSelected = selectedBallId === m.slug;
-
-                return `
-                    <div class="card ball-card" data-ball-slug="${m.slug}" style="background: rgba(255,255,255,0.02); border: 1px solid ${isSelected ? 'var(--accent)' : 'var(--border)'}; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; transition: border-color 0.2s;">
-                        <div style="height: 120px; width: 100%; background: rgba(0,0,0,0.5); position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden;">
-                            ${thumb ? `<img src="${thumb}" alt="${escHtml(m.title)}" style="height: 100%; width: 100%; object-fit: cover;" onerror="this.style.display='none';">` : `<div style="font-size: 13px; color: var(--muted); font-weight: 600;">Custom Ball</div>`}
-                            <span style="position: absolute; bottom: 6px; right: 8px; font-size: 10px; font-weight: 700; background: rgba(0,0,0,0.75); color: var(--accent); padding: 2px 6px; border-radius: 4px;">${dlCount} downloads</span>
-                        </div>
-                        <div style="padding: 12px; flex: 1; display: flex; flex-direction: column; justify-content: space-between;">
-                            <div>
-                                <strong style="display: block; font-size: 13px; color: var(--text);">${escHtml(m.title)}</strong>
-                                <span style="display: block; font-size: 11px; color: var(--muted); margin: 2px 0 8px;">by ${escHtml(author)}</span>
-                            </div>
-                            <div style="display: flex; gap: 6px; margin-top: 8px;">
-                                <button type="button" class="action-btn vgm-ball-apply-btn ${isSelected ? 'action-btn-secondary' : ''}" data-slug="${m.slug}" data-title="${escHtml(m.title)}" style="flex: 1; font-size: 12px; padding: 6px 10px;">
-                                    ${isSelected ? 'Active' : 'Download & Apply'}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-
-            vgmGrid.querySelectorAll('.vgm-ball-apply-btn').forEach(btn => {
-                btn.onclick = async () => {
-                    const slug = btn.dataset.slug;
-                    const title = btn.dataset.title;
-                    btn.disabled = true;
-                    btn.textContent = 'Applying...';
-                    try {
-                        selectedBallId = slug;
-                        if (enabledEl) enabledEl.checked = true;
-                        const payload = { enabled: true, selected_id: slug, name: title };
-                        localStorage.setItem(BALL_SPOOF_KEY, JSON.stringify({ ball_spoof: payload }));
-                        await runToolSave(btn, 'Ball skin', { ball_spoof: payload }, { enabled: true });
-                        showToast(`Downloaded and applied ball skin: "${title}"!`, 'success');
-                        btn.textContent = 'Active';
-                        loadVgmBalls(vgmBallPage, vgmSearch?.value || 'ball');
-                    } catch (err) {
-                        btn.disabled = false;
-                        btn.textContent = 'Download & Apply';
-                        showToast(String(err), 'error');
-                    }
-                };
-            });
-        } catch (e) {
-            console.warn('Failed to load VGM balls:', e);
-            if (vgmGrid) {
-                vgmGrid.innerHTML = `
-                    <div style="grid-column: 1 / -1; text-align: center; padding: 40px 20px; color: var(--danger);">
-                        <p style="font-size: 14px;">Failed to connect to VideoGameMods catalog.</p>
-                        <span style="font-size: 12px; color: var(--text-secondary);">${escHtml(String(e))}</span>
-                    </div>`;
-            }
-        }
+    const renderBallLibrary = () => {
+        if (!libraryGrid) return;
+        libraryGrid.innerHTML = `
+            <div style="grid-column: 1 / -1; text-align: center; padding: 48px 20px; color: var(--muted); background: rgba(255,255,255,0.015); border: 1px dashed var(--border); border-radius: 8px;">
+                <div style="font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px;">No custom Balls installed</div>
+                <div style="font-size: 12.5px; color: var(--text-secondary);">Go to the Import tab to install a custom ball skin. Compatible with AlphaConsole (.zip, .json, or .png).</div>
+            </div>
+        `;
     };
-
-    if (vgmSearch) {
-        let vgmDebounce = null;
-        vgmSearch.oninput = () => {
-            clearTimeout(vgmDebounce);
-            vgmDebounce = setTimeout(() => loadVgmBalls(1, vgmSearch.value), 400);
-        };
-    }
-
-    const prevBtn = document.getElementById('ball-vgm-prev-btn');
-    const nextBtn = document.getElementById('ball-vgm-next-btn');
-    if (prevBtn) prevBtn.onclick = () => { if (vgmBallPage > 1) loadVgmBalls(vgmBallPage - 1, vgmSearch?.value || 'ball'); };
-    if (nextBtn) nextBtn.onclick = () => { loadVgmBalls(vgmBallPage + 1, vgmSearch?.value || 'ball'); };
-
-    if (urlDlBtn && urlInput) {
-        urlDlBtn.onclick = async () => {
-            const url = urlInput.value.trim();
-            if (!url) {
-                showToast('Please enter an AlphaConsole or VideoGameMods ball link.', 'error');
-                return;
-            }
-            urlDlBtn.disabled = true;
-            urlDlBtn.textContent = 'Downloading...';
-            try {
-                const pkg = await invoke('download_decal_from_url', { url });
-                showToast(`Downloaded ball package "${pkg.name || 'custom_ball'}"!`, 'success');
-                if (enabledEl) enabledEl.checked = true;
-                const payload = { enabled: true, selected_id: 'custom_pkg', name: pkg.name };
-                localStorage.setItem(BALL_SPOOF_KEY, JSON.stringify({ ball_spoof: payload }));
-                await runToolSave(urlDlBtn, 'Ball skin URL', { ball_spoof: payload }, { enabled: true });
-                urlDlBtn.textContent = 'Applied!';
-            } catch (err) {
-                showToast(formatError(err), 'error');
-                urlDlBtn.textContent = 'Fetch & Apply';
-            } finally {
-                urlDlBtn.disabled = false;
-            }
-        };
-    }
-
-    const loadBallConfig = () => {
-        const stored = readLocalJson(BALL_SPOOF_KEY).ball_spoof || { enabled: false, selected_id: 'default' };
-        if (enabledEl) enabledEl.checked = !!stored.enabled;
-        selectedBallId = stored.selected_id || 'default';
-    };
-
-    const renderBallCards = (filterQuery = '') => {
-        const q = filterQuery.toLowerCase().trim();
-        const filtered = q
-            ? BALL_SKINS.filter(b => b.name.toLowerCase().includes(q) || b.author.toLowerCase().includes(q) || b.description.toLowerCase().includes(q))
-            : BALL_SKINS;
-
-        browseGrid.innerHTML = filtered.map(ball => {
-            const isSelected = ball.id === selectedBallId;
-            return `
-                <div class="card ball-card" data-ball-id="${ball.id}" style="background: rgba(255,255,255,0.02); border: 1px solid ${isSelected ? 'var(--accent)' : 'var(--border)'}; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between; transition: border-color 0.2s;">
-                    <div>
-                        <div style="height: 100px; width: 100%; border-radius: 6px; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; background: rgba(0,0,0,0.3);">
-                            <div style="width: 64px; height: 64px; border-radius: 50%; background: ${ball.gradient}; box-shadow: 0 4px 14px rgba(0,0,0,0.5), inset -2px -2px 6px rgba(0,0,0,0.6);"></div>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px;">
-                            <strong style="font-size: 13.5px; color: var(--text);">${escHtml(ball.name)}</strong>
-                        </div>
-                        <span style="display: block; font-size: 11px; color: var(--muted); margin-bottom: 8px;">by ${escHtml(ball.author)}</span>
-                        <p style="font-size: 11.5px; color: var(--muted); line-height: 1.35; margin: 0 0 12px;">${escHtml(ball.description)}</p>
-                    </div>
-                    <button type="button" class="action-btn ball-select-btn ${isSelected ? 'action-btn-secondary' : ''}" data-ball-id="${ball.id}" style="width: 100%; font-size: 12px; padding: 6px 10px;">
-                        ${isSelected ? 'Active Ball' : 'Apply Ball'}
-                    </button>
-                </div>
-            `;
-        }).join('');
-
-        browseGrid.querySelectorAll('.ball-select-btn').forEach(btn => {
-            btn.onclick = async () => {
-                const bId = btn.dataset.ballId;
-                selectedBallId = bId;
-                if (enabledEl) enabledEl.checked = true;
-                const payload = { enabled: true, selected_id: bId };
-                localStorage.setItem(BALL_SPOOF_KEY, JSON.stringify({ ball_spoof: payload }));
-                await runToolSave(btn, 'Ball skin', { ball_spoof: payload }, { enabled: true });
-                renderBallCards(searchInput?.value || '');
-                showToast(`Applied ball skin: ${BALL_SKINS.find(x => x.id === bId)?.name || bId}`, 'success');
-            };
-        });
-    };
-
-    const ballNameInput = document.getElementById('ball-name-input');
-
-    if (searchInput) {
-        searchInput.oninput = () => renderBallCards(searchInput.value);
-    }
 
     if (dropzone && fileInput) {
         dropzone.onclick = () => fileInput.click();
@@ -6783,6 +6062,32 @@ function initBallsTab() {
                 if (ballNameInput && !ballNameInput.value) {
                     ballNameInput.value = customBallFile.name.replace(/\.[^/.]+$/, '');
                 }
+            }
+        };
+    }
+
+    if (urlDlBtn && urlInput) {
+        urlDlBtn.onclick = async () => {
+            const url = urlInput.value.trim();
+            if (!url) {
+                showToast('Please enter an AlphaConsole ball texture package URL', 'error');
+                return;
+            }
+            urlDlBtn.disabled = true;
+            urlDlBtn.textContent = 'Downloading...';
+            try {
+                const pkg = await invoke('download_decal_from_url', { url });
+                showToast(`Downloaded ball package "${pkg.name || 'custom_ball'}"!`, 'success');
+                if (enabledEl) enabledEl.checked = true;
+                const payload = { enabled: true, selected_id: 'custom_pkg', name: pkg.name };
+                localStorage.setItem(BALL_SPOOF_KEY, JSON.stringify({ ball_spoof: payload }));
+                await runToolSave(urlDlBtn, 'Ball skin URL', { ball_spoof: payload }, { enabled: true });
+                urlDlBtn.textContent = 'Applied!';
+            } catch (err) {
+                showToast(formatError(err), 'error');
+                urlDlBtn.textContent = 'Fetch & Apply';
+            } finally {
+                urlDlBtn.disabled = false;
             }
         };
     }
@@ -6818,14 +6123,13 @@ function initBallsTab() {
 
     if (resetBtn) {
         resetBtn.onclick = async () => {
-            selectedBallId = 'default';
             customBallFile = null;
             if (enabledEl) enabledEl.checked = false;
             if (dropLabel) dropLabel.textContent = 'Drag and drop ball texture (.png / .dds) here';
             const payload = { enabled: false, selected_id: 'default' };
             localStorage.setItem(BALL_SPOOF_KEY, JSON.stringify({ ball_spoof: payload }));
             await runToolSave(resetBtn, 'Ball skin reset', { ball_spoof: payload }, { enabled: false });
-            renderBallCards(searchInput?.value || '');
+            renderBallLibrary();
             showToast('Restored default Soccar ball.', 'success');
         };
     }
@@ -6833,8 +6137,7 @@ function initBallsTab() {
     if (ballsTabReady) return;
     ballsTabReady = true;
 
-    loadBallConfig();
-    renderBallCards();
+    renderBallLibrary();
 }
 
 function initCustomizationTab() {
