@@ -1144,15 +1144,15 @@ async function loadData() {
         }
 
         if (config && config.game_dir) {
-            updateLoadingText('Patching game files...');
-            try {
-                const patched = await invoke('ensure_game_patches');
+            // Check & ensure game patches in background without blocking app initialization
+            invoke('ensure_game_patches').then(patched => {
                 if (patched) {
-                    showToast('Game files patched (URL/WebSocket validation bypassed).', 'success');
+                    showToast('Game files verified & patched.', 'success');
+                    refreshPaletteStatus();
                 }
-            } catch (err) {
-                console.error('Failed to ensure game patches:', err);
-            }
+            }).catch(err => {
+                console.warn('Background game patch check failed:', err);
+            });
         }
 
         if (itemsResult) {

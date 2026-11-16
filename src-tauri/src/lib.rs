@@ -1734,11 +1734,16 @@ pub(crate) async fn sync_all_swaps_to_tagame(
     let integrity = load_integrity(app);
     let palette_active = integrity.palette_active;
 
-    // Ensure TAGame.upk is restored to pristine vanilla from backup if present, unless rich palette is active
     let tagame_path = cooked.join("TAGame.upk");
     let backup_path = cooked.join("TAGame.upk.bak");
+    // Only restore TAGame from backup if TAGame.upk is not already crash-patched
     if backup_path.is_file() && !palette_active {
-        let _ = std::fs::copy(&backup_path, &tagame_path);
+        let is_patched = std::fs::read(&tagame_path)
+            .map(|b| upk::is_tagame_file_crash_patched(&b))
+            .unwrap_or(false);
+        if !is_patched {
+            let _ = std::fs::copy(&backup_path, &tagame_path);
+        }
     }
 
     // Restore any other UPKs from backups to keep game packages clean and stock (never overwrite ProjectX.upk or active modded TAGame)

@@ -2364,7 +2364,6 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
     let mut drop_obj = serde_json::json!({
         "ProductID": dropped_pid,
         "InstanceID": drop_inst_hex,
-        "SeriesID": 1,
         "TradeHold": -1,
         "AddedTimestamp": now_ts,
         "UpdatedTimestamp": now_ts,
@@ -6359,7 +6358,6 @@ pub async fn inject_reward_drop(items: &[(i32, i32)]) -> Result<bool, String> {
         let prod_obj = serde_json::json!({
             "ProductID": pid,
             "InstanceID": inst_id,
-            "SeriesID": 1,
             "AddedTimestamp": now,
             "UpdatedTimestamp": now,
             "Attributes": attrs
@@ -7359,7 +7357,6 @@ pub fn patch_player_products_json(
             let mut prod_obj = serde_json::json!({
                 "ProductID": wanted_id,
                 "InstanceID": inst_hex,
-                "SeriesID": 1,
                 "TradeHold": -1,
                 "AddedTimestamp": static_ts,
                 "UpdatedTimestamp": static_ts,
@@ -8033,7 +8030,7 @@ mod tests {
         assert_eq!(arr.len(), 2);
         let injected = arr.iter().find(|i| i["ProductID"] == 4284).unwrap();
         assert_eq!(injected["Attributes"][0]["Key"], "Painted");
-        assert_eq!(injected["Attributes"][0]["Value"], "12");
+        assert_eq!(injected["Attributes"][0]["Value"], 12);
     }
 
     #[test]
@@ -8274,7 +8271,7 @@ mod tests {
         assert_eq!(injected["PaintID"], 12);
         assert_eq!(injected["Paint"], 12);
         assert_eq!(injected["Attributes"][0]["Key"], "Painted");
-        assert_eq!(injected["Attributes"][0]["Value"], "12");
+        assert_eq!(injected["Attributes"][0]["Value"], 12);
         assert_eq!(injected["Attributes"][1]["Key"], "Paint");
         assert_eq!(injected["Attributes"][1]["Value"], "12");
         assert!(injected.get("AddedTimestamp").is_some());
