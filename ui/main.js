@@ -859,6 +859,21 @@ async function init() {
     if (applyBtn) applyBtn.onclick = handleApply;
     const restoreBtnEl = document.getElementById('restore-btn');
     if (restoreBtnEl) restoreBtnEl.onclick = handleRestore;
+    const checkPatchBtn = document.getElementById("settings-patch-status-btn");
+    if (checkPatchBtn) {
+        checkPatchBtn.onclick = async () => {
+            const btnText = document.getElementById("settings-patch-btn-text");
+            if (btnText) btnText.textContent = "Patching...";
+            try {
+                const patched = await invoke("ensure_game_patches");
+                await updateGamePatchStatusUI();
+                showToast(patched ? "Game files patched successfully!" : "ProjectX is already patched.", "success");
+            } catch (err) {
+                showToast("Failed to patch game files: " + err, "error");
+            }
+        };
+    }
+
     const settingsRedownloadBtn = document.getElementById('settings-redownload-assets-btn');
     if (settingsRedownloadBtn) settingsRedownloadBtn.onclick = handleRedownloadAssets;
     const devRedownloadBtn = document.getElementById('dev-redownload-assets-btn');
@@ -9957,6 +9972,48 @@ async function refreshNetworkStatus() {
             if (pillEl) {
                 pillEl.textContent = status.proxy_running ? 'PSYNET PROXY RUNNING' : 'SYSTEM READY';
             }
+        }
+
+        // Query game patch status
+        await updateGamePatchStatusUI();
+    } catch (_) {}
+}
+
+async function updateGamePatchStatusUI() {
+    try {
+        const patchStatus = await invoke("get_game_patch_status");
+        const patchEl = document.getElementById("net-stat-patch");
+        const tagameEl = document.getElementById("net-stat-tagame");
+        const btnText = document.getElementById("settings-patch-btn-text");
+
+        if (patchEl && patchStatus) {
+            if (patchStatus.projectx_patched) {
+                patchEl.innerHTML = "<span style=\"color:#00e676;\">● PATCHED</span>";
+            } else if (patchStatus.projectx_exists) {
+                patchEl.innerHTML = "<span style=\"color:#ff5252; cursor:pointer;\" title=\"Click to patch ProjectX.upk now\">▲ UNPATCHED (Click)</span>";
+                patchEl.onclick = async () => {
+                    patchEl.textContent = "Patching...";
+                    await invoke("ensure_game_patches");
+                    await updateGamePatchStatusUI();
+                };
+            } else {
+                patchEl.innerHTML = "<span style=\"color:var(--text-secondary);\">NOT FOUND</span>";
+            }
+        }
+
+        if (tagameEl && patchStatus) {
+            if (patchStatus.tagame_valid) {
+                tagameEl.innerHTML = "<span style=\"color:#00e676;\">● CLEAN STOCK (82.2MB)</span>";
+            } else if (patchStatus.tagame_exists) {
+                const mb = (patchStatus.tagame_size / (1024 * 1024)).toFixed(1);
+                tagameEl.innerHTML = "<span style=\"color:#ffb142;\" title=\"Third-party or older version (" + mb + "MB)\">MODIFIED (" + mb + "MB)</span>";
+            } else {
+                tagameEl.innerHTML = "<span style=\"color:var(--text-secondary);\">NOT FOUND</span>";
+            }
+        }
+
+        if (btnText && patchStatus) {
+            btnText.textContent = patchStatus.projectx_patched ? "Game Patches: Active" : "Patch Game Files Now";
         }
     } catch (_) {}
 }

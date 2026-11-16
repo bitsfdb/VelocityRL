@@ -1475,6 +1475,62 @@ async fn check_integrity(app: tauri::AppHandle) -> Result<integrity::RepairRepor
     Ok(integrity::check_repair(&game, &state))
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GamePatchStatus {
+    pub projectx_patched: bool,
+    pub projectx_exists: bool,
+    pub tagame_exists: bool,
+    pub tagame_size: u64,
+    pub tagame_valid: bool,
+    pub cooked_dir: String,
+}
+
+#[tauri::command]
+async fn get_game_patch_status(app: tauri::AppHandle) -> Result<GamePatchStatus, String> {
+    let config = get_config(app.clone()).await?;
+    if config.game_dir.is_empty() {
+        return Ok(GamePatchStatus {
+            projectx_patched: false,
+            projectx_exists: false,
+            tagame_exists: false,
+            tagame_size: 0,
+            tagame_valid: false,
+            cooked_dir: String::new(),
+        });
+    }
+    let game = PathBuf::from(&config.game_dir);
+    let cooked = upk::palette::resolve_cooked_dir(&game).unwrap_or(game);
+    let px_path = if cooked.join("ProjectX.upk").is_file() {
+        cooked.join("ProjectX.upk")
+    } else {
+        cooked.join("TAGame/CookedPCConsole/ProjectX.upk")
+    };
+    let tg_path = if cooked.join("TAGame.upk").is_file() {
+        cooked.join("TAGame.upk")
+    } else {
+        cooked.join("TAGame/CookedPCConsole/TAGame.upk")
+    };
+
+    let px_bytes = std::fs::read(&px_path).ok();
+    let px_exists = px_bytes.is_some();
+    let px_patched = px_bytes.as_ref().map(|b| upk::is_projectx_file_patched(b)).unwrap_or(false);
+
+    let tg_meta = std::fs::metadata(&tg_path).ok();
+    let tg_exists = tg_meta.is_some();
+    let tg_size = tg_meta.map(|m| m.len()).unwrap_or(0);
+    // Official clean stock build 261031.63733.533021 size is 82,255,585 bytes
+    let tg_valid = tg_size == 82255585;
+
+    Ok(GamePatchStatus {
+        projectx_patched: px_patched,
+        projectx_exists: px_exists,
+        tagame_exists: tg_exists,
+        tagame_size: tg_size,
+        tagame_valid: tg_valid,
+        cooked_dir: cooked.to_string_lossy().to_string(),
+    })
+}
+
 #[tauri::command]
 async fn ensure_game_patches(app: tauri::AppHandle) -> Result<bool, String> {
     let config = get_config(app.clone()).await?;
@@ -4057,6 +4113,7 @@ pub fn run() {
             restore_single_backup,
             check_integrity,
             ensure_game_patches,
+            get_game_patch_status,
             acknowledge_repair,
             get_palette_status,
             apply_rich_palette,

@@ -2358,6 +2358,43 @@ where
 /// - URLValidator_X::IsIPv4AddressValid -> return true;
 /// - URLValidator_X::IsIPv4AndPortValid -> return true;
 /// - URLValidator_X::HostLooksLikeIPv4 -> return true;
+pub fn is_projectx_file_patched(file_bytes: &[u8]) -> bool {
+    if file_bytes.len() < 0x20 {
+        return false;
+    }
+    let total_header_size = u32::from_le_bytes(file_bytes[8..12].try_into().unwrap_or([0; 4])) as usize;
+    let mut p = 12;
+    let flen = i32::from_le_bytes(file_bytes.get(p..p + 4).and_then(|s| s.try_into().ok()).unwrap_or([0; 4]));
+    let prefix_sz = 12 + 4 + (if flen > 0 { flen as usize } else { (-flen * 2) as usize }) + 4;
+    p = prefix_sz;
+    let _name_count = i32::from_le_bytes(file_bytes.get(p..p + 4).and_then(|s| s.try_into().ok()).unwrap_or([0; 4]));
+    let name_offset = u32::from_le_bytes(file_bytes.get(p + 4..p + 8).and_then(|s| s.try_into().ok()).unwrap_or([0; 4])) as usize;
+    let p_sum = prefix_sz + 8;
+    let _export_count = i32::from_le_bytes(file_bytes.get(p_sum..p_sum + 4).and_then(|s| s.try_into().ok()).unwrap_or([0; 4])) as usize;
+    let depends_offset = i32::from_le_bytes(file_bytes.get(p_sum + 16..p_sum + 20).and_then(|s| s.try_into().ok()).unwrap_or([0; 4])) as usize;
+    let enc_size = (total_header_size.saturating_sub(name_offset) + 15) & !15;
+    let enc_end = name_offset + enc_size;
+    if enc_end <= file_bytes.len() && depends_offset >= name_offset {
+        let plain_header = crypto::decrypt_ecb(&TAGAME_KEY, &file_bytes[name_offset..enc_end]);
+        let chunks_rel = depends_offset - name_offset;
+        if chunks_rel + 4 <= plain_header.len() {
+            let num_chunks = u32::from_le_bytes(plain_header[chunks_rel..chunks_rel + 4].try_into().unwrap_or([0; 4])) as usize;
+            if num_chunks >= 2 && chunks_rel + 4 + 72 <= plain_header.len() {
+                let c1_p = chunks_rel + 4 + 36;
+                let c1_c_off = u64::from_le_bytes(plain_header[c1_p + 12..c1_p + 20].try_into().unwrap_or([0; 8])) as usize;
+                let c1_c_sz = i32::from_le_bytes(plain_header[c1_p + 20..c1_p + 24].try_into().unwrap_or([0; 4])) as usize;
+                if c1_c_off + c1_c_sz <= file_bytes.len() {
+                    if let Ok(c1_decomp) = crate::upk::compression::decompress_chunk(&file_bytes[c1_c_off..c1_c_off + c1_c_sz]) {
+                        return c1_decomp.windows(26).any(|w| w == b"http://127.0.0.1:15759/rpc")
+                            && c1_decomp.windows(21).any(|w| w == b"ws://127.0.0.1:15759/");
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
 pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
     let px_path = if cooked_dir.join("ProjectX.upk").is_file() {
         cooked_dir.join("ProjectX.upk")
@@ -2369,7 +2406,7 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
 
     let bak_path = px_path.with_extension("upk.bak");
 
-    // If backup does not exist yet, create it from current px_path
+    // If backup does not exist yet, create backup of current file before any patching
     if !bak_path.is_file() {
         if let Ok(bytes) = fs::read(&px_path) {
             let _ = fs::write(&bak_path, &bytes);
@@ -2378,48 +2415,16 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
 
     // Fast check: if current file already contains both RPC and WS broker patches, nothing to do
     if let Ok(cur_px_bytes) = fs::read(&px_path) {
-        if cur_px_bytes.len() >= 0x20 {
-            let total_header_size = u32::from_le_bytes(cur_px_bytes[8..12].try_into().unwrap_or([0; 4])) as usize;
-            let mut p = 12;
-            let flen = i32::from_le_bytes(cur_px_bytes.get(p..p + 4).and_then(|s| s.try_into().ok()).unwrap_or([0; 4]));
-            let prefix_sz = 12 + 4 + (if flen > 0 { flen as usize } else { (-flen * 2) as usize }) + 4;
-            p = prefix_sz;
-            let _name_count = i32::from_le_bytes(cur_px_bytes.get(p..p + 4).and_then(|s| s.try_into().ok()).unwrap_or([0; 4]));
-            let name_offset = u32::from_le_bytes(cur_px_bytes.get(p + 4..p + 8).and_then(|s| s.try_into().ok()).unwrap_or([0; 4])) as usize;
-            let p_sum = prefix_sz + 8;
-            let _export_count = i32::from_le_bytes(cur_px_bytes.get(p_sum..p_sum + 4).and_then(|s| s.try_into().ok()).unwrap_or([0; 4])) as usize;
-            let depends_offset = i32::from_le_bytes(cur_px_bytes.get(p_sum + 16..p_sum + 20).and_then(|s| s.try_into().ok()).unwrap_or([0; 4])) as usize;
-            let enc_size = (total_header_size.saturating_sub(name_offset) + 15) & !15;
-            let enc_end = name_offset + enc_size;
-            if enc_end <= cur_px_bytes.len() && depends_offset >= name_offset {
-                let plain_header = crypto::decrypt_ecb(&TAGAME_KEY, &cur_px_bytes[name_offset..enc_end]);
-                let chunks_rel = depends_offset - name_offset;
-                if chunks_rel + 4 <= plain_header.len() {
-                    let num_chunks = u32::from_le_bytes(plain_header[chunks_rel..chunks_rel + 4].try_into().unwrap_or([0; 4])) as usize;
-                    if num_chunks >= 2 && chunks_rel + 4 + 72 <= plain_header.len() {
-                        let c1_p = chunks_rel + 4 + 36;
-                        let c1_c_off = u64::from_le_bytes(plain_header[c1_p + 12..c1_p + 20].try_into().unwrap_or([0; 8])) as usize;
-                        let c1_c_sz = i32::from_le_bytes(plain_header[c1_p + 20..c1_p + 24].try_into().unwrap_or([0; 4])) as usize;
-                        if c1_c_off + c1_c_sz <= cur_px_bytes.len() {
-                            if let Ok(c1_decomp) = crate::upk::compression::decompress_chunk(&cur_px_bytes[c1_c_off..c1_c_off + c1_c_sz]) {
-                                if c1_decomp.windows(26).any(|w| w == b"http://127.0.0.1:15759/rpc")
-                                    && c1_decomp.windows(21).any(|w| w == b"ws://127.0.0.1:15759/")
-                                {
-                                    return Ok(false); // Already cleanly patched with both RPC and WS broker
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        if is_projectx_file_patched(&cur_px_bytes) {
+            return Ok(false); // Already cleanly patched with both RPC and WS broker
         }
     }
 
-    // Deploy verified package directly if available locally or from cached repository
+    // Deploy verified package directly if available locally and verified patched
     let local_cached = Path::new("/var/www/bndq/tagame/ProjectX.upk");
     if local_cached.is_file() {
         if let Ok(bytes) = fs::read(local_cached) {
-            if bytes.len() >= 1_000_000 && &bytes[..4] == &[0xC1, 0x83, 0x2A, 0x9E] {
+            if is_projectx_file_patched(&bytes) {
                 let _ = fs::write(&px_path, &bytes);
                 crate::applog::event("projectx: applied patched ProjectX.upk with RPC and WebSocket broker from repository");
                 return Ok(true);
@@ -2449,7 +2454,7 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
             }
         });
         if let Ok(bytes) = dl_res {
-            if bytes.len() >= 1_000_000 && &bytes[..4] == &[0xC1, 0x83, 0x2A, 0x9E] {
+            if is_projectx_file_patched(&bytes) {
                 let _ = fs::write(&px_path, &bytes);
                 crate::applog::event("projectx: downloaded pre-patched ProjectX.upk from bndq.me/tagame");
                 return Ok(true);

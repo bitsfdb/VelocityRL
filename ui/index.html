@@ -1290,7 +1290,7 @@
                     </div>
                 </div>
 
-                <div class="grid-stats" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px; margin-bottom:14px;">
+                <div class="grid-stats" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:10px; margin-bottom:14px;">
                     <div class="stat-card card spoof-card" style="padding:10px 14px; margin:0;">
                         <div class="stat-label" style="font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:700; letter-spacing:0.5px;">Broker / RPC Port</div>
                         <div id="net-stat-broker" class="stat-val" style="font-size:15px; font-weight:700; color:var(--accent); margin-top:3px;">127.0.0.1:443</div>
@@ -1304,8 +1304,12 @@
                         <div id="net-stat-count" class="stat-val" style="font-size:15px; font-weight:700; color:#fff; margin-top:3px;">0</div>
                     </div>
                     <div class="stat-card card spoof-card" style="padding:10px 14px; margin:0;">
-                        <div class="stat-label" style="font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:700; letter-spacing:0.5px;">Active Spoofs</div>
-                        <div id="net-stat-spoof" class="stat-val" style="font-size:15px; font-weight:700; color:#00e676; margin-top:3px;">Enabled</div>
+                        <div class="stat-label" style="font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:700; letter-spacing:0.5px;">ProjectX UPK Patch</div>
+                        <div id="net-stat-patch" class="stat-val" style="font-size:14px; font-weight:700; color:#00e676; margin-top:3px; display:flex; align-items:center; gap:6px;">Checking...</div>
+                    </div>
+                    <div class="stat-card card spoof-card" style="padding:10px 14px; margin:0;">
+                        <div class="stat-label" style="font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:700; letter-spacing:0.5px;">TAGame UPK Stock</div>
+                        <div id="net-stat-tagame" class="stat-val" style="font-size:14px; font-weight:700; color:#00e676; margin-top:3px; display:flex; align-items:center; gap:6px;">Checking...</div>
                     </div>
                 </div>
 
@@ -1431,6 +1435,7 @@
                     <div style="font-weight:600; font-size:12px;" data-i18n="settings.diagnostics_title">Troubleshooting</div>
                 </div>
                 <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <button type="button" id="settings-patch-status-btn" class="path-btn" style="color:var(--accent); border-color:var(--accent);"><span id="settings-patch-btn-text">Check Patch Status</span></button>
                     <button type="button" id="settings-redownload-assets-btn" class="path-btn"><span data-i18n="restore.redownload_assets">Redownload assets</span></button>
                     <button type="button" id="settings-dev-panel-btn" class="path-btn"><span data-i18n="settings.debug_panel">Debug Panel</span></button>
                     <button type="button" id="settings-export-diag-btn" class="path-btn"><span data-i18n="settings.export_diagnostics">Export Diagnostics</span></button>
