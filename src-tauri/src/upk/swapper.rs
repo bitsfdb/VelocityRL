@@ -2365,11 +2365,12 @@ pub fn is_projectx_file_patched(file_bytes: &[u8]) -> bool {
     let total_header_size = u32::from_le_bytes(file_bytes[8..12].try_into().unwrap_or([0; 4])) as usize;
     let mut p = 12;
     let flen = i32::from_le_bytes(file_bytes.get(p..p + 4).and_then(|s| s.try_into().ok()).unwrap_or([0; 4]));
-    let prefix_sz = 12 + 4 + (if flen > 0 { flen as usize } else { (-flen * 2) as usize }) + 4;
+    let prefix_sz = 12 + 4 + (if flen > 0 { flen as usize } else { (-flen * 2) as usize });
     p = prefix_sz;
-    let _name_count = i32::from_le_bytes(file_bytes.get(p..p + 4).and_then(|s| s.try_into().ok()).unwrap_or([0; 4]));
-    let name_offset = u32::from_le_bytes(file_bytes.get(p + 4..p + 8).and_then(|s| s.try_into().ok()).unwrap_or([0; 4])) as usize;
-    let p_sum = prefix_sz + 8;
+    let _pkg_flags = u32::from_le_bytes(file_bytes.get(p..p + 4).and_then(|s| s.try_into().ok()).unwrap_or([0; 4]));
+    let _name_count = i32::from_le_bytes(file_bytes.get(p + 4..p + 8).and_then(|s| s.try_into().ok()).unwrap_or([0; 4]));
+    let name_offset = u32::from_le_bytes(file_bytes.get(p + 8..p + 12).and_then(|s| s.try_into().ok()).unwrap_or([0; 4])) as usize;
+    let p_sum = prefix_sz + 12;
     let _export_count = i32::from_le_bytes(file_bytes.get(p_sum..p_sum + 4).and_then(|s| s.try_into().ok()).unwrap_or([0; 4])) as usize;
     let depends_offset = i32::from_le_bytes(file_bytes.get(p_sum + 16..p_sum + 20).and_then(|s| s.try_into().ok()).unwrap_or([0; 4])) as usize;
     let enc_size = (total_header_size.saturating_sub(name_offset) + 15) & !15;
@@ -2432,14 +2433,14 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
     }
 
     let total_header_size = u32::from_le_bytes(file_bytes[8..12].try_into().unwrap()) as usize;
-    let mut p = 12;
-    let flen = i32::from_le_bytes(file_bytes[p..p + 4].try_into().unwrap());
-    p += 4 + if flen > 0 { flen as usize } else { (-flen * 2) as usize };
-    p += 4;
-    let name_count = i32::from_le_bytes(file_bytes[p..p + 4].try_into().unwrap());
-    let name_offset = u32::from_le_bytes(file_bytes[p + 4..p + 8].try_into().unwrap()) as usize;
+    let flen = i32::from_le_bytes(file_bytes[12..16].try_into().unwrap());
+    let prefix_sz = 12 + 4 + (if flen > 0 { flen as usize } else { (-flen * 2) as usize });
+    let p = prefix_sz;
+    let _pkg_flags = u32::from_le_bytes(file_bytes[p..p + 4].try_into().unwrap());
+    let name_count = i32::from_le_bytes(file_bytes[p + 4..p + 8].try_into().unwrap());
+    let name_offset = u32::from_le_bytes(file_bytes[p + 8..p + 12].try_into().unwrap()) as usize;
 
-    let p_sum = 12 + 4 + (if flen > 0 { flen as usize } else { (-flen * 2) as usize }) + 4 + 8;
+    let p_sum = prefix_sz + 12;
     let export_count = i32::from_le_bytes(file_bytes[p_sum..p_sum + 4].try_into().unwrap()) as usize;
     let export_offset = i32::from_le_bytes(file_bytes[p_sum + 4..p_sum + 8].try_into().unwrap()) as usize;
     let depends_offset = i32::from_le_bytes(file_bytes[p_sum + 16..p_sum + 20].try_into().unwrap()) as usize;
