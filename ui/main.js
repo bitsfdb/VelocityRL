@@ -9305,8 +9305,15 @@ async function updateGamePatchStatusUI() {
         }
 
         if (tagameEl && patchStatus) {
-            if (patchStatus.tagame_valid) {
-                tagameEl.innerHTML = "<span style=\"color:#00e676;\">● CLEAN STOCK (82.2MB)</span>";
+            if (patchStatus.tagame_crash_fixed) {
+                tagameEl.innerHTML = "<span style=\"color:#00e676;\">● CRASH-FIXED (82.2MB)</span>";
+            } else if (patchStatus.tagame_valid) {
+                tagameEl.innerHTML = "<span style=\"color:#ffb142; cursor:pointer;\" title=\"Stock vanilla without match crash fixes. Click to patch.\">▲ UNPATCHED (Click)</span>";
+                tagameEl.onclick = async () => {
+                    tagameEl.textContent = "Patching...";
+                    await invoke("ensure_game_patches");
+                    await updateGamePatchStatusUI();
+                };
             } else if (patchStatus.tagame_exists) {
                 const mb = (patchStatus.tagame_size / (1024 * 1024)).toFixed(1);
                 tagameEl.innerHTML = "<span style=\"color:#ffb142;\" title=\"Third-party or older version (" + mb + "MB)\">MODIFIED (" + mb + "MB)</span>";

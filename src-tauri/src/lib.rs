@@ -1482,6 +1482,7 @@ pub struct GamePatchStatus {
     pub tagame_exists: bool,
     pub tagame_size: u64,
     pub tagame_valid: bool,
+    pub tagame_crash_fixed: bool,
     pub cooked_dir: String,
 }
 
@@ -1495,6 +1496,7 @@ async fn get_game_patch_status(app: tauri::AppHandle) -> Result<GamePatchStatus,
             tagame_exists: false,
             tagame_size: 0,
             tagame_valid: false,
+            tagame_crash_fixed: false,
             cooked_dir: String::new(),
         });
     }
@@ -1515,9 +1517,10 @@ async fn get_game_patch_status(app: tauri::AppHandle) -> Result<GamePatchStatus,
     let px_exists = px_bytes.is_some();
     let px_patched = px_bytes.as_ref().map(|b| upk::is_projectx_file_patched(b)).unwrap_or(false);
 
-    let tg_meta = std::fs::metadata(&tg_path).ok();
-    let tg_exists = tg_meta.is_some();
-    let tg_size = tg_meta.map(|m| m.len()).unwrap_or(0);
+    let tg_bytes = std::fs::read(&tg_path).ok();
+    let tg_exists = tg_bytes.is_some();
+    let tg_size = tg_bytes.as_ref().map(|b| b.len() as u64).unwrap_or(0);
+    let tg_crash_fixed = tg_bytes.as_ref().map(|b| upk::is_tagame_file_crash_patched(b)).unwrap_or(false);
     // Official clean stock build 261031.63733.533021 size is 82,255,585 bytes
     let tg_valid = tg_size == 82255585;
 
@@ -1527,6 +1530,7 @@ async fn get_game_patch_status(app: tauri::AppHandle) -> Result<GamePatchStatus,
         tagame_exists: tg_exists,
         tagame_size: tg_size,
         tagame_valid: tg_valid,
+        tagame_crash_fixed: tg_crash_fixed,
         cooked_dir: cooked.to_string_lossy().to_string(),
     })
 }
@@ -1540,9 +1544,10 @@ async fn ensure_game_patches(app: tauri::AppHandle) -> Result<bool, String> {
     let game = PathBuf::from(&config.game_dir);
     let cooked = upk::palette::resolve_cooked_dir(&game).unwrap_or(game);
     let projectx_patched = upk::ensure_projectx_patched(&cooked)?;
+    let tagame_patched = upk::ensure_tagame_patched(&cooked).await?;
     let swaps = load_swaps(&app);
     let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
-    Ok(projectx_patched)
+    Ok(projectx_patched || tagame_patched)
 }
 
 #[tauri::command]

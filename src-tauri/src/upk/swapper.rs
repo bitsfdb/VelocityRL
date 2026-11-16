@@ -1901,6 +1901,44 @@ pub fn is_projectx_file_patched(file_bytes: &[u8]) -> bool {
     false
 }
 
+pub fn is_tagame_file_crash_patched(file_bytes: &[u8]) -> bool {
+    if file_bytes.len() < 0x20 {
+        return false;
+    }
+    let total_header_size = u32::from_le_bytes(file_bytes[8..12].try_into().unwrap_or([0; 4])) as usize;
+    let mut p = 12;
+    let flen = i32::from_le_bytes(file_bytes.get(p..p + 4).and_then(|s| s.try_into().ok()).unwrap_or([0; 4]));
+    let prefix_sz = 12 + 4 + (if flen > 0 { flen as usize } else { (-flen * 2) as usize });
+    p = prefix_sz;
+    let _pkg_flags = u32::from_le_bytes(file_bytes.get(p..p + 4).and_then(|s| s.try_into().ok()).unwrap_or([0; 4]));
+    let _name_count = i32::from_le_bytes(file_bytes.get(p + 4..p + 8).and_then(|s| s.try_into().ok()).unwrap_or([0; 4]));
+    let name_offset = u32::from_le_bytes(file_bytes.get(p + 8..p + 12).and_then(|s| s.try_into().ok()).unwrap_or([0; 4])) as usize;
+    let p_sum = prefix_sz + 12;
+    let _export_count = i32::from_le_bytes(file_bytes.get(p_sum..p_sum + 4).and_then(|s| s.try_into().ok()).unwrap_or([0; 4])) as usize;
+    let depends_offset = i32::from_le_bytes(file_bytes.get(p_sum + 16..p_sum + 20).and_then(|s| s.try_into().ok()).unwrap_or([0; 4])) as usize;
+    let enc_size = (total_header_size.saturating_sub(name_offset) + 15) & !15;
+    let enc_end = name_offset + enc_size;
+    if enc_end <= file_bytes.len() && depends_offset >= name_offset {
+        let plain_header = crypto::decrypt_ecb(&TAGAME_KEY, &file_bytes[name_offset..enc_end]);
+        let chunks_rel = depends_offset - name_offset;
+        if chunks_rel + 4 <= plain_header.len() {
+            let num_chunks = u32::from_le_bytes(plain_header[chunks_rel..chunks_rel + 4].try_into().unwrap_or([0; 4])) as usize;
+            if num_chunks > 78 && chunks_rel + 4 + (79 * 36) <= plain_header.len() {
+                let c78_p = chunks_rel + 4 + (78 * 36);
+                let c78_c_off = u64::from_le_bytes(plain_header[c78_p + 12..c78_p + 20].try_into().unwrap_or([0; 8])) as usize;
+                let c78_c_sz = i32::from_le_bytes(plain_header[c78_p + 20..c78_p + 24].try_into().unwrap_or([0; 4])) as usize;
+                if c78_c_off + c78_c_sz <= file_bytes.len() {
+                    if let Ok(c78_decomp) = crate::upk::compression::decompress_chunk(&file_bytes[c78_c_off..c78_c_off + c78_c_sz]) {
+                        const SHOULD_BACKFILL_PATCH: [u8; 6] = [0x53, 0x2e, 0x00, 0x00, 0xe4, 0x7a];
+                        return c78_decomp.windows(6).any(|w| w == SHOULD_BACKFILL_PATCH);
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
 pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
     let px_path = if cooked_dir.join("ProjectX.upk").is_file() {
         cooked_dir.join("ProjectX.upk")
@@ -2319,11 +2357,56 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
     Ok(true)
 }
 
-/// Ensure TAGame.upk does not use corrupted third-party packages; preserve vanilla package integrity.
-pub async fn ensure_tagame_patched(_cooked_dir: &Path) -> Result<bool, String> {
-    // TAGame.upk must remain vanilla stock (or cleanly patched in-place by palette/swapper).
-    // Downloading external pre-patched TAGame.upk causes uncompressed chunk mismatches in UE3.
-    Ok(false)
+/// Ensure TAGame.upk has the match/backfill crash fixes applied (Chunks 78 and 81).
+/// If missing, downloads the official patched TAGame.upk from the asset mirror.
+pub async fn ensure_tagame_patched(cooked_dir: &Path) -> Result<bool, String> {
+    let tg_path = if cooked_dir.join("TAGame.upk").is_file() {
+        cooked_dir.join("TAGame.upk")
+    } else if cooked_dir.join("TAGame/CookedPCConsole/TAGame.upk").is_file() {
+        cooked_dir.join("TAGame/CookedPCConsole/TAGame.upk")
+    } else {
+        return Ok(false);
+    };
+
+    let bak_path = tg_path.with_extension("upk.bak");
+
+    // Check if current file already contains the crash patch
+    if let Ok(cur_tg_bytes) = fs::read(&tg_path) {
+        if is_tagame_file_crash_patched(&cur_tg_bytes) {
+            return Ok(false); // Already cleanly patched
+        }
+    }
+
+    // If backup does not exist, backup current file first
+    if !bak_path.is_file() {
+        if let Ok(bytes) = fs::read(&tg_path) {
+            let _ = fs::write(&bak_path, &bytes);
+        }
+    }
+
+    crate::applog::event("tagame: downloading official crash-fixed TAGame.upk");
+
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .user_agent(crate::app_user_agent())
+        .timeout(std::time::Duration::from_secs(300))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let url = "https://bndq.me/tagame/patched/TAGame.upk";
+    let resp = client.get(url).send().await.map_err(|e| format!("Failed to request {url}: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("Mirror returned HTTP {} for TAGame.upk", resp.status()));
+    }
+
+    let bytes = resp.bytes().await.map_err(|e| format!("Failed to download TAGame.upk: {e}"))?;
+    if bytes.len() < 80_000_000 {
+        return Err(format!("Downloaded TAGame.upk too small ({} bytes)", bytes.len()));
+    }
+
+    fs::write(&tg_path, &bytes).map_err(|e| format!("Failed to write patched TAGame.upk: {e}"))?;
+    crate::applog::event("tagame: official crash-fixed TAGame.upk installed successfully");
+    Ok(true)
 }
 
 

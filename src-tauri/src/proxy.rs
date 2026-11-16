@@ -7335,11 +7335,11 @@ pub fn patch_player_products_json(
                     item["Attributes"] = serde_json::json!([
                         {
                             "Key": "Painted",
-                            "Value": paint_id.to_string()
+                            "Value": paint_id
                         },
                         {
                             "Key": "Paint",
-                            "Value": paint_id.to_string()
+                            "Value": paint_id
                         }
                     ]);
                     changed = true;
@@ -7371,11 +7371,11 @@ pub fn patch_player_products_json(
                 prod_obj["Attributes"] = serde_json::json!([
                     {
                         "Key": "Painted",
-                        "Value": paint_id.to_string()
+                        "Value": paint_id
                     },
                     {
                         "Key": "Paint",
-                        "Value": paint_id.to_string()
+                        "Value": paint_id
                     }
                 ]);
             }
