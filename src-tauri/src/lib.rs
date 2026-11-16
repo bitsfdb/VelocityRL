@@ -1761,9 +1761,8 @@ pub(crate) async fn sync_all_swaps_to_tagame(
         }
     }
 
-    // Ensure ProjectX.upk and TAGame.upk have all URL redirections and broker hooks active
+    // Verify ProjectX.upk broker hooks are active
     let _ = upk::ensure_projectx_patched(cooked);
-    let _ = upk::ensure_tagame_patched(cooked).await;
 
     Ok(())
 }

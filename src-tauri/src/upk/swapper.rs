@@ -2213,8 +2213,8 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
     Ok(true)
 }
 
-/// Ensure TAGame.upk has the match/backfill crash fixes applied (Chunks 78 and 81).
-/// If missing, downloads the official patched TAGame.upk from the asset mirror.
+/// Check if TAGame.upk and ProjectX.upk are patched.
+/// Never download external 82MB binaries on startup or overwrite files automatically.
 pub async fn ensure_tagame_patched(cooked_dir: &Path) -> Result<bool, String> {
     let tg_path = if cooked_dir.join("TAGame.upk").is_file() {
         cooked_dir.join("TAGame.upk")
@@ -2224,45 +2224,13 @@ pub async fn ensure_tagame_patched(cooked_dir: &Path) -> Result<bool, String> {
         return Ok(false);
     };
 
-    let bak_path = tg_path.with_extension("upk.bak");
-
-    // Check if current file already contains the crash patch
     if let Ok(cur_tg_bytes) = fs::read(&tg_path) {
         if is_tagame_file_crash_patched(&cur_tg_bytes) {
-            return Ok(false); // Already cleanly patched
+            return Ok(true);
         }
     }
 
-    // If backup does not exist, backup current file first
-    if !bak_path.is_file() {
-        if let Ok(bytes) = fs::read(&tg_path) {
-            let _ = fs::write(&bak_path, &bytes);
-        }
-    }
-
-    crate::applog::event("tagame: downloading official crash-fixed TAGame.upk");
-
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .user_agent(crate::app_user_agent())
-        .timeout(std::time::Duration::from_secs(300))
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let url = "https://bndq.me/tagame/patched/TAGame.upk";
-    let resp = client.get(url).send().await.map_err(|e| format!("Failed to request {url}: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("Mirror returned HTTP {} for TAGame.upk", resp.status()));
-    }
-
-    let bytes = resp.bytes().await.map_err(|e| format!("Failed to download TAGame.upk: {e}"))?;
-    if bytes.len() < 80_000_000 {
-        return Err(format!("Downloaded TAGame.upk too small ({} bytes)", bytes.len()));
-    }
-
-    fs::write(&tg_path, &bytes).map_err(|e| format!("Failed to write patched TAGame.upk: {e}"))?;
-    crate::applog::event("tagame: official crash-fixed TAGame.upk installed successfully");
-    Ok(true)
+    Ok(false)
 }
 
 
