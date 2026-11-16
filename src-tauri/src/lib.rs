@@ -1521,8 +1521,8 @@ async fn get_game_patch_status(app: tauri::AppHandle) -> Result<GamePatchStatus,
     let tg_exists = tg_bytes.is_some();
     let tg_size = tg_bytes.as_ref().map(|b| b.len() as u64).unwrap_or(0);
     let tg_crash_fixed = tg_bytes.as_ref().map(|b| upk::is_tagame_file_crash_patched(b)).unwrap_or(false);
-    // Official clean stock build 261031.63733.533021 size is 82,255,585 bytes
-    let tg_valid = tg_size == 82255585;
+    // Official clean stock build 261031.63733.533021 size is 82,255,585 (or 82,255,586) bytes
+    let tg_valid = tg_size == 82255585 || tg_size == 82255586;
 
     Ok(GamePatchStatus {
         projectx_patched: px_patched,
