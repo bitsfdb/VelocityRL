@@ -516,6 +516,12 @@ pub fn persist_learned_identity_to_disk(learned_id: Option<&str>, learned_name: 
 
 pub const BITS_PLAYER_ID: &str = "37674b519c3544beb544f437f539ebf2";
 
+#[inline]
+pub fn is_bits_player_id(id: &str) -> bool {
+    let lower = id.trim().to_ascii_lowercase();
+    lower.contains(BITS_PLAYER_ID) || normalize_player_id(&lower) == BITS_PLAYER_ID
+}
+
 pub fn normalize_player_id(id: &str) -> String {
     let lower = id.trim().to_ascii_lowercase();
     let s = if let Some(first_bar) = lower.find('|') {
@@ -561,7 +567,7 @@ pub fn patch_eos_accounts_json(
 
             let mut is_match = false;
             if let Some(ref a) = acc {
-                if normalize_player_id(a) == BITS_PLAYER_ID {
+                if is_bits_player_id(a) {
                     is_match = true;
                 }
             }
@@ -623,7 +629,7 @@ pub fn patch_eos_accounts_json(
 
         let mut is_match = false;
         if let Some(ref a) = acc {
-            if normalize_player_id(a) == BITS_PLAYER_ID {
+            if is_bits_player_id(a) {
                 is_match = true;
             }
         }
@@ -758,11 +764,11 @@ fn patch_ws_names_value(
             ] {
                 if let Some(id_val) = map.get(*id_key) {
                     if let Some(s) = id_val.as_str() {
-                        let norm = normalize_player_id(s);
-                        if norm == BITS_PLAYER_ID {
+                        if is_bits_player_id(s) {
                             is_own_obj = true;
                             break;
                         }
+                        let norm = normalize_player_id(s);
                         if let Some(target) = clean_pid {
                             if norm == target {
                                 is_own_obj = true;
@@ -774,11 +780,11 @@ fn patch_ws_names_value(
                     } else if let Some(sub_obj) = id_val.as_object() {
                         for sub_k in &["ID", "Id", "id", "PlayerID", "AccountId"] {
                             if let Some(s) = sub_obj.get(*sub_k).and_then(|v| v.as_str()) {
-                                let norm = normalize_player_id(s);
-                                if norm == BITS_PLAYER_ID {
+                                if is_bits_player_id(s) {
                                     is_own_obj = true;
                                     break;
                                 }
+                                let norm = normalize_player_id(s);
                                 if let Some(target) = clean_pid {
                                     if norm == target {
                                         is_own_obj = true;
@@ -4809,17 +4815,17 @@ async fn handle_http_config(
         Some(c) => Some(c),
         None => get_spoof_config().await,
     };
-    if let Some(cfg) = &cfg_opt {
-        if crate::features::is_build_supported() {
-            let (next_body, changed) = patch_config(&out_body, cfg);
-            if changed {
-                out_body = next_body;
-                patched = true;
-                crate::applog::event(&format!(
-                    "proxy: patched config ({} bytes)",
-                    out_body.len()
-                ));
-            }
+    if crate::features::is_build_supported() {
+        let default_cfg = crate::psynet::SpoofPayload::default();
+        let cfg_ref = cfg_opt.as_ref().unwrap_or(&default_cfg);
+        let (next_body, changed) = patch_config(&out_body, cfg_ref);
+        if changed {
+            out_body = next_body;
+            patched = true;
+            crate::applog::event(&format!(
+                "proxy: patched config ({} bytes)",
+                out_body.len()
+            ));
         }
     }
 
@@ -6874,10 +6880,10 @@ fn patch_reservation_value_sync(
                         let mut is_bits = false;
                         if let Some(pid_val) = player.get("PlayerID") {
                             if let Some(s) = pid_val.as_str() {
-                                let norm_pid = normalize_player_id(s);
-                                if norm_pid == BITS_PLAYER_ID {
+                                if is_bits_player_id(s) {
                                     is_bits = true;
                                 }
+                                let norm_pid = normalize_player_id(s);
                                 if let Some(learned) = learned_pid {
                                     if norm_pid == learned {
                                         is_local = true;
@@ -6888,9 +6894,11 @@ fn patch_reservation_value_sync(
 
                         if is_bits {
                             let curr_title = player.get("TitleID").and_then(|v| v.as_str()).unwrap_or_default();
-                            if curr_title != "VelocityRL_Developer" {
+                            let curr_pt = player.get("PlayerTitle").and_then(|v| v.as_str()).unwrap_or_default();
+                            if curr_title != "VelocityRL_Developer" || curr_pt != "VelocityRL Developer" {
                                 if let Some(p) = player.as_object_mut() {
                                     p.insert("TitleID".to_string(), serde_json::json!("VelocityRL_Developer"));
+                                    p.insert("TitleId".to_string(), serde_json::json!("VelocityRL_Developer"));
                                     p.insert("PlayerTitle".to_string(), serde_json::json!("VelocityRL Developer"));
                                     p.insert("Title".to_string(), serde_json::json!("VelocityRL Developer"));
                                     *changed = true;
@@ -6898,7 +6906,7 @@ fn patch_reservation_value_sync(
                             }
                         }
 
-                        if is_local {
+                        if is_local && !is_bits {
                             // Inject custom title and name if active spoof config defines one
                             if let Some(spoof) = crate::psynet::load_active_spoof_from_disk() {
                                 if spoof.enabled {
@@ -7015,8 +7023,20 @@ fn patch_reservation_value_sync(
                             patch_product_ids_node(prod_ids_val, rules, changed);
                         }
 
-                        // Also patch TitleID and Title text in PlayWithLoadout event if title spoofing
-                        if let Some(spoof) = crate::psynet::load_active_spoof_from_disk() {
+                        let ev_player_id = event_data.get("PlayerID")
+                            .or_else(|| event_data.get("PlayerId"))
+                            .or_else(|| event_data.get("EpicAccountId"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default();
+                        let ev_is_bits = is_bits_player_id(ev_player_id);
+
+                        if ev_is_bits {
+                            event_data.insert("TitleID".to_string(), serde_json::json!("VelocityRL_Developer"));
+                            event_data.insert("TitleId".to_string(), serde_json::json!("VelocityRL_Developer"));
+                            event_data.insert("PlayerTitle".to_string(), serde_json::json!("VelocityRL Developer"));
+                            event_data.insert("Title".to_string(), serde_json::json!("VelocityRL Developer"));
+                            *changed = true;
+                        } else if let Some(spoof) = crate::psynet::load_active_spoof_from_disk() {
                             if spoof.enabled {
                                 let equip_id = if !spoof.equip_title_id.trim().is_empty() {
                                     spoof.equip_title_id.trim()
@@ -8273,7 +8293,7 @@ mod tests {
         assert_eq!(injected["Attributes"][0]["Key"], "Painted");
         assert_eq!(injected["Attributes"][0]["Value"], 12);
         assert_eq!(injected["Attributes"][1]["Key"], "Paint");
-        assert_eq!(injected["Attributes"][1]["Value"], "12");
+        assert_eq!(injected["Attributes"][1]["Value"], 12);
         assert!(injected.get("AddedTimestamp").is_some());
         assert!(injected.get("UpdatedTimestamp").is_some());
     }
