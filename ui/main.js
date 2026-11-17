@@ -5883,7 +5883,6 @@ function initDecalsTab() {
     }
 }
 
-const BOOST_METER_SPOOF_KEY = 'velocityrl_boost_meter_spoof';
 let boostMeterTabReady = false;
 
 function initBoostMeterTab() {
