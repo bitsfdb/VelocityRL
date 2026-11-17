@@ -1895,7 +1895,7 @@ async fn spawn_item(
         inv.items.push(crate::psynet::InventorySpoofItemPayload {
             product_id: wid,
             paint_id: paint,
-            series_id: 1,
+            series_id: 0,
             slot: String::new(),
             dlc: false,
         });
@@ -1988,7 +1988,7 @@ async fn spawn_items_batch(
             inv.items.push(crate::psynet::InventorySpoofItemPayload {
                 product_id: wid,
                 paint_id,
-                series_id: 1,
+                series_id: 0,
                 slot: String::new(),
                 dlc: false,
             });
