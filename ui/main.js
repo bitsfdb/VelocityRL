@@ -199,6 +199,7 @@ function releaseAppLoading() {
     const overlay = document.getElementById('app-loading-overlay');
     if (overlay) {
         overlay.hidden = true;
+        overlay.style.display = 'none';
         overlay.setAttribute('aria-busy', 'false');
         overlay.setAttribute('aria-hidden', 'true');
     }
