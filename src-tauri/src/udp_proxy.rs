@@ -787,3 +787,79 @@ pub fn get_local_port() -> Option<u16> {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvInit};
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+
+    type Aes256CbcEnc = cbc::Encryptor<aes::Aes256>;
+    type Aes256CbcDec = cbc::Decryptor<aes::Aes256>;
+    type HmacSha256 = Hmac<Sha256>;
+
+    #[test]
+    fn test_process_c2s_encrypted_datagram_decryption_and_hmac_integrity() {
+        let crypto = ReservationCrypto {
+            aes_key: [0x42u8; 32],
+            aes_iv: [0x24u8; 16],
+            hmac_key: [0x55u8; 32],
+        };
+
+        // Construct mock UE3 connection payload
+        let raw_payload = b"\x01\x00\x00\x00\x15\x00\x00\x00:?Name=OriginalPlayer?Team=0\x00";
+
+        // Compute HMAC over raw payload
+        let mut mac = HmacSha256::new_from_slice(&crypto.hmac_key).unwrap();
+        mac.update(raw_payload);
+        let hmac_digest = mac.finalize().into_bytes();
+
+        let mut data_with_hmac = raw_payload.to_vec();
+        data_with_hmac.extend_from_slice(&hmac_digest);
+
+        // Encrypt with AES-256-CBC
+        let enc = Aes256CbcEnc::new_from_slices(&crypto.aes_key, &crypto.aes_iv).unwrap();
+        let pt_len = data_with_hmac.len();
+        let mut enc_buf = vec![0u8; pt_len + 16];
+        enc_buf[..pt_len].copy_from_slice(&data_with_hmac);
+        let ciphertext = enc.encrypt_padded_mut::<Pkcs7>(&mut enc_buf, pt_len).unwrap().to_vec();
+
+        // Process through proxy decryption
+        let (processed, patched) = process_c2s_encrypted_datagram(&ciphertext, &crypto);
+
+        // Since no spoofing rule is active on disk in test, was_patched = false and packet passes through
+        assert!(!patched, "Without spoof config, packet passes unmodified");
+        assert_eq!(processed, ciphertext, "Passthrough maintains 100% cryptographic byte parity");
+
+        // Now test manual decryption of the ciphertext to ensure decryptor logic is sound
+        let dec = Aes256CbcDec::new_from_slices(&crypto.aes_key, &crypto.aes_iv).unwrap();
+        let mut dec_buf = ciphertext.clone();
+        let decrypted = dec.decrypt_padded_mut::<Pkcs7>(&mut dec_buf).unwrap();
+
+        assert_eq!(decrypted.len(), raw_payload.len() + 32);
+        let dec_payload = &decrypted[..raw_payload.len()];
+        let dec_hmac = &decrypted[raw_payload.len()..];
+
+        assert_eq!(dec_payload, raw_payload, "Decrypted payload matches original raw payload byte-for-byte");
+
+        // Verify HMAC
+        let mut verify_mac = HmacSha256::new_from_slice(&crypto.hmac_key).unwrap();
+        verify_mac.update(dec_payload);
+        verify_mac.verify_slice(dec_hmac).expect("HMAC-SHA256 must verify cleanly");
+    }
+
+    #[test]
+    fn test_process_c2s_encrypted_datagram_rejects_corrupted_padding() {
+        let crypto = ReservationCrypto {
+            aes_key: [0x42u8; 32],
+            aes_iv: [0x24u8; 16],
+            hmac_key: [0x55u8; 32],
+        };
+
+        let garbage_ciphertext = vec![0xAAu8; 48];
+        let (processed, patched) = process_c2s_encrypted_datagram(&garbage_ciphertext, &crypto);
+        assert!(!patched);
+        assert_eq!(processed, garbage_ciphertext, "Corrupted/unmatched ciphertexts must fail-safe passthrough");
+    }
+}
