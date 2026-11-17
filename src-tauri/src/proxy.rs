@@ -3700,6 +3700,12 @@ pub async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         }
     }
 
+    let (new_body_sync, did_patch_sync) = neutralize_inventory_out_of_sync_json(&current_body);
+    if did_patch_sync {
+        current_body = new_body_sync;
+        any_changed = true;
+    }
+
     let is_products = svc_lower.contains("getplayerproducts")
         || svc_lower.contains("getloadoutproducts")
         || svc_lower.contains("checkownership")
@@ -7368,10 +7374,10 @@ pub fn patch_player_products_json(
         }
 
         if !matched {
-            // Deterministic instance ID based on wanted_id and paint_id
-            // Prevents Rocket League client from detecting newly generated items on every relaunch,
-            // which causes recurring spawn drop toasts and "items failed to sync resyncing" save errors.
-            let inst_hex = format!("vrl{:08x}{:08x}0000000000000000", wanted_id as u32, paint_id as u32);
+            // Deterministic 128-bit hex instance ID based on wanted_id and paint_id
+            // Must be strictly valid 32-character hexadecimal (0-9, a-f) so UnrealScript
+            // hex-decodes it into FQWord (UpperBits, LowerBits) without parse error.
+            let inst_hex = format!("{:08x}{:08x}0000000000000000", wanted_id as u32, paint_id as u32);
             let static_ts: i64 = 1700000000;
 
             let mut prod_obj = serde_json::json!({
