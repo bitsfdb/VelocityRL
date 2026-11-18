@@ -2480,6 +2480,23 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
     Some(resp_obj)
 }
 
+/// Pull the requested player's Steam ID out of an avatar request path.
+/// Understands the Shift sidecar scheme:
+/// `/Content/Images/Players/Avatars/Large/<id>/0?buildSecret=..&tab=1`
+/// as well as the simpler VelocityRL routes (`/rlim/avatar?id=...`).
+pub fn avatar_player_id_from_path(path: &str) -> Option<u64> {
+    for part in path.split(&['/', '?', '&'][..]) {
+        let candidate = part
+            .strip_suffix(".png")
+            .or_else(|| part.strip_suffix(".jpg"))
+            .unwrap_or(part);
+        if let Some(id) = crate::avatar::parse_steam_id(candidate) {
+            return Some(id);
+        }
+    }
+    None
+}
+
 /// Handle incoming requests on the plain-HTTP broker (ephemeral local port).
 /// Upgrades WebSocket connections to the game server, and proxies HTTP RPC/Services calls to api.rlpp.psynet.gg.
 async fn handle_broker_request(
@@ -2755,17 +2772,22 @@ async fn handle_broker_request(
                     .await
                     .unwrap_or_else(|_| (format!("Player_{}", steam_id % 10000), "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb_full.jpg".to_string()));
 
-                // Download and process avatar
+                // Download and process the Steam avatar for the profile card.
+                // Never let a Steam login replace an avatar the user already
+                // chose, otherwise signing in silently wipes the custom PFP.
                 let mut avatar_b64 = String::new();
                 if let Ok(img_resp) = client.get(&avatar_url).send().await {
                     if let Ok(bytes) = img_resp.bytes().await {
                         if let Ok((_bgra, png_bytes)) = crate::avatar::process_avatar_image(&bytes) {
-                            crate::avatar::set_active_avatar_png(png_bytes.clone());
-                            let _ = std::fs::write("/root/avatar.png", &png_bytes);
+                            let keep_custom = crate::avatar::get_active_avatar_png().is_some();
                             let cache_dir = std::path::PathBuf::from("/root/.config/com.velocityrl.app/custom_avatars");
                             let _ = std::fs::create_dir_all(&cache_dir);
-                            let _ = std::fs::write(cache_dir.join("active_avatar.png"), &png_bytes);
                             let _ = std::fs::write(cache_dir.join(format!("steam_{steam_id}.png")), &png_bytes);
+                            if !keep_custom {
+                                crate::avatar::set_active_avatar_png(png_bytes.clone());
+                                let _ = std::fs::write("/root/avatar.png", &png_bytes);
+                                let _ = std::fs::write(cache_dir.join("active_avatar.png"), &png_bytes);
+                            }
 
                             let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &png_bytes);
                             avatar_b64 = format!("data:image/png;base64,{b64}");
@@ -2873,16 +2895,13 @@ async fn handle_broker_request(
         || path_str == "/s/pfp" || path_str.starts_with("/s/pfp/") || path_str.starts_with("/rlim/pfp/")
         || path_str.contains("/avatars/")
         || path_str.contains("/content/images/players/avatars/") {
-        // 1. Check if a specific Steam ID is requested in path or query
+        // 1. Check if a specific Steam ID is requested in path or query.
+        //    Shift-style URLs look like
+        //    /Content/Images/Players/Avatars/Large/<id>/0?buildSecret=..&tab=1
+        //    so scan every path/query component rather than relying on a
+        //    single fixed position.
         let query_str = req.uri().query().unwrap_or_default();
-        let mut target_steam_id: Option<u64> = None;
-        for part in path_str.split(&['/', '?', '&'][..]) {
-            let candidate = part.strip_suffix(".png").or_else(|| part.strip_suffix(".jpg")).unwrap_or(part);
-            if let Some(id) = crate::avatar::parse_steam_id(candidate) {
-                target_steam_id = Some(id);
-                break;
-            }
-        }
+        let mut target_steam_id = avatar_player_id_from_path(&path_str);
         if target_steam_id.is_none() {
             for q_part in query_str.split('&') {
                 if let Some((k, v)) = q_part.split_once('=') {
@@ -2926,8 +2945,14 @@ async fn handle_broker_request(
                 }
             }
 
-            let allow_other_pfps = crate::avatar::is_load_other_pfps_enabled_internal()
-                && crate::avatar::get_authenticated_steam_user_internal().is_some();
+            // The sidecar URL patched into TAGame.upk is now the game's primary
+            // avatar path for *every* player. Other players must keep their real
+            // Steam avatars regardless of the "load other PFPs" toggle (it only
+            // controls the older in-menu broker routes).
+            let is_sidecar_route = path_str.contains("/content/images/players/avatars/");
+            let allow_other_pfps = is_sidecar_route
+                || (crate::avatar::is_load_other_pfps_enabled_internal()
+                    && crate::avatar::get_authenticated_steam_user_internal().is_some());
             if allow_other_pfps {
                 if let Some(steam_png) = crate::avatar::fetch_steam_avatar_png(steam_id).await {
                     crate::applog::event(&format!("broker: {path_str} queried for Steam ID {steam_id} -> responding with Steam avatar ({} bytes)", steam_png.len()));
@@ -8509,6 +8534,31 @@ mod tests {
         assert_eq!(val[1]["displayName"], "OtherPlayer");
         assert_eq!(learned_pid.as_deref(), Some("37674b519c3544beb544f437f539ebf2"));
         assert_eq!(learned_name.as_deref(), Some("OldName"));
+    }
+
+    #[test]
+    fn test_avatar_player_id_from_shift_sidecar_path() {
+        let id = 76561198000000000u64;
+        let path = format!(
+            "/content/images/players/avatars/large/{id}/0?buildsecret=abc123&tab=1"
+        );
+        assert_eq!(super::avatar_player_id_from_path(&path), Some(id));
+    }
+
+    #[test]
+    fn test_avatar_player_id_from_shift_sidecar_path_png() {
+        let id = 76561198012345678u64;
+        let path = format!("/content/images/players/avatars/large/{id}.png");
+        assert_eq!(super::avatar_player_id_from_path(&path), Some(id));
+    }
+
+    #[test]
+    fn test_avatar_player_id_from_local_route() {
+        let path = "/rlim/avatar/76561198000000000";
+        assert_eq!(
+            super::avatar_player_id_from_path(path),
+            Some(76561198000000000)
+        );
     }
 }
 

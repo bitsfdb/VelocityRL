@@ -11,7 +11,8 @@ use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use tauri::Manager;
-use crate::upk::swapper::TAGAME_BACKUP_NAME;
+use crate::upk::crypto;
+use crate::upk::swapper::{TAGAME_BACKUP_NAME, TAGAME_KEY};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomProfileConfig {
@@ -539,7 +540,16 @@ fn percent_decode(s: &str) -> String {
 /// or legacy Steam2 format (STEAM_0:X:Y / STEAM_1:X:Y) into a validated 64-bit Steam ID.
 pub fn parse_steam_id(raw: &str) -> Option<u64> {
     let decoded = percent_decode(raw.trim());
-    let s = decoded.trim();
+    let mut s = decoded.trim();
+    // Rocket League PlayerIDString values are sometimes prefixed with the
+    // platform name (e.g. "steam:7656...", "steam|7656...").
+    let lower = s.to_ascii_lowercase();
+    for prefix in ["steam:", "steam|", "steamid:", "steamid64:"] {
+        if lower.starts_with(prefix) {
+            s = s[prefix.len()..].trim();
+            break;
+        }
+    }
     if s.is_empty() {
         return None;
     }
@@ -787,31 +797,67 @@ pub async fn apply_custom_avatar_upk(app: tauri::AppHandle, avatar_source: Strin
         fs::read(path).map_err(|e| format!("Failed to read avatar file: {e}"))?
     };
 
-    let (_, processed_png) = process_avatar_image(&image_bytes)?;
+    let (raw_bgra, processed_png) = process_avatar_image(&image_bytes)?;
     // Persist downloaded/processed avatar to local disk cache and /root/avatar.png
     let _ = save_cached_avatar(&app, &processed_png);
     let _ = fs::write("/root/avatar.png", &processed_png);
     set_active_avatar_png(processed_png.clone());
 
-    // Avatars are delivered by the local broker over HTTP. If a previous build
-    // stamped the avatar into TAGame.upk, restore the pristine backup so the
-    // old PlaceholderAnthem texture patch no longer applies to every player.
-    if let Some(game_dir) = get_game_dir(&app) {
-        if let Ok(cooked_dir) = crate::upk::swapper::resolve_cooked_dir(&game_dir) {
-            let tagame_path = cooked_dir.join("TAGame.upk");
-            let backup_path = cooked_dir.join(TAGAME_BACKUP_NAME);
-            if backup_path.is_file() && tagame_path.is_file() {
-                if let Err(e) = fs::copy(&backup_path, &tagame_path) {
-                    crate::applog::event(&format!("avatar: failed to remove legacy UPK avatar patch: {e}"));
-                } else {
-                    crate::applog::event("avatar: restored TAGame.upk from backup (web pipeline only)");
-                }
-            }
+    // Write the image into TAGame.upk and point only GFxData_LocalPlayer_TA at
+    // it. GFxData_Persona_TA is deliberately left alone: patching it made every
+    // player in the lobby show the local avatar.
+    apply_avatar_to_game(&app, &raw_bgra);
+
+    crate::applog::event("avatar: custom avatar applied to TAGame.upk (local player only)");
+    Ok("Custom avatar active for the local player".into())
+}
+
+/// Write the avatar texture/bytecode patch into the installed TAGame.upk.
+/// Failures are logged but never block the broker-side avatar.
+fn apply_avatar_to_game(app: &tauri::AppHandle, raw_bgra: &[u8]) {
+    let Some(game_dir) = get_game_dir(app) else {
+        return;
+    };
+    let Ok(cooked_dir) = crate::upk::swapper::resolve_cooked_dir(&game_dir) else {
+        return;
+    };
+    let tagame_path = cooked_dir.join("TAGame.upk");
+    if !tagame_path.is_file() {
+        return;
+    }
+    match apply_custom_avatar_to_tagame(&tagame_path, raw_bgra) {
+        Ok(()) => crate::applog::event("avatar: TAGame.upk patched for local player avatar"),
+        Err(e) => crate::applog::event(&format!("avatar: failed to patch TAGame.upk: {e}")),
+    }
+}
+
+/// Re-apply the cached custom avatar on startup. The in-memory avatar and the
+/// TAGame.upk bytecode patch do not survive an app restart on their own, which
+/// is why the picture used to appear only after pressing Apply again.
+pub fn ensure_cached_avatar_applied(app: &tauri::AppHandle) {
+    let mut cached: Option<Vec<u8>> = None;
+    if let Ok(dir) = app.path().app_config_dir() {
+        let path = dir.join("custom_avatars").join("active_avatar.png");
+        if let Ok(bytes) = fs::read(&path) {
+            cached = Some(bytes);
+        }
+    }
+    if cached.is_none() {
+        if let Ok(bytes) = fs::read("/root/avatar.png") {
+            cached = Some(bytes);
         }
     }
 
-    crate::applog::event("avatar: custom avatar activated via broker HTTP pipeline");
-    Ok("Custom avatar active via the local broker HTTP pipeline".into())
+    let Some(png_bytes) = cached else {
+        return;
+    };
+    let Ok((raw_bgra, processed_png)) = process_avatar_image(&png_bytes) else {
+        crate::applog::event("avatar: cached avatar could not be decoded on startup");
+        return;
+    };
+    set_active_avatar_png(processed_png);
+    apply_avatar_to_game(app, &raw_bgra);
+    crate::applog::event("avatar: cached avatar restored on startup");
 }
 
 #[tauri::command]
@@ -837,6 +883,401 @@ pub fn restore_custom_avatar_upk(app: tauri::AppHandle) -> Result<String, String
     Ok("Vanilla avatar restored".into())
 }
 
+
+pub fn apply_custom_avatar_to_tagame(tagame_path: &Path, raw_bgra: &[u8]) -> Result<(), String> {
+    if raw_bgra.len() != 262_144 {
+        return Err("Raw BGRA buffer must be exactly 262,144 bytes".into());
+    }
+    if !tagame_path.is_file() {
+        return Err(format!("TAGame.upk not found at {}", tagame_path.display()));
+    }
+
+    let backup_path = tagame_path.with_file_name(TAGAME_BACKUP_NAME);
+    if !backup_path.is_file() {
+        fs::copy(tagame_path, &backup_path)
+            .map_err(|e| format!("Failed to create backup: {e}"))?;
+    }
+
+    // Read pristine file contents (from backup if available, else from tagame_path)
+    let mut file_bytes = if backup_path.is_file() {
+        fs::read(&backup_path).map_err(|e| format!("Failed to read backup: {e}"))?
+    } else {
+        fs::read(tagame_path).map_err(|e| format!("Failed to read TAGame.upk: {e}"))?
+    };
+
+    if file_bytes.len() < 32 {
+        return Err("TAGame.upk too small".into());
+    }
+
+    let total_header_size = u32::from_le_bytes(file_bytes[8..12].try_into().unwrap()) as usize;
+    let mut p = 12;
+    let flen = i32::from_le_bytes(file_bytes[p..p + 4].try_into().unwrap());
+    p += 4 + if flen > 0 { flen as usize } else { (-flen * 2) as usize };
+    p += 4;
+    let name_count = i32::from_le_bytes(file_bytes[p..p + 4].try_into().unwrap());
+    p += 4;
+    let name_offset = u32::from_le_bytes(file_bytes[p..p + 4].try_into().unwrap()) as usize;
+
+    let enc_size = (total_header_size - name_offset + 15) & !15;
+    let enc_end = name_offset + enc_size;
+    if enc_end > file_bytes.len() {
+        return Err("Encrypted header bounds invalid".into());
+    }
+
+    let mut plain_header = crypto::decrypt_ecb(&TAGAME_KEY, &file_bytes[name_offset..enc_end]);
+    let names = crate::upk::palette::parse_names_in_block(&plain_header, name_count)
+        .map_err(|e| e.to_string())?;
+
+    let p_sum = 12 + 4 + (if flen > 0 { flen as usize } else { (-flen * 2) as usize }) + 4 + 8;
+    let export_count = i32::from_le_bytes(file_bytes[p_sum..p_sum + 4].try_into().unwrap()) as usize;
+    let export_offset = i32::from_le_bytes(file_bytes[p_sum + 4..p_sum + 8].try_into().unwrap()) as usize;
+    let depends_offset = i32::from_le_bytes(file_bytes[p_sum + 16..p_sum + 20].try_into().unwrap()) as usize;
+
+    let export_rel = export_offset - name_offset;
+    let depends_rel = depends_offset - name_offset;
+
+    #[allow(dead_code)]
+    struct ExportEntry {
+        idx: usize,
+        name: String,
+        outer_idx: i32,
+        outer_name: String,
+        serial_size: i32,
+        serial_offset: i64,
+        header_pos: usize,
+    }
+
+    let mut exports: Vec<ExportEntry> = Vec::new();
+    let mut pos = export_rel;
+    while pos + 72 <= depends_rel && pos + 72 <= plain_header.len() && exports.len() < export_count {
+        let i32_at = |a: usize| i32::from_le_bytes(plain_header[pos + a..pos + a + 4].try_into().unwrap());
+        let outer_idx = i32_at(8);
+        let name_idx = i32_at(12);
+        let serial_size = i32_at(32);
+        let serial_offset = i64::from_le_bytes(plain_header[pos + 36..pos + 44].try_into().unwrap());
+        let noc = i32_at(48);
+
+        let nm = if name_idx >= 0 && (name_idx as usize) < names.len() {
+            names[name_idx as usize].clone()
+        } else {
+            String::new()
+        };
+
+        exports.push(ExportEntry {
+            idx: exports.len() + 1,
+            name: nm,
+            outer_idx,
+            outer_name: String::new(),
+            serial_size,
+            serial_offset,
+            header_pos: pos,
+        });
+        pos += 72 + (noc.max(0) as usize) * 4;
+    }
+
+    for i in 0..exports.len() {
+        let out_idx = exports[i].outer_idx;
+        if out_idx > 0 && (out_idx as usize) <= exports.len() {
+            exports[i].outer_name = exports[out_idx as usize - 1].name.clone();
+        }
+    }
+
+    #[allow(dead_code)]
+    struct ChunkEntry {
+        pos: usize,
+        uncomp_offset: i64,
+        uncomp_size: i32,
+        comp_offset: i64,
+        comp_size: i32,
+    }
+
+    let mut c_pos = depends_rel;
+    if c_pos + 4 > plain_header.len() {
+        return Err("Chunk table offset out of bounds".into());
+    }
+    let chunk_count = i32::from_le_bytes(plain_header[c_pos..c_pos + 4].try_into().unwrap()) as usize;
+    c_pos += 4;
+
+    let mut chunks = Vec::with_capacity(chunk_count);
+    for _ in 0..chunk_count {
+        if c_pos + 36 > plain_header.len() {
+            break;
+        }
+        let uncomp_offset = i64::from_le_bytes(plain_header[c_pos..c_pos + 8].try_into().unwrap());
+        let uncomp_size = i32::from_le_bytes(plain_header[c_pos + 8..c_pos + 12].try_into().unwrap());
+        let comp_offset = i64::from_le_bytes(plain_header[c_pos + 12..c_pos + 20].try_into().unwrap());
+        let comp_size = i32::from_le_bytes(plain_header[c_pos + 20..c_pos + 24].try_into().unwrap());
+        chunks.push(ChunkEntry {
+            pos: c_pos,
+            uncomp_offset,
+            uncomp_size,
+            comp_offset,
+            comp_size,
+        });
+        c_pos += 36;
+    }
+
+    if chunks.len() < 7 {
+        return Err("TAGame.upk has insufficient chunks".into());
+    }
+
+    // 1. Patch GFxData_LocalPlayer_TA::HandleGetAvatar in whichever chunk
+    //    actually contains it. Older builds assumed chunk 1, but in current
+    //    Rocket League packages these functions live in a later chunk — using
+    //    a hardcoded index silently did nothing, which is why the local avatar
+    //    only appeared intermittently.
+    let get_avatar_exp = exports
+        .iter()
+        .find(|e| e.name == "HandleGetAvatar" && e.outer_name == "GFxData_LocalPlayer_TA")
+        .ok_or_else(|| "HandleGetAvatar not found in GFxData_LocalPlayer_TA".to_string())?;
+
+    let avatar_chunk_idx = chunks
+        .iter()
+        .position(|c| {
+            get_avatar_exp.serial_offset >= c.uncomp_offset
+                && get_avatar_exp.serial_offset < c.uncomp_offset + c.uncomp_size as i64
+        })
+        .ok_or_else(|| "HandleGetAvatar chunk not found".to_string())?;
+    let ac = &chunks[avatar_chunk_idx];
+    let ac_start = ac.comp_offset as usize;
+    let ac_end = ac_start + ac.comp_size as usize;
+    if ac_end > file_bytes.len() {
+        return Err("avatar function chunk out of bounds".into());
+    }
+
+    let mut decomp_av = crate::upk::compression::decompress_chunk(&file_bytes[ac_start..ac_end])
+        .map_err(|e| format!("Decompress avatar function chunk failed: {e}"))?;
+
+    let fn_rel_off = (get_avatar_exp.serial_offset - ac.uncomp_offset) as usize;
+    if fn_rel_off + 48 + 14 > decomp_av.len() {
+        return Err("HandleGetAvatar script out of bounds".into());
+    }
+    let script_disk_sz =
+        u32::from_le_bytes(decomp_av[fn_rel_off + 44..fn_rel_off + 48].try_into().unwrap()) as usize;
+    if script_disk_sz == 14 {
+        let patched_bc = [
+            0x0f, 0x01, 0xd1, 0x85, 0x00, 0x00, // EX_LET PlayerAvatarTexture
+            0x20, 0x3a, 0x6b, 0x01, 0x00, // EX_OBJECT_CONST PlaceholderAnthem (#92986)
+            0x04, 0x0b, 0x4c, // EX_RETURN EX_NOTHING EX_END_OF_SCRIPT
+        ];
+        decomp_av[fn_rel_off + 48..fn_rel_off + 48 + 14].copy_from_slice(&patched_bc);
+    }
+
+    // Older builds also patched GFxData_Persona_TA::HandleGetAvatar, which made
+    // every player in the lobby display the local avatar. Undo that here even
+    // when the source TAGame.upk (or its .bak) still carries the old patch.
+    if let Some(persona_exp) = exports
+        .iter()
+        .find(|e| e.name == "HandleGetAvatar" && e.outer_name == "GFxData_Persona_TA")
+    {
+        let p_rel_off = (persona_exp.serial_offset - ac.uncomp_offset) as usize;
+        if p_rel_off + 48 + 14 <= decomp_av.len() {
+            let original_bc = [
+                0x0f, 0x01, 0xdb, 0x91, 0x00, 0x00, // EX_LET PlayerAvatar
+                0x2b, 0xe2, 0x91, 0x00, 0x00, // EX_CONTEXT (Avatar param)
+                0x04, 0x0b, 0x4c, // EX_RETURN EX_NOTHING EX_END_OF_SCRIPT
+            ];
+            let patched_bc = [
+                0x0f, 0x01, 0xdb, 0x91, 0x00, 0x00, // EX_LET PlayerAvatar
+                0x20, 0x3a, 0x6b, 0x01, 0x00, // EX_OBJECT_CONST PlaceholderAnthem
+                0x04, 0x0b, 0x4c,
+            ];
+            let cur = &decomp_av[p_rel_off + 48..p_rel_off + 48 + 14];
+            if cur == patched_bc {
+                decomp_av[p_rel_off + 48..p_rel_off + 48 + 14].copy_from_slice(&original_bc);
+                crate::applog::event("avatar: reverted legacy persona avatar patch");
+            }
+        }
+    }
+
+    let recomp_av = crate::upk::compression::compress_chunk(&decomp_av)
+        .map_err(|e| format!("Recompress avatar function chunk failed: {e}"))?;
+    let orig_av_sz = ac.comp_size as usize;
+    if recomp_av.len() <= orig_av_sz {
+        let mut padded = recomp_av;
+        padded.resize(orig_av_sz, 0);
+        file_bytes[ac_start..ac_start + orig_av_sz].copy_from_slice(&padded);
+    } else {
+        return Err("Recompressed avatar function chunk exceeds allocation".into());
+    }
+
+    // 2. Patch Chunk 6: album_anthem_placeholderanthem.PlaceholderAnthem bulk data
+    let c6_start = chunks[6].comp_offset as usize;
+    let c6_end = c6_start + chunks[6].comp_size as usize;
+    if c6_end > file_bytes.len() {
+        return Err("Chunk 6 out of bounds".into());
+    }
+
+    let mut decomp6 = crate::upk::compression::decompress_chunk(&file_bytes[c6_start..c6_end])
+        .map_err(|e| format!("Decompress Chunk 6 failed: {e}"))?;
+
+    let tex_exp = exports.iter().find(|e| e.name == "PlaceholderAnthem")
+        .ok_or_else(|| "PlaceholderAnthem not found".to_string())?;
+
+    let tex_rel_off = (tex_exp.serial_offset - chunks[6].uncomp_offset) as usize;
+    let pixel_start = tex_rel_off + 360;
+    if pixel_start + 262_144 <= decomp6.len() {
+        decomp6[pixel_start..pixel_start + 262_144].copy_from_slice(raw_bgra);
+    } else {
+        return Err("PlaceholderAnthem pixel offset out of bounds".into());
+    }
+
+    let recomp6 = crate::upk::compression::compress_chunk(&decomp6)
+        .map_err(|e| format!("Recompress Chunk 6 failed: {e}"))?;
+    let orig_c6_sz = chunks[6].comp_size as usize;
+
+    if recomp6.len() <= orig_c6_sz {
+        // Fits in-place
+        let mut padded6 = recomp6;
+        padded6.resize(orig_c6_sz, 0);
+        file_bytes[c6_start..c6_start + orig_c6_sz].copy_from_slice(&padded6);
+    } else {
+        // RL subsequent chunks cleanly
+        let delta = recomp6.len() as i64 - orig_c6_sz as i64;
+        let tail_start = c6_start + orig_c6_sz;
+        let tail = file_bytes[tail_start..].to_vec();
+
+        file_bytes.truncate(c6_start);
+        file_bytes.extend_from_slice(&recomp6);
+        file_bytes.extend_from_slice(&tail);
+
+        // Update Chunk 6 comp_size in plain_header
+        plain_header[chunks[6].pos + 20..chunks[6].pos + 24]
+            .copy_from_slice(&(recomp6.len() as i32).to_le_bytes());
+
+        // RL subsequent chunks comp_offset
+        for ch in &chunks[7..] {
+            let new_co = ch.comp_offset + delta;
+            plain_header[ch.pos + 12..ch.pos + 20]
+                .copy_from_slice(&new_co.to_le_bytes());
+        }
+
+        // Re-encrypt header with updated chunk table
+        let re_enc = crypto::encrypt_ecb(&TAGAME_KEY, &plain_header);
+        file_bytes[name_offset..enc_end].copy_from_slice(&re_enc);
+    }
+
+    // 3. Transplant the sidecar avatar URL bytecode from Shift's UpdatePRIData.
+    //    The stock function never fetches avatars over HTTP; Shift's version
+    //    builds http://127.0.0.1:49320/Content/Images/Players/Avatars/Large/<id>/
+    //    and hands it to WebImageCache.SyncImageURL. The broker answers with the
+    //    custom avatar for the local player and with each other player's Steam
+    //    avatar, which is exactly the behaviour we need.
+    //
+    //    The bytecode references only objects that exist in the stock package
+    //    (verified: all 1709 referenced object indices resolve identically), so
+    //    it can be pasted verbatim. A fresh export serial block is appended to
+    //    the end of the owning chunk and the export's serial_offset is repointed
+    //    there, which avoids touching the other exports in that chunk.
+    {
+        const SHIFT_UPDATE_PRI_DATA: &[u8] = include_bytes!("avatar/shift_update_pri_data.bin");
+        const SHIFT_MEM_SIZE: u32 = 28_742;
+        const SHIFT_SCRIPT_SIZE: u32 = 19_434;
+
+        let pri_exp = exports
+            .iter()
+            .find(|e| e.name == "UpdatePRIData" && e.outer_name == "GFxData_PRI_TA")
+            .ok_or_else(|| "GFxData_PRI_TA::UpdatePRIData not found".to_string())?;
+
+        let url_chunk_idx = chunks
+            .iter()
+            .position(|c| {
+                pri_exp.serial_offset >= c.uncomp_offset
+                    && pri_exp.serial_offset < c.uncomp_offset + c.uncomp_size as i64
+            })
+            .ok_or_else(|| "UpdatePRIData chunk not found".to_string())?;
+
+        // Chunk 6 may have grown and shifted later chunks, so read the live
+        // offsets from the (decrypted) header rather than the cached table.
+        let cp = chunks[url_chunk_idx].pos;
+        let uncomp_offset = i64::from_le_bytes(plain_header[cp..cp + 8].try_into().unwrap());
+        let comp_offset = i64::from_le_bytes(plain_header[cp + 12..cp + 20].try_into().unwrap());
+        let orig_comp_size =
+            i32::from_le_bytes(plain_header[cp + 20..cp + 24].try_into().unwrap()) as usize;
+        let start = comp_offset as usize;
+        let end = start + orig_comp_size;
+        if end > file_bytes.len() {
+            return Err("avatar URL chunk out of bounds".into());
+        }
+
+        let mut decomp = crate::upk::compression::decompress_chunk(&file_bytes[start..end])
+            .map_err(|e| format!("Decompress avatar URL chunk failed: {e}"))?;
+
+        let orig_rel = (pri_exp.serial_offset - uncomp_offset) as usize;
+        if orig_rel + 48 > decomp.len() {
+            return Err("avatar URL export header out of bounds".into());
+        }
+
+        // Reuse the original serial header (and any trailing fields after the
+        // script), but swap in the transplanted bytecode and its sizes.
+        let orig_serial_size = pri_exp.serial_size.max(48) as usize;
+        if orig_rel + orig_serial_size > decomp.len() {
+            return Err("avatar URL export serial out of bounds".into());
+        }
+        let mut serial = decomp[orig_rel..orig_rel + orig_serial_size].to_vec();
+        let orig_disk_sz = i32::from_le_bytes(serial[44..48].try_into().unwrap()).max(0) as usize;
+        let trailing = if 48 + orig_disk_sz < serial.len() {
+            serial[48 + orig_disk_sz..].to_vec()
+        } else {
+            Vec::new()
+        };
+        serial.truncate(48);
+        serial[40..44].copy_from_slice(&SHIFT_MEM_SIZE.to_le_bytes());
+        serial[44..48].copy_from_slice(&SHIFT_SCRIPT_SIZE.to_le_bytes());
+        serial.extend_from_slice(SHIFT_UPDATE_PRI_DATA);
+        serial.extend_from_slice(&trailing);
+
+        let new_rel = decomp.len();
+        decomp.extend_from_slice(&serial);
+
+        // Repoint the export at the appended serial block.
+        let ep = pri_exp.header_pos;
+        let new_serial_size = serial.len() as i32;
+        plain_header[ep + 32..ep + 36].copy_from_slice(&new_serial_size.to_le_bytes());
+        let new_serial_offset = uncomp_offset + new_rel as i64;
+        plain_header[ep + 36..ep + 44].copy_from_slice(&new_serial_offset.to_le_bytes());
+
+        // The chunk now decompresses to more bytes.
+        plain_header[cp + 8..cp + 12].copy_from_slice(&(decomp.len() as i32).to_le_bytes());
+
+        let recomp = crate::upk::compression::compress_chunk(&decomp)
+            .map_err(|e| format!("Recompress avatar URL chunk failed: {e}"))?;
+        if recomp.len() <= orig_comp_size {
+            let mut padded = recomp;
+            padded.resize(orig_comp_size, 0);
+            file_bytes[start..start + orig_comp_size].copy_from_slice(&padded);
+        } else {
+            let delta = recomp.len() as i64 - orig_comp_size as i64;
+            let tail = file_bytes[start + orig_comp_size..].to_vec();
+            file_bytes.truncate(start);
+            file_bytes.extend_from_slice(&recomp);
+            file_bytes.extend_from_slice(&tail);
+            plain_header[cp + 20..cp + 24].copy_from_slice(&(recomp.len() as i32).to_le_bytes());
+            for ch in &chunks[url_chunk_idx + 1..] {
+                let co = i64::from_le_bytes(plain_header[ch.pos + 12..ch.pos + 20].try_into().unwrap());
+                plain_header[ch.pos + 12..ch.pos + 20].copy_from_slice(&(co + delta).to_le_bytes());
+            }
+        }
+
+        crate::applog::event(
+            "avatar: transplanted Shift UpdatePRIData (sidecar avatar URL delivery)",
+        );
+    }
+
+    // Persist every header change made by the patches above. Re-encrypting an
+    // already updated header is harmless (same plaintext -> same ciphertext).
+    let re_enc = crypto::encrypt_ecb(&TAGAME_KEY, &plain_header);
+    file_bytes[name_offset..enc_end].copy_from_slice(&re_enc);
+
+    // Atomic write to TAGame.upk
+    let tmp_path = tagame_path.with_extension("tmp_avatar");
+    fs::write(&tmp_path, &file_bytes)
+        .map_err(|e| format!("Failed to write patched UPK: {e}"))?;
+    fs::rename(&tmp_path, tagame_path)
+        .map_err(|e| format!("Failed to atomically replace TAGame.upk: {e}"))?;
+
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {

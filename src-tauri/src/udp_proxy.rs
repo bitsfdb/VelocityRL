@@ -15,18 +15,20 @@ use tokio::sync::RwLock;
 use aes::Aes256;
 use cbc::{Decryptor, Encryptor};
 use cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvInit};
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
 
-type HmacSha256 = Hmac<Sha256>;
 type Aes256CbcDec = Decryptor<Aes256>;
 type Aes256CbcEnc = Encryptor<Aes256>;
+
+/// How many recently seen reservation keys to keep trying per datagram.
+const MAX_CRYPTO_CANDIDATES: usize = 4;
 
 /// Modern Rocket League UDP Match Security Session Keys
 #[derive(Clone, Debug)]
 pub struct ReservationCrypto {
     pub aes_key: [u8; 32],
     pub aes_iv: [u8; 16],
+    /// Present in the reservation payload; the current match protocol does not
+    /// append a MAC to each datagram, so this is retained for diagnostics only.
     pub hmac_key: [u8; 32],
 }
 
@@ -48,8 +50,10 @@ struct ProxyState {
     target_server: RwLock<Option<SocketAddr>>,
     /// Learned endpoint of the local Rocket League client.
     client_endpoint: RwLock<Option<SocketAddr>>,
-    /// Active AES-256-CBC and HMAC-SHA256 session keys parsed from reservation.
-    active_crypto: RwLock<Option<ReservationCrypto>>,
+    /// Candidate AES-256-CBC session keys parsed from reservations. PsyNet can
+    /// re-issue a reservation with a fresh key that the match never uses, so we
+    /// keep a few and use whichever one actually decrypts the datagram.
+    active_crypto: RwLock<Vec<ReservationCrypto>>,
     /// Whether the proxy is active.
     running: AtomicBool,
 }
@@ -188,7 +192,7 @@ mod once_cell_or_lazy {
                         local_port: AtomicU16::new(0),
                         target_server: RwLock::new(None),
                         client_endpoint: RwLock::new(None),
-                        active_crypto: RwLock::new(None),
+                        active_crypto: RwLock::new(Vec::new()),
                         running: AtomicBool::new(false),
                     })
                 })
@@ -251,17 +255,16 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                     // Forward to real game server (with C2S login bunch rewrite if spoofing name)
                     let target_opt = *state_c2s.target_server.read().await;
                     if let Some(target) = target_opt {
-                        let active_crypto_opt = state_c2s.active_crypto.read().await.clone();
+                        let cryptos = state_c2s.active_crypto.read().await.clone();
 
-                        let encrypted = active_crypto_opt.is_some();
-                        let (final_buf, plaintext, was_patched) = if let Some(crypto) = active_crypto_opt {
+                        let encrypted = !cryptos.is_empty();
+                        let (final_buf, plaintext, was_patched) = if !cryptos.is_empty() {
                             // Datagram proxying pipeline:
-                            // 1. Decrypt C2S datagram with AES-256-CBC
-                            // 2. Validate PKCS#7 padding and length (must have 32-byte HMAC at end)
-                            // 3. Patch plaintext bunch (?Name=...)
-                            // 4. Recompute HMAC-SHA256 over patched plaintext
-                            // 5. Append HMAC, PKCS#7 pad to 16 bytes, re-encrypt with AES-256-CBC
-                            process_c2s_encrypted_datagram(&buf[..len], &crypto)
+                            // 1. Decrypt C2S datagram with AES-256-CBC (whole datagram,
+                            //    PKCS#7 padded; no trailing MAC in the current protocol)
+                            // 2. Patch plaintext bunch (?Name=...)
+                            // 3. Re-encrypt with the same reservation key
+                            process_c2s_encrypted_datagram(&buf[..len], &cryptos)
                         } else {
                             // Unencrypted fallback
                             let mut unenc_buf = buf[..len].to_vec();
@@ -344,11 +347,9 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                 Ok((len, from_server)) => {
                     s2c_pkt_count += 1;
 
-                    let crypto_opt = state_s2c.active_crypto.read().await.clone();
-                    let encrypted = crypto_opt.is_some();
-                    let plaintext = crypto_opt
-                        .as_ref()
-                        .and_then(|crypto| decrypt_datagram_payload(&buf[..len], crypto));
+                    let cryptos = state_s2c.active_crypto.read().await.clone();
+                    let encrypted = !cryptos.is_empty();
+                    let plaintext = decrypt_datagram_payload(&buf[..len], &cryptos);
                     let scanned = plaintext.as_deref().unwrap_or(&buf[..len]);
 
                     // Capture the decrypted view for the monitor and dump. The original
@@ -467,9 +468,31 @@ pub async fn set_active_reservation_with_crypto(
     }
     {
         let mut crypto_lock = state.active_crypto.write().await;
-        *crypto_lock = crypto.clone();
+        match crypto.clone() {
+            // A reservation without keys means the match stream is plaintext.
+            None => crypto_lock.clear(),
+            Some(crypto) => {
+                crypto_lock.retain(|existing| {
+                    existing.aes_key != crypto.aes_key || existing.aes_iv != crypto.aes_iv
+                });
+                crypto_lock.insert(0, crypto);
+                crypto_lock.truncate(MAX_CRYPTO_CANDIDATES);
+            }
+        }
     }
 
+    let crypto_mode = {
+        let crypto_lock = state.active_crypto.read().await;
+        if crypto_lock.is_empty() {
+            "Plaintext Passthrough".to_string()
+        } else {
+            format!(
+                "AES-256-CBC ({} candidate key{})",
+                crypto_lock.len(),
+                if crypto_lock.len() == 1 { "" } else { "s" }
+            )
+        }
+    };
     crate::proxy::record_network_event(
         "UDP",
         "LOOPBACK",
@@ -477,8 +500,7 @@ pub async fn set_active_reservation_with_crypto(
         "RESERVATION",
         &format!("Active Match Server Rerouted -> 127.0.0.1:{proxy_port}"),
         &format!(
-            "Target Upstream Match Server: {resolved}\nLocal Bound UDP Port: {proxy_port}\nCrypto Mode: {}",
-            if crypto.is_some() { "AES-256-CBC + HMAC-SHA256" } else { "Plaintext Passthrough" }
+            "Target Upstream Match Server: {resolved}\nLocal Bound UDP Port: {proxy_port}\nCrypto Mode: {crypto_mode}"
         ),
         true,
     );
@@ -487,47 +509,22 @@ pub async fn set_active_reservation_with_crypto(
 }
 
 /// UDP packet decrypt & rewrite routine:
-/// 1. Decrypt AES-256-CBC datagram using reservation AES key and IV
-/// 2. Unpad PKCS#7 (and verify block padding)
-/// 3. Verify payload contains 32-byte HMAC-SHA256 digest at end
-/// 4. Extract plaintext payload, patch `?Name=` UE login bunch if spoofing
-/// 5. Compute new HMAC-SHA256 digest over patched plaintext
-/// 6. Append HMAC-SHA256 digest, pad with PKCS#7 to 16 bytes
-/// 7. Encrypt with AES-256-CBC using reservation AES key and IV
+/// 1. Decrypt the AES-256-CBC datagram (whole datagram, PKCS#7 padded) using
+///    whichever reservation key actually decrypts it
+/// 2. Patch `?Name=` UE login bunch if spoofing
+/// 3. Re-encrypt with the same key
 pub fn process_c2s_encrypted_datagram(
     packet: &[u8],
-    crypto: &ReservationCrypto,
+    cryptos: &[ReservationCrypto],
 ) -> (Vec<u8>, Option<Vec<u8>>, bool) {
-    if packet.len() < 48 || packet.len() % 16 != 0 {
-        // Not a valid AES-CBC encrypted block datagram
-        return (packet.to_vec(), None, false);
-    }
-
     // 1. Decrypt datagram with AES-256-CBC
-    let mut dec_buf = packet.to_vec();
-    let decryptor = match Aes256CbcDec::new_from_slices(&crypto.aes_key, &crypto.aes_iv) {
-        Ok(d) => d,
-        Err(_) => return (packet.to_vec(), None, false),
+    let (mut payload, crypto) = match decrypt_datagram_with_candidates(packet, cryptos) {
+        Some(found) => found,
+        // Decrypt failed or padding invalid; passthrough original packet
+        None => return (packet.to_vec(), None, false),
     };
 
-    let pt = match decryptor.decrypt_padded_mut::<Pkcs7>(&mut dec_buf) {
-        Ok(p) => p,
-        Err(_) => {
-            // Decrypt failed or padding invalid; passthrough original packet
-            return (packet.to_vec(), None, false);
-        }
-    };
-
-    // 2. Verified length: must have at least 32 bytes for the HMAC-SHA256 signature
-    if pt.len() < 32 {
-        return (packet.to_vec(), None, false);
-    }
-
-    let payload_len = pt.len() - 32;
-    let mut payload = pt[..payload_len].to_vec();
-    let _received_hmac = &pt[payload_len..];
-
-    // 3. Patch plaintext bunch if name spoofing is active
+    // 2. Patch plaintext bunch if name spoofing is active
     let mut effective_len = payload.len();
     let mut was_patched = false;
 
@@ -556,7 +553,7 @@ pub fn process_c2s_encrypted_datagram(
         return (packet.to_vec(), Some(payload), false);
     }
 
-    // 4-6. Recompute HMAC-SHA256, append tag, and re-encrypt with AES-256-CBC.
+    // 3. Re-encrypt with the reservation key that decrypted this packet.
     match encrypt_datagram_payload(&payload, crypto) {
         (encrypted, true) => (encrypted, Some(payload), true),
         _ => (packet.to_vec(), Some(payload), false),
@@ -762,42 +759,46 @@ pub fn patch_c2s_login_bunch(buf: &mut [u8], len: &mut usize, target_name: &str)
     false
 }
 
-/// Decrypt an encrypted datagram using modern AES-256-CBC and return the plaintext bunch payload.
-pub fn decrypt_datagram_payload(packet: &[u8], crypto: &ReservationCrypto) -> Option<Vec<u8>> {
-    if packet.len() < 48 || packet.len() % 16 != 0 {
+/// Try each known reservation key against a datagram. The first key whose
+/// PKCS#7 padding validates wins; this tolerates PsyNet issuing a fresh (unused)
+/// reservation key for the same match.
+fn decrypt_datagram_with_candidates<'a>(
+    packet: &[u8],
+    cryptos: &'a [ReservationCrypto],
+) -> Option<(Vec<u8>, &'a ReservationCrypto)> {
+    if cryptos.is_empty() || packet.len() < 16 || packet.len() % 16 != 0 {
         return None;
     }
-    let mut dec_buf = packet.to_vec();
-    let decryptor = Aes256CbcDec::new_from_slices(&crypto.aes_key, &crypto.aes_iv).ok()?;
-    let pt = decryptor.decrypt_padded_mut::<Pkcs7>(&mut dec_buf).ok()?;
-    if pt.len() < 32 {
-        return None;
+    for crypto in cryptos {
+        let decryptor = match Aes256CbcDec::new_from_slices(&crypto.aes_key, &crypto.aes_iv) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+        let mut dec_buf = packet.to_vec();
+        if let Ok(pt) = decryptor.decrypt_padded_mut::<Pkcs7>(&mut dec_buf) {
+            return Some((pt.to_vec(), crypto));
+        }
     }
-    let payload_len = pt.len() - 32;
-    Some(pt[..payload_len].to_vec())
+    None
 }
 
-/// Encrypt a plaintext payload into an authenticated match datagram.
-/// Mirrors the reservation datagram format: [payload][HMAC-SHA256(32 bytes)] -> AES-256-CBC with PKCS#7 padding.
+/// Decrypt an encrypted datagram and return the plaintext bunch payload.
+pub fn decrypt_datagram_payload(packet: &[u8], cryptos: &[ReservationCrypto]) -> Option<Vec<u8>> {
+    decrypt_datagram_with_candidates(packet, cryptos).map(|(plaintext, _)| plaintext)
+}
+
+/// Encrypt a plaintext payload into a match datagram: AES-256-CBC with PKCS#7
+/// padding over the whole datagram. The current Rocket League protocol does not
+/// append a MAC, so there is no appearing/disappearing 32-byte trailer.
 pub fn encrypt_datagram_payload(payload: &[u8], crypto: &ReservationCrypto) -> (Vec<u8>, bool) {
-    let mut mac = match HmacSha256::new_from_slice(&crypto.hmac_key) {
-        Ok(m) => m,
-        Err(_) => return (Vec::new(), false),
-    };
-    mac.update(payload);
-    let computed_hmac = mac.finalize().into_bytes();
-
-    let mut secured = payload.to_vec();
-    secured.extend_from_slice(&computed_hmac);
-
     let encryptor = match Aes256CbcEnc::new_from_slices(&crypto.aes_key, &crypto.aes_iv) {
         Ok(e) => e,
         Err(_) => return (Vec::new(), false),
     };
 
-    let data_len = secured.len();
+    let data_len = payload.len();
     let mut enc_buf = vec![0u8; data_len + 16];
-    enc_buf[..data_len].copy_from_slice(&secured);
+    enc_buf[..data_len].copy_from_slice(payload);
 
     match encryptor.encrypt_padded_mut::<Pkcs7>(&mut enc_buf, data_len) {
         Ok(ct) => (ct.to_vec(), true),
@@ -972,75 +973,58 @@ pub fn get_local_port() -> Option<u16> {
 mod tests {
     use super::*;
     use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvInit};
-    use hmac::{Hmac, Mac};
-    use sha2::Sha256;
 
     type Aes256CbcEnc = cbc::Encryptor<aes::Aes256>;
     type Aes256CbcDec = cbc::Decryptor<aes::Aes256>;
-    type HmacSha256 = Hmac<Sha256>;
+
+    fn crypto_with(key: u8, iv: u8) -> ReservationCrypto {
+        ReservationCrypto {
+            aes_key: [key; 32],
+            aes_iv: [iv; 16],
+            hmac_key: [0x55; 32],
+        }
+    }
+
+    fn encrypt_raw(raw: &[u8], crypto: &ReservationCrypto) -> Vec<u8> {
+        let enc = Aes256CbcEnc::new_from_slices(&crypto.aes_key, &crypto.aes_iv).unwrap();
+        let mut buf = vec![0u8; raw.len() + 16];
+        buf[..raw.len()].copy_from_slice(raw);
+        enc.encrypt_padded_mut::<Pkcs7>(&mut buf, raw.len())
+            .unwrap()
+            .to_vec()
+    }
 
     #[test]
-    fn test_process_c2s_encrypted_datagram_decryption_and_hmac_integrity() {
-        let crypto = ReservationCrypto {
-            aes_key: [0x42u8; 32],
-            aes_iv: [0x24u8; 16],
-            hmac_key: [0x55u8; 32],
-        };
+    fn test_process_c2s_encrypted_datagram_decryption() {
+        let crypto = crypto_with(0x42, 0x24);
 
         // Construct mock UE3 connection payload
         let raw_payload = b"\x01\x00\x00\x00\x15\x00\x00\x00:?Name=OriginalPlayer?Team=0\x00";
-
-        // Compute HMAC over raw payload
-        let mut mac = HmacSha256::new_from_slice(&crypto.hmac_key).unwrap();
-        mac.update(raw_payload);
-        let hmac_digest = mac.finalize().into_bytes();
-
-        let mut data_with_hmac = raw_payload.to_vec();
-        data_with_hmac.extend_from_slice(&hmac_digest);
-
-        // Encrypt with AES-256-CBC
-        let enc = Aes256CbcEnc::new_from_slices(&crypto.aes_key, &crypto.aes_iv).unwrap();
-        let pt_len = data_with_hmac.len();
-        let mut enc_buf = vec![0u8; pt_len + 16];
-        enc_buf[..pt_len].copy_from_slice(&data_with_hmac);
-        let ciphertext = enc.encrypt_padded_mut::<Pkcs7>(&mut enc_buf, pt_len).unwrap().to_vec();
+        let ciphertext = encrypt_raw(raw_payload, &crypto);
 
         // Process through proxy decryption
-        let (processed, plaintext, patched) = process_c2s_encrypted_datagram(&ciphertext, &crypto);
+        let (processed, plaintext, patched) =
+            process_c2s_encrypted_datagram(&ciphertext, &[crypto.clone()]);
 
         // Since no spoofing rule is active on disk in test, was_patched = false and packet passes through
         assert!(!patched, "Without spoof config, packet passes unmodified");
-        assert_eq!(processed, ciphertext, "Passthrough maintains 100% cryptographic byte parity");
+        assert_eq!(processed, ciphertext, "Passthrough maintains byte parity");
         assert_eq!(
             plaintext.as_deref(),
             Some(&raw_payload[..]),
             "Decrypted plaintext must be available even on passthrough"
         );
 
-        // Now test manual decryption of the ciphertext to ensure decryptor logic is sound
+        // Manual decryption should recover the exact payload (no MAC trailer).
         let dec = Aes256CbcDec::new_from_slices(&crypto.aes_key, &crypto.aes_iv).unwrap();
         let mut dec_buf = ciphertext.clone();
         let decrypted = dec.decrypt_padded_mut::<Pkcs7>(&mut dec_buf).unwrap();
-
-        assert_eq!(decrypted.len(), raw_payload.len() + 32);
-        let dec_payload = &decrypted[..raw_payload.len()];
-        let dec_hmac = &decrypted[raw_payload.len()..];
-
-        assert_eq!(dec_payload, raw_payload, "Decrypted payload matches original raw payload byte-for-byte");
-
-        // Verify HMAC
-        let mut verify_mac = HmacSha256::new_from_slice(&crypto.hmac_key).unwrap();
-        verify_mac.update(dec_payload);
-        verify_mac.verify_slice(dec_hmac).expect("HMAC-SHA256 must verify cleanly");
+        assert_eq!(decrypted, raw_payload, "Whole datagram decrypts to the payload");
     }
 
     #[test]
-    fn test_encrypt_datagram_payload_roundtrip_authenticates_and_decrypts() {
-        let crypto = ReservationCrypto {
-            aes_key: [0x31u8; 32],
-            aes_iv: [0x17u8; 16],
-            hmac_key: [0x9Bu8; 32],
-        };
+    fn test_encrypt_datagram_payload_roundtrip() {
+        let crypto = crypto_with(0x31, 0x17);
 
         let raw_payload = b"\x01\x00\x00\x00\x08\x00\x00\x00R.Name.v1\x00";
         let (ciphertext, ok) = encrypt_datagram_payload(raw_payload, &crypto);
@@ -1048,9 +1032,23 @@ mod tests {
         assert_eq!(ciphertext.len() % 16, 0, "ciphertext must be a whole number of AES blocks");
         assert_ne!(&ciphertext[..], raw_payload, "ciphertext must not equal plaintext");
 
-        let decrypted = decrypt_datagram_payload(&ciphertext, &crypto)
+        let decrypted = decrypt_datagram_payload(&ciphertext, &[crypto.clone()])
             .expect("decrypt_datagram_payload must recover the plaintext");
         assert_eq!(decrypted, raw_payload, "round-trip must preserve payload byte-for-byte");
+    }
+
+    #[test]
+    fn test_decrypt_tries_all_candidate_keys() {
+        let stale = crypto_with(0x11, 0x22);
+        let live = crypto_with(0x42, 0x24);
+
+        let raw_payload = b"NMT_Welcome\x00?Name=Player";
+        let ciphertext = encrypt_raw(raw_payload, &live);
+
+        // Newest reservation key is wrong; the older one still decrypts the stream.
+        let decrypted = decrypt_datagram_payload(&ciphertext, &[stale, live])
+            .expect("must fall back to the key that actually decrypts");
+        assert_eq!(decrypted, raw_payload);
     }
 
     #[test]
@@ -1072,14 +1070,11 @@ mod tests {
 
     #[test]
     fn test_process_c2s_encrypted_datagram_rejects_corrupted_padding() {
-        let crypto = ReservationCrypto {
-            aes_key: [0x42u8; 32],
-            aes_iv: [0x24u8; 16],
-            hmac_key: [0x55u8; 32],
-        };
+        let crypto = crypto_with(0x42, 0x24);
 
         let garbage_ciphertext = vec![0xAAu8; 48];
-        let (processed, plaintext, patched) = process_c2s_encrypted_datagram(&garbage_ciphertext, &crypto);
+        let (processed, plaintext, patched) =
+            process_c2s_encrypted_datagram(&garbage_ciphertext, &[crypto]);
         assert!(!patched);
         assert_eq!(processed, garbage_ciphertext, "Corrupted/unmatched ciphertexts must fail-safe passthrough");
         assert!(plaintext.is_none(), "Undecryptable packets must not expose fake plaintext");

@@ -3775,6 +3775,7 @@ pub fn run() {
             let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
             let dir = applog::init(app.handle());
             perform_startup_cache_maintenance(app.handle());
+            avatar::ensure_cached_avatar_applied(app.handle());
             let (_data_dir, _) = get_catalog_dirs(app.handle());
             psynet::ensure_wininet_revocation_disabled();
             #[cfg(windows)]
