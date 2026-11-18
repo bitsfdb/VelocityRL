@@ -11,8 +11,7 @@ use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use tauri::Manager;
-use crate::upk::crypto;
-use crate::upk::swapper::{TAGAME_KEY, TAGAME_BACKUP_NAME};
+use crate::upk::swapper::TAGAME_BACKUP_NAME;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomProfileConfig {
@@ -735,11 +734,6 @@ pub fn process_avatar_image(raw_bytes: &[u8]) -> Result<(Vec<u8>, Vec<u8>), Stri
     Ok((bgra, png_bytes))
 }
 
-pub fn process_avatar_to_bgra256(raw_bytes: &[u8]) -> Result<Vec<u8>, String> {
-    let (bgra, _) = process_avatar_image(raw_bytes)?;
-    Ok(bgra)
-}
-
 fn get_game_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
     if let Ok(dir) = app.path().app_config_dir() {
         let config_file = dir.join("config.json");
@@ -793,31 +787,31 @@ pub async fn apply_custom_avatar_upk(app: tauri::AppHandle, avatar_source: Strin
         fs::read(path).map_err(|e| format!("Failed to read avatar file: {e}"))?
     };
 
-    let (raw_bgra, processed_png) = process_avatar_image(&image_bytes)?;
+    let (_, processed_png) = process_avatar_image(&image_bytes)?;
     // Persist downloaded/processed avatar to local disk cache and /root/avatar.png
     let _ = save_cached_avatar(&app, &processed_png);
     let _ = fs::write("/root/avatar.png", &processed_png);
     set_active_avatar_png(processed_png.clone());
 
+    // Avatars are delivered by the local broker over HTTP. If a previous build
+    // stamped the avatar into TAGame.upk, restore the pristine backup so the
+    // old PlaceholderAnthem texture patch no longer applies to every player.
     if let Some(game_dir) = get_game_dir(&app) {
         if let Ok(cooked_dir) = crate::upk::swapper::resolve_cooked_dir(&game_dir) {
             let tagame_path = cooked_dir.join("TAGame.upk");
             let backup_path = cooked_dir.join(TAGAME_BACKUP_NAME);
-            if tagame_path.is_file() {
-                if !backup_path.is_file() {
-                    let _ = fs::copy(&tagame_path, &backup_path);
-                }
-                if let Err(e) = apply_custom_avatar_to_tagame(&tagame_path, &raw_bgra) {
-                    crate::applog::event(&format!("avatar: failed to apply to TAGame.upk: {e}"));
+            if backup_path.is_file() && tagame_path.is_file() {
+                if let Err(e) = fs::copy(&backup_path, &tagame_path) {
+                    crate::applog::event(&format!("avatar: failed to remove legacy UPK avatar patch: {e}"));
                 } else {
-                    crate::applog::event("avatar: successfully applied custom avatar to TAGame.upk");
+                    crate::applog::event("avatar: restored TAGame.upk from backup (web pipeline only)");
                 }
             }
         }
     }
 
-    crate::applog::event("avatar: custom avatar activated in broker pipeline and TAGame.upk");
-    Ok("Custom avatar active via broker HTTP pipeline and TAGame.upk".into())
+    crate::applog::event("avatar: custom avatar activated via broker HTTP pipeline");
+    Ok("Custom avatar active via the local broker HTTP pipeline".into())
 }
 
 #[tauri::command]
@@ -843,266 +837,6 @@ pub fn restore_custom_avatar_upk(app: tauri::AppHandle) -> Result<String, String
     Ok("Vanilla avatar restored".into())
 }
 
-pub fn apply_custom_avatar_to_tagame(tagame_path: &Path, raw_bgra: &[u8]) -> Result<(), String> {
-    if raw_bgra.len() != 262_144 {
-        return Err("Raw BGRA buffer must be exactly 262,144 bytes".into());
-    }
-    if !tagame_path.is_file() {
-        return Err(format!("TAGame.upk not found at {}", tagame_path.display()));
-    }
-
-    let backup_path = tagame_path.with_file_name(TAGAME_BACKUP_NAME);
-    if !backup_path.is_file() {
-        fs::copy(tagame_path, &backup_path)
-            .map_err(|e| format!("Failed to create backup: {e}"))?;
-    }
-
-    // Read pristine file contents (from backup if available, else from tagame_path)
-    let mut file_bytes = if backup_path.is_file() {
-        fs::read(&backup_path).map_err(|e| format!("Failed to read backup: {e}"))?
-    } else {
-        fs::read(tagame_path).map_err(|e| format!("Failed to read TAGame.upk: {e}"))?
-    };
-
-    if file_bytes.len() < 32 {
-        return Err("TAGame.upk too small".into());
-    }
-
-    let total_header_size = u32::from_le_bytes(file_bytes[8..12].try_into().unwrap()) as usize;
-    let mut p = 12;
-    let flen = i32::from_le_bytes(file_bytes[p..p + 4].try_into().unwrap());
-    p += 4 + if flen > 0 { flen as usize } else { (-flen * 2) as usize };
-    p += 4;
-    let name_count = i32::from_le_bytes(file_bytes[p..p + 4].try_into().unwrap());
-    p += 4;
-    let name_offset = u32::from_le_bytes(file_bytes[p..p + 4].try_into().unwrap()) as usize;
-
-    let enc_size = (total_header_size - name_offset + 15) & !15;
-    let enc_end = name_offset + enc_size;
-    if enc_end > file_bytes.len() {
-        return Err("Encrypted header bounds invalid".into());
-    }
-
-    let mut plain_header = crypto::decrypt_ecb(&TAGAME_KEY, &file_bytes[name_offset..enc_end]);
-    let names = crate::upk::palette::parse_names_in_block(&plain_header, name_count)
-        .map_err(|e| e.to_string())?;
-
-    let p_sum = 12 + 4 + (if flen > 0 { flen as usize } else { (-flen * 2) as usize }) + 4 + 8;
-    let export_count = i32::from_le_bytes(file_bytes[p_sum..p_sum + 4].try_into().unwrap()) as usize;
-    let export_offset = i32::from_le_bytes(file_bytes[p_sum + 4..p_sum + 8].try_into().unwrap()) as usize;
-    let depends_offset = i32::from_le_bytes(file_bytes[p_sum + 16..p_sum + 20].try_into().unwrap()) as usize;
-
-    let export_rel = export_offset - name_offset;
-    let depends_rel = depends_offset - name_offset;
-
-    #[allow(dead_code)]
-    struct ExportEntry {
-        idx: usize,
-        name: String,
-        outer_idx: i32,
-        outer_name: String,
-        serial_size: i32,
-        serial_offset: i64,
-    }
-
-    let mut exports: Vec<ExportEntry> = Vec::new();
-    let mut pos = export_rel;
-    while pos + 72 <= depends_rel && pos + 72 <= plain_header.len() && exports.len() < export_count {
-        let i32_at = |a: usize| i32::from_le_bytes(plain_header[pos + a..pos + a + 4].try_into().unwrap());
-        let outer_idx = i32_at(8);
-        let name_idx = i32_at(12);
-        let serial_size = i32_at(32);
-        let serial_offset = i64::from_le_bytes(plain_header[pos + 36..pos + 44].try_into().unwrap());
-        let noc = i32_at(48);
-
-        let nm = if name_idx >= 0 && (name_idx as usize) < names.len() {
-            names[name_idx as usize].clone()
-        } else {
-            String::new()
-        };
-
-        exports.push(ExportEntry {
-            idx: exports.len() + 1,
-            name: nm,
-            outer_idx,
-            outer_name: String::new(),
-            serial_size,
-            serial_offset,
-        });
-        pos += 72 + (noc.max(0) as usize) * 4;
-    }
-
-    for i in 0..exports.len() {
-        let out_idx = exports[i].outer_idx;
-        if out_idx > 0 && (out_idx as usize) <= exports.len() {
-            exports[i].outer_name = exports[out_idx as usize - 1].name.clone();
-        }
-    }
-
-    #[allow(dead_code)]
-    struct ChunkEntry {
-        pos: usize,
-        uncomp_offset: i64,
-        uncomp_size: i32,
-        comp_offset: i64,
-        comp_size: i32,
-    }
-
-    let mut c_pos = depends_rel;
-    if c_pos + 4 > plain_header.len() {
-        return Err("Chunk table offset out of bounds".into());
-    }
-    let chunk_count = i32::from_le_bytes(plain_header[c_pos..c_pos + 4].try_into().unwrap()) as usize;
-    c_pos += 4;
-
-    let mut chunks = Vec::with_capacity(chunk_count);
-    for _ in 0..chunk_count {
-        if c_pos + 36 > plain_header.len() {
-            break;
-        }
-        let uncomp_offset = i64::from_le_bytes(plain_header[c_pos..c_pos + 8].try_into().unwrap());
-        let uncomp_size = i32::from_le_bytes(plain_header[c_pos + 8..c_pos + 12].try_into().unwrap());
-        let comp_offset = i64::from_le_bytes(plain_header[c_pos + 12..c_pos + 20].try_into().unwrap());
-        let comp_size = i32::from_le_bytes(plain_header[c_pos + 20..c_pos + 24].try_into().unwrap());
-        chunks.push(ChunkEntry {
-            pos: c_pos,
-            uncomp_offset,
-            uncomp_size,
-            comp_offset,
-            comp_size,
-        });
-        c_pos += 36;
-    }
-
-    if chunks.len() < 7 {
-        return Err("TAGame.upk has insufficient chunks".into());
-    }
-
-    // 1. Patch Chunk 1:
-    //    a) GFxData_LocalPlayer_TA::HandleGetAvatar (Main menu & local banner)
-    //       Original bytecode (14 bytes): 0f 01 d1 85 00 00 2b 32 86 00 00 04 0b 4c
-    //       Patched bytecode (14 bytes):  0f 01 d1 85 00 00 20 3a 6b 01 00 04 0b 4c (EX_OBJECT_CONST PlaceholderAnthem #92986)
-    //    b) GFxData_Persona_TA::HandleGetAvatar (Scoreboard, party bar, & persona cards)
-    //       Original bytecode (14 bytes): 0f 01 db 91 00 00 2b e2 91 00 00 04 0b 4c
-    //       Patched bytecode (14 bytes):  0f 01 db 91 00 00 20 3a 6b 01 00 04 0b 4c (EX_OBJECT_CONST PlaceholderAnthem #92986)
-    let c1_start = chunks[1].comp_offset as usize;
-    let c1_end = c1_start + chunks[1].comp_size as usize;
-    if c1_end > file_bytes.len() {
-        return Err("Chunk 1 out of bounds".into());
-    }
-
-    let mut decomp1 = crate::upk::compression::decompress_chunk(&file_bytes[c1_start..c1_end])
-        .map_err(|e| format!("Decompress Chunk 1 failed: {e}"))?;
-
-    // a) Patch GFxData_LocalPlayer_TA::HandleGetAvatar
-    let get_avatar_exp = exports.iter().find(|e| e.name == "HandleGetAvatar" && e.outer_name == "GFxData_LocalPlayer_TA")
-        .ok_or_else(|| "HandleGetAvatar not found in GFxData_LocalPlayer_TA".to_string())?;
-
-    let fn_rel_off = (get_avatar_exp.serial_offset - chunks[1].uncomp_offset) as usize;
-    if fn_rel_off + 48 + 14 <= decomp1.len() {
-        let script_disk_sz = u32::from_le_bytes(decomp1[fn_rel_off + 44..fn_rel_off + 48].try_into().unwrap()) as usize;
-        if script_disk_sz == 14 {
-            let patched_bc = [
-                0x0f, 0x01, 0xd1, 0x85, 0x00, 0x00, // EX_LET PlayerAvatarTexture
-                0x20, 0x3a, 0x6b, 0x01, 0x00,       // EX_OBJECT_CONST PlaceholderAnthem (#92986)
-                0x04, 0x0b, 0x4c                    // EX_RETURN EX_NOTHING EX_END_OF_SCRIPT
-            ];
-            decomp1[fn_rel_off + 48..fn_rel_off + 48 + 14].copy_from_slice(&patched_bc);
-        }
-    }
-
-    // b) Patch GFxData_Persona_TA::HandleGetAvatar
-    if let Some(persona_avatar_exp) = exports.iter().find(|e| e.name == "HandleGetAvatar" && e.outer_name == "GFxData_Persona_TA") {
-        let p_rel_off = (persona_avatar_exp.serial_offset - chunks[1].uncomp_offset) as usize;
-        if p_rel_off + 48 + 14 <= decomp1.len() {
-            let script_disk_sz = u32::from_le_bytes(decomp1[p_rel_off + 44..p_rel_off + 48].try_into().unwrap()) as usize;
-            if script_disk_sz == 14 {
-                let patched_persona_bc = [
-                    0x0f, 0x01, 0xdb, 0x91, 0x00, 0x00, // EX_LET PlayerAvatar (Export #37339)
-                    0x20, 0x3a, 0x6b, 0x01, 0x00,       // EX_OBJECT_CONST PlaceholderAnthem (#92986)
-                    0x04, 0x0b, 0x4c                    // EX_RETURN EX_NOTHING EX_END_OF_SCRIPT
-                ];
-                decomp1[p_rel_off + 48..p_rel_off + 48 + 14].copy_from_slice(&patched_persona_bc);
-            }
-        }
-    }
-
-    let recomp1 = crate::upk::compression::compress_chunk(&decomp1)
-        .map_err(|e| format!("Recompress Chunk 1 failed: {e}"))?;
-    let orig_c1_sz = chunks[1].comp_size as usize;
-    if recomp1.len() <= orig_c1_sz {
-        let mut padded1 = recomp1;
-        padded1.resize(orig_c1_sz, 0);
-        file_bytes[c1_start..c1_start + orig_c1_sz].copy_from_slice(&padded1);
-    } else {
-        return Err("Recompressed Chunk 1 exceeds allocation".into());
-    }
-
-    // 2. Patch Chunk 6: album_anthem_placeholderanthem.PlaceholderAnthem bulk data
-    let c6_start = chunks[6].comp_offset as usize;
-    let c6_end = c6_start + chunks[6].comp_size as usize;
-    if c6_end > file_bytes.len() {
-        return Err("Chunk 6 out of bounds".into());
-    }
-
-    let mut decomp6 = crate::upk::compression::decompress_chunk(&file_bytes[c6_start..c6_end])
-        .map_err(|e| format!("Decompress Chunk 6 failed: {e}"))?;
-
-    let tex_exp = exports.iter().find(|e| e.name == "PlaceholderAnthem")
-        .ok_or_else(|| "PlaceholderAnthem not found".to_string())?;
-
-    let tex_rel_off = (tex_exp.serial_offset - chunks[6].uncomp_offset) as usize;
-    let pixel_start = tex_rel_off + 360;
-    if pixel_start + 262_144 <= decomp6.len() {
-        decomp6[pixel_start..pixel_start + 262_144].copy_from_slice(raw_bgra);
-    } else {
-        return Err("PlaceholderAnthem pixel offset out of bounds".into());
-    }
-
-    let recomp6 = crate::upk::compression::compress_chunk(&decomp6)
-        .map_err(|e| format!("Recompress Chunk 6 failed: {e}"))?;
-    let orig_c6_sz = chunks[6].comp_size as usize;
-
-    if recomp6.len() <= orig_c6_sz {
-        // Fits in-place
-        let mut padded6 = recomp6;
-        padded6.resize(orig_c6_sz, 0);
-        file_bytes[c6_start..c6_start + orig_c6_sz].copy_from_slice(&padded6);
-    } else {
-        // RL subsequent chunks cleanly
-        let delta = recomp6.len() as i64 - orig_c6_sz as i64;
-        let tail_start = c6_start + orig_c6_sz;
-        let tail = file_bytes[tail_start..].to_vec();
-
-        file_bytes.truncate(c6_start);
-        file_bytes.extend_from_slice(&recomp6);
-        file_bytes.extend_from_slice(&tail);
-
-        // Update Chunk 6 comp_size in plain_header
-        plain_header[chunks[6].pos + 20..chunks[6].pos + 24]
-            .copy_from_slice(&(recomp6.len() as i32).to_le_bytes());
-
-        // RL subsequent chunks comp_offset
-        for ch in &chunks[7..] {
-            let new_co = ch.comp_offset + delta;
-            plain_header[ch.pos + 12..ch.pos + 20]
-                .copy_from_slice(&new_co.to_le_bytes());
-        }
-
-        // Re-encrypt header with updated chunk table
-        let re_enc = crypto::encrypt_ecb(&TAGAME_KEY, &plain_header);
-        file_bytes[name_offset..enc_end].copy_from_slice(&re_enc);
-    }
-
-    // Atomic write to TAGame.upk
-    let tmp_path = tagame_path.with_extension("tmp_avatar");
-    fs::write(&tmp_path, &file_bytes)
-        .map_err(|e| format!("Failed to write patched UPK: {e}"))?;
-    fs::rename(&tmp_path, tagame_path)
-        .map_err(|e| format!("Failed to atomically replace TAGame.upk: {e}"))?;
-
-    Ok(())
-}
 
 #[cfg(test)]
 mod tests {
@@ -1116,37 +850,6 @@ mod tests {
         assert_eq!(cfg.banner_id, "circuitboard");
         assert_eq!(cfg.border_id, "flames");
         assert_eq!(cfg.xp_level, None);
-    }
-
-    #[test]
-    fn test_process_avatar_to_bgra256() {
-        // Create an in-memory 64x64 PNG
-        let img = image::RgbaImage::new(64, 64);
-        let mut png_bytes = Vec::new();
-        let mut cursor = Cursor::new(&mut png_bytes);
-        img.write_to(&mut cursor, image::ImageFormat::Png).expect("Encode PNG");
-
-        let bgra = process_avatar_to_bgra256(&png_bytes).expect("Process avatar to BGRA");
-        assert_eq!(bgra.len(), 262_144);
-    }
-
-    #[test]
-    fn test_apply_custom_avatar_to_tagame_real() {
-        let tagame_path = Path::new("/root/TAGame_clean.upk");
-        if !tagame_path.exists() {
-            return;
-        }
-
-        let temp_dir = std::env::temp_dir().join(format!("vrl_test_avatar_{}", std::process::id()));
-        let _ = fs::create_dir_all(&temp_dir);
-        let test_upk = temp_dir.join("TAGame.upk");
-        fs::copy(tagame_path, &test_upk).expect("copy tagame upk");
-
-        let raw_bgra = vec![0x7fu8; 262_144];
-        let res = apply_custom_avatar_to_tagame(&test_upk, &raw_bgra);
-        assert!(res.is_ok(), "apply_custom_avatar_to_tagame failed: {:?}", res.err());
-
-        let _ = fs::remove_dir_all(&temp_dir);
     }
 
     #[test]

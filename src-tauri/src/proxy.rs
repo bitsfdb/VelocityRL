@@ -2900,7 +2900,32 @@ async fn handle_broker_request(
             }
         }
 
+        // Explicit paths used for the local player's own avatar. Other avatar
+        // routes are treated as per-player requests and must never fall back to
+        // the local image, otherwise every player shows the same picture.
+        let is_local_route = path_str == "/rlim/avatar"
+            || path_str.starts_with("/rlim/avatar?")
+            || path_str == "/a.png"
+            || path_str.starts_with("/a.png?");
+
+        let authenticated_steam_id = crate::avatar::get_authenticated_steam_user_internal()
+            .and_then(|user| crate::avatar::parse_steam_id(&user.steam_id));
+
         if let Some(steam_id) = target_steam_id {
+            // The linked account's own ID always resolves to the local avatar.
+            if Some(steam_id) == authenticated_steam_id {
+                if let Some(png_bytes) = crate::avatar::get_active_avatar_png() {
+                    crate::applog::event(&format!("broker: {path_str} queried for local Steam ID {steam_id} -> responding with active avatar PNG ({} bytes)", png_bytes.len()));
+                    return Ok(Response::builder()
+                        .status(StatusCode::OK)
+                        .header("Content-Type", "image/png")
+                        .header("Content-Length", png_bytes.len().to_string())
+                        .header("Cache-Control", "no-cache, no-store")
+                        .body(full_body(png_bytes))
+                        .unwrap());
+                }
+            }
+
             let allow_other_pfps = crate::avatar::is_load_other_pfps_enabled_internal()
                 && crate::avatar::get_authenticated_steam_user_internal().is_some();
             if allow_other_pfps {
@@ -2917,20 +2942,9 @@ async fn handle_broker_request(
             } else {
                 crate::applog::event(&format!("broker: {path_str} queried for Steam ID {steam_id} -> rejected (load other pfps disabled or unauthenticated)"));
             }
-        }
 
-        // 2. Fall back to active local player custom avatar
-        if let Some(png_bytes) = crate::avatar::get_active_avatar_png() {
-            crate::applog::event(&format!("broker: {path_str} queried -> responding with active avatar PNG ({} bytes)", png_bytes.len()));
-            return Ok(Response::builder()
-                .status(StatusCode::OK)
-                .header("Content-Type", "image/png")
-                .header("Content-Length", png_bytes.len().to_string())
-                .header("Cache-Control", "no-cache, no-store")
-                .body(full_body(png_bytes))
-                .unwrap());
-        } else {
-            crate::applog::event(&format!("broker: {path_str} queried -> no active custom avatar"));
+            // A request for another player must never receive the local avatar.
+            crate::applog::event(&format!("broker: {path_str} queried for Steam ID {steam_id} -> no per-player avatar available"));
             return Ok(Response::builder()
                 .status(StatusCode::NOT_FOUND)
                 .header("Content-Type", "text/plain")
@@ -2939,6 +2953,30 @@ async fn handle_broker_request(
                 .body(full_body(Vec::new()))
                 .unwrap());
         }
+
+        // No player ID in the request. Only the explicit local routes may use the
+        // active avatar; generic /avatars/... requests must not leak it.
+        if is_local_route {
+            if let Some(png_bytes) = crate::avatar::get_active_avatar_png() {
+                crate::applog::event(&format!("broker: {path_str} queried -> responding with active avatar PNG ({} bytes)", png_bytes.len()));
+                return Ok(Response::builder()
+                    .status(StatusCode::OK)
+                    .header("Content-Type", "image/png")
+                    .header("Content-Length", png_bytes.len().to_string())
+                    .header("Cache-Control", "no-cache, no-store")
+                    .body(full_body(png_bytes))
+                    .unwrap());
+            }
+        }
+
+        crate::applog::event(&format!("broker: {path_str} queried -> no local avatar for this route"));
+        return Ok(Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .header("Content-Type", "text/plain")
+            .header("Content-Length", "0")
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body(Vec::new()))
+            .unwrap());
     }
 
 
