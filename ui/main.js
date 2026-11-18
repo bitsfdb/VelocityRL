@@ -9224,6 +9224,24 @@ function setupNetworkInspectorListeners() {
         };
     }
 
+    const dumpBtn = document.getElementById('net-dump-btn');
+    if (dumpBtn) {
+        dumpBtn.onclick = async () => {
+            const original = dumpBtn.textContent;
+            dumpBtn.disabled = true;
+            dumpBtn.textContent = 'Dumping';
+            try {
+                const path = await invoke('dump_network_capture');
+                showToast(`Network dump saved to ${path}`, 'success');
+            } catch (e) {
+                showToast(`Network dump failed: ${e}`, 'error');
+            } finally {
+                dumpBtn.disabled = false;
+                dumpBtn.textContent = original;
+            }
+        };
+    }
+
     const searchInput = document.getElementById('net-search-input');
     if (searchInput) {
         searchInput.oninput = () => renderNetworkEventsTable();
@@ -9421,6 +9439,7 @@ window.selectNetworkEvent = function(id) {
                 <div class="net-field-row"><span class="net-field-label">Direction</span><span class="net-field-value">${escapeHtmlStr(ev.direction)}</span></div>
                 <div class="net-field-row"><span class="net-field-label">Endpoint</span><span class="net-field-value net-mono">${escapeHtmlStr(ev.service_or_url)}</span></div>
                 <div class="net-field-row"><span class="net-field-label">Size</span><span class="net-field-value">${ev.payload_len} bytes</span></div>
+                ${ev.protocol === 'UDP' ? `<div class="net-field-row"><span class="net-field-label">Payload</span><span class="net-field-value">${ev.status_or_type.includes('DECRYPTED') || ev.status_or_type.includes('PATCHED') ? 'Decrypted' : ev.status_or_type.includes('ENCRYPTED') ? 'Encrypted' : 'Plaintext'}</span></div>` : ''}
                 <div class="net-field-row"><span class="net-field-label">Status</span><span class="net-field-value">${ev.intercepted ? 'Modified' : 'Passed through'}</span></div>
             </div>
             <div class="net-section-label">Payload</div>

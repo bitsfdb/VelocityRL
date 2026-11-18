@@ -14,6 +14,7 @@ use tauri::Manager;
 mod applog;
 mod integrity;
 mod jobobject;
+mod network_dump;
 mod presets;
 pub mod psynet;
 pub mod upk;
@@ -3692,6 +3693,12 @@ fn get_network_events() -> Vec<proxy::NetworkEventEntry> {
 #[tauri::command]
 fn clear_network_events() {
     proxy::clear_network_events();
+    udp_proxy::clear_udp_capture();
+}
+
+#[tauri::command]
+fn dump_network_capture(app: tauri::AppHandle) -> Result<String, String> {
+    network_dump::dump_network_capture(&app)
 }
 
 #[tauri::command]
@@ -4248,6 +4255,7 @@ pub fn run() {
             save_rlim_config,
             get_network_events,
             clear_network_events,
+            dump_network_capture,
             get_network_status,
         ])
         .build(tauri::generate_context!())

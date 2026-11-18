@@ -79,6 +79,77 @@ pub fn get_ping_spoof() -> Option<crate::psynet::PingSpoofPayload> {
     None
 }
 
+/// One captured match datagram. `payload` is decrypted plaintext when
+/// `decrypted` is true, otherwise the raw bytes that crossed the wire.
+#[derive(Clone, Debug)]
+pub struct UdpCaptureEntry {
+    pub timestamp: String,
+    pub direction: String,
+    pub endpoint: String,
+    pub encrypted: bool,
+    pub decrypted: bool,
+    pub payload: Vec<u8>,
+}
+
+const MAX_UDP_CAPTURE_PACKETS: usize = 4096;
+const MAX_UDP_CAPTURE_BYTES: usize = 64 * 1024 * 1024;
+
+static UDP_CAPTURE: std::sync::Mutex<Option<std::collections::VecDeque<UdpCaptureEntry>>> =
+    std::sync::Mutex::new(None);
+static UDP_CAPTURE_BYTES: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+pub fn record_udp_capture(
+    direction: &str,
+    endpoint: &str,
+    encrypted: bool,
+    decrypted: bool,
+    payload: &[u8],
+) {
+    let entry = UdpCaptureEntry {
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        direction: direction.to_string(),
+        endpoint: endpoint.to_string(),
+        encrypted,
+        decrypted,
+        payload: payload.to_vec(),
+    };
+
+    if let Ok(mut lock) = UDP_CAPTURE.lock() {
+        let deque = lock.get_or_insert_with(|| std::collections::VecDeque::with_capacity(1024));
+        let mut total = UDP_CAPTURE_BYTES.load(Ordering::Relaxed);
+        while !deque.is_empty()
+            && (deque.len() >= MAX_UDP_CAPTURE_PACKETS
+                || total.saturating_add(payload.len()) > MAX_UDP_CAPTURE_BYTES)
+        {
+            if let Some(old) = deque.pop_front() {
+                total = total.saturating_sub(old.payload.len());
+            }
+        }
+        total = total.saturating_add(payload.len());
+        deque.push_back(entry);
+        UDP_CAPTURE_BYTES.store(total, Ordering::Relaxed);
+    }
+}
+
+pub fn get_udp_capture() -> Vec<UdpCaptureEntry> {
+    if let Ok(lock) = UDP_CAPTURE.lock() {
+        if let Some(deque) = lock.as_ref() {
+            return deque.iter().cloned().collect();
+        }
+    }
+    Vec::new()
+}
+
+pub fn clear_udp_capture() {
+    if let Ok(mut lock) = UDP_CAPTURE.lock() {
+        if let Some(deque) = lock.as_mut() {
+            deque.clear();
+        }
+    }
+    UDP_CAPTURE_BYTES.store(0, Ordering::Relaxed);
+}
+
 /// Sample a random simulated ping in milliseconds from the configured interval [min_ms..=max_ms]
 pub fn sample_spoofed_ping_ms() -> Option<u32> {
     let cfg = get_ping_spoof()?;
@@ -182,7 +253,8 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                     if let Some(target) = target_opt {
                         let active_crypto_opt = state_c2s.active_crypto.read().await.clone();
 
-                        let (final_buf, was_patched) = if let Some(crypto) = active_crypto_opt {
+                        let encrypted = active_crypto_opt.is_some();
+                        let (final_buf, plaintext, was_patched) = if let Some(crypto) = active_crypto_opt {
                             // Datagram proxying pipeline:
                             // 1. Decrypt C2S datagram with AES-256-CBC
                             // 2. Validate PKCS#7 padding and length (must have 32-byte HMAC at end)
@@ -213,17 +285,36 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                                     unenc_buf.truncate(effective_len);
                                 }
                             }
-                            (unenc_buf, patched)
+                            (unenc_buf, None, patched)
                         };
+
+                        // Capture the plaintext for the monitor/dump, never the ciphertext
+                        // when decryption succeeded.
+                        let captured: &[u8] = plaintext.as_deref().unwrap_or(&final_buf);
+                        record_udp_capture(
+                            "C2S",
+                            &format!("{target}"),
+                            encrypted,
+                            plaintext.is_some(),
+                            captured,
+                        );
 
                         c2s_pkt_count += 1;
                         if was_patched || c2s_pkt_count <= 5 || c2s_pkt_count % 120 == 0 {
-                            let (summary, decoded_info) = decode_udp_packet_summary(&final_buf, true);
+                            let (summary, decoded_info) = decode_udp_packet_summary(captured, true);
                             crate::proxy::record_network_event(
                                 "UDP",
                                 "OUTBOUND",
                                 &format!("{target}"),
-                                if was_patched { "C2S_PATCHED" } else { "C2S_PACKET" },
+                                if was_patched {
+                                    "C2S_PATCHED"
+                                } else if plaintext.is_some() {
+                                    "C2S_DECRYPTED"
+                                } else if encrypted {
+                                    "C2S_ENCRYPTED"
+                                } else {
+                                    "C2S_PACKET"
+                                },
                                 &summary,
                                 &decoded_info,
                                 was_patched,
@@ -253,36 +344,51 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                 Ok((len, from_server)) => {
                     s2c_pkt_count += 1;
 
-                    let plaintext = state_s2c
-                        .active_crypto
-                        .read()
-                        .await
-                        .clone()
-                        .and_then(|crypto| decrypt_datagram_payload(&buf[..len], &crypto));
+                    let crypto_opt = state_s2c.active_crypto.read().await.clone();
+                    let encrypted = crypto_opt.is_some();
+                    let plaintext = crypto_opt
+                        .as_ref()
+                        .and_then(|crypto| decrypt_datagram_payload(&buf[..len], crypto));
                     let scanned = plaintext.as_deref().unwrap_or(&buf[..len]);
+
+                    // Capture the decrypted view for the monitor and dump. The original
+                    // ciphertext is still what gets forwarded to the client.
+                    record_udp_capture(
+                        "S2C",
+                        &format!("{from_server}"),
+                        encrypted,
+                        plaintext.is_some(),
+                        scanned,
+                    );
+
+                    // Never drop a whole datagram to hide a loadout reset: UE3 reliable
+                    // bunches share the packet stream, so dropping one can stall spawn
+                    // and leave the client stuck in spectator.
                     let is_loadout_reset = payload_contains_loadout_reset(scanned);
-
                     if is_loadout_reset {
-                        crate::applog::event("udp_proxy: blocked server loadout reset datagram");
+                        crate::applog::event("udp_proxy: server loadout reset observed (forwarded)");
                         crate::proxy::record_network_event(
                             "UDP",
                             "INBOUND",
                             &format!("{from_server}"),
-                            "LOADOUT_RESET_BLOCKED",
-                            "Server loadout reset withheld from client",
-                            &decode_udp_packet_summary(&buf[..len], false).1,
-                            true,
+                            "LOADOUT_RESET_SEEN",
+                            "Server loadout reset observed and forwarded",
+                            &format_payload_hexdump(scanned, 2048),
+                            false,
                         );
-                        continue;
-                    }
-
-                    if s2c_pkt_count <= 5 || s2c_pkt_count % 120 == 0 {
-                        let (summary, decoded_info) = decode_udp_packet_summary(&buf[..len], false);
+                    } else if s2c_pkt_count <= 5 || s2c_pkt_count % 120 == 0 {
+                        let (summary, decoded_info) = decode_udp_packet_summary(scanned, false);
                         crate::proxy::record_network_event(
                             "UDP",
                             "INBOUND",
                             &format!("{from_server}"),
-                            "S2C_PACKET",
+                            if plaintext.is_some() {
+                                "S2C_DECRYPTED"
+                            } else if encrypted {
+                                "S2C_ENCRYPTED"
+                            } else {
+                                "S2C_PACKET"
+                            },
                             &summary,
                             &decoded_info,
                             false,
@@ -391,30 +497,30 @@ pub async fn set_active_reservation_with_crypto(
 pub fn process_c2s_encrypted_datagram(
     packet: &[u8],
     crypto: &ReservationCrypto,
-) -> (Vec<u8>, bool) {
+) -> (Vec<u8>, Option<Vec<u8>>, bool) {
     if packet.len() < 48 || packet.len() % 16 != 0 {
         // Not a valid AES-CBC encrypted block datagram
-        return (packet.to_vec(), false);
+        return (packet.to_vec(), None, false);
     }
 
     // 1. Decrypt datagram with AES-256-CBC
     let mut dec_buf = packet.to_vec();
     let decryptor = match Aes256CbcDec::new_from_slices(&crypto.aes_key, &crypto.aes_iv) {
         Ok(d) => d,
-        Err(_) => return (packet.to_vec(), false),
+        Err(_) => return (packet.to_vec(), None, false),
     };
 
     let pt = match decryptor.decrypt_padded_mut::<Pkcs7>(&mut dec_buf) {
         Ok(p) => p,
         Err(_) => {
             // Decrypt failed or padding invalid; passthrough original packet
-            return (packet.to_vec(), false);
+            return (packet.to_vec(), None, false);
         }
     };
 
     // 2. Verified length: must have at least 32 bytes for the HMAC-SHA256 signature
     if pt.len() < 32 {
-        return (packet.to_vec(), false);
+        return (packet.to_vec(), None, false);
     }
 
     let payload_len = pt.len() - 32;
@@ -445,12 +551,16 @@ pub fn process_c2s_encrypted_datagram(
     }
 
     if !was_patched {
-        // If not patched, pass original packet through directly
-        return (packet.to_vec(), false);
+        // If not patched, pass the original packet through but keep the decrypted
+        // plaintext so the monitor can display it.
+        return (packet.to_vec(), Some(payload), false);
     }
 
     // 4-6. Recompute HMAC-SHA256, append tag, and re-encrypt with AES-256-CBC.
-    encrypt_datagram_payload(&payload, crypto)
+    match encrypt_datagram_payload(&payload, crypto) {
+        (encrypted, true) => (encrypted, Some(payload), true),
+        _ => (packet.to_vec(), Some(payload), false),
+    }
 }
 
 /// Rewrite C2S Login bunch packet (`?Name=...`) if a spoofed name is active.
@@ -795,9 +905,9 @@ pub fn decode_udp_packet_summary(buf: &[u8], is_c2s: bool) -> (String, String) {
         }
     }
 
-    // Full aligned hex dump of the payload (up to 512 bytes)
+    // Full aligned hex dump of the payload (up to 2048 bytes)
     details.push_str("\nPayload Hexdump:\n");
-    details.push_str(&format_payload_hexdump(buf, 512));
+    details.push_str(&format_payload_hexdump(buf, 2048));
 
     let summary = format!("{detected_type} ({len} bytes)");
     (summary, details)
@@ -896,11 +1006,16 @@ mod tests {
         let ciphertext = enc.encrypt_padded_mut::<Pkcs7>(&mut enc_buf, pt_len).unwrap().to_vec();
 
         // Process through proxy decryption
-        let (processed, patched) = process_c2s_encrypted_datagram(&ciphertext, &crypto);
+        let (processed, plaintext, patched) = process_c2s_encrypted_datagram(&ciphertext, &crypto);
 
         // Since no spoofing rule is active on disk in test, was_patched = false and packet passes through
         assert!(!patched, "Without spoof config, packet passes unmodified");
         assert_eq!(processed, ciphertext, "Passthrough maintains 100% cryptographic byte parity");
+        assert_eq!(
+            plaintext.as_deref(),
+            Some(&raw_payload[..]),
+            "Decrypted plaintext must be available even on passthrough"
+        );
 
         // Now test manual decryption of the ciphertext to ensure decryptor logic is sound
         let dec = Aes256CbcDec::new_from_slices(&crypto.aes_key, &crypto.aes_iv).unwrap();
@@ -964,8 +1079,9 @@ mod tests {
         };
 
         let garbage_ciphertext = vec![0xAAu8; 48];
-        let (processed, patched) = process_c2s_encrypted_datagram(&garbage_ciphertext, &crypto);
+        let (processed, plaintext, patched) = process_c2s_encrypted_datagram(&garbage_ciphertext, &crypto);
         assert!(!patched);
         assert_eq!(processed, garbage_ciphertext, "Corrupted/unmatched ciphertexts must fail-safe passthrough");
+        assert!(plaintext.is_none(), "Undecryptable packets must not expose fake plaintext");
     }
 }
