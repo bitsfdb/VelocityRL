@@ -2042,11 +2042,13 @@ async fn handle_forward_intercepted_request(
             }
         }
 
+        let was_denied = response_denies_access(&final_body);
         let (new_body_sync, did_patch_sync) = neutralize_inventory_out_of_sync_json(&final_body);
         if did_patch_sync {
             final_body = new_body_sync;
             body_modified = true;
         }
+        let effective_status = if was_denied && did_patch_sync { StatusCode::OK } else { status };
 
         let is_avatar_rpc = path_lower.contains("canshowavatar")
             || find_bytes(&final_body, b"\"AllowedPlayerIDs\"").is_some()
@@ -2059,7 +2061,7 @@ async fn handle_forward_intercepted_request(
             }
         }
 
-        let mut resp_builder = Response::builder().status(status);
+        let mut resp_builder = Response::builder().status(effective_status);
         for (k, v) in resp_headers.iter() {
             let k_lower = k.as_str().to_ascii_lowercase();
             if k_lower != "content-length"
@@ -2096,7 +2098,7 @@ async fn handle_forward_intercepted_request(
             "HTTP",
             "INBOUND",
             &url,
-            &status.to_string(),
+            &effective_status.to_string(),
             if body_modified { "Forward Intercepted RPC (Patched)" } else { "Forward Intercepted RPC" },
             &String::from_utf8_lossy(&final_body),
             body_modified,
@@ -3075,6 +3077,7 @@ async fn handle_broker_request(
     let mut patched = false;
 
     let path_lower = path_and_query.to_ascii_lowercase();
+    let mut effective_status = status;
     if path_lower.contains("authplayer") {
         cache_auth_ws(&out_body);
         for k in &["VerifiedPlayerName", "PlayerName", "DisplayName"] {
@@ -3161,10 +3164,14 @@ async fn handle_broker_request(
             }
         }
 
+        let was_denied = response_denies_access(&out_body);
         let (new_body_sync, did_patch_sync) = neutralize_inventory_out_of_sync_json(&out_body);
         if did_patch_sync {
             out_body = new_body_sync;
             patched = true;
+        }
+        if was_denied && did_patch_sync {
+            effective_status = StatusCode::OK;
         }
 
         let is_skill_rpc = path_lower.contains("getplayerskill")
@@ -3261,7 +3268,7 @@ async fn handle_broker_request(
         }
     }
 
-    let mut resp_builder = Response::builder().status(status.as_u16());
+    let mut resp_builder = Response::builder().status(effective_status.as_u16());
     let mut psy_time = String::new();
     for (k, v) in resp_headers.iter() {
         let k_lower = k.as_str().to_ascii_lowercase();
@@ -3289,7 +3296,7 @@ async fn handle_broker_request(
         "HTTP",
         "INBOUND",
         &path_lower,
-        &status.to_string(),
+        &effective_status.to_string(),
         if patched { "Broker Services RPC (Patched)" } else { "Broker Services RPC" },
         &String::from_utf8_lossy(&out_body),
         patched,
@@ -7620,12 +7627,17 @@ pub fn patch_cross_entitlement_json(
     }
 }
 
+/// Detect an access-denied / out-of-sync response before it is rewritten.
+pub fn response_denies_access(body: &[u8]) -> bool {
+    let upper = body.to_ascii_uppercase();
+    upper.windows(12).any(|w| w == b"ACCESSDENIED")
+        || upper.windows(18).any(|w| w == b"INVENTORYOUTOFSYNC")
+}
+
 /// Neutralize "InventoryOutOfSync" and "AccessDenied" error states from PsyNet JSON responses
 /// preventing client popup/notification "Inventory out of sync, resyncing..." or drop opening hangs
 pub fn neutralize_inventory_out_of_sync_json(body: &[u8]) -> (Vec<u8>, bool) {
-    let has_sync = body.windows(18).any(|w| w == b"InventoryOutOfSync");
-    let has_denied = body.windows(12).any(|w| w == b"AccessDenied");
-    if !has_sync && !has_denied {
+    if !response_denies_access(body) {
         return (body.to_vec(), false);
     }
 
@@ -7650,11 +7662,20 @@ pub fn neutralize_inventory_out_of_sync_json(body: &[u8]) -> (Vec<u8>, bool) {
 fn neutralize_inventory_out_of_sync_value(val: &mut serde_json::Value, changed: &mut bool) {
     match val {
         serde_json::Value::Object(map) => {
-            for key in ["status", "Status", "Message", "message", "Error", "error", "ErrorCode", "errorCode"] {
+            for key in [
+                "status", "Status", "Message", "message", "Error", "error",
+                "ErrorCode", "errorCode", "Result", "result", "ResultCode",
+                "resultCode", "Code", "code", "Reason", "reason",
+            ] {
                 if let Some(v) = map.get_mut(key) {
                     if let Some(s) = v.as_str() {
-                        if s.contains("InventoryOutOfSync") || s.contains("AccessDenied") {
-                            *v = if key.eq_ignore_ascii_case("status") {
+                        if s.to_ascii_uppercase().contains("INVENTORYOUTOFSYNC")
+                            || s.to_ascii_uppercase().contains("ACCESSDENIED")
+                        {
+                            *v = if key.eq_ignore_ascii_case("status")
+                                || key.eq_ignore_ascii_case("result")
+                                || key.eq_ignore_ascii_case("code")
+                            {
                                 serde_json::Value::String("OK".to_string())
                             } else {
                                 serde_json::Value::Null
@@ -7841,6 +7862,24 @@ pub fn inspect_active_upk_payload() -> (String, serde_json::Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_access_denied_response_is_neutralized() {
+        let body = br#"{"Result":"AccessDenied","bSuccess":false,"Message":"AccessDenied"}"#;
+        assert!(response_denies_access(body));
+        let (patched, changed) = neutralize_inventory_out_of_sync_json(body);
+        assert!(changed);
+        let text = String::from_utf8(patched).unwrap();
+        assert!(!text.contains("AccessDenied"));
+        assert!(text.contains("\"bSuccess\":true"));
+        assert!(text.contains("\"Result\":\"OK\""));
+
+        let clean = br#"{"Result":{"Drops":[]},"bSuccess":true}"#;
+        assert!(!response_denies_access(clean));
+        let (same, changed) = neutralize_inventory_out_of_sync_json(clean);
+        assert!(!changed);
+        assert_eq!(same, clean);
+    }
 
     #[test]
     fn test_patch_palette() {

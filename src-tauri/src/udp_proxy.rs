@@ -52,12 +52,6 @@ struct ProxyState {
     active_crypto: RwLock<Option<ReservationCrypto>>,
     /// Whether the proxy is active.
     running: AtomicBool,
-    /// Whether match loadout freeze is active.
-    loadout_freeze: AtomicBool,
-    /// Active custom spawn loadout products.
-    spawn_loadout: RwLock<std::collections::HashMap<i32, i32>>,
-    /// Active upstream socket handle.
-    upstream_socket: RwLock<Option<Arc<UdpSocket>>>,
 }
 
 static PROXY_STATE: once_cell_or_lazy::LazyState = once_cell_or_lazy::LazyState::new();
@@ -125,9 +119,6 @@ mod once_cell_or_lazy {
                         client_endpoint: RwLock::new(None),
                         active_crypto: RwLock::new(None),
                         running: AtomicBool::new(false),
-                        loadout_freeze: AtomicBool::new(false),
-                        spawn_loadout: RwLock::new(std::collections::HashMap::new()),
-                        upstream_socket: RwLock::new(None),
                     })
                 })
                 .clone()
@@ -164,11 +155,6 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
 
     let client_sock = Arc::new(client_sock);
     let upstream_sock = Arc::new(upstream_sock);
-
-    {
-        let mut up_lock = state.upstream_socket.write().await;
-        *up_lock = Some(upstream_sock.clone());
-    }
 
     crate::applog::event(&format!(
         "udp_proxy: started Rocket League match UDP proxy on 127.0.0.1:{bound_port}"
@@ -266,6 +252,30 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
             match us_s2c.recv_from(&mut buf).await {
                 Ok((len, from_server)) => {
                     s2c_pkt_count += 1;
+
+                    let plaintext = state_s2c
+                        .active_crypto
+                        .read()
+                        .await
+                        .clone()
+                        .and_then(|crypto| decrypt_datagram_payload(&buf[..len], &crypto));
+                    let scanned = plaintext.as_deref().unwrap_or(&buf[..len]);
+                    let is_loadout_reset = payload_contains_loadout_reset(scanned);
+
+                    if is_loadout_reset {
+                        crate::applog::event("udp_proxy: blocked server loadout reset datagram");
+                        crate::proxy::record_network_event(
+                            "UDP",
+                            "INBOUND",
+                            &format!("{from_server}"),
+                            "LOADOUT_RESET_BLOCKED",
+                            "Server loadout reset withheld from client",
+                            &decode_udp_packet_summary(&buf[..len], false).1,
+                            true,
+                        );
+                        continue;
+                    }
+
                     if s2c_pkt_count <= 5 || s2c_pkt_count % 120 == 0 {
                         let (summary, decoded_info) = decode_udp_packet_summary(&buf[..len], false);
                         crate::proxy::record_network_event(
@@ -431,16 +441,6 @@ pub fn process_c2s_encrypted_datagram(
         if let Some(name) = spoof_name {
             was_patched = patch_c2s_login_bunch(&mut payload, &mut effective_len, name);
             payload.truncate(effective_len);
-        }
-    }
-
-    if get_loadout_freeze() {
-        let is_loadout_bunch = payload.windows(15).any(|w| {
-            w == b"ServerSetLoadou" || w == b"SetCustomLoadou"
-        });
-        if is_loadout_bunch {
-            crate::applog::event("udp_proxy: preserved loadout bunch with active freeze");
-            was_patched = true;
         }
     }
 
@@ -803,6 +803,50 @@ pub fn decode_udp_packet_summary(buf: &[u8], is_c2s: bool) -> (String, String) {
     (summary, details)
 }
 
+/// Check whether a decrypted match payload carries a server-side loadout reset.
+/// Unreal bunches are bit-packed, so scan every byte alignment.
+fn payload_contains_loadout_reset(payload: &[u8]) -> bool {
+    const MARKERS: &[&[u8]] = &[
+        b"ServerSetLoadout",
+        b"ClientSetLoadout",
+        b"SetCustomLoadout",
+        b"SetLoadout",
+    ];
+
+    for &needle in MARKERS {
+        if payload.len() < needle.len() {
+            continue;
+        }
+        for shift in 0..8 {
+            if shift == 0 {
+                if payload.windows(needle.len()).any(|w| w == needle) {
+                    return true;
+                }
+                continue;
+            }
+            for i in 0..(payload.len() - 1) {
+                let mut matched = true;
+                for (b_idx, &nb) in needle.iter().enumerate() {
+                    let c_idx = i + b_idx;
+                    if c_idx + 1 >= payload.len() {
+                        matched = false;
+                        break;
+                    }
+                    let byte = (payload[c_idx] >> shift) | (payload[c_idx + 1] << (8 - shift));
+                    if byte != nb {
+                        matched = false;
+                        break;
+                    }
+                }
+                if matched {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 /// Get current bound local UDP proxy port if running.
 pub fn get_local_port() -> Option<u16> {
     let state = PROXY_STATE.get();
@@ -812,107 +856,6 @@ pub fn get_local_port() -> Option<u16> {
     } else {
         None
     }
-}
-
-pub fn set_loadout_freeze(enabled: bool) {
-    let state = PROXY_STATE.get();
-    state.loadout_freeze.store(enabled, Ordering::SeqCst);
-    crate::applog::event(&format!("udp_proxy: loadout freeze set to {enabled}"));
-}
-
-pub fn get_loadout_freeze() -> bool {
-    let state = PROXY_STATE.get();
-    state.loadout_freeze.load(Ordering::SeqCst)
-}
-
-pub async fn set_spawn_loadout_json(products_json: &str) -> Result<(), String> {
-    let state = PROXY_STATE.get();
-    let val: serde_json::Value = serde_json::from_str(products_json)
-        .map_err(|e| format!("Invalid JSON: {e}"))?;
-    let mut map = std::collections::HashMap::new();
-    if let Some(arr) = val.as_array() {
-        for obj in arr {
-            if let (Some(slot), Some(id)) = (
-                obj.get("slot_id").and_then(|v| v.as_i64()).or_else(|| obj.get("slot").and_then(|v| v.as_i64())),
-                obj.get("product_id").and_then(|v| v.as_i64()).or_else(|| obj.get("id").and_then(|v| v.as_i64())),
-            ) {
-                map.insert(slot as i32, id as i32);
-            }
-        }
-    } else if let Some(obj) = val.as_object() {
-        for (k, v) in obj {
-            if let (Ok(slot), Some(id)) = (k.parse::<i32>(), v.as_i64()) {
-                map.insert(slot, id as i32);
-            }
-        }
-    }
-    {
-        let mut lock = state.spawn_loadout.write().await;
-        *lock = map;
-    }
-    crate::applog::event("udp_proxy: registered spawn loadout products");
-    Ok(())
-}
-
-pub async fn set_spawn_reservation_products(products: &[(i32, i32)]) {
-    let state = PROXY_STATE.get();
-    let mut lock = state.spawn_loadout.write().await;
-    for &(slot_or_id, paint) in products {
-        lock.insert(slot_or_id, paint);
-    }
-}
-
-pub async fn send_pri_rpc(rpc_bits: Option<&[u8]>) -> Result<(), String> {
-    let state = PROXY_STATE.get();
-    let target = {
-        let lock = state.target_server.read().await;
-        (*lock).ok_or_else(|| "No active match server target".to_string())?
-    };
-    let crypto = {
-        let lock = state.active_crypto.read().await;
-        (*lock).clone().ok_or_else(|| "No active match crypto keys".to_string())?
-    };
-
-    let payload = if let Some(bits) = rpc_bits {
-        bits.to_vec()
-    } else {
-        let mut bunch = vec![0x01, 0x00, 0x00, 0x00];
-        let items = state.spawn_loadout.read().await.clone();
-        for (k, v) in items {
-            bunch.extend_from_slice(&k.to_le_bytes());
-            bunch.extend_from_slice(&v.to_le_bytes());
-        }
-        bunch
-    };
-
-    let (ciphertext, ok) = encrypt_datagram_payload(&payload, &crypto);
-    if !ok {
-        return Err("Failed to encrypt PRI RPC bunch".to_string());
-    }
-
-    let sock_opt = {
-        let lock = state.upstream_socket.read().await;
-        (*lock).clone()
-    };
-
-    if let Some(sock) = sock_opt {
-        sock.send_to(&ciphertext, target)
-            .await
-            .map_err(|e| format!("Failed to send PRI RPC bunch: {e}"))?;
-    } else {
-        let sock = UdpSocket::bind("0.0.0.0:0")
-            .await
-            .map_err(|e| format!("Failed to bind ephemeral socket: {e}"))?;
-        sock.send_to(&ciphertext, target)
-            .await
-            .map_err(|e| format!("Failed to send PRI RPC bunch: {e}"))?;
-    }
-
-    crate::applog::event(&format!(
-        "udp_proxy: sent PRI RPC bunch ({} bytes) to {target}",
-        ciphertext.len()
-    ));
-    Ok(())
 }
 
 #[cfg(test)]
@@ -993,6 +936,23 @@ mod tests {
         let decrypted = decrypt_datagram_payload(&ciphertext, &crypto)
             .expect("decrypt_datagram_payload must recover the plaintext");
         assert_eq!(decrypted, raw_payload, "round-trip must preserve payload byte-for-byte");
+    }
+
+    #[test]
+    fn test_payload_contains_loadout_reset_at_multiple_alignments() {
+        let plain = b"prefix\x00ServerSetLoadout\x00suffix";
+        assert!(payload_contains_loadout_reset(plain));
+
+        // Bit-pack the marker at shift 3 to mimic UE bunch alignment.
+        let marker = b"ClientSetLoadout";
+        let mut packed = vec![0u8; marker.len() + 2];
+        for (i, &byte) in marker.iter().enumerate() {
+            packed[i] |= byte << 3;
+            packed[i + 1] |= byte >> 5;
+        }
+        assert!(payload_contains_loadout_reset(&packed));
+
+        assert!(!payload_contains_loadout_reset(b"NMT_Welcome\x00?Name=Player"));
     }
 
     #[test]

@@ -3695,26 +3695,6 @@ fn clear_network_events() {
 }
 
 #[tauri::command]
-fn set_udp_loadout_freeze(enabled: bool) {
-    udp_proxy::set_loadout_freeze(enabled);
-}
-
-#[tauri::command]
-fn get_udp_loadout_freeze() -> bool {
-    udp_proxy::get_loadout_freeze()
-}
-
-#[tauri::command]
-async fn set_udp_spawn_loadout(products_json: String) -> Result<(), String> {
-    udp_proxy::set_spawn_loadout_json(&products_json).await
-}
-
-#[tauri::command]
-async fn send_udp_pri_rpc(rpc_bits: Option<Vec<u8>>) -> Result<(), String> {
-    udp_proxy::send_pri_rpc(rpc_bits.as_deref()).await
-}
-
-#[tauri::command]
 async fn get_network_status() -> Result<serde_json::Value, String> {
     let cfg = psynet::load_active_spoof_from_disk().unwrap_or_default();
     let udp_port = udp_proxy::get_local_port().unwrap_or(0);
@@ -3723,7 +3703,6 @@ async fn get_network_status() -> Result<serde_json::Value, String> {
         "broker_port": broker_port,
         "udp_match_proxy_port": udp_port,
         "proxy_running": proxy::is_proxy_running(),
-        "loadout_freeze": udp_proxy::get_loadout_freeze(),
         "spoof_active": cfg.enabled,
         "name_spoof": cfg.name_spoof.as_ref().map(|n| n.display_name.clone()).unwrap_or_default(),
         "fake_rank_enabled": cfg.fake_ranks.as_ref().map(|s| s.enabled).unwrap_or(false),
@@ -4270,10 +4249,6 @@ pub fn run() {
             get_network_events,
             clear_network_events,
             get_network_status,
-            set_udp_loadout_freeze,
-            get_udp_loadout_freeze,
-            set_udp_spawn_loadout,
-            send_udp_pri_rpc,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
