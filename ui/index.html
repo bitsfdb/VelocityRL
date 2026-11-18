@@ -47,7 +47,7 @@
             </div>
             <div class="nav-item" data-tab="network-tab">
                 <svg class="nav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
-                <span>Network Inspector</span>
+                <span>Network Monitor</span>
             </div>
         </nav>
 
@@ -994,68 +994,64 @@
             </div>
 
             <div id="network-tab" class="tab-content">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <div class="net-header">
                     <div>
-                        <h2 class="section-title">Network & UDP Inspector</h2>
-                        <p class="section-desc">Live capture and dissection of PsyNet RPCs, WebSockets, CDN configs, and UDP match packets.</p>
+                        <h2 class="section-title">Network Monitor</h2>
+                        <p class="section-desc">Traffic routed through the local proxy and match relay.</p>
                     </div>
-                    <div style="display:flex; gap:8px; align-items:center;">
-                        <span id="net-status-pill" class="status-pill" style="display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600; background:rgba(0,230,118,0.12); color:#00e676; border:1px solid rgba(0,230,118,0.3);">
-                            <span class="dot" style="width:7px; height:7px; border-radius:50%; background:#00e676; box-shadow:0 0 6px #00e676;"></span>
-                            <span id="net-status-text">MITM ACTIVE</span>
+                    <div class="net-actions">
+                        <span id="net-status-pill" class="net-pill">
+                            <span class="net-pill-dot"></span>
+                            <span id="net-status-text">Proxy Ready</span>
                         </span>
-                        <button type="button" id="net-clear-btn" class="action-btn action-btn-secondary" style="font-size:11px; padding:5px 12px; height:28px;">Clear Stream</button>
+                        <button type="button" id="net-clear-btn" class="net-btn">Clear</button>
                     </div>
                 </div>
 
-                <div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap; padding:8px 14px; margin-bottom:12px; background:var(--panel); border:1px solid var(--border); border-radius:6px; font-size:11px;">
-                    <div><span style="color:var(--text-secondary);">Broker:</span> <strong id="net-stat-broker" style="color:var(--accent);">127.0.0.1:443</strong></div>
-                    <span style="color:var(--border);">|</span>
-                    <div><span style="color:var(--text-secondary);">UDP Match Proxy:</span> <strong id="net-stat-udp" style="color:#ff9f43;">Listening (Auto)</strong></div>
-                    <span style="color:var(--border);">|</span>
-                    <div><span style="color:var(--text-secondary);">Packets:</span> <strong id="net-stat-count" style="color:#fff;">0</strong></div>
-                    <span style="color:var(--border);">|</span>
-                    <div><span style="color:var(--text-secondary);">ProjectX Patch:</span> <strong id="net-stat-patch" style="color:#00e676;">Checking...</strong></div>
-                    <span style="color:var(--border);">|</span>
-                    <div><span style="color:var(--text-secondary);">TAGame Stock:</span> <strong id="net-stat-tagame" style="color:#00e676;">Checking...</strong></div>
+                <div class="net-summary">
+                    <div class="net-summary-item"><span class="net-summary-label">Broker</span> <strong id="net-stat-broker" class="net-summary-value">127.0.0.1:443</strong></div>
+                    <div class="net-summary-item"><span class="net-summary-label">Match Relay</span> <strong id="net-stat-udp" class="net-summary-value">Auto</strong></div>
+                    <div class="net-summary-item"><span class="net-summary-label">Entries</span> <strong id="net-stat-count" class="net-summary-value">0</strong></div>
+                    <div class="net-summary-item"><span class="net-summary-label">ProjectX</span> <strong id="net-stat-patch" class="net-summary-value">Checking</strong></div>
+                    <div class="net-summary-item"><span class="net-summary-label">TAGame</span> <strong id="net-stat-tagame" class="net-summary-value">Checking</strong></div>
                 </div>
 
-                <div class="toolbar" style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap;">
-                    <input type="text" id="net-search-input" placeholder="Search service, RPC, payload text..." style="flex:1; min-width:200px; background:var(--input-bg); border:1px solid var(--border); border-radius:6px; padding:6px 12px; color:#fff; font-size:12px; outline:none;">
-                    <div style="display:flex; gap:6px;">
-                        <button type="button" class="net-filter-btn active" data-filter="all" style="background:rgba(0,229,255,0.1); border:1px solid var(--accent); color:var(--accent); border-radius:6px; padding:6px 12px; font-size:11px; font-weight:600; cursor:pointer;">ALL</button>
-                        <button type="button" class="net-filter-btn" data-filter="UDP" style="background:var(--panel-hover); border:1px solid var(--border); color:var(--text-secondary); border-radius:6px; padding:6px 12px; font-size:11px; font-weight:600; cursor:pointer;">UDP</button>
-                        <button type="button" class="net-filter-btn" data-filter="HTTP" style="background:var(--panel-hover); border:1px solid var(--border); color:var(--text-secondary); border-radius:6px; padding:6px 12px; font-size:11px; font-weight:600; cursor:pointer;">HTTP RPC</button>
-                        <button type="button" class="net-filter-btn" data-filter="WS" style="background:var(--panel-hover); border:1px solid var(--border); color:var(--text-secondary); border-radius:6px; padding:6px 12px; font-size:11px; font-weight:600; cursor:pointer;">WEBSOCKET</button>
-                        <button type="button" class="net-filter-btn" data-filter="intercepted" style="background:var(--panel-hover); border:1px solid var(--border); color:var(--text-secondary); border-radius:6px; padding:6px 12px; font-size:11px; font-weight:600; cursor:pointer;">MODIFIED</button>
+                <div class="net-toolbar">
+                    <input type="text" id="net-search-input" class="net-search" placeholder="Search traffic">
+                    <div class="net-filters">
+                        <button type="button" class="net-btn net-filter-btn active" data-filter="all">All</button>
+                        <button type="button" class="net-btn net-filter-btn" data-filter="UDP">UDP</button>
+                        <button type="button" class="net-btn net-filter-btn" data-filter="HTTP">HTTP</button>
+                        <button type="button" class="net-btn net-filter-btn" data-filter="WS">WebSocket</button>
+                        <button type="button" class="net-btn net-filter-btn" data-filter="intercepted">Modified</button>
                     </div>
                 </div>
 
-                <div class="layout-main" style="display:grid; grid-template-columns:1fr 460px; gap:14px; height:calc(100vh - 310px); min-height:480px;">
-                    <div class="table-wrap card spoof-card" style="padding:0; overflow-y:auto; overflow-x:hidden; position:relative; margin:0;">
-                        <table style="width:100%; border-collapse:collapse; text-align:left;">
-                            <thead style="position:sticky; top:0; background:#11141b; z-index:10; border-bottom:1px solid var(--border);">
+                <div class="net-layout">
+                    <div class="table-wrap card spoof-card net-table-wrap">
+                        <table class="net-table">
+                            <thead>
                                 <tr>
-                                    <th style="padding:8px 10px; font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:700; width:75px;">Proto</th>
-                                    <th style="padding:8px 10px; font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:700; width:70px;">Time</th>
-                                    <th style="padding:8px 10px; font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:700;">Service / Target</th>
-                                    <th style="padding:8px 10px; font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:700;">Summary</th>
-                                    <th style="padding:8px 10px; font-size:10px; color:var(--text-secondary); text-transform:uppercase; font-weight:700; width:65px;">Status</th>
+                                    <th style="width:78px;">Protocol</th>
+                                    <th style="width:70px;">Time</th>
+                                    <th>Endpoint</th>
+                                    <th>Description</th>
+                                    <th style="width:70px;">Status</th>
                                 </tr>
                             </thead>
                             <tbody id="net-events-tbody">
-                                <tr><td colspan="5" style="text-align:center; padding:40px; color:var(--text-secondary);">Waiting for Rocket League network traffic...</td></tr>
+                                <tr><td colspan="5" class="net-empty">No traffic captured yet.</td></tr>
                             </tbody>
                         </table>
                     </div>
 
-                    <div class="detail-pane card spoof-card" style="padding:14px; overflow-y:auto; display:flex; flex-direction:column; margin:0;">
-                        <div style="border-bottom:1px solid var(--border); padding-bottom:10px; margin-bottom:12px;">
-                            <div id="net-detail-title" style="font-size:14px; font-weight:700; color:#fff; word-break:break-all;">Select a packet or RPC event</div>
-                            <div id="net-detail-proto" style="font-size:11px; color:var(--accent); font-weight:600; text-transform:uppercase; margin-top:2px;">No Selection</div>
+                    <div class="detail-pane card spoof-card net-detail">
+                        <div class="net-detail-header">
+                            <div id="net-detail-title" class="net-detail-title">Select an entry</div>
+                            <div id="net-detail-proto" class="net-detail-meta">No selection</div>
                         </div>
                         <div id="net-detail-body" style="flex:1; overflow-y:auto;">
-                            <p style="color:var(--text-secondary); font-size:12px;">Click any network row on the left to inspect its decrypted payload, headers, JSON tree, or Wireshark-style UDP bunch hexdump.</p>
+                            <p class="net-muted" style="font-size:12px;">Select an entry to view its metadata and payload.</p>
                         </div>
                     </div>
                 </div>
