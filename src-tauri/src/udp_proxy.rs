@@ -52,6 +52,12 @@ struct ProxyState {
     active_crypto: RwLock<Option<ReservationCrypto>>,
     /// Whether the proxy is active.
     running: AtomicBool,
+    /// Whether match loadout freeze is active.
+    loadout_freeze: AtomicBool,
+    /// Active custom spawn loadout products.
+    spawn_loadout: RwLock<std::collections::HashMap<i32, i32>>,
+    /// Active upstream socket handle.
+    upstream_socket: RwLock<Option<Arc<UdpSocket>>>,
 }
 
 static PROXY_STATE: once_cell_or_lazy::LazyState = once_cell_or_lazy::LazyState::new();
@@ -119,6 +125,9 @@ mod once_cell_or_lazy {
                         client_endpoint: RwLock::new(None),
                         active_crypto: RwLock::new(None),
                         running: AtomicBool::new(false),
+                        loadout_freeze: AtomicBool::new(false),
+                        spawn_loadout: RwLock::new(std::collections::HashMap::new()),
+                        upstream_socket: RwLock::new(None),
                     })
                 })
                 .clone()
@@ -155,6 +164,11 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
 
     let client_sock = Arc::new(client_sock);
     let upstream_sock = Arc::new(upstream_sock);
+
+    {
+        let mut up_lock = state.upstream_socket.write().await;
+        *up_lock = Some(upstream_sock.clone());
+    }
 
     crate::applog::event(&format!(
         "udp_proxy: started Rocket League match UDP proxy on 127.0.0.1:{bound_port}"
@@ -420,39 +434,23 @@ pub fn process_c2s_encrypted_datagram(
         }
     }
 
+    if get_loadout_freeze() {
+        let is_loadout_bunch = payload.windows(15).any(|w| {
+            w == b"ServerSetLoadou" || w == b"SetCustomLoadou"
+        });
+        if is_loadout_bunch {
+            crate::applog::event("udp_proxy: preserved loadout bunch with active freeze");
+            was_patched = true;
+        }
+    }
+
     if !was_patched {
         // If not patched, pass original packet through directly
         return (packet.to_vec(), false);
     }
 
-    // 4. Recompute HMAC-SHA256 over modified payload
-    let mut mac = match HmacSha256::new_from_slice(&crypto.hmac_key) {
-        Ok(m) => m,
-        Err(_) => return (packet.to_vec(), false),
-    };
-    mac.update(&payload);
-    let computed_hmac = mac.finalize().into_bytes();
-
-    // 5. Append HMAC-SHA256 (32 bytes)
-    payload.extend_from_slice(&computed_hmac);
-
-    // 6. Encrypt with AES-256-CBC and PKCS#7 padding
-    let encryptor = match Aes256CbcEnc::new_from_slices(&crypto.aes_key, &crypto.aes_iv) {
-        Ok(e) => e,
-        Err(_) => return (packet.to_vec(), false),
-    };
-
-    let data_len = payload.len();
-    let max_len = data_len + 16;
-    let mut enc_buf = vec![0u8; max_len];
-    enc_buf[..data_len].copy_from_slice(&payload);
-
-    let ciphertext = match encryptor.encrypt_padded_mut::<Pkcs7>(&mut enc_buf, data_len) {
-        Ok(ct) => ct.to_vec(),
-        Err(_) => return (packet.to_vec(), false),
-    };
-
-    (ciphertext, true)
+    // 4-6. Recompute HMAC-SHA256, append tag, and re-encrypt with AES-256-CBC.
+    encrypt_datagram_payload(&payload, crypto)
 }
 
 /// Rewrite C2S Login bunch packet (`?Name=...`) if a spoofed name is active.
@@ -669,6 +667,34 @@ pub fn decrypt_datagram_payload(packet: &[u8], crypto: &ReservationCrypto) -> Op
     Some(pt[..payload_len].to_vec())
 }
 
+/// Encrypt a plaintext payload into an authenticated match datagram.
+/// Mirrors the reservation datagram format: [payload][HMAC-SHA256(32 bytes)] -> AES-256-CBC with PKCS#7 padding.
+pub fn encrypt_datagram_payload(payload: &[u8], crypto: &ReservationCrypto) -> (Vec<u8>, bool) {
+    let mut mac = match HmacSha256::new_from_slice(&crypto.hmac_key) {
+        Ok(m) => m,
+        Err(_) => return (Vec::new(), false),
+    };
+    mac.update(payload);
+    let computed_hmac = mac.finalize().into_bytes();
+
+    let mut secured = payload.to_vec();
+    secured.extend_from_slice(&computed_hmac);
+
+    let encryptor = match Aes256CbcEnc::new_from_slices(&crypto.aes_key, &crypto.aes_iv) {
+        Ok(e) => e,
+        Err(_) => return (Vec::new(), false),
+    };
+
+    let data_len = secured.len();
+    let mut enc_buf = vec![0u8; data_len + 16];
+    enc_buf[..data_len].copy_from_slice(&secured);
+
+    match encryptor.encrypt_padded_mut::<Pkcs7>(&mut enc_buf, data_len) {
+        Ok(ct) => (ct.to_vec(), true),
+        Err(_) => (Vec::new(), false),
+    }
+}
+
 /// Format bytes as a clean, aligned Wireshark/Hex-view table (hex bytes on left, ASCII on right)
 pub fn format_payload_hexdump(data: &[u8], max_bytes: usize) -> String {
     let slice = if data.len() > max_bytes {
@@ -788,6 +814,107 @@ pub fn get_local_port() -> Option<u16> {
     }
 }
 
+pub fn set_loadout_freeze(enabled: bool) {
+    let state = PROXY_STATE.get();
+    state.loadout_freeze.store(enabled, Ordering::SeqCst);
+    crate::applog::event(&format!("udp_proxy: loadout freeze set to {enabled}"));
+}
+
+pub fn get_loadout_freeze() -> bool {
+    let state = PROXY_STATE.get();
+    state.loadout_freeze.load(Ordering::SeqCst)
+}
+
+pub async fn set_spawn_loadout_json(products_json: &str) -> Result<(), String> {
+    let state = PROXY_STATE.get();
+    let val: serde_json::Value = serde_json::from_str(products_json)
+        .map_err(|e| format!("Invalid JSON: {e}"))?;
+    let mut map = std::collections::HashMap::new();
+    if let Some(arr) = val.as_array() {
+        for obj in arr {
+            if let (Some(slot), Some(id)) = (
+                obj.get("slot_id").and_then(|v| v.as_i64()).or_else(|| obj.get("slot").and_then(|v| v.as_i64())),
+                obj.get("product_id").and_then(|v| v.as_i64()).or_else(|| obj.get("id").and_then(|v| v.as_i64())),
+            ) {
+                map.insert(slot as i32, id as i32);
+            }
+        }
+    } else if let Some(obj) = val.as_object() {
+        for (k, v) in obj {
+            if let (Ok(slot), Some(id)) = (k.parse::<i32>(), v.as_i64()) {
+                map.insert(slot, id as i32);
+            }
+        }
+    }
+    {
+        let mut lock = state.spawn_loadout.write().await;
+        *lock = map;
+    }
+    crate::applog::event("udp_proxy: registered spawn loadout products");
+    Ok(())
+}
+
+pub async fn set_spawn_reservation_products(products: &[(i32, i32)]) {
+    let state = PROXY_STATE.get();
+    let mut lock = state.spawn_loadout.write().await;
+    for &(slot_or_id, paint) in products {
+        lock.insert(slot_or_id, paint);
+    }
+}
+
+pub async fn send_pri_rpc(rpc_bits: Option<&[u8]>) -> Result<(), String> {
+    let state = PROXY_STATE.get();
+    let target = {
+        let lock = state.target_server.read().await;
+        (*lock).ok_or_else(|| "No active match server target".to_string())?
+    };
+    let crypto = {
+        let lock = state.active_crypto.read().await;
+        (*lock).clone().ok_or_else(|| "No active match crypto keys".to_string())?
+    };
+
+    let payload = if let Some(bits) = rpc_bits {
+        bits.to_vec()
+    } else {
+        let mut bunch = vec![0x01, 0x00, 0x00, 0x00];
+        let items = state.spawn_loadout.read().await.clone();
+        for (k, v) in items {
+            bunch.extend_from_slice(&k.to_le_bytes());
+            bunch.extend_from_slice(&v.to_le_bytes());
+        }
+        bunch
+    };
+
+    let (ciphertext, ok) = encrypt_datagram_payload(&payload, &crypto);
+    if !ok {
+        return Err("Failed to encrypt PRI RPC bunch".to_string());
+    }
+
+    let sock_opt = {
+        let lock = state.upstream_socket.read().await;
+        (*lock).clone()
+    };
+
+    if let Some(sock) = sock_opt {
+        sock.send_to(&ciphertext, target)
+            .await
+            .map_err(|e| format!("Failed to send PRI RPC bunch: {e}"))?;
+    } else {
+        let sock = UdpSocket::bind("0.0.0.0:0")
+            .await
+            .map_err(|e| format!("Failed to bind ephemeral socket: {e}"))?;
+        sock.send_to(&ciphertext, target)
+            .await
+            .map_err(|e| format!("Failed to send PRI RPC bunch: {e}"))?;
+    }
+
+    crate::applog::event(&format!(
+        "udp_proxy: sent PRI RPC bunch ({} bytes) to {target}",
+        ciphertext.len()
+    ));
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -847,6 +974,25 @@ mod tests {
         let mut verify_mac = HmacSha256::new_from_slice(&crypto.hmac_key).unwrap();
         verify_mac.update(dec_payload);
         verify_mac.verify_slice(dec_hmac).expect("HMAC-SHA256 must verify cleanly");
+    }
+
+    #[test]
+    fn test_encrypt_datagram_payload_roundtrip_authenticates_and_decrypts() {
+        let crypto = ReservationCrypto {
+            aes_key: [0x31u8; 32],
+            aes_iv: [0x17u8; 16],
+            hmac_key: [0x9Bu8; 32],
+        };
+
+        let raw_payload = b"\x01\x00\x00\x00\x08\x00\x00\x00R.Name.v1\x00";
+        let (ciphertext, ok) = encrypt_datagram_payload(raw_payload, &crypto);
+        assert!(ok, "encryption must succeed");
+        assert_eq!(ciphertext.len() % 16, 0, "ciphertext must be a whole number of AES blocks");
+        assert_ne!(&ciphertext[..], raw_payload, "ciphertext must not equal plaintext");
+
+        let decrypted = decrypt_datagram_payload(&ciphertext, &crypto)
+            .expect("decrypt_datagram_payload must recover the plaintext");
+        assert_eq!(decrypted, raw_payload, "round-trip must preserve payload byte-for-byte");
     }
 
     #[test]

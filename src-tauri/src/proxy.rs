@@ -1812,12 +1812,25 @@ async fn handle_forward_intercepted_request(
     };
 
     let path_lower = path.to_ascii_lowercase();
-    if path_lower.contains("products/unlockcontainer") || path_lower.contains("unlockcontainer") {
+    if path_lower.contains("products/unlockcontainer")
+        || path_lower.contains("unlockcontainer")
+        || path_lower.contains("products/opencontainer")
+        || path_lower.contains("opencontainer")
+    {
         if let Some(resp_json) = generate_simulated_unlock_container_payload(&req_body_bytes) {
             let resp_bytes = serde_json::to_vec(&resp_json).unwrap_or_default();
             let psy_time = format!("{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(1755399374));
             let sig = resign_rpc_response(&psy_time, &resp_bytes);
             crate::applog::event("proxy: intercepted forward HTTPS Products/UnlockContainer -> simulated crate open drop");
+            record_network_event(
+                "HTTP",
+                "INBOUND",
+                &path_lower,
+                "200 OK",
+                "UnlockContainer Drop Grant (Simulated)",
+                &String::from_utf8_lossy(&resp_bytes),
+                true,
+            );
             return Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header("Content-Type", "application/json")
@@ -2318,22 +2331,84 @@ pub async fn start_ws_broker() -> Result<u16, String> {
     Ok(port)
 }
 
+fn extract_id_list(val: &serde_json::Value, keys: &[&str]) -> Vec<String> {
+    for k in keys {
+        if let Some(v) = val.get(*k) {
+            if let Some(arr) = v.as_array() {
+                let ids: Vec<String> = arr.iter().filter_map(|x| {
+                    if let Some(s) = x.as_str() {
+                        Some(s.to_string())
+                    } else if let Some(n) = x.as_i64() {
+                        Some(n.to_string())
+                    } else {
+                        None
+                    }
+                }).collect();
+                if !ids.is_empty() {
+                    return ids;
+                }
+            } else if let Some(s) = v.as_str() {
+                if !s.is_empty() {
+                    return vec![s.to_string()];
+                }
+            } else if let Some(n) = v.as_i64() {
+                return vec![n.to_string()];
+            }
+        }
+        if let Some(res) = val.get("Result") {
+            if let Some(v) = res.get(*k) {
+                if let Some(arr) = v.as_array() {
+                    let ids: Vec<String> = arr.iter().filter_map(|x| {
+                        if let Some(s) = x.as_str() {
+                            Some(s.to_string())
+                        } else if let Some(n) = x.as_i64() {
+                            Some(n.to_string())
+                        } else {
+                            None
+                        }
+                    }).collect();
+                    if !ids.is_empty() {
+                        return ids;
+                    }
+                } else if let Some(s) = v.as_str() {
+                    if !s.is_empty() {
+                        return vec![s.to_string()];
+                    }
+                } else if let Some(n) = v.as_i64() {
+                    return vec![n.to_string()];
+                }
+            }
+        }
+    }
+    Vec::new()
+}
+
 fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json::Value> {
-    let req_val: serde_json::Value = serde_json::from_slice(body).ok()?;
-    let container_ids: Vec<String> = req_val.get("InstanceIDs")
-        .or_else(|| req_val.get("instance_ids"))
-        .or_else(|| req_val.get("ContainerIDs"))
-        .or_else(|| req_val.get("Result").and_then(|r| r.get("InstanceIDs")))
-        .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
-        .unwrap_or_default();
-    let key_ids: Vec<String> = req_val.get("KeyInstanceIDs")
-        .or_else(|| req_val.get("key_instance_ids"))
-        .or_else(|| req_val.get("KeyIDs"))
-        .or_else(|| req_val.get("Result").and_then(|r| r.get("KeyInstanceIDs")))
-        .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
-        .unwrap_or_default();
+    let req_val: serde_json::Value = serde_json::from_slice(body).unwrap_or(serde_json::json!({}));
+    let container_ids = extract_id_list(
+        &req_val,
+        &[
+            "InstanceIDs",
+            "instance_ids",
+            "ContainerIDs",
+            "container_ids",
+            "ContainerID",
+            "container_id",
+            "InstanceID",
+            "instance_id",
+        ],
+    );
+    let key_ids = extract_id_list(
+        &req_val,
+        &[
+            "KeyInstanceIDs",
+            "key_instance_ids",
+            "KeyIDs",
+            "key_ids",
+            "KeyID",
+            "key_id",
+        ],
+    );
 
     // High tier items pool for crate drops
     let drop_candidates: &[(i32, i32)] = &[
@@ -2915,12 +2990,25 @@ async fn handle_broker_request(
         }
     };
 
-    if path_lower.contains("products/unlockcontainer") || path_lower.contains("unlockcontainer") {
+    if path_lower.contains("products/unlockcontainer")
+        || path_lower.contains("unlockcontainer")
+        || path_lower.contains("products/opencontainer")
+        || path_lower.contains("opencontainer")
+    {
         if let Some(resp_json) = generate_simulated_unlock_container_payload(&body_bytes) {
             let resp_bytes = serde_json::to_vec(&resp_json).unwrap_or_default();
             let psy_time = format!("{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(1755399374));
             let sig = resign_rpc_response(&psy_time, &resp_bytes);
             crate::applog::event("broker: simulated Products/UnlockContainer -> drop granted & registered to inventory");
+            record_network_event(
+                "HTTP",
+                "INBOUND",
+                &path_lower,
+                "200 OK",
+                "UnlockContainer Drop Grant (Simulated)",
+                &String::from_utf8_lossy(&resp_bytes),
+                true,
+            );
             return Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header("Content-Type", "application/json")
@@ -3689,7 +3777,9 @@ pub async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
     }
 
     let is_unlock_container = svc_lower.contains("products/unlockcontainer")
-        || svc_lower.contains("unlockcontainer");
+        || svc_lower.contains("unlockcontainer")
+        || svc_lower.contains("products/opencontainer")
+        || svc_lower.contains("opencontainer");
 
     if is_unlock_container {
         if let Some(resp_json) = generate_simulated_unlock_container_payload(body_part) {
@@ -7530,10 +7620,12 @@ pub fn patch_cross_entitlement_json(
     }
 }
 
-/// Neutralize "InventoryOutOfSync" error states from PsyNet JSON responses
-/// preventing client popup/notification "Inventory out of sync, resyncing..."
+/// Neutralize "InventoryOutOfSync" and "AccessDenied" error states from PsyNet JSON responses
+/// preventing client popup/notification "Inventory out of sync, resyncing..." or drop opening hangs
 pub fn neutralize_inventory_out_of_sync_json(body: &[u8]) -> (Vec<u8>, bool) {
-    if !body.windows(18).any(|w| w == b"InventoryOutOfSync") {
+    let has_sync = body.windows(18).any(|w| w == b"InventoryOutOfSync");
+    let has_denied = body.windows(12).any(|w| w == b"AccessDenied");
+    if !has_sync && !has_denied {
         return (body.to_vec(), false);
     }
 
@@ -7561,7 +7653,7 @@ fn neutralize_inventory_out_of_sync_value(val: &mut serde_json::Value, changed: 
             for key in ["status", "Status", "Message", "message", "Error", "error", "ErrorCode", "errorCode"] {
                 if let Some(v) = map.get_mut(key) {
                     if let Some(s) = v.as_str() {
-                        if s.contains("InventoryOutOfSync") {
+                        if s.contains("InventoryOutOfSync") || s.contains("AccessDenied") {
                             *v = if key.eq_ignore_ascii_case("status") {
                                 serde_json::Value::String("OK".to_string())
                             } else {

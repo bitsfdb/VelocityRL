@@ -806,8 +806,6 @@ pub async fn apply_custom_avatar_upk(app: tauri::AppHandle, avatar_source: Strin
             if tagame_path.is_file() {
                 if !backup_path.is_file() {
                     let _ = fs::copy(&tagame_path, &backup_path);
-                } else {
-                    let _ = fs::copy(&backup_path, &tagame_path);
                 }
                 if let Err(e) = apply_custom_avatar_to_tagame(&tagame_path, &raw_bgra) {
                     crate::applog::event(&format!("avatar: failed to apply to TAGame.upk: {e}"));
@@ -859,8 +857,12 @@ pub fn apply_custom_avatar_to_tagame(tagame_path: &Path, raw_bgra: &[u8]) -> Res
             .map_err(|e| format!("Failed to create backup: {e}"))?;
     }
 
-    let mut file_bytes = fs::read(&backup_path)
-        .map_err(|e| format!("Failed to read backup: {e}"))?;
+    // Read pristine file contents (from backup if available, else from tagame_path)
+    let mut file_bytes = if backup_path.is_file() {
+        fs::read(&backup_path).map_err(|e| format!("Failed to read backup: {e}"))?
+    } else {
+        fs::read(tagame_path).map_err(|e| format!("Failed to read TAGame.upk: {e}"))?
+    };
 
     if file_bytes.len() < 32 {
         return Err("TAGame.upk too small".into());
