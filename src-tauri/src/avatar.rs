@@ -814,50 +814,85 @@ pub async fn apply_custom_avatar_upk(app: tauri::AppHandle, avatar_source: Strin
 
 /// Write the avatar texture/bytecode patch into the installed TAGame.upk.
 /// Failures are logged but never block the broker-side avatar.
-fn apply_avatar_to_game(app: &tauri::AppHandle, raw_bgra: &[u8]) {
+fn apply_avatar_to_game(app: &tauri::AppHandle, raw_bgra: &[u8]) -> bool {
     let Some(game_dir) = get_game_dir(app) else {
-        return;
+        crate::applog::event(
+            "avatar: no game_dir in config.json, cannot patch TAGame.upk — set the game path and re-apply",
+        );
+        return false;
     };
-    let Ok(cooked_dir) = crate::upk::swapper::resolve_cooked_dir(&game_dir) else {
-        return;
+    let cooked_dir = match crate::upk::swapper::resolve_cooked_dir(&game_dir) {
+        Ok(dir) => dir,
+        Err(e) => {
+            crate::applog::event(&format!(
+                "avatar: could not resolve CookedPCConsole under {} ({e})",
+                game_dir.display()
+            ));
+            return false;
+        }
     };
     let tagame_path = cooked_dir.join("TAGame.upk");
     if !tagame_path.is_file() {
-        return;
+        crate::applog::event(&format!(
+            "avatar: TAGame.upk not found at {}",
+            tagame_path.display()
+        ));
+        return false;
     }
     match apply_custom_avatar_to_tagame(&tagame_path, raw_bgra) {
-        Ok(()) => crate::applog::event("avatar: TAGame.upk patched for local player avatar"),
-        Err(e) => crate::applog::event(&format!("avatar: failed to patch TAGame.upk: {e}")),
+        Ok(()) => {
+            crate::applog::event(&format!(
+                "avatar: TAGame.upk patched at {} (local avatar + sidecar URLs)",
+                tagame_path.display()
+            ));
+            true
+        }
+        Err(e) => {
+            crate::applog::event(&format!("avatar: failed to patch TAGame.upk: {e}"));
+            false
+        }
     }
 }
 
 /// Re-apply the cached custom avatar on startup. The in-memory avatar and the
 /// TAGame.upk bytecode patch do not survive an app restart on their own, which
 /// is why the picture used to appear only after pressing Apply again.
-pub fn ensure_cached_avatar_applied(app: &tauri::AppHandle) {
+pub fn ensure_cached_avatar_applied(app: &tauri::AppHandle) -> bool {
     let mut cached: Option<Vec<u8>> = None;
+    let mut source = String::from("<none>");
     if let Ok(dir) = app.path().app_config_dir() {
         let path = dir.join("custom_avatars").join("active_avatar.png");
-        if let Ok(bytes) = fs::read(&path) {
-            cached = Some(bytes);
+        match fs::read(&path) {
+            Ok(bytes) => {
+                cached = Some(bytes);
+                source = path.display().to_string();
+            }
+            Err(e) => crate::applog::event(&format!(
+                "avatar startup: no cached avatar at {} ({e})",
+                path.display()
+            )),
         }
     }
     if cached.is_none() {
         if let Ok(bytes) = fs::read("/root/avatar.png") {
             cached = Some(bytes);
+            source = "/root/avatar.png".into();
         }
     }
 
     let Some(png_bytes) = cached else {
-        return;
+        crate::applog::event("avatar startup: no cached avatar found, UPK not patched");
+        return false;
     };
     let Ok((raw_bgra, processed_png)) = process_avatar_image(&png_bytes) else {
-        crate::applog::event("avatar: cached avatar could not be decoded on startup");
-        return;
+        crate::applog::event("avatar startup: cached avatar could not be decoded");
+        return false;
     };
     set_active_avatar_png(processed_png);
-    apply_avatar_to_game(app, &raw_bgra);
-    crate::applog::event("avatar: cached avatar restored on startup");
+    crate::applog::event(&format!(
+        "avatar startup: restoring cached avatar from {source}"
+    ));
+    apply_avatar_to_game(app, &raw_bgra)
 }
 
 #[tauri::command]

@@ -3775,7 +3775,15 @@ pub fn run() {
             let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
             let dir = applog::init(app.handle());
             perform_startup_cache_maintenance(app.handle());
-            avatar::ensure_cached_avatar_applied(app.handle());
+            // Sometimes the config/avatar cache is not readable in the first
+            // few milliseconds of setup. Retry once shortly after startup.
+            let retry_handle = app.handle().clone();
+            if !avatar::ensure_cached_avatar_applied(app.handle()) {
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(3));
+                    avatar::ensure_cached_avatar_applied(&retry_handle);
+                });
+            }
             let (_data_dir, _) = get_catalog_dirs(app.handle());
             psynet::ensure_wininet_revocation_disabled();
             #[cfg(windows)]
