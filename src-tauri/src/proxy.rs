@@ -2929,10 +2929,16 @@ async fn handle_broker_request(
 
         let authenticated_steam_id = crate::avatar::get_authenticated_steam_user_internal()
             .and_then(|user| crate::avatar::parse_steam_id(&user.steam_id));
+        // Steam login is optional, but the proxy also learns the local player's
+        // own ID from intercepted PsyNet responses. Use it as a fallback so the
+        // custom avatar still goes to the right player without a login.
+        let learned_steam_id = crate::proxy::get_learned_player_id()
+            .map(|id| normalize_player_id(&id))
+            .and_then(|id| crate::avatar::parse_steam_id(&id));
 
         if let Some(steam_id) = target_steam_id {
             // The linked account's own ID always resolves to the local avatar.
-            if Some(steam_id) == authenticated_steam_id {
+            if Some(steam_id) == authenticated_steam_id || Some(steam_id) == learned_steam_id {
                 if let Some(png_bytes) = crate::avatar::get_active_avatar_png() {
                     crate::applog::event(&format!("broker: {path_str} queried for local Steam ID {steam_id} -> responding with active avatar PNG ({} bytes)", png_bytes.len()));
                     return Ok(Response::builder()
