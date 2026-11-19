@@ -1262,14 +1262,32 @@ pub fn apply_custom_avatar_to_tagame(tagame_path: &Path, raw_bgra: &[u8]) -> Res
         serial.extend_from_slice(SHIFT_UPDATE_PRI_DATA);
         serial.extend_from_slice(&trailing);
 
-        let new_rel = decomp.len();
+        let old_uncomp_end = uncomp_offset + decomp.len() as i64;
         decomp.extend_from_slice(&serial);
+        let delta = serial.len() as i64;
+
+        // Growing this chunk's uncompressed data shifts the logical start of
+        // every later chunk by `delta`. Exports that live in those later chunks
+        // (including the very first byte after this one) must move with them,
+        // or they will resolve to the appended bytes. This was the cause of
+        // "duplicate NetIndex / Serial size mismatch" crashes on startup.
+        for exp in &exports {
+            if exp.serial_offset >= old_uncomp_end {
+                let epos = exp.header_pos;
+                let so = i64::from_le_bytes(plain_header[epos + 36..epos + 44].try_into().unwrap());
+                plain_header[epos + 36..epos + 44].copy_from_slice(&(so + delta).to_le_bytes());
+            }
+        }
+        for ch in &chunks[url_chunk_idx + 1..] {
+            let uo = i64::from_le_bytes(plain_header[ch.pos..ch.pos + 8].try_into().unwrap());
+            plain_header[ch.pos..ch.pos + 8].copy_from_slice(&(uo + delta).to_le_bytes());
+        }
 
         // Repoint the export at the appended serial block.
         let ep = pri_exp.header_pos;
         let new_serial_size = serial.len() as i32;
         plain_header[ep + 32..ep + 36].copy_from_slice(&new_serial_size.to_le_bytes());
-        let new_serial_offset = uncomp_offset + new_rel as i64;
+        let new_serial_offset = old_uncomp_end;
         plain_header[ep + 36..ep + 44].copy_from_slice(&new_serial_offset.to_le_bytes());
 
         // The chunk now decompresses to more bytes.

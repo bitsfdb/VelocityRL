@@ -102,5 +102,43 @@ fn transplanted_update_pri_data_is_readable() {
     }
     assert!(found, "transplanted UpdatePRIData export not found");
 
+    // No two exports may share serial data. Appending the transplanted block
+    // grows the chunk, so every later export and chunk must be shifted; without
+    // that, the game crashes with "duplicate NetIndex / Serial size mismatch".
+    let mut serials: Vec<(i32, i64, String, String)> = Vec::new();
+    let mut pos = export_rel;
+    for _ in 0..export_count {
+        if pos + 72 > depends_rel || pos + 72 > plain.len() {
+            break;
+        }
+        let i32_at = |a: usize| i32::from_le_bytes(plain[pos + a..pos + a + 4].try_into().unwrap());
+        let name_idx = i32_at(12);
+        let serial_size = i32_at(32);
+        let serial_offset = i64::from_le_bytes(plain[pos + 36..pos + 44].try_into().unwrap());
+        let name = if name_idx >= 0 && (name_idx as usize) < names.len() {
+            names[name_idx as usize].clone()
+        } else {
+            String::new()
+        };
+        if serial_size > 0 {
+            serials.push((serial_size, serial_offset, name, String::new()));
+        }
+        let noc = i32_at(48);
+        pos += 72 + noc.max(0) as usize * 4;
+    }
+    serials.sort_by_key(|s| s.1);
+    for pair in serials.windows(2) {
+        assert!(
+            pair[1].1 >= pair[0].1 + pair[0].0 as i64,
+            "exports overlap: {} @ {} (size {}) and {} @ {}",
+            pair[0].2, pair[0].1, pair[0].0, pair[1].2, pair[1].1
+        );
+    }
+    let force_feedback = serials
+        .iter()
+        .find(|s| s.2 == "SetForceFeedbackScale")
+        .expect("SetForceFeedbackScale must still be present");
+    assert_eq!(force_feedback.0, 96, "neighbouring export serial size changed");
+
     let _ = fs::remove_file(&tmp);
 }
