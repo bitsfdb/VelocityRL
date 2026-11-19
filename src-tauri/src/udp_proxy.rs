@@ -1069,6 +1069,42 @@ mod tests {
     }
 
     #[test]
+    fn test_decrypt_real_capture_with_reservation_key() {
+        // Key/IV from the first ReservationsReadyMessage in the real capture,
+        // plus one C2S and one S2C datagram from udp-packets.json. This locks in
+        // the whole-datagram AES-256-CBC + PKCS#7 framing used by the live match.
+        let key = base64::Engine::decode(
+            &base64::engine::general_purpose::STANDARD,
+            "8B93VmMkuo9J+TWTFdZ/KK380tckolQRa8WVdRu6RGM=",
+        )
+        .unwrap();
+        let iv = base64::Engine::decode(
+            &base64::engine::general_purpose::STANDARD,
+            "fnG/YrVIlkaWskzXBWdPPg==",
+        )
+        .unwrap();
+        let crypto = ReservationCrypto {
+            aes_key: key.try_into().unwrap(),
+            aes_iv: iv.try_into().unwrap(),
+            hmac_key: [0; 32],
+        };
+
+        for wire in [
+            "UC0OdAhU8lqxpEi0D1Z4X/ZV40Xk3Jf96LXg9ygTMolT/2tZQOzn6E/iGM+vtv/o6XTPPPBj/Iw4f4tstmiNc9nmrd6pWAcnvLtEQelNMog=",
+            "r4H68tTWrTDAnmD15CHYzVyFDBTzVu/unJ5rwIbHA+Qa+kgVCmv+RoBuIxHPKSHe",
+        ] {
+            let ciphertext = base64::Engine::decode(
+                &base64::engine::general_purpose::STANDARD,
+                wire,
+            )
+            .unwrap();
+            let plaintext = decrypt_datagram_payload(&ciphertext, &[crypto.clone()])
+                .expect("real captured datagram must decrypt with the reservation key");
+            assert!(!plaintext.is_empty());
+        }
+    }
+
+    #[test]
     fn test_process_c2s_encrypted_datagram_rejects_corrupted_padding() {
         let crypto = crypto_with(0x42, 0x24);
 
