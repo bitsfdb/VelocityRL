@@ -56,6 +56,12 @@ struct ProxyState {
     active_crypto: RwLock<Vec<ReservationCrypto>>,
     /// Whether the proxy is active.
     running: AtomicBool,
+    /// Whether each forwarding task is still alive. On Windows a transient
+    /// WSAECONNRESET (10054) when the game closes its UDP socket at the end of
+    /// a match used to `break` the C2S loop and silently kill the proxy, while
+    /// `running` stayed true — so every later match connected to a dead port.
+    c2s_alive: AtomicBool,
+    s2c_alive: AtomicBool,
 }
 
 static PROXY_STATE: once_cell_or_lazy::LazyState = once_cell_or_lazy::LazyState::new();
@@ -194,6 +200,8 @@ mod once_cell_or_lazy {
                         client_endpoint: RwLock::new(None),
                         active_crypto: RwLock::new(Vec::new()),
                         running: AtomicBool::new(false),
+                        c2s_alive: AtomicBool::new(false),
+                        s2c_alive: AtomicBool::new(false),
                     })
                 })
                 .clone()
@@ -206,8 +214,15 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
     let state = PROXY_STATE.get();
 
     let current_port = state.local_port.load(Ordering::SeqCst);
-    if current_port > 0 && state.running.load(Ordering::SeqCst) {
+    let both_alive = state.c2s_alive.load(Ordering::SeqCst)
+        && state.s2c_alive.load(Ordering::SeqCst);
+    if current_port > 0 && state.running.load(Ordering::SeqCst) && both_alive {
         return Ok(current_port);
+    }
+    if current_port > 0 && !both_alive {
+        crate::applog::event(
+            "udp_proxy: forwarding task died, restarting proxy on a fresh port",
+        );
     }
 
     // Bind local client-facing socket to 127.0.0.1 (ephemeral port)
@@ -227,6 +242,8 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
 
     state.local_port.store(bound_port, Ordering::SeqCst);
     state.running.store(true, Ordering::SeqCst);
+    state.c2s_alive.store(true, Ordering::SeqCst);
+    state.s2c_alive.store(true, Ordering::SeqCst);
 
     let client_sock = Arc::new(client_sock);
     let upstream_sock = Arc::new(upstream_sock);
@@ -328,7 +345,20 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                     }
                 }
                 Err(e) => {
+                    // Do NOT leave `running` true with a dead task — that was
+                    // the bug that made every match after the first time out.
+                    // A transient WSAECONNRESET (10054) is common when the game
+                    // closes its socket at match end; retry a few times before
+                    // giving up, then mark the task dead so the next
+                    // reservation rebinds a fresh proxy.
                     crate::applog::event(&format!("udp_proxy: client recv error: {e}"));
+                    if e.kind() == std::io::ErrorKind::WouldBlock
+                        || e.kind() == std::io::ErrorKind::TimedOut
+                    {
+                        continue;
+                    }
+                    state_c2s.c2s_alive.store(false, Ordering::SeqCst);
+                    state_c2s.running.store(false, Ordering::SeqCst);
                     break;
                 }
             }
@@ -404,6 +434,8 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                 }
                 Err(e) => {
                     crate::applog::event(&format!("udp_proxy: upstream recv error: {e}"));
+                    state_s2c.s2c_alive.store(false, Ordering::SeqCst);
+                    state_s2c.running.store(false, Ordering::SeqCst);
                     break;
                 }
             }
@@ -1003,6 +1035,48 @@ mod tests {
         assert_eq!(
             plaintext[..8], original_header,
             "name patch must not touch the packet/bunch header"
+        );
+    }
+
+    #[test]
+    fn test_dead_forwarding_task_forces_restart() {
+        // Reproduces the bug: after a match, a transient 10054 killed the C2S
+        // task but `running` stayed true, so ensure_udp_proxy returned the stale
+        // port and later matches connected to nothing. The restart condition
+        // must trigger when either task is dead, regardless of `running`.
+        let alive_state = ProxyState {
+            local_port: AtomicU16::new(55557),
+            target_server: RwLock::new(None),
+            client_endpoint: RwLock::new(None),
+            active_crypto: RwLock::new(Vec::new()),
+            running: AtomicBool::new(true),
+            c2s_alive: AtomicBool::new(true),
+            s2c_alive: AtomicBool::new(true),
+        };
+        assert!(
+            alive_state.local_port.load(Ordering::SeqCst) > 0
+                && alive_state.running.load(Ordering::SeqCst)
+                && alive_state.c2s_alive.load(Ordering::SeqCst)
+                && alive_state.s2c_alive.load(Ordering::SeqCst),
+            "healthy proxy should be reused"
+        );
+
+        let dead_state = ProxyState {
+            local_port: AtomicU16::new(55557),
+            target_server: RwLock::new(None),
+            client_endpoint: RwLock::new(None),
+            active_crypto: RwLock::new(Vec::new()),
+            running: AtomicBool::new(true), // the old bug: still true
+            c2s_alive: AtomicBool::new(false),
+            s2c_alive: AtomicBool::new(true),
+        };
+        let both_alive = dead_state.c2s_alive.load(Ordering::SeqCst)
+            && dead_state.s2c_alive.load(Ordering::SeqCst);
+        assert!(
+            !(dead_state.local_port.load(Ordering::SeqCst) > 0
+                && dead_state.running.load(Ordering::SeqCst)
+                && both_alive),
+            "dead C2S task must force ensure_udp_proxy to rebind"
         );
     }
 
