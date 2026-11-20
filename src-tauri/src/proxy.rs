@@ -2409,7 +2409,7 @@ pub fn avatar_player_id_from_path(path: &str) -> Option<u64> {
 /// Handle incoming requests on the plain-HTTP broker (ephemeral local port).
 /// Upgrades WebSocket connections to the game server, and proxies HTTP RPC/Services calls to api.rlpp.psynet.gg.
 async fn handle_broker_request(
-    req: Request<Incoming>,
+    mut req: Request<Incoming>,
     client: reqwest::Client,
 ) -> Result<Response<ResponseBoxBody>, hyper::Error> {
     let is_upgrade = req
@@ -2709,8 +2709,7 @@ async fn handle_broker_request(
     }
 
     if path_str == "/rlim/pk" || path_str.starts_with("/rlim/pk?")
-        || path_str == "/rlim/sk" || path_str.starts_with("/rlim/sk?")
-        || path_str == "/rlim/lo" || path_str.starts_with("/rlim/lo?") {
+        || path_str == "/rlim/sk" || path_str.starts_with("/rlim/sk?") {
         crate::applog::event(&format!("broker: {path_str} queried"));
         return Ok(Response::builder()
             .status(StatusCode::OK)
@@ -2718,6 +2717,85 @@ async fn handle_broker_request(
             .header("Content-Length", "0")
             .header("Cache-Control", "no-cache, no-store")
             .body(full_body(Vec::new()))
+            .unwrap());
+    }
+
+    // SHIFT loadout wire converter. The in-game ValidateReplicatedLoadout hook
+    // sends the recorded B1 preset key here; we return the fixed-width decimal
+    // records the game bytecode parses into ClientLoadouts. When the game sends
+    // an empty/marker key we rebuild it from the currently recorded loadout
+    // (every slot, paint, title and attribute) so the freeze stays current.
+    if path_str == "/rlim/lo" || path_str.starts_with("/rlim/lo?") {
+        let query = req.uri().query().unwrap_or_default().to_string();
+        let body_bytes = match req.body_mut().collect().await {
+            Ok(c) => c.to_bytes().to_vec(),
+            Err(_) => Vec::new(),
+        };
+        let body_text = String::from_utf8_lossy(&body_bytes).into_owned();
+        let key = crate::loadout_wire::find_key(&query, &body_text);
+
+        let digits = key
+            .as_deref()
+            .and_then(crate::loadout_wire::key_to_digits)
+            .unwrap_or_else(|| {
+                let mut slots: Vec<(u32, Vec<(String, String)>)> =
+                    vec![(0, Vec::new()); crate::presets::COSMETIC_SLOTS_COUNT + 7];
+
+                for rule in load_active_swap_rules(None) {
+                    let idx = crate::presets::upk_slot_index_from_str(&rule.slot) as usize;
+                    if idx < slots.len() && rule.wanted_id > 0 {
+                        let mut attrs = Vec::new();
+                        if rule.paint_id > 0 {
+                            attrs.push(("Painted".to_string(), rule.paint_id.to_string()));
+                        }
+                        slots[idx] = (rule.wanted_id as u32, attrs);
+                    }
+                }
+                let mut spawned = load_active_spawned_items(None);
+                for (product, paint) in spawned.drain(..) {
+                    if product <= 0 || slots.iter().any(|(p, _)| *p == product as u32) {
+                        continue;
+                    }
+                    if let Some(slot) = slots.iter_mut().find(|(p, _)| *p == 0) {
+                        let mut attrs = Vec::new();
+                        if paint > 0 {
+                            attrs.push(("Painted".to_string(), paint.to_string()));
+                        }
+                        *slot = (product as u32, attrs);
+                    }
+                }
+
+                let title = crate::psynet::load_active_spoof_from_disk()
+                    .map(|c| {
+                        if !c.equip_title_id.trim().is_empty() {
+                            c.equip_title_id.trim().to_string()
+                        } else {
+                            c.display_title_id.trim().to_string()
+                        }
+                    })
+                    .unwrap_or_default();
+                if !title.is_empty() && !slots.is_empty() {
+                    slots[0].1.push(("TitleId".to_string(), title));
+                }
+
+                let encoded = crate::loadout_wire::encode_loadout(&slots, 1);
+                crate::applog::event(&format!("broker: {path_str} rebuilt loadout key {encoded}"));
+                crate::loadout_wire::key_to_digits(&encoded).unwrap_or_else(|| "D".to_string())
+            });
+
+        crate::applog::event(&format!(
+            "broker: {path_str} -> {}... ({} bytes)",
+            &digits[..digits.len().min(96)],
+            digits.len()
+        ));
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "text/plain; charset=utf-8")
+            .header("Access-Control-Allow-Origin", "*")
+            .header("Content-Length", digits.len().to_string())
+            .header("Cache-Control", "no-store")
+            .header("Connection", "close")
+            .body(full_body(digits.into_bytes()))
             .unwrap());
     }
 

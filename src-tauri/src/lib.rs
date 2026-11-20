@@ -16,6 +16,7 @@ mod integrity;
 mod jobobject;
 mod network_dump;
 mod presets;
+mod loadout_wire;
 pub mod psynet;
 pub mod upk;
 pub mod workshop;
