@@ -2983,7 +2983,11 @@ async fn handle_broker_request(
         // account id from the request path against the learned local PlayerID
         // directly so the custom avatar resolves for those requests too.
         let learned_player_id = crate::proxy::get_learned_player_id().unwrap_or_default();
-        let learned_account_id = normalize_player_id(&learned_player_id);
+        let mut learned_account_id = normalize_player_id(&learned_player_id);
+        if learned_account_id.is_empty() {
+            // Same local identity used by name spoofing.
+            learned_account_id = normalize_player_id(BITS_PLAYER_ID);
+        }
         let target_is_local_pid = !learned_account_id.is_empty()
             && path_str.split(&['/', '?', '&'][..]).any(|part| {
                 let decoded = crate::avatar::percent_decode(part);
@@ -3055,12 +3059,7 @@ async fn handle_broker_request(
                 .unwrap());
         }
 
-        // No resolvable player ID: this is the local player's menu/lobby avatar
-        // request (the in-game one carries PlayerIDString). Serve the applied PNG.
-        let no_id_local = path_str.contains("/content/images/players/avatars/")
-            && target_steam_id.is_none()
-            && !target_is_local_pid;
-        if is_local_route || no_id_local {
+        if is_local_route {
             if let Some(png_bytes) = crate::avatar::get_active_avatar_png() {
                 crate::applog::event(&format!("broker: {path_str} queried -> responding with active avatar PNG ({} bytes)", png_bytes.len()));
                 return Ok(Response::builder()
