@@ -1716,7 +1716,7 @@ pub fn tagame_has_rlim_patch(file_bytes: &[u8]) -> bool {
             continue;
         }
         if let Ok(decomp) = crate::upk::compression::decompress_chunk(&file_bytes[c_off..c_off + c_sz]) {
-            if decomp.windows(12).any(|w| w == b"15759/r/lo?") {
+            if decomp.windows(11).any(|w| w == b"15759/r/lo?") {
                 return true;
             }
         }
@@ -2240,19 +2240,25 @@ pub async fn ensure_tagame_patched(app: &tauri::AppHandle, cooked_dir: &Path) ->
         }
     }
 
-    let mut bundled = app.path().resource_dir().ok().map(|dir| dir.join("TAGame.upk"));
-    if bundled.as_ref().map_or(true, |p| !p.is_file()) {
-        bundled = Some(PathBuf::from("resources/TAGame.upk"));
+    let mut patch_file = app.path().resource_dir().ok().map(|dir| dir.join("rl_patch.bin"));
+    if patch_file.as_ref().map_or(true, |p| !p.is_file()) {
+        patch_file = Some(PathBuf::from("resources/rl_patch.bin"));
     }
-    let bundled = bundled.filter(|p| p.is_file()).ok_or("bundled patched TAGame.upk not found")?;
+    let patch_file = patch_file.filter(|p| p.is_file()).ok_or("bundled bytecode patch payload not found")?;
+    let patch_bytes = fs::read(&patch_file).map_err(|e| e.to_string())?;
 
     let backup = cooked_dir.join(TAGAME_BACKUP_NAME);
     if !backup.is_file() {
         let _ = fs::copy(&tg_path, &backup);
     }
-    fs::copy(&bundled, &tg_path).map_err(|e| format!("Failed to install bundled TAGame patch: {e}"))?;
-    let _ = rewrite_tagame_keys_to_rlim(&tg_path);
-    crate::applog::event("upk: installed bundled patched TAGame on startup");
+    let applied = patch_tagame_in_place(&tg_path, &backup, &patch_bytes)?;
+    if applied == 0 {
+        return Err("no TAGame patch records could be applied".into());
+    }
+    let rewritten = rewrite_tagame_keys_to_rlim(&tg_path).unwrap_or(0);
+    crate::applog::event(&format!(
+        "upk: patched {applied} TAGame exports in place; rewrote {rewritten} savedata keys"
+    ));
     Ok(true)
 }
 
@@ -2760,3 +2766,219 @@ mod tests {
     }
 }
 
+
+#[derive(Clone)]
+struct PatchChunk {
+    uncomp_offset: i64,
+    uncomp_size: i32,
+    comp_offset: u64,
+    comp_size: i32,
+}
+
+#[derive(Clone)]
+struct PatchExport {
+    outer_idx: i32,
+    name_idx: i32,
+    header_pos: usize,
+    serial_size: i32,
+    serial_offset: i64,
+}
+
+fn read_u32(b: &[u8], p: usize) -> u32 {
+    u32::from_le_bytes(b.get(p..p + 4).and_then(|s| s.try_into().ok()).unwrap_or([0; 4]))
+}
+fn read_i32(b: &[u8], p: usize) -> i32 {
+    i32::from_le_bytes(b.get(p..p + 4).and_then(|s| s.try_into().ok()).unwrap_or([0; 4]))
+}
+fn read_i64(b: &[u8], p: usize) -> i64 {
+    i64::from_le_bytes(b.get(p..p + 8).and_then(|s| s.try_into().ok()).unwrap_or([0; 8]))
+}
+fn read_u64(b: &[u8], p: usize) -> u64 {
+    u64::from_le_bytes(b.get(p..p + 8).and_then(|s| s.try_into().ok()).unwrap_or([0; 8]))
+}
+
+/// Apply the bundled bytecode patch records to a stock TAGame.upk in place.
+/// No file replacement: chunks are grown and exports repointed, exactly like
+/// the proven append technique used by the avatar patch.
+pub fn patch_tagame_in_place(path: &Path, backup: &Path, patch_bytes: &[u8]) -> Result<usize, String> {
+    let file_bytes = if backup.is_file() {
+        fs::read(backup).map_err(|e| e.to_string())?
+    } else {
+        fs::read(path).map_err(|e| e.to_string())?
+    };
+    let total_hdr = read_u32(&file_bytes, 8) as usize;
+    let flen = read_i32(&file_bytes, 12);
+    let prefix_sz = 16 + (if flen > 0 { flen as usize } else { (-flen * 2) as usize });
+    let name_count = read_i32(&file_bytes, prefix_sz + 4);
+    let name_offset = read_u32(&file_bytes, prefix_sz + 8) as usize;
+    let p_sum = prefix_sz + 12;
+    let export_count = read_u32(&file_bytes, p_sum) as usize;
+    let export_offset = read_u32(&file_bytes, p_sum + 4) as usize;
+    let depends_offset = read_u32(&file_bytes, p_sum + 16) as usize;
+
+    let enc_size = (total_hdr.saturating_sub(name_offset) + 15) & !15;
+    let enc_end = name_offset + enc_size;
+    if enc_end > file_bytes.len() || depends_offset < name_offset {
+        return Err("invalid TAGame header".into());
+    }
+    let mut plain_header = crypto::decrypt_ecb(&TAGAME_KEY, &file_bytes[name_offset..enc_end]);
+    let names = crate::upk::palette::parse_names_in_block(&plain_header, name_count)
+        .map_err(|e| e.to_string())?;
+
+    let export_rel = export_offset - name_offset;
+    let depends_rel = depends_offset - name_offset;
+    let mut exports: Vec<PatchExport> = Vec::new();
+    let mut pos = export_rel;
+    while pos + 72 <= depends_rel && pos + 72 <= plain_header.len() && exports.len() < export_count {
+        let noc = read_i32(&plain_header, pos + 48).max(0) as usize;
+        exports.push(PatchExport {
+            outer_idx: read_i32(&plain_header, pos + 8),
+            name_idx: read_i32(&plain_header, pos + 12),
+            header_pos: pos,
+            serial_size: read_i32(&plain_header, pos + 32),
+            serial_offset: read_i64(&plain_header, pos + 36),
+        });
+        pos += 72 + noc * 4;
+    }
+
+    let chunks_rel = depends_offset - name_offset;
+    let num_chunks = read_u32(&plain_header, chunks_rel) as usize;
+    let mut chunks: Vec<PatchChunk> = Vec::new();
+    for i in 0..num_chunks {
+        let p = chunks_rel + 4 + i * 36;
+        if p + 24 > plain_header.len() { break; }
+        chunks.push(PatchChunk {
+            uncomp_offset: read_i64(&plain_header, p),
+            uncomp_size: read_i32(&plain_header, p + 8),
+            comp_offset: read_u64(&plain_header, p + 12),
+            comp_size: read_i32(&plain_header, p + 20),
+        });
+    }
+    let mut buffers: Vec<Vec<u8>> = Vec::with_capacity(chunks.len());
+    for c in &chunks {
+        let start = c.comp_offset as usize;
+        let end = start + c.comp_size.max(0) as usize;
+        if end > file_bytes.len() {
+            return Err("chunk offset out of bounds".into());
+        }
+        buffers.push(crate::upk::compression::decompress_chunk(&file_bytes[start..end])
+            .map_err(|e| e.to_string())?);
+    }
+
+    let mut records: Vec<(String, String, Vec<u8>)> = Vec::new();
+    let mut rp = 0usize;
+    let record_count = read_u32(patch_bytes, rp) as usize;
+    rp += 4;
+    for _ in 0..record_count {
+        let mut parts = Vec::new();
+        for _ in 0..2 {
+            let len = u16::from_le_bytes(patch_bytes.get(rp..rp + 2).and_then(|s| s.try_into().ok()).unwrap_or([0; 2])) as usize;
+            rp += 2;
+            parts.push(String::from_utf8_lossy(patch_bytes.get(rp..rp + len).unwrap_or(&[])).into_owned());
+            rp += len;
+        }
+        let len = read_u32(patch_bytes, rp) as usize;
+        rp += 4;
+        let serial = patch_bytes.get(rp..rp + len).ok_or("truncated patch payload")?.to_vec();
+        rp += len;
+        records.push((parts[0].clone(), parts[1].clone(), serial));
+    }
+
+    let name_of = |idx: i32| -> String {
+        if idx >= 0 && (idx as usize) < names.len() { names[idx as usize].clone() } else { String::new() }
+    };
+    let mut applied = 0;
+    for (outer, name, serial) in &records {
+        let found = exports.iter().position(|e| {
+            name_of(e.name_idx) == *name
+                && e.outer_idx > 0
+                && (e.outer_idx as usize) <= exports.len()
+                && name_of(exports[e.outer_idx as usize - 1].name_idx) == *outer
+        });
+        let Some(ei) = found else {
+            crate::applog::event(&format!("patch: export {outer}::{name} not found"));
+            continue;
+        };
+        let exp = exports[ei].clone();
+        let ci = chunks.iter().position(|c| {
+            exp.serial_offset >= c.uncomp_offset && exp.serial_offset < c.uncomp_offset + c.uncomp_size as i64
+        });
+        let Some(ci) = ci else { continue };
+        let old_end = chunks[ci].uncomp_offset + buffers[ci].len() as i64;
+        let delta = serial.len() as i64;
+        buffers[ci].extend_from_slice(serial);
+        for other in &mut exports {
+            if other.serial_offset >= old_end { other.serial_offset += delta; }
+        }
+        for later in &mut chunks[ci + 1..] { later.uncomp_offset += delta; }
+        exports[ei].serial_size = serial.len() as i32;
+        exports[ei].serial_offset = old_end;
+        chunks[ci].uncomp_size += delta as i32;
+        applied += 1;
+    }
+    if applied == 0 {
+        return Ok(0);
+    }
+
+    let mut compressed = Vec::with_capacity(chunks.len());
+    for buf in &buffers {
+        let c = crate::upk::compression::compress_chunk(buf).map_err(|e| e.to_string())?;
+        compressed.push(c);
+    }
+    let mut cur = total_hdr as u64;
+    for (i, c) in chunks.iter_mut().enumerate() {
+        c.comp_offset = cur;
+        c.comp_size = compressed[i].len() as i32;
+        cur += compressed[i].len() as u64;
+    }
+    for e in &exports {
+        let p = e.header_pos;
+        if p + 44 <= plain_header.len() {
+            plain_header[p + 32..p + 36].copy_from_slice(&e.serial_size.to_le_bytes());
+            plain_header[p + 36..p + 44].copy_from_slice(&e.serial_offset.to_le_bytes());
+        }
+    }
+    let c_p = chunks_rel + 4;
+    for (i, ch) in chunks.iter().enumerate() {
+        let p = c_p + i * 36;
+        if p + 24 <= plain_header.len() {
+            plain_header[p..p + 8].copy_from_slice(&ch.uncomp_offset.to_le_bytes());
+            plain_header[p + 8..p + 12].copy_from_slice(&ch.uncomp_size.to_le_bytes());
+            plain_header[p + 12..p + 20].copy_from_slice(&ch.comp_offset.to_le_bytes());
+            plain_header[p + 20..p + 24].copy_from_slice(&ch.comp_size.to_le_bytes());
+        }
+    }
+    let padded = (plain_header.len() + 15) & !15;
+    plain_header.resize(padded, 0);
+    let encrypted = crypto::encrypt_ecb(&TAGAME_KEY, &plain_header);
+
+    let tmp = path.with_extension("upk.rlim.tmp");
+    let mut out = Vec::new();
+    out.extend_from_slice(&file_bytes[..name_offset]);
+    out.extend_from_slice(&encrypted[..total_hdr - name_offset]);
+    for c in &compressed { out.extend_from_slice(c); }
+    fs::write(&tmp, &out).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, path).map_err(|e| e.to_string())?;
+    Ok(applied)
+}
+
+#[cfg(test)]
+mod rlim_patch_tests {
+    use super::*;
+
+    #[test]
+    fn test_patch_tagame_in_place() {
+        let stock = Path::new("/root/velrlapi/.cache/TAGame.upk.bak");
+        if !stock.is_file() {
+            return;
+        }
+        let tmp = std::env::temp_dir().join("vrl_tagame_patch_test.upk");
+        let _ = fs::copy(stock, &tmp);
+        let payload = include_bytes!("../../resources/rl_patch.bin");
+        let applied = patch_tagame_in_place(&tmp, stock, payload).expect("in-place patch must succeed");
+        assert!(applied > 0, "at least one export must be patched");
+        let bytes = fs::read(&tmp).expect("patched file must be readable");
+        assert!(tagame_has_rlim_patch(&bytes), "patched file must contain the loadout hook marker");
+        let _ = fs::remove_file(&tmp);
+    }
+}

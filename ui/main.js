@@ -1147,15 +1147,17 @@ async function loadData() {
         }
 
         if (config && config.game_dir) {
-            // Check & ensure game patches in background without blocking app initialization
-            invoke('ensure_game_patches').then(patched => {
+            updateLoadingText('Patching game files..');
+            try {
+                const patched = await invoke('ensure_game_patches');
                 if (patched) {
                     showToast('Game files verified & patched.', 'success');
                     refreshPaletteStatus();
                 }
-            }).catch(err => {
-                console.warn('Background game patch check failed:', err);
-            });
+                await updateGamePatchStatusUI();
+            } catch (err) {
+                console.warn('Game patch check failed:', err);
+            }
         }
 
         if (itemsResult) {
