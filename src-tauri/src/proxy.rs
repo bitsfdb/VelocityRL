@@ -2600,6 +2600,36 @@ async fn handle_broker_request(
             .unwrap());
     }
 
+    // Plain-text variant for the in-game hook: body is just the loadout IDs,
+    // title travels in a response header so no JSON parser is needed in bytecode.
+    if path_str == "/loadout/raw" || path_str.starts_with("/loadout/raw?")
+        || path_str == "/rlim/loadout/raw" || path_str.starts_with("/rlim/loadout/raw?") {
+        let rules = load_active_swap_rules(None);
+        let mut pids: Vec<String> = rules.iter()
+            .filter(|r| r.wanted_id > 0)
+            .map(|r| if r.paint_id > 0 { format!("{}:{}", r.wanted_id, r.paint_id) }
+                     else { r.wanted_id.to_string() })
+            .collect();
+        for (pid, paint) in load_active_spawned_items(None) {
+            if pid > 0 {
+                let s = if paint > 0 { format!("{pid}:{paint}") } else { pid.to_string() };
+                if !pids.contains(&s) { pids.push(s); }
+            }
+        }
+        let body = pids.join(",");
+        crate::applog::event(&format!("broker: {path_str} -> raw loadout '{}'", body));
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "text/plain; charset=utf-8")
+            .header("X-VRL-Title", "VelocityRL_Developer")
+            .header("Access-Control-Allow-Origin", "*")
+            .header("Content-Length", body.len().to_string())
+            .header("Cache-Control", "no-store")
+            .header("Connection", "close")
+            .body(full_body(body.into_bytes()))
+            .unwrap());
+    }
+
     if path_str == "/rlim/loadout" || path_str.starts_with("/rlim/loadout?")
         || path_str == "/s/lo" || path_str.starts_with("/s/lo?")
         || path_str == "/loadout" || path_str.starts_with("/loadout?") {
