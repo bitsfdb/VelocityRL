@@ -15,6 +15,8 @@ use tokio::sync::RwLock;
 use aes::Aes256;
 use cbc::{Decryptor, Encryptor};
 use cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvInit};
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 
 type Aes256CbcDec = Decryptor<Aes256>;
 type Aes256CbcEnc = Encryptor<Aes256>;
@@ -26,6 +28,11 @@ const MAX_CRYPTO_CANDIDATES: usize = 4;
 /// original wire bytes untouched. No name rewrite, no re-encryption. This
 /// keeps the relay transparent while we study the protocol.
 pub const UDP_ANALYSIS_ONLY: bool = true;
+
+/// Hard passthrough: the match relay does nothing except copy raw datagrams
+/// between the game and the real server. No decrypt, no decode, no capture,
+/// no event recording, no rewrite. Enabled while diagnosing connection issues.
+pub const UDP_PURE_PASSTHROUGH: bool = true;
 
 /// Modern Rocket League UDP Match Security Session Keys
 #[derive(Clone, Debug)]
@@ -279,6 +286,14 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                         *client_lock = Some(src);
                     }
 
+                    // Pure passthrough: forward the exact bytes, immediately.
+                    if UDP_PURE_PASSTHROUGH {
+                        if let Some(target) = *state_c2s.target_server.read().await {
+                            let _ = us_c2s.send_to(&buf[..len], target).await;
+                        }
+                        continue;
+                    }
+
                     // Forward to real game server (with C2S login bunch rewrite if spoofing name)
                     let target_opt = *state_c2s.target_server.read().await;
                     if let Some(target) = target_opt {
@@ -430,6 +445,14 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
         while state_s2c.running.load(Ordering::Relaxed) {
             match us_s2c.recv_from(&mut buf).await {
                 Ok((len, from_server)) => {
+                    // Pure passthrough: forward the exact bytes, immediately.
+                    if UDP_PURE_PASSTHROUGH {
+                        if let Some(client) = *state_s2c.client_endpoint.read().await {
+                            let _ = cs_s2c.send_to(&buf[..len], client).await;
+                        }
+                        continue;
+                    }
+
                     s2c_pkt_count += 1;
 
                     let cryptos = state_s2c.active_crypto.read().await.clone();
@@ -599,21 +622,29 @@ pub async fn set_active_reservation_with_crypto(
 /// UDP packet decrypt & rewrite routine:
 /// 1. Decrypt the AES-256-CBC datagram (whole datagram, PKCS#7 padded) using
 ///    whichever reservation key actually decrypts it
-/// 2. Patch `?Name=` UE login bunch if spoofing
-/// 3. Re-encrypt with the same key
+/// 2. Strip the 32-byte HMAC-SHA256 trailer
+/// 3. Patch `?Name=` UE login bunch if spoofing
+/// 4. Recompute HMAC-SHA256 over the modified bunch and append it
+/// 5. Re-encrypt with the same key
 pub fn process_c2s_encrypted_datagram(
     packet: &[u8],
     cryptos: &[ReservationCrypto],
 ) -> (Vec<u8>, Option<Vec<u8>>, bool) {
-    // 1. Decrypt datagram with AES-256-CBC
-    let (mut payload, crypto) = match decrypt_datagram_with_candidates(packet, cryptos) {
+    let (payload, crypto) = match decrypt_datagram_with_candidates(packet, cryptos) {
         Some(found) => found,
-        // Decrypt failed or padding invalid; passthrough original packet
         None => return (packet.to_vec(), None, false),
     };
 
-    // 2. Patch plaintext bunch if name spoofing is active
-    let mut effective_len = payload.len();
+    // Plaintext is bunch || HMAC-SHA256(32). Split them before patching.
+    let (bunch, _) = if payload.len() >= 32 {
+        payload.split_at(payload.len() - 32)
+    } else {
+        (payload.as_slice(), payload.as_slice())
+    };
+    let mut bunch = bunch.to_vec();
+
+    // Patch the bunch if name spoofing is active.
+    let mut effective_len = bunch.len();
     let mut was_patched = false;
 
     if let Some(active_cfg) = crate::psynet::load_active_spoof_from_disk() {
@@ -630,21 +661,23 @@ pub fn process_c2s_encrypted_datagram(
         };
 
         if let Some(name) = spoof_name {
-            was_patched = patch_c2s_login_bunch(&mut payload, &mut effective_len, name);
-            payload.truncate(effective_len);
+            was_patched = patch_c2s_login_bunch(&mut bunch, &mut effective_len, name);
+            bunch.truncate(effective_len);
         }
     }
 
     if !was_patched {
-        // If not patched, pass the original packet through but keep the decrypted
-        // plaintext so the monitor can display it.
         return (packet.to_vec(), Some(payload), false);
     }
 
-    // 3. Re-encrypt with the reservation key that decrypted this packet.
-    match encrypt_datagram_payload(&payload, crypto) {
-        (encrypted, true) => (encrypted, Some(payload), true),
-        _ => (packet.to_vec(), Some(payload), false),
+    // Re-sign the rewritten bunch with the reservation HMAC key.
+    let Some(resigned) = resign_datagram(&bunch, crypto) else {
+        crate::applog::event("udp_proxy: could not re-sign bunch (bad HMAC key)");
+        return (packet.to_vec(), Some(payload), false);
+    };
+    match encrypt_datagram_payload(&resigned, crypto) {
+        (encrypted, true) => (encrypted, Some(resigned), true),
+        _ => (packet.to_vec(), Some(resigned), false),
     }
 }
 
@@ -776,6 +809,31 @@ pub fn decrypt_datagram_payload(packet: &[u8], cryptos: &[ReservationCrypto]) ->
 /// Encrypt a plaintext payload into a match datagram: AES-256-CBC with PKCS#7
 /// padding over the whole datagram. The current Rocket League protocol does not
 /// append a MAC, so there is no appearing/disappearing 32-byte trailer.
+/// Verify the 32-byte HMAC-SHA256 trailer over the bunch plaintext.
+pub fn verify_hmac(payload: &[u8], crypto: &ReservationCrypto) -> bool {
+    if payload.len() < 32 {
+        return false;
+    }
+    let (bunch, tag) = payload.split_at(payload.len() - 32);
+    match Hmac::<Sha256>::new_from_slice(&crypto.hmac_key) {
+        Ok(mut mac) => {
+            mac.update(bunch);
+            mac.verify_slice(tag).is_ok()
+        }
+        Err(_) => false,
+    }
+}
+
+/// Append a fresh HMAC-SHA256 trailer over the bunch plaintext. The returned
+/// buffer is ready for AES-CBC + PKCS#7 encryption.
+pub fn resign_datagram(payload: &[u8], crypto: &ReservationCrypto) -> Option<Vec<u8>> {
+    let mut mac = Hmac::<Sha256>::new_from_slice(&crypto.hmac_key).ok()?;
+    mac.update(payload);
+    let mut out = payload.to_vec();
+    out.extend_from_slice(&mac.finalize().into_bytes());
+    Some(out)
+}
+
 pub fn encrypt_datagram_payload(payload: &[u8], crypto: &ReservationCrypto) -> (Vec<u8>, bool) {
     let encryptor = match Aes256CbcEnc::new_from_slices(&crypto.aes_key, &crypto.aes_iv) {
         Ok(e) => e,
@@ -1006,6 +1064,23 @@ mod tests {
         let mut dec_buf = ciphertext.clone();
         let decrypted = dec.decrypt_padded_mut::<Pkcs7>(&mut dec_buf).unwrap();
         assert_eq!(decrypted, raw_payload, "Whole datagram decrypts to the payload");
+    }
+
+    #[test]
+    fn test_hmac_tail_sign_and_verify_roundtrip() {
+        // Real protocol: plaintext = bunch || HMAC-SHA256(bunch, hmacKey)[32].
+        let crypto = crypto_with(0x31, 0x17);
+        let bunch = b"\xe6\xd7\x1a\x18\x57\x0b\xee\x05\x47\x00\x10\x10\x58\x29\x10\x00";
+
+        let signed = resign_datagram(bunch, &crypto).expect("signing must succeed");
+        assert_eq!(signed.len(), bunch.len() + 32);
+        assert!(verify_hmac(&signed, &crypto), "freshly signed payload must verify");
+        assert!(!verify_hmac(bunch, &crypto), "unsigned bunch must fail verification");
+
+        // A single bit flip in the bunch must invalidate the tag.
+        let mut tampered = signed.clone();
+        tampered[0] ^= 1;
+        assert!(!verify_hmac(&tampered, &crypto), "tampered bunch must fail verification");
     }
 
     #[test]
