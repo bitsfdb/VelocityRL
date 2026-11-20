@@ -2981,7 +2981,8 @@ async fn handle_broker_request(
         let learned_account_id = normalize_player_id(&learned_player_id);
         let target_is_local_pid = !learned_account_id.is_empty()
             && path_str.split(&['/', '?', '&'][..]).any(|part| {
-                let candidate = normalize_player_id(part);
+                let decoded = crate::avatar::percent_decode(part);
+                let candidate = normalize_player_id(&decoded);
                 !candidate.is_empty() && candidate == learned_account_id
             });
         if target_is_local_pid {
@@ -8715,6 +8716,11 @@ mod tests {
     fn test_epic_player_id_normalizes_to_account_id() {
         assert_eq!(
             super::normalize_player_id("Epic|37674b519c3544beb544f437f539ebf2|0"),
+            "37674b519c3544beb544f437f539ebf2"
+        );
+        let encoded = crate::avatar::percent_decode("epic%7c37674b519c3544beb544f437f539ebf2%7c0");
+        assert_eq!(
+            super::normalize_player_id(&encoded),
             "37674b519c3544beb544f437f539ebf2"
         );
     }

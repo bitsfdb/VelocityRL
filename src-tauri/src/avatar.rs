@@ -540,7 +540,7 @@ struct SteamMiniProfileResponse {
 
 pub const STEAMID64_INDIVIDUAL_BASE: u64 = 76561197960265728;
 
-fn percent_decode(s: &str) -> String {
+pub fn percent_decode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let bytes = s.as_bytes();
     let mut i = 0;
