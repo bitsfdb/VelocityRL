@@ -55,9 +55,13 @@ main > .repair-banner strong { font-size: 11px; font-weight: 600; white-space: n
 .studio-hero { position: relative; isolation: isolate; overflow: clip; display: flex; flex-shrink: 0; min-height: 206px; border: 1px solid #303238; border-radius: 18px; background: #17191d; }
 .studio-hero::after { content: ''; position: absolute; z-index: -1; top: -100%; left: 40%; width: 25%; height: 300%; transform: rotate(30deg); background: linear-gradient(90deg, transparent, #ffffff04, transparent); animation: studio-light 12s ease-in-out infinite alternate; pointer-events: none; }
 .studio-hero-copy { padding: 27px 32px; position: relative; z-index: 2; }
-.studio-eyebrow { color: #a7acb8; font-size: 10px; letter-spacing: 2.2px; font-weight: 550; }
+.studio-eyebrow { color: #a7acb8; font-size: 10px; letter-spacing: 2.2px; font-weight: 550; display: inline-flex; align-items: center; gap: 7px; transition: color 0.3s; }
+.studio-eyebrow.is-game-running { color: #4ade80; }
+.studio-status-pulse { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 8px #22c55e, 0 0 16px rgba(34, 197, 94, 0.5); display: inline-block; animation: status-pulse-anim 2s infinite ease-in-out; }
+@keyframes status-pulse-anim { 0%, 100% { transform: scale(0.9); opacity: 0.8; } 50% { transform: scale(1.2); opacity: 1; } }
 .studio-hero h1 { margin: 9px 0 7px; font-size: clamp(32px, 3.8vw, 46px); line-height: 1.12; font-weight: 550; letter-spacing: -2px; }
-.studio-hero h1 em { font-style: normal; color: #aeb7c9; }
+.studio-hero h1 em { font-style: normal; color: #aeb7c9; transition: color 0.3s; }
+.studio-hero h1 em.is-game-active { color: #38bdf8; text-shadow: 0 0 16px rgba(56, 189, 248, 0.4); }
 .studio-hero p { color: #a6a9b3; font-size: 13px; line-height: 1.6; }
 .studio-explore { margin-top: 20px; display: inline-flex; gap: 18px; align-items: center; padding: 0; min-height: 28px; background: none; color: #e5e7ed; border: 0; font-size: 12px; cursor: pointer; }
 .studio-explore svg { transition: transform .55s var(--studio-spring); }

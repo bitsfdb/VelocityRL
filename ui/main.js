@@ -1225,6 +1225,8 @@ async function loadData() {
 
         updateLoadingText('Pre-warming titles & tools...');
         await initTitlesTab().catch(e => console.warn('Pre-warming titles failed:', e));
+        refreshSwapRlHint(true).catch(() => {});
+        startRlRunningPoll();
 
         updateLoadingText('Starting up...');
         loadingPercent = 100;
@@ -3107,21 +3109,56 @@ function validateSwapInputs() {
 
 const validate = validateSwapInputs;
 
-let lastRlHintCheck = 0;
-async function refreshSwapRlHint(force = false) {
-    const hint = document.getElementById('swap-rl-hint');
-    if (!hint) return;
-    const now = Date.now();
-    if (!force && now - lastRlHintCheck < 5000) return;
-    lastRlHintCheck = now;
-    try {
-        hint.hidden = !(await invoke('is_rocket_league_running'));
-    } catch {
-        hint.hidden = true;
+let currentRlRunningState = null;
+function updateRocketLeagueHeroStatus(isRunning) {
+    if (currentRlRunningState === isRunning) return;
+    currentRlRunningState = isRunning;
+
+    const heading = document.getElementById('studio-heading');
+    const eyebrow = document.getElementById('studio-eyebrow');
+    const desc = document.getElementById('studio-hero-desc');
+
+    if (isRunning) {
+        if (heading) heading.innerHTML = 'Rocket League is <em class="is-game-active">running.</em>';
+        if (eyebrow) {
+            eyebrow.classList.add('is-game-running');
+            eyebrow.innerHTML = '<span class="studio-status-pulse"></span> GAME DETECTED';
+        }
+        if (desc) desc.textContent = 'Live session detected. Items and titles will appear in real time.';
+    } else {
+        if (heading) heading.innerHTML = 'Never <em>blend in.</em>';
+        if (eyebrow) {
+            eyebrow.classList.remove('is-game-running');
+            eyebrow.textContent = 'THE GARAGE, REIMAGINED';
+        }
+        if (desc) desc.textContent = 'Every detail. Every possibility. Your next signature look.';
     }
 }
 
-function startRlRunningPoll() {}
+let lastRlHintCheck = 0;
+async function refreshSwapRlHint(force = false) {
+    const now = Date.now();
+    if (!force && now - lastRlHintCheck < 3000) return;
+    lastRlHintCheck = now;
+    try {
+        const isRunning = await invoke('is_rocket_league_running');
+        updateRocketLeagueHeroStatus(!!isRunning);
+        const hint = document.getElementById('swap-rl-hint');
+        if (hint) hint.hidden = !isRunning;
+    } catch {
+        updateRocketLeagueHeroStatus(false);
+    }
+}
+
+let rlPollInterval = null;
+function startRlRunningPoll() {
+    if (rlPollInterval) return;
+    rlPollInterval = setInterval(() => {
+        if (!document.hidden) {
+            refreshSwapRlHint().catch(() => {});
+        }
+    }, 3500);
+}
 function showRlRunningToast() {}
 
 async function openSettingsForPath() {
