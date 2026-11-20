@@ -2621,7 +2621,6 @@ async fn handle_broker_request(
         return Ok(Response::builder()
             .status(StatusCode::OK)
             .header("Content-Type", "text/plain; charset=utf-8")
-            .header("X-VRL-Title", "VelocityRL_Developer")
             .header("Access-Control-Allow-Origin", "*")
             .header("Content-Length", body.len().to_string())
             .header("Cache-Control", "no-store")
