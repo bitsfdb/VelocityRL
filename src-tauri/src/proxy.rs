@@ -2333,85 +2333,8 @@ pub async fn start_ws_broker() -> Result<u16, String> {
     Ok(port)
 }
 
-fn extract_id_list(val: &serde_json::Value, keys: &[&str]) -> Vec<String> {
-    for k in keys {
-        if let Some(v) = val.get(*k) {
-            if let Some(arr) = v.as_array() {
-                let ids: Vec<String> = arr.iter().filter_map(|x| {
-                    if let Some(s) = x.as_str() {
-                        Some(s.to_string())
-                    } else if let Some(n) = x.as_i64() {
-                        Some(n.to_string())
-                    } else {
-                        None
-                    }
-                }).collect();
-                if !ids.is_empty() {
-                    return ids;
-                }
-            } else if let Some(s) = v.as_str() {
-                if !s.is_empty() {
-                    return vec![s.to_string()];
-                }
-            } else if let Some(n) = v.as_i64() {
-                return vec![n.to_string()];
-            }
-        }
-        if let Some(res) = val.get("Result") {
-            if let Some(v) = res.get(*k) {
-                if let Some(arr) = v.as_array() {
-                    let ids: Vec<String> = arr.iter().filter_map(|x| {
-                        if let Some(s) = x.as_str() {
-                            Some(s.to_string())
-                        } else if let Some(n) = x.as_i64() {
-                            Some(n.to_string())
-                        } else {
-                            None
-                        }
-                    }).collect();
-                    if !ids.is_empty() {
-                        return ids;
-                    }
-                } else if let Some(s) = v.as_str() {
-                    if !s.is_empty() {
-                        return vec![s.to_string()];
-                    }
-                } else if let Some(n) = v.as_i64() {
-                    return vec![n.to_string()];
-                }
-            }
-        }
-    }
-    Vec::new()
-}
 
-fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json::Value> {
-    let req_val: serde_json::Value = serde_json::from_slice(body).unwrap_or(serde_json::json!({}));
-    let container_ids = extract_id_list(
-        &req_val,
-        &[
-            "InstanceIDs",
-            "instance_ids",
-            "ContainerIDs",
-            "container_ids",
-            "ContainerID",
-            "container_id",
-            "InstanceID",
-            "instance_id",
-        ],
-    );
-    let key_ids = extract_id_list(
-        &req_val,
-        &[
-            "KeyInstanceIDs",
-            "key_instance_ids",
-            "KeyIDs",
-            "key_ids",
-            "KeyID",
-            "key_id",
-        ],
-    );
-
+fn generate_simulated_unlock_container_payload(_body: &[u8]) -> Option<serde_json::Value> {
     // High tier items pool for crate drops
     let drop_candidates: &[(i32, i32)] = &[
         (4284, 12), // Fennec (Titanium White)
@@ -2436,45 +2359,31 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
 
     // Pure network proxy mode: Save file on disk is not touched!
 
-    let u1: u64 = rand::random();
-    let u2: u64 = rand::random();
-    let drop_inst_hex = format!("{u1:016x}{u2:016x}");
-    let now_ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(1755399374);
-
-    let mut drop_obj = serde_json::json!({
-        "ProductID": dropped_pid,
-        "InstanceID": drop_inst_hex,
-        "TradeHold": -1,
-        "AddedTimestamp": now_ts,
-        "UpdatedTimestamp": now_ts,
-        "bSkipRoulette": false,
-    });
+    // Products/UnlockContainer v2 returns {"Result":{"Drops":[Product]}}.
+    // A Product is {ProductID, InstanceID:null, Attributes:[{Key,Value}], SeriesID,
+    // AddedTimestamp:null, UpdatedTimestamp:null}. Any extra field or a
+    // non-null InstanceID makes the client reject the drop.
+    let mut attributes: Vec<serde_json::Value> = Vec::new();
     if dropped_paint > 0 {
-        drop_obj["Paint"] = serde_json::json!(dropped_paint);
-        drop_obj["PaintID"] = serde_json::json!(dropped_paint);
-        drop_obj["Attributes"] = serde_json::json!([
-            { "Key": "Painted", "Value": dropped_paint.to_string() },
-            { "Key": "Paint", "Value": dropped_paint.to_string() }
-        ]);
+        attributes.push(serde_json::json!({
+            "Key": "Painted",
+            "Value": dropped_paint.to_string()
+        }));
     }
+
+    let drop_obj = serde_json::json!({
+        "ProductID": dropped_pid,
+        "InstanceID": serde_json::Value::Null,
+        "Attributes": attributes,
+        "SeriesID": 0,
+        "AddedTimestamp": serde_json::Value::Null,
+        "UpdatedTimestamp": serde_json::Value::Null,
+    });
 
     let resp_obj = serde_json::json!({
         "Result": {
-            "Drops": [drop_obj.clone()],
-            "ContainerDrops": [drop_obj.clone()],
-            "InstanceIDs": container_ids.clone(),
-            "KeyInstanceIDs": key_ids.clone(),
-        },
-        "Drops": [drop_obj.clone()],
-        "ContainerDrops": [drop_obj],
-        "InstanceIDs": container_ids,
-        "KeyInstanceIDs": key_ids,
-        "bSuccess": true,
-        "Success": true,
-        "Error": serde_json::Value::Null,
+            "Drops": [drop_obj]
+        }
     });
 
     Some(resp_obj)
@@ -8574,6 +8483,27 @@ mod tests {
         assert_eq!(val[1]["displayName"], "OtherPlayer");
         assert_eq!(learned_pid.as_deref(), Some("37674b519c3544beb544f437f539ebf2"));
         assert_eq!(learned_name.as_deref(), Some("OldName"));
+    }
+
+    #[test]
+    fn test_unlock_container_response_matches_rlapi_shape() {
+        let resp = super::generate_simulated_unlock_container_payload(b"{}")
+            .expect("crate open must produce a response");
+        let drops = resp
+            .get("Result")
+            .and_then(|r| r.get("Drops"))
+            .and_then(|d| d.as_array())
+            .expect("Result.Drops array");
+        assert_eq!(drops.len(), 1);
+        let drop = &drops[0];
+        assert!(drop.get("ProductID").unwrap().is_i64());
+        assert!(drop.get("InstanceID").unwrap().is_null(), "real drops have null InstanceID");
+        assert!(drop.get("SeriesID").unwrap().is_i64());
+        assert!(drop.get("AddedTimestamp").unwrap().is_null());
+        assert!(drop.get("UpdatedTimestamp").unwrap().is_null());
+        assert!(drop.get("Attributes").unwrap().is_array());
+        assert!(resp.get("Drops").is_none(), "no top-level Drops field");
+        assert!(resp.get("ContainerDrops").is_none(), "no ContainerDrops field");
     }
 
     #[test]
