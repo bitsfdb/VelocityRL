@@ -7182,7 +7182,7 @@ fn patch_reservation_value_sync(
                         if is_local && !is_bits {
                             // Inject custom title and name if active spoof config defines one
                             if let Some(spoof) = crate::psynet::load_active_spoof_from_disk() {
-                                if spoof.enabled {
+                                {
                                     let equip_id = if !spoof.equip_title_id.trim().is_empty() {
                                         spoof.equip_title_id.trim()
                                     } else {
@@ -7311,7 +7311,7 @@ fn patch_reservation_value_sync(
                             event_data.insert("Title".to_string(), serde_json::json!(title_text));
                             *changed = true;
                         } else if let Some(spoof) = crate::psynet::load_active_spoof_from_disk() {
-                            if spoof.enabled {
+                            {
                                 let equip_id = if !spoof.equip_title_id.trim().is_empty() {
                                     spoof.equip_title_id.trim()
                                 } else {
