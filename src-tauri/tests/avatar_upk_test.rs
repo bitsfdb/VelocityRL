@@ -88,7 +88,7 @@ fn transplanted_update_pri_data_is_readable() {
                     let rel = (serial_offset - uncomp_offset) as usize;
                     let script = &decomp[rel + 48..rel + 48 + 19_434];
                     let expected: &[u8] =
-                        include_bytes!("../src/avatar/shift_update_pri_data.bin");
+                        include_bytes!("../src/avatar/sidecar_update_pri_data.bin");
                     assert_eq!(script, expected, "transplanted bytecode mismatch");
                     found = true;
                     break;

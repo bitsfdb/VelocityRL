@@ -104,6 +104,9 @@ pub struct UdpCaptureEntry {
     pub encrypted: bool,
     pub decrypted: bool,
     pub payload: Vec<u8>,
+    /// Exact bytes that crossed the wire (before decrypt). Kept so we can
+    /// brute-force HMAC variants offline; `payload` is the decrypted view.
+    pub raw_wire: Vec<u8>,
 }
 
 const MAX_UDP_CAPTURE_PACKETS: usize = 4096;
@@ -120,6 +123,7 @@ pub fn record_udp_capture(
     encrypted: bool,
     decrypted: bool,
     payload: &[u8],
+    raw_wire: &[u8],
 ) {
     let entry = UdpCaptureEntry {
         timestamp: chrono::Utc::now().to_rfc3339(),
@@ -128,6 +132,7 @@ pub fn record_udp_capture(
         encrypted,
         decrypted,
         payload: payload.to_vec(),
+        raw_wire: raw_wire.to_vec(),
     };
 
     if let Ok(mut lock) = UDP_CAPTURE.lock() {
@@ -298,6 +303,7 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                                 encrypted,
                                 plaintext.is_some(),
                                 captured,
+                                &original,
                             );
 
                             c2s_pkt_count += 1;
@@ -365,6 +371,7 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                             encrypted,
                             plaintext.is_some(),
                             captured,
+                            &buf[..len],
                         );
 
                         c2s_pkt_count += 1;
@@ -438,6 +445,7 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                         encrypted,
                         plaintext.is_some(),
                         scanned,
+                        &buf[..len],
                     );
 
                     // Never drop a whole datagram to hide a loadout reset: UE3 reliable

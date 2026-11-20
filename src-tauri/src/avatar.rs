@@ -1192,12 +1192,12 @@ pub fn apply_custom_avatar_to_tagame(tagame_path: &Path, raw_bgra: &[u8]) -> Res
         file_bytes[name_offset..enc_end].copy_from_slice(&re_enc);
     }
 
-    // 3. Transplant the sidecar avatar URL bytecode from Shift's UpdatePRIData.
-    //    The stock function never fetches avatars over HTTP; Shift's version
+    // 3. Transplant the sidecar avatar URL bytecode into UpdatePRIData.
+    //    The stock function never fetches avatars over HTTP; this version
     //    builds http://127.0.0.1:49320/Content/Images/Players/Avatars/Large/<id>/
     //    and hands it to WebImageCache.SyncImageURL. The broker answers with the
     //    custom avatar for the local player and with each other player's Steam
-    //    avatar, which is exactly the behaviour we need.
+    //    avatar.
     //
     //    The bytecode references only objects that exist in the stock package
     //    (verified: all 1709 referenced object indices resolve identically), so
@@ -1205,9 +1205,9 @@ pub fn apply_custom_avatar_to_tagame(tagame_path: &Path, raw_bgra: &[u8]) -> Res
     //    the end of the owning chunk and the export's serial_offset is repointed
     //    there, which avoids touching the other exports in that chunk.
     {
-        const SHIFT_UPDATE_PRI_DATA: &[u8] = include_bytes!("avatar/shift_update_pri_data.bin");
-        const SHIFT_MEM_SIZE: u32 = 28_742;
-        const SHIFT_SCRIPT_SIZE: u32 = 19_434;
+        const SIDECAR_UPDATE_PRI_DATA: &[u8] = include_bytes!("avatar/sidecar_update_pri_data.bin");
+        const SIDECAR_MEM_SIZE: u32 = 28_742;
+        const SIDECAR_SCRIPT_SIZE: u32 = 19_434;
 
         let pri_exp = exports
             .iter()
@@ -1257,9 +1257,9 @@ pub fn apply_custom_avatar_to_tagame(tagame_path: &Path, raw_bgra: &[u8]) -> Res
             Vec::new()
         };
         serial.truncate(48);
-        serial[40..44].copy_from_slice(&SHIFT_MEM_SIZE.to_le_bytes());
-        serial[44..48].copy_from_slice(&SHIFT_SCRIPT_SIZE.to_le_bytes());
-        serial.extend_from_slice(SHIFT_UPDATE_PRI_DATA);
+        serial[40..44].copy_from_slice(&SIDECAR_MEM_SIZE.to_le_bytes());
+        serial[44..48].copy_from_slice(&SIDECAR_SCRIPT_SIZE.to_le_bytes());
+        serial.extend_from_slice(SIDECAR_UPDATE_PRI_DATA);
         serial.extend_from_slice(&trailing);
 
         let old_uncomp_end = uncomp_offset + decomp.len() as i64;
@@ -1313,7 +1313,7 @@ pub fn apply_custom_avatar_to_tagame(tagame_path: &Path, raw_bgra: &[u8]) -> Res
         }
 
         crate::applog::event(
-            "avatar: transplanted Shift UpdatePRIData (sidecar avatar URL delivery)",
+            "avatar: transplanted sidecar UpdatePRIData bytecode",
         );
     }
 

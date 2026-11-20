@@ -2481,7 +2481,7 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
 }
 
 /// Pull the requested player's Steam ID out of an avatar request path.
-/// Understands the Shift sidecar scheme:
+/// Understands the sidecar avatar URL scheme:
 /// `/Content/Images/Players/Avatars/Large/<id>/0?buildSecret=..&tab=1`
 /// as well as the simpler VelocityRL routes (`/rlim/avatar?id=...`).
 pub fn avatar_player_id_from_path(path: &str) -> Option<u64> {
@@ -2896,7 +2896,7 @@ async fn handle_broker_request(
         || path_str.contains("/avatars/")
         || path_str.contains("/content/images/players/avatars/") {
         // 1. Check if a specific Steam ID is requested in path or query.
-        //    Shift-style URLs look like
+        //    Sidecar avatar URLs look like
         //    /Content/Images/Players/Avatars/Large/<id>/0?buildSecret=..&tab=1
         //    so scan every path/query component rather than relying on a
         //    single fixed position.
@@ -8577,7 +8577,7 @@ mod tests {
     }
 
     #[test]
-    fn test_avatar_player_id_from_shift_sidecar_path() {
+    fn test_avatar_player_id_from_sidecar_path() {
         let id = 76561198000000000u64;
         let path = format!(
             "/content/images/players/avatars/large/{id}/0?buildsecret=abc123&tab=1"
@@ -8586,7 +8586,7 @@ mod tests {
     }
 
     #[test]
-    fn test_avatar_player_id_from_shift_sidecar_path_png() {
+    fn test_avatar_player_id_from_sidecar_path_png() {
         let id = 76561198012345678u64;
         let path = format!("/content/images/players/avatars/large/{id}.png");
         assert_eq!(super::avatar_player_id_from_path(&path), Some(id));

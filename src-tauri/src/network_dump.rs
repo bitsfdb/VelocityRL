@@ -20,6 +20,8 @@ struct DumpPacket {
     encrypted: bool,
     decrypted: bool,
     payload_b64: String,
+    /// Exact bytes that crossed the wire before decryption (base64).
+    raw_wire_b64: String,
 }
 
 /// Write the current monitor events and the buffered UDP datagrams to a folder
@@ -50,6 +52,7 @@ pub fn dump_network_capture(app: &tauri::AppHandle) -> Result<String, String> {
             encrypted: packet.encrypted,
             decrypted: packet.decrypted,
             payload_b64: base64::engine::general_purpose::STANDARD.encode(&packet.payload),
+            raw_wire_b64: base64::engine::general_purpose::STANDARD.encode(&packet.raw_wire),
         })
         .collect();
     let packets_json = serde_json::to_vec_pretty(&dump_packets)
@@ -244,6 +247,7 @@ mod tests {
             encrypted: true,
             decrypted: true,
             payload: payload.to_vec(),
+            raw_wire: payload.to_vec(),
         }
     }
 
