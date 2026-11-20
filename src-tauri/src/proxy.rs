@@ -6487,21 +6487,21 @@ pub async fn inject_reward_drop(items: &[(i32, i32)]) -> Result<bool, String> {
         if pid <= 0 {
             continue;
         }
-        let inst_id = format!("{:016x}{:016x}", rand::random::<u64>(), rand::random::<u64>());
-        let mut attrs = Vec::new();
-        if paint > 0 {
-            attrs.push(serde_json::json!({
-                "Key": "Paint",
-                "Value": paint
-            }));
-        }
-        let prod_obj = serde_json::json!({
+        let inst_hex = format!("{:08x}{:08x}0000000000000000", pid as u32, paint.max(0) as u32);
+        let mut prod_obj = serde_json::json!({
             "ProductID": pid,
-            "InstanceID": inst_id,
+            "InstanceID": inst_hex,
+            "TradeHold": -1,
             "AddedTimestamp": now,
             "UpdatedTimestamp": now,
-            "Attributes": attrs
         });
+        if paint > 0 {
+            prod_obj["Paint"] = serde_json::json!(paint);
+            prod_obj["PaintID"] = serde_json::json!(paint);
+            prod_obj["Attributes"] = serde_json::json!([
+                { "Key": "Painted", "Value": paint }
+            ]);
+        }
         product_data_map.insert(pid.to_string(), prod_obj);
     }
 
