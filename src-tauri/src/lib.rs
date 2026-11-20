@@ -1538,6 +1538,69 @@ async fn get_game_patch_status(app: tauri::AppHandle) -> Result<GamePatchStatus,
 }
 
 #[tauri::command]
+async fn apply_saved_spoof_values() -> Result<String, String> {
+    let cfg = crate::psynet::load_active_spoof_from_disk();
+    let name = cfg
+        .as_ref()
+        .and_then(|c| c.name_spoof.as_ref())
+        .filter(|n| n.enabled && !n.display_name.trim().is_empty())
+        .map(|n| n.display_name.trim().to_string())
+        .or_else(|| {
+            cfg.as_ref()
+                .filter(|c| !c.custom_name.trim().is_empty())
+                .map(|c| c.custom_name.trim().to_string())
+        })
+        .unwrap_or_default();
+    let title = cfg
+        .as_ref()
+        .map(|c| {
+            if !c.equip_title_id.trim().is_empty() {
+                c.equip_title_id.trim().to_string()
+            } else {
+                c.display_title_id.trim().to_string()
+            }
+        })
+        .unwrap_or_default();
+    let ping = crate::udp_proxy::sample_spoofed_ping_ms()
+        .map(|v| v.to_string())
+        .or_else(|| {
+            cfg.as_ref()
+                .and_then(|c| c.ping_spoof.clone())
+                .filter(|p| p.enabled)
+                .map(|p| p.min_ms.to_string())
+        })
+        .unwrap_or_default();
+
+    let mut slots: Vec<(u32, Vec<(String, String)>)> =
+        vec![(0, Vec::new()); crate::presets::COSMETIC_SLOTS_COUNT + 7];
+    for rule in crate::proxy::load_active_swap_rules(None) {
+        let idx = crate::presets::upk_slot_index_from_str(&rule.slot) as usize;
+        if idx < slots.len() && rule.wanted_id > 0 {
+            let mut attrs = Vec::new();
+            if rule.paint_id > 0 {
+                attrs.push(("Painted".to_string(), rule.paint_id.to_string()));
+            }
+            slots[idx] = (rule.wanted_id as u32, attrs);
+        }
+    }
+    for (pid, paint) in crate::proxy::load_active_spawned_items(None) {
+        if pid <= 0 || slots.iter().any(|(p, _)| *p == pid as u32) {
+            continue;
+        }
+        if let Some(slot) = slots.iter_mut().find(|(p, _)| *p == 0) {
+            let mut attrs = Vec::new();
+            if paint > 0 {
+                attrs.push(("Painted".to_string(), paint.to_string()));
+            }
+            *slot = (pid as u32, attrs);
+        }
+    }
+    let key = crate::loadout_wire::encode_loadout(&slots, 1);
+    crate::savedata::patch_saved_spoof_values(&name, &ping, &title, &key)?;
+    Ok(key)
+}
+
+#[tauri::command]
 async fn ensure_game_patches(app: tauri::AppHandle) -> Result<bool, String> {
     let config = get_config(app.clone()).await?;
     if config.game_dir.is_empty() {
@@ -1549,6 +1612,7 @@ async fn ensure_game_patches(app: tauri::AppHandle) -> Result<bool, String> {
     let tagame_patched = upk::ensure_tagame_patched(&cooked).await?;
     let swaps = load_swaps(&app);
     let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
+    let _ = apply_saved_spoof_values().await;
     Ok(projectx_patched || tagame_patched)
 }
 
@@ -4145,6 +4209,7 @@ pub fn run() {
             restore_single_backup,
             check_integrity,
             ensure_game_patches,
+            apply_saved_spoof_values,
             get_game_patch_status,
             acknowledge_repair,
             get_palette_status,
