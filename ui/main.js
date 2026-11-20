@@ -213,6 +213,8 @@ function releaseAppLoading() {
     validateSwapInputs();
     const restoreBtn = document.getElementById('restore-btn');
     if (restoreBtn && restoreBtn.dataset.busy !== '1') restoreBtn.disabled = false;
+    invoke('app_window_focus').catch(() => {});
+    try { window.focus(); } catch (_) {}
 }
 
 function wireLoadingGate() {
@@ -766,6 +768,52 @@ async function initVersionBadge() {
 
 async function init() {
     wireLoadingGate();
+    try {
+        window.__TAURI__?.event?.listen('prepatched-progress', (evt) => {
+            const p = evt?.payload || {};
+            const file = p.file || 'game files';
+            const percent = Math.min(100, Math.max(0, p.percent || 0));
+            const stage = p.stage || 'downloading';
+
+            let label = '';
+            if (stage === 'downloading') {
+                const dlMb = p.downloaded ? (p.downloaded / (1024 * 1024)).toFixed(1) : '0';
+                const totMb = p.total ? (p.total / (1024 * 1024)).toFixed(1) : '0';
+                label = `Downloading ${file} (${dlMb}MB / ${totMb}MB · ${percent}%)`;
+            } else if (stage === 'verifying') {
+                label = `Verifying ${file}...`;
+            } else if (stage === 'installing') {
+                label = `Applying ${file}...`;
+            } else if (stage === 'completed') {
+                label = `${file} updated`;
+            }
+
+            // Update app-loading overlay
+            const loadingText = document.querySelector('.app-loading-text');
+            if (loadingText && label) loadingText.textContent = label;
+            const loadingFill = document.getElementById('app-loading-fill');
+            if (loadingFill) loadingFill.style.width = `${percent}%`;
+            const loadingPct = document.getElementById('app-loading-percent');
+            if (loadingPct) loadingPct.textContent = `${percent}%`;
+
+            // Update boot lockup
+            const bootInfo = document.getElementById('boot-progress-info');
+            const bootText = document.getElementById('boot-progress-text');
+            const bootNum = document.getElementById('boot-progress-num');
+            const bootTrack = document.querySelector('.boot-track');
+            const bootTrackFill = document.getElementById('boot-track-fill') || document.querySelector('.boot-track i');
+
+            if (bootInfo) bootInfo.style.display = 'flex';
+            if (bootText && label) bootText.textContent = label;
+            if (bootNum) bootNum.textContent = `${percent}%`;
+            if (bootTrack) bootTrack.style.width = '200px';
+            if (bootTrackFill) {
+                bootTrackFill.style.animation = 'none';
+                bootTrackFill.style.width = `${percent}%`;
+                bootTrackFill.style.transform = 'none';
+            }
+        });
+    } catch (_) {}
     initVersionBadge();
     ownedSearch = document.getElementById('owned-search');
     wantedSearch = document.getElementById('wanted-search');
@@ -1153,7 +1201,7 @@ async function loadData() {
         }
 
         if (config && config.game_dir) {
-            updateLoadingText('Verifying pre-patched files..');
+            updateLoadingText('Checking pre-patched game files...');
             try {
                 const res = await invoke('ensure_game_patches');
                 if (res) {
@@ -3144,20 +3192,20 @@ function updateRocketLeagueHeroStatus(isRunning) {
     const eyebrow = document.getElementById('studio-eyebrow');
     const desc = document.getElementById('studio-hero-desc');
 
-    if (isRunning) {
-        if (heading) heading.innerHTML = 'Never <em>blend in.</em>';
-        if (eyebrow) {
+    if (heading) {
+        heading.innerHTML = isRunning ? 'Never <em class="is-game-active">blend in.</em>' : 'Never <em>blend in.</em>';
+    }
+    if (eyebrow) {
+        if (isRunning) {
             eyebrow.classList.add('is-game-running');
-            eyebrow.innerHTML = '<span class="studio-status-pulse"></span> GAME DETECTED';
-        }
-        if (desc) desc.textContent = 'Live session detected. Items and titles will appear in real time.';
-    } else {
-        if (heading) heading.innerHTML = 'Never <em>blend in.</em>';
-        if (eyebrow) {
+            eyebrow.innerHTML = '<span class="studio-status-pulse"></span> THE GARAGE, REIMAGINED';
+        } else {
             eyebrow.classList.remove('is-game-running');
             eyebrow.textContent = 'THE GARAGE, REIMAGINED';
         }
-        if (desc) desc.textContent = 'Every detail. Every possibility. Your next signature look.';
+    }
+    if (desc) {
+        desc.textContent = 'Every detail. Every possibility. Your next signature look.';
     }
 }
 
@@ -3170,7 +3218,7 @@ async function refreshSwapRlHint(force = false) {
         const isRunning = await invoke('is_rocket_league_running');
         updateRocketLeagueHeroStatus(!!isRunning);
         const hint = document.getElementById('swap-rl-hint');
-        if (hint) hint.hidden = !isRunning;
+        if (hint) hint.hidden = true;
     } catch {
         updateRocketLeagueHeroStatus(false);
     }
@@ -7791,6 +7839,10 @@ async function loadTitlesDatabase() {
     const applyLoadedTitles = (raw) => {
         titlesDb = normalizeTitlesPayload(raw);
         titlesDb.categories = { ...titlesDb.categories, ...bundledCats };
+        if (typeof renderCatalogGridPage === 'function') {
+            renderCatalogGridPage();
+            updateCatalogSelectionUi();
+        }
     };
     try {
         const res = await fetch('titles.json');

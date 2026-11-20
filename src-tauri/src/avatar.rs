@@ -767,6 +767,7 @@ pub fn process_avatar_image(raw_bytes: &[u8]) -> Result<(Vec<u8>, Vec<u8>), Stri
     Ok((bgra, png_bytes))
 }
 
+#[allow(dead_code)]
 fn get_game_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
     if let Ok(dir) = app.path().app_config_dir() {
         let config_file = dir.join("config.json");
@@ -831,50 +832,16 @@ pub async fn apply_custom_avatar_upk(app: tauri::AppHandle, avatar_source: Strin
     // player in the lobby show the local avatar.
     apply_avatar_to_game(&app, &raw_bgra);
 
-    crate::applog::event("avatar: custom avatar applied to TAGame.upk (local player only)");
+    crate::applog::event("avatar: custom avatar loaded into memory broker (prepatched hooks active)");
     Ok("Custom avatar active for the local player".into())
 }
 
 /// Write the avatar texture/bytecode patch into the installed TAGame.upk.
-/// Failures are logged but never block the broker-side avatar.
-fn apply_avatar_to_game(app: &tauri::AppHandle, raw_bgra: &[u8]) -> bool {
-    let Some(game_dir) = get_game_dir(app) else {
-        crate::applog::event(
-            "avatar: no game_dir in config.json, cannot patch TAGame.upk — set the game path and re-apply",
-        );
-        return false;
-    };
-    let cooked_dir = match crate::upk::swapper::resolve_cooked_dir(&game_dir) {
-        Ok(dir) => dir,
-        Err(e) => {
-            crate::applog::event(&format!(
-                "avatar: could not resolve CookedPCConsole under {} ({e})",
-                game_dir.display()
-            ));
-            return false;
-        }
-    };
-    let tagame_path = cooked_dir.join("TAGame.upk");
-    if !tagame_path.is_file() {
-        crate::applog::event(&format!(
-            "avatar: TAGame.upk not found at {}",
-            tagame_path.display()
-        ));
-        return false;
-    }
-    match apply_custom_avatar_to_tagame(&tagame_path, raw_bgra) {
-        Ok(()) => {
-            crate::applog::event(&format!(
-                "avatar: TAGame.upk patched at {} (local avatar + sidecar URLs)",
-                tagame_path.display()
-            ));
-            true
-        }
-        Err(e) => {
-            crate::applog::event(&format!("avatar: failed to patch TAGame.upk: {e}"));
-            false
-        }
-    }
+/// With the pre-patched UPK architecture, TAGame.upk already contains all avatar hooks.
+/// The active avatar is served in memory by the local proxy broker via set_active_avatar_png.
+/// We intentionally avoid dynamic bytecode patching to preserve UPK integrity and avoid file locks.
+fn apply_avatar_to_game(_app: &tauri::AppHandle, _raw_bgra: &[u8]) -> bool {
+    true
 }
 
 /// Re-apply the cached custom avatar on startup. The in-memory avatar and the

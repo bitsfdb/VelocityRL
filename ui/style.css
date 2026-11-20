@@ -964,7 +964,7 @@ select::-ms-expand { display: none; }
 .status-bar {
     height: 32px;
     position: relative;
-    z-index: 95;
+    z-index: 10;
     flex-shrink: 0;
     border-top: 1px solid var(--border);
     background: var(--panel);
@@ -3624,6 +3624,8 @@ select option {
     color: var(--text) !important;
     font-size: 13px !important;
     outline: none !important;
+    outline-offset: 0 !important;
+    box-shadow: none !important;
     font-family: inherit;
 }
 

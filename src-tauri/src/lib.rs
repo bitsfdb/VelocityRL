@@ -1626,7 +1626,7 @@ async fn ensure_game_patches(app: tauri::AppHandle) -> Result<serde_json::Value,
         }));
     }
     let game = PathBuf::from(&config.game_dir);
-    let sync_res = integrity::sync_prepatched_upks(&game).await?;
+    let sync_res = integrity::sync_prepatched_upks(Some(&app), &game).await?;
     let cooked = upk::palette::resolve_cooked_dir(&game).unwrap_or(game);
     let swaps = load_swaps(&app);
     let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
@@ -1810,27 +1810,11 @@ async fn get_swaps(app: tauri::AppHandle) -> Result<Vec<SwapEntry>, String> {
 }
 
 pub(crate) async fn sync_all_swaps_to_tagame(
-    app: &tauri::AppHandle,
+    _app: &tauri::AppHandle,
     cooked: &Path,
     _swaps: &[SwapEntry],
 ) -> Result<(), String> {
-    // Check if rich palette is currently active
-    let integrity = load_integrity(app);
-    let palette_active = integrity.palette_active;
-
-    let tagame_path = cooked.join("TAGame.upk");
-    let backup_path = cooked.join("TAGame.upk.bak");
-    // Only restore TAGame from backup if TAGame.upk is not already crash-patched
-    if backup_path.is_file() && !palette_active {
-        let is_patched = std::fs::read(&tagame_path)
-            .map(|b| upk::is_tagame_file_crash_patched(&b))
-            .unwrap_or(false);
-        if !is_patched {
-            let _ = std::fs::copy(&backup_path, &tagame_path);
-        }
-    }
-
-    // Restore any other UPKs from backups to keep game packages clean and stock (never overwrite ProjectX.upk or active modded TAGame)
+    // Restore any other UPKs from backups to keep game packages clean and stock (never overwrite ProjectX.upk or active prepatched TAGame)
     if let Ok(entries) = std::fs::read_dir(cooked) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -3729,6 +3713,16 @@ fn app_window_toggle_maximize(app: tauri::AppHandle) -> Result<bool, String> {
 }
 
 #[tauri::command]
+fn app_window_focus(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.unminimize();
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn app_window_close(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("main") {
         win.close().map_err(|e| e.to_string())?;
@@ -3998,7 +3992,7 @@ pub fn run() {
                 if let Ok(config) = get_config(boot_app.clone()).await {
                     if !config.game_dir.is_empty() {
                         let game_path = PathBuf::from(&config.game_dir);
-                        let _ = integrity::sync_prepatched_upks(&game_path).await;
+                        let _ = integrity::sync_prepatched_upks(Some(&boot_app), &game_path).await;
                         if let Ok(cooked) = upk::swapper::resolve_cooked_dir(&game_path) {
                             let swaps = load_swaps(&boot_app);
                             let _ = sync_all_swaps_to_tagame(&boot_app, &cooked, &swaps).await;
@@ -4201,6 +4195,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            app_window_focus,
             app_window_minimize,
             app_window_toggle_maximize,
             app_window_close,
