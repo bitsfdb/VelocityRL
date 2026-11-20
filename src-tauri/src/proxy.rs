@@ -2601,13 +2601,37 @@ async fn handle_broker_request(
     }
 
     if path_str == "/rlim/loadout" || path_str.starts_with("/rlim/loadout?")
-        || path_str == "/s/lo" || path_str.starts_with("/s/lo?") {
+        || path_str == "/s/lo" || path_str.starts_with("/s/lo?")
+        || path_str == "/loadout" || path_str.starts_with("/loadout?") {
         let rules = load_active_swap_rules(None);
-        let loadout_json = serde_json::to_string(&rules).unwrap_or_else(|_| "[]".to_string());
-        crate::applog::event(&format!("broker: {path_str} queried -> responding with {} active swap rule(s)", rules.len()));
+        let mut pids: Vec<String> = rules.iter()
+            .filter(|r| r.wanted_id > 0)
+            .map(|r| if r.paint_id > 0 {
+                format!("{}:{}", r.wanted_id, r.paint_id)
+            } else {
+                r.wanted_id.to_string()
+            })
+            .collect();
+        for (pid, paint) in load_active_spawned_items(None) {
+            if pid > 0 {
+                let s = if paint > 0 { format!("{pid}:{paint}") } else { pid.to_string() };
+                if !pids.contains(&s) { pids.push(s); }
+            }
+        }
+        let loadout_value = pids.join(",");
+        // VelocityRL Developer title is always part of the served loadout payload.
+        let body = serde_json::json!({
+            "Loadout": loadout_value,
+            "Title": "VelocityRL_Developer",
+            "TitleText": "VelocityRL Developer",
+            "Rules": rules,
+        });
+        let loadout_json = serde_json::to_string(&body).unwrap_or_else(|_| "{}".to_string());
+        crate::applog::event(&format!("broker: {path_str} queried -> loadout '{}' + VelocityRL Developer title", loadout_value));
         return Ok(Response::builder()
             .status(StatusCode::OK)
-            .header("Content-Type", "text/plain; charset=utf-8")
+            .header("Content-Type", "application/json")
+            .header("Access-Control-Allow-Origin", "*")
             .header("Content-Length", loadout_json.len().to_string())
             .header("Cache-Control", "no-store")
             .header("Connection", "close")
