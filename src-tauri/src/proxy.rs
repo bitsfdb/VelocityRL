@@ -7715,6 +7715,20 @@ pub fn neutralize_inventory_out_of_sync_json(body: &[u8]) -> (Vec<u8>, bool) {
         Err(_) => return (body.to_vec(), false),
     };
 
+    // A frame whose whole purpose is an InventoryOutOfSync/AccessDenied error
+    // (e.g. {"Error":{"Type":"InventoryOutOfSync","Message":""}}) must never
+    // reach the client: RL shows the "Inventory out of sync, Syncing now..."
+    // popup directly from this. Answer it as an empty successful result so the
+    // RPC completes cleanly instead.
+    let is_error_frame = root.get("Error").or_else(|| root.get("error")).is_some()
+        && root.get("Result").is_none()
+        && root.get("result").is_none();
+    if is_error_frame {
+        if let Ok(bytes) = serde_json::to_vec(&serde_json::json!({ "Result": {} })) {
+            return (bytes, true);
+        }
+    }
+
     let mut changed = false;
     neutralize_inventory_out_of_sync_value(&mut root, &mut changed);
 
@@ -7735,6 +7749,7 @@ fn neutralize_inventory_out_of_sync_value(val: &mut serde_json::Value, changed: 
                 "status", "Status", "Message", "message", "Error", "error",
                 "ErrorCode", "errorCode", "Result", "result", "ResultCode",
                 "resultCode", "Code", "code", "Reason", "reason",
+                "Type", "type", "Name", "name", "Detail", "detail",
             ] {
                 if let Some(v) = map.get_mut(key) {
                     if let Some(s) = v.as_str() {
@@ -7948,6 +7963,25 @@ mod tests {
         let (same, changed) = neutralize_inventory_out_of_sync_json(clean);
         assert!(!changed);
         assert_eq!(same, clean);
+    }
+
+    #[test]
+    fn test_inventory_out_of_sync_error_frame_becomes_success() {
+        // Exact S2C frame from the real dump (event 1125):
+        // {"Error":{"Type":"InventoryOutOfSync","Message":""}}
+        let body = br#"{"Error":{"Type":"InventoryOutOfSync","Message":""}}"#;
+        assert!(response_denies_access(body));
+        let (patched, changed) = neutralize_inventory_out_of_sync_json(body);
+        assert!(changed, "error frame must be neutralized");
+        let text = String::from_utf8(patched).unwrap();
+        assert!(
+            !text.to_ascii_lowercase().contains("outofsync"),
+            "client must never see InventoryOutOfSync: {text}"
+        );
+        assert!(
+            text.contains("\"Result\""),
+            "frame must be rewritten as a successful result: {text}"
+        );
     }
 
     #[test]
