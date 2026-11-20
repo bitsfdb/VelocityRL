@@ -2648,15 +2648,15 @@ async fn handle_broker_request(
             }
         }
         let loadout_value = pids.join(",");
-        // VelocityRL Developer title is always part of the served loadout payload.
+        let (title_id, title_text) = configured_title();
         let body = serde_json::json!({
             "Loadout": loadout_value,
-            "Title": "VelocityRL_Developer",
-            "TitleText": "VelocityRL Developer",
+            "Title": title_id,
+            "TitleText": title_text,
             "Rules": rules,
         });
         let loadout_json = serde_json::to_string(&body).unwrap_or_else(|_| "{}".to_string());
-        crate::applog::event(&format!("broker: {path_str} queried -> loadout '{}' + VelocityRL Developer title", loadout_value));
+        crate::applog::event(&format!("broker: {path_str} queried -> loadout '{}' + title '{title_id}'", loadout_value));
         return Ok(Response::builder()
             .status(StatusCode::OK)
             .header("Content-Type", "application/json")
@@ -5487,6 +5487,31 @@ fn upsert_title_entry(body: &[u8], title_id: &str, text: &str, category: &str) -
     (out, true)
 }
 
+fn configured_title() -> (String, String) {
+    let fallback = ("VelocityRL_Developer".to_string(), "VelocityRL Developer".to_string());
+    match crate::psynet::load_active_spoof_from_disk() {
+        Some(cfg) if cfg.enabled => {
+            let id = if !cfg.equip_title_id.trim().is_empty() {
+                cfg.equip_title_id.trim()
+            } else {
+                cfg.display_title_id.trim()
+            };
+            if id.is_empty() {
+                return fallback;
+            }
+            let text = if !cfg.custom_text.trim().is_empty() {
+                cfg.custom_text.trim().to_string()
+            } else if !cfg.display_title_id.trim().is_empty() {
+                cfg.display_title_id.trim().to_string()
+            } else {
+                id.to_string()
+            };
+            (id.to_string(), text)
+        }
+        _ => fallback,
+    }
+}
+
 pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>, bool) {
     let mut out = body.to_vec();
     let mut any_change = false;
@@ -7104,14 +7129,15 @@ fn patch_reservation_value_sync(
                         }
 
                         if is_bits {
+                            let (title_id, title_text) = configured_title();
                             let curr_title = player.get("TitleID").and_then(|v| v.as_str()).unwrap_or_default();
                             let curr_pt = player.get("PlayerTitle").and_then(|v| v.as_str()).unwrap_or_default();
-                            if curr_title != "VelocityRL_Developer" || curr_pt != "VelocityRL Developer" {
+                            if curr_title != title_id || curr_pt != title_text {
                                 if let Some(p) = player.as_object_mut() {
-                                    p.insert("TitleID".to_string(), serde_json::json!("VelocityRL_Developer"));
-                                    p.insert("TitleId".to_string(), serde_json::json!("VelocityRL_Developer"));
-                                    p.insert("PlayerTitle".to_string(), serde_json::json!("VelocityRL Developer"));
-                                    p.insert("Title".to_string(), serde_json::json!("VelocityRL Developer"));
+                                    p.insert("TitleID".to_string(), serde_json::json!(title_id));
+                                    p.insert("TitleId".to_string(), serde_json::json!(title_id));
+                                    p.insert("PlayerTitle".to_string(), serde_json::json!(title_text));
+                                    p.insert("Title".to_string(), serde_json::json!(title_text));
                                     *changed = true;
                                 }
                             }
@@ -7242,10 +7268,11 @@ fn patch_reservation_value_sync(
                         let ev_is_bits = is_bits_player_id(ev_player_id);
 
                         if ev_is_bits {
-                            event_data.insert("TitleID".to_string(), serde_json::json!("VelocityRL_Developer"));
-                            event_data.insert("TitleId".to_string(), serde_json::json!("VelocityRL_Developer"));
-                            event_data.insert("PlayerTitle".to_string(), serde_json::json!("VelocityRL Developer"));
-                            event_data.insert("Title".to_string(), serde_json::json!("VelocityRL Developer"));
+                            let (title_id, title_text) = configured_title();
+                            event_data.insert("TitleID".to_string(), serde_json::json!(title_id));
+                            event_data.insert("TitleId".to_string(), serde_json::json!(title_id));
+                            event_data.insert("PlayerTitle".to_string(), serde_json::json!(title_text));
+                            event_data.insert("Title".to_string(), serde_json::json!(title_text));
                             *changed = true;
                         } else if let Some(spoof) = crate::psynet::load_active_spoof_from_disk() {
                             if spoof.enabled {
