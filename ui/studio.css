@@ -68,8 +68,23 @@ main > .repair-banner strong { font-size: 11px; font-weight: 600; white-space: n
 .catalog-toolbar { border: 0; background: transparent; padding: 0; gap: 8px; }
 .catalog-search-wrap { order: -1; flex: 1 1 230px; min-width: 180px; }
 .catalog-select-wrap, .catalog-search-wrap { min-height: 42px; border-radius: 11px; background: #141519; border-color: #ffffff10; }
-.catalog-search-wrap:focus-within, .catalog-select-wrap:focus-within { border-color: #9bafd2; box-shadow: 0 0 0 3px #9bafd215; }
-.catalog-select-wrap::after { content: ''; width: 5px; height: 5px; border-right: 1px solid #a3a5ae; border-bottom: 1px solid #a3a5ae; transform: rotate(45deg) translateY(-2px); margin-left: 4px; pointer-events: none; }
+.catalog-search-wrap:focus-within, .catalog-select-wrap:focus-within, .catalog-select-wrap.is-open { border-color: #9bafd2; box-shadow: 0 0 0 3px #9bafd215; }
+.catalog-select-wrap { position: relative; cursor: pointer; user-select: none; }
+.catalog-select-wrap::after { display: none !important; }
+.catalog-select-wrap select.catalog-dropdown { position: absolute !important; width: 0 !important; height: 0 !important; opacity: 0 !important; pointer-events: none !important; margin: 0 !important; padding: 0 !important; border: 0 !important; }
+.custom-select-trigger { display: inline-flex; align-items: center; gap: 8px; height: 100%; width: 100%; cursor: pointer; outline: none; }
+.custom-select-label { font-size: 12.5px; font-weight: 500; color: #e5e7eb; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 145px; }
+.custom-select-chevron { color: #8b909a; transition: transform .25s var(--studio-spring), color .2s; flex-shrink: 0; margin-left: auto; }
+.catalog-select-wrap.is-open .custom-select-chevron { transform: rotate(180deg); color: #e5e7eb; }
+.custom-select-menu { position: absolute; top: calc(100% + 6px); left: 0; min-width: 100%; width: max-content; max-width: 260px; max-height: 320px; overflow-y: auto; overflow-x: hidden; background: #15171c; border: 1px solid #30333a; border-radius: 12px; box-shadow: 0 16px 42px rgba(0, 0, 0, .75), 0 2px 10px rgba(0, 0, 0, .5); padding: 6px; z-index: 1000; display: none; animation: studio-menu-drop .18s cubic-bezier(.16, 1, .3, 1) both; }
+@keyframes studio-menu-drop { from { opacity: 0; transform: translateY(-6px) scale(.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.catalog-select-wrap.is-open .custom-select-menu { display: flex; flex-direction: column; gap: 2px; }
+.custom-select-option { display: flex; align-items: center; gap: 10px; padding: 7px 11px; border-radius: 8px; font-size: 12.5px; color: #c9ccd5; cursor: pointer; transition: background .12s ease, color .12s ease; white-space: nowrap; }
+.custom-select-option:hover, .custom-select-option.is-focused { background: #23262f; color: #ffffff; }
+.custom-select-option.is-selected { background: #2a2f3c; color: #ffffff; font-weight: 600; }
+.custom-select-opt-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; border: 1px solid rgba(255, 255, 255, .25); }
+.custom-select-opt-check { margin-left: auto; color: #aebdd8; opacity: 0; display: flex; align-items: center; padding-left: 8px; }
+.custom-select-option.is-selected .custom-select-opt-check { opacity: 1; }
 .catalog-dropdown { font-size: 12px !important; max-width: 130px; }
 .catalog-spawn-btn { order: 5; height: 42px; border-radius: 11px; background: #e1e5ee; color: #14161c; font-size: 12px; box-shadow: inset 0 1px #fff; }
 .catalog-spawn-btn:hover:not(:disabled) { background: #fff; box-shadow: 0 4px 24px #dce5ff20; }
@@ -123,7 +138,6 @@ input[type=text], input[type=number], select, textarea { border-radius: 10px; }
 /* Solid graphite, machined edges, and a live contour field — no frosted surfaces. */
 #velocity-field { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
 .main-wrap { position: relative; z-index: 1; background: transparent; }
-main { view-transition-name: workspace; }
 .nav-track { position: absolute; left: 0; right: 0; z-index: -1; background: #2b2e34; border: 1px solid #3b3f47; border-radius: 10px; transform-origin: center; pointer-events: none; }
 .subtab-strip { position: relative; isolation: isolate; }
 .subtab-btn { position: relative; z-index: 1; }
@@ -153,21 +167,6 @@ main { view-transition-name: workspace; }
 .velocity-boot.is-leaving { animation: boot-curtain .8s cubic-bezier(.76,0,.24,1) forwards; }
 .velocity-boot.is-leaving .boot-lockup { animation: boot-depart .55s cubic-bezier(.7,0,.9,.5) forwards; }
 .motion-suspended *, .motion-suspended *::before, .motion-suspended *::after { animation-play-state: paused !important; }
-/* Navigation uses two simultaneous spatial surfaces, not a staggered page fade. */
-::view-transition { pointer-events: none; }
-::view-transition-group(root) { animation: none; }
-::view-transition-old(root) { display: none; }
-::view-transition-new(root) { animation: none; }
-::view-transition-group(workspace) { animation-duration: .38s; overflow: clip; }
-::view-transition-old(workspace), ::view-transition-new(workspace) { mix-blend-mode: normal; animation-duration: .38s; animation-fill-mode: both; }
-::view-transition-old(workspace) { animation-name: workspace-out; animation-timing-function: cubic-bezier(.4,0,.6,1); }
-::view-transition-new(workspace) { animation-name: workspace-in; animation-timing-function: cubic-bezier(.16,1,.3,1); }
-html[data-travel=back]::view-transition-old(workspace) { animation-name: workspace-out-back; }
-html[data-travel=back]::view-transition-new(workspace) { animation-name: workspace-in-back; }
-@keyframes workspace-out { to { transform: translateX(-50px) scale(.985); opacity: 0; } }
-@keyframes workspace-in { from { transform: translateX(70px); clip-path: inset(0 0 0 15%); } to { transform: translateX(0); clip-path: inset(0); } }
-@keyframes workspace-out-back { to { transform: translateX(50px) scale(.985); opacity: 0; } }
-@keyframes workspace-in-back { from { transform: translateX(-70px); clip-path: inset(0 15% 0 0); } to { transform: translateX(0); clip-path: inset(0); } }
 @keyframes signature-beat { 0%, 100% { transform: scaleY(.35); } 45% { transform: scaleY(1); } }
 @keyframes hero-current { to { transform: translateX(84px); } }
 @keyframes orbit-three { to { transform: rotateX(40deg) rotateY(-20deg) rotateZ(360deg); } }
