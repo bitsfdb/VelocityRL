@@ -3816,6 +3816,7 @@ pub fn run() {
             perform_startup_cache_maintenance(app.handle());
             // Sometimes the config/avatar cache is not readable in the first
             // few milliseconds of setup. Retry once shortly after startup.
+            let _ = avatar::load_authenticated_steam_user_from_disk();
             let retry_handle = app.handle().clone();
             if !avatar::ensure_cached_avatar_applied(app.handle()) {
                 std::thread::spawn(move || {

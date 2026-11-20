@@ -241,10 +241,31 @@ pub struct SteamAuthenticatedUser {
 
 static AUTHENTICATED_STEAM_USER: std::sync::Mutex<Option<SteamAuthenticatedUser>> = std::sync::Mutex::new(None);
 
+fn steam_user_path() -> PathBuf {
+    crate::psynet::config_dir().join("steam_user.json")
+}
+
 pub fn set_authenticated_steam_user(user: SteamAuthenticatedUser) {
+    if let Ok(raw) = serde_json::to_string(&user) {
+        let path = steam_user_path();
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let _ = fs::write(&path, raw);
+    }
     if let Ok(mut lock) = AUTHENTICATED_STEAM_USER.lock() {
         *lock = Some(user);
     }
+}
+
+/// Restore a linked Steam account from disk so login survives an app restart.
+pub fn load_authenticated_steam_user_from_disk() -> Option<SteamAuthenticatedUser> {
+    let raw = fs::read_to_string(steam_user_path()).ok()?;
+    let user: SteamAuthenticatedUser = serde_json::from_str(&raw).ok()?;
+    if let Ok(mut lock) = AUTHENTICATED_STEAM_USER.lock() {
+        *lock = Some(user.clone());
+    }
+    Some(user)
 }
 
 pub fn get_authenticated_steam_user_internal() -> Option<SteamAuthenticatedUser> {
@@ -252,6 +273,7 @@ pub fn get_authenticated_steam_user_internal() -> Option<SteamAuthenticatedUser>
 }
 
 pub fn clear_authenticated_steam_user_internal() {
+    let _ = fs::remove_file(steam_user_path());
     if let Ok(mut lock) = AUTHENTICATED_STEAM_USER.lock() {
         *lock = None;
     }
@@ -903,18 +925,7 @@ pub fn restore_custom_avatar_upk(app: tauri::AppHandle) -> Result<String, String
         let _ = fs::remove_file(dir.join("custom_avatars").join("active_avatar.png"));
     }
 
-    // Ensure TAGame.upk is restored if a backup was previously created
-    if let Some(game_dir) = get_game_dir(&app) {
-        if let Ok(cooked_dir) = crate::upk::swapper::resolve_cooked_dir(&game_dir) {
-            let tagame_path = cooked_dir.join("TAGame.upk");
-            let backup_path = cooked_dir.join(TAGAME_BACKUP_NAME);
-            if backup_path.is_file() {
-                let _ = fs::copy(&backup_path, &tagame_path);
-            }
-        }
-    }
-
-    crate::applog::event("avatar: custom avatar cleared from broker pipeline");
+    crate::applog::event("avatar: custom avatar cleared from broker pipeline (game patches untouched)");
     Ok("Vanilla avatar restored".into())
 }
 
