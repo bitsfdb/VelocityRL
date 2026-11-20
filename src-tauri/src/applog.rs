@@ -306,6 +306,10 @@ pub fn event(message: &str) {
     log_app_event(message);
 }
 
+pub fn get_logs_dir_path() -> Option<PathBuf> {
+    LOG_DIR.lock().ok().and_then(|g| g.clone())
+}
+
 pub fn mark_clean_exit() {
     if let Ok(guard) = LOG_DIR.lock() {
         if let Some(ref dir) = *guard {

@@ -7,8 +7,70 @@
  */
 use crate::upk::{palette, parser};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UpkHashesAudit {
+    #[serde(default)]
+    pub timestamp: i64,
+    #[serde(default)]
+    pub rl_version: Option<String>,
+    #[serde(default)]
+    pub rl_exe_sha256: Option<String>,
+    #[serde(default)]
+    pub tagame_sha256: Option<String>,
+    #[serde(default)]
+    pub tagame_size: Option<u64>,
+    #[serde(default)]
+    pub projectx_sha256: Option<String>,
+    #[serde(default)]
+    pub projectx_size: Option<u64>,
+    #[serde(default)]
+    pub engine_sha256: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "status", content = "details")]
+pub enum PrepatchedSyncStatus {
+    Success {
+        version: String,
+        tagame_updated: bool,
+        projectx_updated: bool,
+        message: String,
+    },
+    VersionMismatch {
+        local_version: String,
+        server_version: String,
+        message: String,
+    },
+    UpToDate {
+        version: String,
+        message: String,
+    },
+    Failed {
+        error: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrepatchedFileInfo {
+    pub sha256: String,
+    pub size: u64,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrepatchedManifest {
+    pub game_version: String,
+    #[serde(default)]
+    pub prime_version: String,
+    #[serde(default)]
+    pub feature_set: String,
+    pub files: HashMap<String, PrepatchedFileInfo>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct IntegrityState {
@@ -25,6 +87,8 @@ pub struct IntegrityState {
     /// launching — otherwise the new game binary will crash against the old patched data.
     #[serde(default)]
     pub rl_update_fingerprint: String,
+    #[serde(default)]
+    pub last_audit: Option<UpkHashesAudit>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -335,6 +399,326 @@ pub fn pre_swap_check(game_dir: &Path) -> PreSwapCheck {
     PreSwapCheck {
         ok: issues.is_empty(),
         issues,
+    }
+}
+
+pub fn compute_file_sha256(path: &Path) -> Option<String> {
+    if !path.is_file() {
+        return None;
+    }
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 65536];
+    loop {
+        let n = file.read(&mut buffer).ok()?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
+    }
+    Some(format!("{:x}", hasher.finalize()))
+}
+
+pub fn resolve_rl_exe(game_dir: &Path) -> Option<PathBuf> {
+    if let Ok(cooked) = palette::resolve_cooked_dir(game_dir) {
+        if let Some(parent2) = cooked.parent().and_then(|p| p.parent()) {
+            let candidate = parent2.join("Binaries").join("Win64").join("RocketLeague.exe");
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    let candidates = [
+        game_dir.join("Binaries").join("Win64").join("RocketLeague.exe"),
+        game_dir.join("RocketLeague.exe"),
+    ];
+    for c in candidates {
+        if c.is_file() {
+            return Some(c);
+        }
+    }
+    None
+}
+
+pub fn detect_local_game_version(game_dir: &Path) -> Option<String> {
+    let exe = resolve_rl_exe(game_dir)?;
+    let data = std::fs::read(&exe).ok()?;
+
+    // 1. Scan for UTF-16LE version pattern \d{6}\.\d{5}\.\d{6} (38 bytes)
+    for window in data.windows(38) {
+        let is_digit = |idx: usize| window[idx * 2] >= b'0' && window[idx * 2] <= b'9' && window[idx * 2 + 1] == 0;
+        let is_dot = |idx: usize| window[idx * 2] == b'.' && window[idx * 2 + 1] == 0;
+
+        let matches = (0..6).all(is_digit)
+            && is_dot(6)
+            && (7..12).all(is_digit)
+            && is_dot(12)
+            && (13..19).all(is_digit);
+
+        if matches {
+            let mut s = String::with_capacity(19);
+            for i in 0..19 {
+                s.push(window[i * 2] as char);
+            }
+            return Some(s);
+        }
+    }
+
+    // 2. Scan for ++Prime+Update... ASCII
+    const PRIME_PREFIX: &[u8] = b"++Prime+Update";
+    if let Some(pos) = data.windows(PRIME_PREFIX.len()).position(|w| w == PRIME_PREFIX) {
+        let mut end = pos + PRIME_PREFIX.len();
+        while end < data.len() && (data[end].is_ascii_alphanumeric() || data[end] == b'+' || data[end] == b'.' || data[end] == b'-') {
+            end += 1;
+        }
+        if let Ok(s) = std::str::from_utf8(&data[pos..end]) {
+            return Some(s.to_string());
+        }
+    }
+
+    None
+}
+
+pub fn audit_and_log_hashes(game_dir: &Path) -> UpkHashesAudit {
+    let now = chrono::Utc::now().timestamp();
+    let rl_version = detect_local_game_version(game_dir);
+
+    let cooked = palette::resolve_cooked_dir(game_dir).ok();
+    let rl_exe = resolve_rl_exe(game_dir);
+
+    let rl_exe_sha256 = rl_exe.as_deref().and_then(compute_file_sha256);
+    let tagame_path = cooked.as_ref().map(|c| c.join("TAGame.upk"));
+    let tagame_sha256 = tagame_path.as_deref().and_then(compute_file_sha256);
+    let tagame_size = tagame_path.as_deref().and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len());
+
+    let projectx_path = cooked.as_ref().map(|c| c.join("ProjectX.upk"));
+    let projectx_sha256 = projectx_path.as_deref().and_then(compute_file_sha256);
+    let projectx_size = projectx_path.as_deref().and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len());
+
+    let engine_path = cooked.as_ref().map(|c| c.join("Engine.upk"));
+    let engine_sha256 = engine_path.as_deref().and_then(compute_file_sha256);
+
+    let audit = UpkHashesAudit {
+        timestamp: now,
+        rl_version: rl_version.clone(),
+        rl_exe_sha256: rl_exe_sha256.clone(),
+        tagame_sha256: tagame_sha256.clone(),
+        tagame_size,
+        projectx_sha256: projectx_sha256.clone(),
+        projectx_size,
+        engine_sha256,
+    };
+
+    let log_msg = format!(
+        "[UPK_HASH_AUDIT] version={:?}, exe_sha256={:?}, tagame_sha256={:?} ({} bytes), projectx_sha256={:?} ({} bytes)",
+        rl_version,
+        rl_exe_sha256,
+        tagame_sha256,
+        tagame_size.unwrap_or(0),
+        projectx_sha256,
+        projectx_size.unwrap_or(0),
+    );
+    crate::applog::event(&log_msg);
+
+    // Persist permanent audit log into logs directory
+    if let Some(logs_dir) = crate::applog::get_logs_dir_path() {
+        let audit_log_path = logs_dir.join("upk_hashes.log");
+        let date_str = chrono::Utc::now().to_rfc3339();
+        let file_line = format!("{date_str} {log_msg}\n");
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&audit_log_path) {
+            let _ = f.write_all(file_line.as_bytes());
+        }
+    }
+
+    audit
+}
+
+pub async fn sync_prepatched_upks(game_dir: &Path) -> Result<PrepatchedSyncStatus, String> {
+    let cooked = match palette::resolve_cooked_dir(game_dir) {
+        Ok(p) => p,
+        Err(e) => {
+            return Ok(PrepatchedSyncStatus::Failed {
+                error: format!("Could not resolve CookedPCConsole: {e}"),
+            });
+        }
+    };
+
+    // 1. Permanently log all file hashes on startup
+    let audit = audit_and_log_hashes(game_dir);
+
+    // 2. Read local game version
+    let local_version = match audit.rl_version.clone() {
+        Some(v) if !v.trim().is_empty() => v,
+        _ => {
+            return Ok(PrepatchedSyncStatus::Failed {
+                error: "Could not read local Rocket League version from RocketLeague.exe".into(),
+            });
+        }
+    };
+
+    // 3. Query server manifest
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(12))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
+
+    let manifest_url = "https://api.velocityrl.tech/v2/rl/prepatched/manifest";
+    let resp = match client.get(manifest_url).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            let msg = format!("Failed to connect to VelocityRL API for prepatched manifest: {e}");
+            crate::applog::event(&format!("prepatched: {msg}"));
+            return Ok(PrepatchedSyncStatus::Failed { error: msg });
+        }
+    };
+
+    if !resp.status().is_success() {
+        let msg = format!("API prepatched manifest returned HTTP {}", resp.status());
+        crate::applog::event(&format!("prepatched: {msg}"));
+        return Ok(PrepatchedSyncStatus::Failed { error: msg });
+    }
+
+    let manifest: PrepatchedManifest = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse prepatched manifest: {e}"))?;
+
+    // 4. Version check: local Rocket League version must match API build version
+    let version_matches = local_version == manifest.game_version
+        || (!manifest.prime_version.is_empty() && local_version == manifest.prime_version);
+
+    if !version_matches {
+        let warning_msg = format!(
+            "Rocket League version mismatch (Local: {} vs API: {}). Auto-patching paused to prevent game instability.",
+            local_version, manifest.game_version
+        );
+        crate::applog::event(&format!("prepatched: {warning_msg}"));
+        return Ok(PrepatchedSyncStatus::VersionMismatch {
+            local_version,
+            server_version: manifest.game_version,
+            message: warning_msg,
+        });
+    }
+
+    crate::applog::event(&format!(
+        "prepatched: game version verified ({local_version}). Checking UPK integrity..."
+    ));
+
+    let mut tagame_updated = false;
+    let mut projectx_updated = false;
+
+    // 5. Check and synchronize prepatched files
+    for (filename, target_info) in &manifest.files {
+        let target_path = cooked.join(filename);
+        let target_sha256 = target_info.sha256.to_ascii_lowercase();
+
+        let current_sha256 = compute_file_sha256(&target_path);
+        if let Some(ref cur) = current_sha256 {
+            if cur.eq_ignore_ascii_case(&target_sha256) {
+                crate::applog::event(&format!(
+                    "prepatched: {filename} already matches target prepatched hash ({target_sha256})"
+                ));
+                continue;
+            }
+        }
+
+        crate::applog::event(&format!(
+            "prepatched: updating {filename} (current hash: {:?}, target: {target_sha256})",
+            current_sha256
+        ));
+
+        // Create backup of current file if it exists, is > 1MB, and no .bak exists yet
+        let bak_path = target_path.with_extension("upk.bak");
+        if !bak_path.is_file() && target_path.is_file() {
+            if let Ok(meta) = std::fs::metadata(&target_path) {
+                if meta.len() > 1_000_000 {
+                    let _ = std::fs::copy(&target_path, &bak_path);
+                    crate::applog::event(&format!("prepatched: created backup at {}", bak_path.display()));
+                }
+            }
+        }
+
+        let download_url = if target_info.url.starts_with("http") {
+            target_info.url.clone()
+        } else {
+            format!("https://api.velocityrl.tech{}", target_info.url)
+        };
+
+        let temp_download_path = target_path.with_extension("upk.vrl_download");
+        let dl_resp = match client.get(&download_url).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                return Err(format!("Failed to download prepatched {filename}: {e}"));
+            }
+        };
+
+        if !dl_resp.status().is_success() {
+            return Err(format!(
+                "Downloading {filename} failed with HTTP status {}",
+                dl_resp.status()
+            ));
+        }
+
+        let bytes = dl_resp
+            .bytes()
+            .await
+            .map_err(|e| format!("Failed reading download body for {filename}: {e}"))?;
+
+        // Verify SHA256 of downloaded content
+        let mut hasher = Sha256::new();
+        hasher.update(&bytes);
+        let downloaded_sha256 = format!("{:x}", hasher.finalize());
+
+        if !downloaded_sha256.eq_ignore_ascii_case(&target_sha256) {
+            return Err(format!(
+                "Integrity mismatch for {filename}: expected {target_sha256}, got {downloaded_sha256}"
+            ));
+        }
+
+        // Write temp file first
+        std::fs::write(&temp_download_path, &bytes)
+            .map_err(|e| format!("Failed writing temp prepatched file {filename}: {e}"))?;
+
+        // Replace destination atomically (handling file locks gracefully)
+        if let Err(e) = std::fs::rename(&temp_download_path, &target_path) {
+            if let Err(e2) = std::fs::copy(&temp_download_path, &target_path) {
+                let _ = std::fs::remove_file(&temp_download_path);
+                if e2.to_string().contains("os error 32") || e2.to_string().contains("os error 33") {
+                    return Err(format!(
+                        "Rocket League is currently running and locking {filename}. Close the game and retry."
+                    ));
+                }
+                return Err(format!("Failed to replace {filename}: {e2} (rename err: {e})"));
+            }
+            let _ = std::fs::remove_file(&temp_download_path);
+        }
+
+        crate::applog::event(&format!(
+            "[PREPATCHED_UPK_APPLIED] successfully installed prepatched {filename} (SHA256: {target_sha256})"
+        ));
+
+        if filename == "TAGame.upk" {
+            tagame_updated = true;
+        } else if filename == "ProjectX.upk" {
+            projectx_updated = true;
+        }
+    }
+
+    // 6. Log final audit after synchronization
+    let _ = audit_and_log_hashes(game_dir);
+
+    if tagame_updated || projectx_updated {
+        Ok(PrepatchedSyncStatus::Success {
+            version: local_version,
+            tagame_updated,
+            projectx_updated,
+            message: "Pre-patched game files verified and successfully updated.".into(),
+        })
+    } else {
+        Ok(PrepatchedSyncStatus::UpToDate {
+            version: local_version,
+            message: "Pre-patched game files verified and up to date.".into(),
+        })
     }
 }
 

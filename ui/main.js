@@ -1153,12 +1153,22 @@ async function loadData() {
         }
 
         if (config && config.game_dir) {
-            updateLoadingText('Patching game files..');
+            updateLoadingText('Verifying pre-patched files..');
             try {
-                const patched = await invoke('ensure_game_patches');
-                if (patched) {
-                    showToast('Game files verified & patched.', 'success');
-                    refreshPaletteStatus();
+                const res = await invoke('ensure_game_patches');
+                if (res) {
+                    if (res.status === 'VersionMismatch') {
+                        const localV = res.details?.local_version || 'Unknown';
+                        const serverV = res.details?.server_version || 'Unknown';
+                        showToast(`RL Version Mismatch: Game ${localV} vs API ${serverV}. Auto-patching paused to prevent game instability.`, 'warning', 9000);
+                    } else if (res.status === 'Success') {
+                        showToast('Pre-patched game files verified & updated.', 'success');
+                        refreshPaletteStatus();
+                    } else if (res.status === 'UpToDate') {
+                        refreshPaletteStatus();
+                    } else if (res.status === 'Failed') {
+                        console.warn('Pre-patched sync:', res.details?.error);
+                    }
                 }
                 await updateGamePatchStatusUI();
             } catch (err) {
@@ -9496,14 +9506,18 @@ async function updateGamePatchStatusUI() {
 
         if (patchEl && patchStatus) {
             patchEl.onclick = null;
-            if (patchStatus.projectx_patched) {
+            if (patchStatus.version_mismatch) {
+                patchEl.className = "net-summary-value net-warning";
+                patchEl.textContent = "Mismatch";
+                patchEl.title = patchStatus.mismatch_warning || "Rocket League version mismatch";
+            } else if (patchStatus.projectx_patched) {
                 patchEl.className = "net-summary-value net-ok";
-                patchEl.textContent = "Patched";
+                patchEl.textContent = "Pre-patched";
             } else if (patchStatus.projectx_exists) {
                 patchEl.className = "net-summary-value net-error";
                 patchEl.textContent = "Not Patched";
                 patchEl.onclick = async () => {
-                    patchEl.textContent = "Patching";
+                    patchEl.textContent = "Updating..";
                     await invoke("ensure_game_patches");
                     await updateGamePatchStatusUI();
                 };
@@ -9515,14 +9529,18 @@ async function updateGamePatchStatusUI() {
 
         if (tagameEl && patchStatus) {
             tagameEl.onclick = null;
-            if (patchStatus.tagame_crash_fixed) {
+            if (patchStatus.version_mismatch) {
+                tagameEl.className = "net-summary-value net-warning";
+                tagameEl.textContent = "Mismatch";
+                tagameEl.title = patchStatus.mismatch_warning || "Rocket League version mismatch";
+            } else if (patchStatus.tagame_crash_fixed) {
                 tagameEl.className = "net-summary-value net-ok";
-                tagameEl.textContent = "Patched";
+                tagameEl.textContent = "Pre-patched";
             } else if (patchStatus.tagame_valid) {
                 tagameEl.className = "net-summary-value net-error";
                 tagameEl.textContent = "Not Patched";
                 tagameEl.onclick = async () => {
-                    tagameEl.textContent = "Patching";
+                    tagameEl.textContent = "Updating..";
                     await invoke("ensure_game_patches");
                     await updateGamePatchStatusUI();
                 };
@@ -9537,7 +9555,9 @@ async function updateGamePatchStatusUI() {
         }
 
         if (btnText && patchStatus) {
-            btnText.textContent = patchStatus.projectx_patched ? "Game Patches: Active" : "Patch Game Files";
+            btnText.textContent = patchStatus.version_mismatch
+                ? "Version Mismatched (Paused)"
+                : (patchStatus.projectx_patched ? "Pre-patched: Active" : "Patch Game Files");
         }
     } catch (_) {}
 }

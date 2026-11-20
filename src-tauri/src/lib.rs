@@ -1486,6 +1486,9 @@ pub struct GamePatchStatus {
     pub tagame_valid: bool,
     pub tagame_crash_fixed: bool,
     pub cooked_dir: String,
+    pub game_version: String,
+    pub version_mismatch: bool,
+    pub mismatch_warning: Option<String>,
 }
 
 #[tauri::command]
@@ -1500,6 +1503,9 @@ async fn get_game_patch_status(app: tauri::AppHandle) -> Result<GamePatchStatus,
             tagame_valid: false,
             tagame_crash_fixed: false,
             cooked_dir: String::new(),
+            game_version: String::new(),
+            version_mismatch: false,
+            mismatch_warning: None,
         });
     }
     let game = PathBuf::from(&config.game_dir);
@@ -1517,14 +1523,20 @@ async fn get_game_patch_status(app: tauri::AppHandle) -> Result<GamePatchStatus,
 
     let px_bytes = std::fs::read(&px_path).ok();
     let px_exists = px_bytes.is_some();
-    let px_patched = px_bytes.as_ref().map(|b| upk::is_projectx_file_patched(b)).unwrap_or(false);
+    let px_hash = integrity::compute_file_sha256(&px_path);
+    let px_patched = px_bytes.as_ref().map(|b| upk::is_projectx_file_patched(b)).unwrap_or(false)
+        || px_hash.as_deref() == Some("4c7f6a3f62072acd1205541f5d9292a2efd3058c2f88906bb8f12bb210abec74");
 
     let tg_bytes = std::fs::read(&tg_path).ok();
     let tg_exists = tg_bytes.is_some();
     let tg_size = tg_bytes.as_ref().map(|b| b.len() as u64).unwrap_or(0);
-    let tg_crash_fixed = tg_bytes.as_ref().map(|b| upk::is_tagame_file_crash_patched(b)).unwrap_or(false);
-    // Official clean stock build 261031.63733.533021 size is 82,255,585 (or 82,255,586) bytes
-    let tg_valid = tg_size == 82255585 || tg_size == 82255586;
+    let tg_hash = integrity::compute_file_sha256(&tg_path);
+    let tg_crash_fixed = tg_bytes.as_ref().map(|b| upk::is_tagame_file_crash_patched(b)).unwrap_or(false)
+        || tg_hash.as_deref() == Some("51fe6cf112480f2c7c3c5cf3fe02b24d7ba1a14800bbe4281814c7566aedd2d1")
+        || tg_hash.as_deref() == Some("2daa86b97fb7543ac0045867f350c5c3caab19681ee1590e51a6851d93dd36a9");
+
+    let tg_valid = tg_exists && tg_size > 1_000_000;
+    let game_version = integrity::detect_local_game_version(Path::new(&config.game_dir)).unwrap_or_default();
 
     Ok(GamePatchStatus {
         projectx_patched: px_patched,
@@ -1534,6 +1546,9 @@ async fn get_game_patch_status(app: tauri::AppHandle) -> Result<GamePatchStatus,
         tagame_valid: tg_valid,
         tagame_crash_fixed: tg_crash_fixed,
         cooked_dir: cooked.to_string_lossy().to_string(),
+        game_version,
+        version_mismatch: false,
+        mismatch_warning: None,
     })
 }
 
@@ -1602,19 +1617,21 @@ fn apply_saved_spoof_values() -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn ensure_game_patches(app: tauri::AppHandle) -> Result<bool, String> {
+async fn ensure_game_patches(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     let config = get_config(app.clone()).await?;
     if config.game_dir.is_empty() {
-        return Ok(false);
+        return Ok(serde_json::json!({
+            "status": "Failed",
+            "details": { "error": "Game directory not configured" }
+        }));
     }
     let game = PathBuf::from(&config.game_dir);
+    let sync_res = integrity::sync_prepatched_upks(&game).await?;
     let cooked = upk::palette::resolve_cooked_dir(&game).unwrap_or(game);
-    let projectx_patched = upk::ensure_projectx_patched(&cooked)?;
-    let tagame_patched = upk::ensure_tagame_patched(&app, &cooked).await?;
     let swaps = load_swaps(&app);
     let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
     let _ = apply_saved_spoof_values();
-    Ok(projectx_patched || tagame_patched)
+    Ok(serde_json::to_value(&sync_res).unwrap_or_default())
 }
 
 #[tauri::command]
@@ -3980,9 +3997,9 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 if let Ok(config) = get_config(boot_app.clone()).await {
                     if !config.game_dir.is_empty() {
-                        if let Ok(cooked) = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                            // On startup, patch ProjectX and ensure game packages are clean
-                            let _ = upk::ensure_projectx_patched(&cooked);
+                        let game_path = PathBuf::from(&config.game_dir);
+                        let _ = integrity::sync_prepatched_upks(&game_path).await;
+                        if let Ok(cooked) = upk::swapper::resolve_cooked_dir(&game_path) {
                             let swaps = load_swaps(&boot_app);
                             let _ = sync_all_swaps_to_tagame(&boot_app, &cooked, &swaps).await;
                         }
