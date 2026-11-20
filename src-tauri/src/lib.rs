@@ -1597,6 +1597,7 @@ fn apply_saved_spoof_values() -> Result<String, String> {
     }
     let key = crate::loadout_wire::encode_loadout(&slots, 1);
     crate::savedata::patch_saved_spoof_values(&name, &ping, &title, &key)?;
+    crate::applog::event(&format!("startup: loadout wire synced to save ({key})"));
     Ok(key)
 }
 
@@ -3817,6 +3818,10 @@ pub fn run() {
             // Sometimes the config/avatar cache is not readable in the first
             // few milliseconds of setup. Retry once shortly after startup.
             let _ = avatar::load_authenticated_steam_user_from_disk();
+            match apply_saved_spoof_values() {
+                Ok(_) => applog::event("startup: saved spoof values and loadout wire synced"),
+                Err(e) => applog::event(&format!("startup: loadout sync skipped: {e}")),
+            }
             let retry_handle = app.handle().clone();
             if !avatar::ensure_cached_avatar_applied(app.handle()) {
                 std::thread::spawn(move || {
