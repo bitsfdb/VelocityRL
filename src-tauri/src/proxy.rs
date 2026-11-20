@@ -2514,6 +2514,7 @@ async fn handle_broker_request(
                     })
             })
             .unwrap_or_default();
+        let _ = crate::savedata::patch_saved_ping(&ping_val);
         crate::applog::event(&format!("broker: {path_str} queried -> responding '{ping_val}'"));
         return Ok(Response::builder()
             .status(StatusCode::OK)
@@ -2992,25 +2993,6 @@ async fn handle_broker_request(
             if let Some(png_bytes) = crate::avatar::get_active_avatar_png() {
                 crate::applog::event(&format!(
                     "broker: {path_str} queried for local Epic player ID -> active avatar PNG ({} bytes)",
-                    png_bytes.len()
-                ));
-                return Ok(Response::builder()
-                    .status(StatusCode::OK)
-                    .header("Content-Type", "image/png")
-                    .header("Content-Length", png_bytes.len().to_string())
-                    .header("Cache-Control", "no-cache, no-store")
-                    .body(full_body(png_bytes))
-                    .unwrap());
-            }
-        }
-
-        // The in-game sidecar URL is the local player's avatar request. When a
-        // custom avatar is active, always serve it there so the applied picture
-        // actually shows up in game.
-        if path_str.contains("/content/images/players/avatars/") {
-            if let Some(png_bytes) = crate::avatar::get_active_avatar_png() {
-                crate::applog::event(&format!(
-                    "broker: {path_str} -> active custom avatar PNG ({} bytes)",
                     png_bytes.len()
                 ));
                 return Ok(Response::builder()
