@@ -2961,6 +2961,7 @@ async fn handle_broker_request(
         // the local image, otherwise every player shows the same picture.
         let is_local_route = path_str == "/rlim/avatar"
             || path_str.starts_with("/rlim/avatar?")
+            || path_str.starts_with("/rlim/avatar.png")
             || path_str == "/a.png"
             || path_str.starts_with("/a.png?");
 
