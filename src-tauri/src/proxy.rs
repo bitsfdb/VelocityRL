@@ -3055,9 +3055,12 @@ async fn handle_broker_request(
                 .unwrap());
         }
 
-        // No player ID in the request. Only the explicit local routes may use the
-        // active avatar; generic /avatars/... requests must not leak it.
-        if is_local_route {
+        // No resolvable player ID: this is the local player's menu/lobby avatar
+        // request (the in-game one carries PlayerIDString). Serve the applied PNG.
+        let no_id_local = path_str.contains("/content/images/players/avatars/")
+            && target_steam_id.is_none()
+            && !target_is_local_pid;
+        if is_local_route || no_id_local {
             if let Some(png_bytes) = crate::avatar::get_active_avatar_png() {
                 crate::applog::event(&format!("broker: {path_str} queried -> responding with active avatar PNG ({} bytes)", png_bytes.len()));
                 return Ok(Response::builder()
