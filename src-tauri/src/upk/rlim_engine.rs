@@ -524,10 +524,6 @@ pub fn apply_rlim_suite(
         patched_fns.push("Eula_TA::RequiresAcceptance".into());
         patched_fns.push("Eula_TA::OnShowEula".into());
     }
-    if config.bridge_timer.enabled {
-        patched_fns.push("Engine.Default__WorldInfo::Tick".into());
-    }
-
     crate::applog::event(&format!(
         "apply_rlim_suite: Applied {} engine patches for VelocityRL RLIM suite",
         patched_fns.len()
