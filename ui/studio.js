@@ -70,10 +70,6 @@
     const panelObserver = new MutationObserver(records => {
         for (const { target, oldValue } of records) {
             if (!target.classList.contains('active') || (oldValue || '').split(' ').includes('active')) continue;
-            animate(target, [
-                { transform: `translateX(${direction * 18}px)`, opacity: .35 },
-                { transform: 'translateX(0)', opacity: 1 }
-            ], { duration: 220, easing: 'cubic-bezier(.16, 1, .3, 1)' });
             if (target.matches('.tab-content')) {
                 const nav = document.querySelector(`.nav-item[data-tab="${target.id}"]`);
                 document.getElementById('studio-page-name').textContent = nav?.textContent.trim() || 'Workspace';
@@ -377,6 +373,39 @@
     });
     bootObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
     if (!document.body.classList.contains('is-loading')) { finishBoot(); bootObserver.disconnect(); }
+    // Window control buttons for borderless custom window frame.
+    const winMin = document.getElementById('win-btn-minimize');
+    const winMax = document.getElementById('win-btn-maximize');
+    const winClose = document.getElementById('win-btn-close');
+    const tauriInvoke = (...args) => window.__TAURI__?.core?.invoke ? window.__TAURI__.core.invoke(...args) : Promise.resolve();
+
+    if (winMin) {
+        winMin.addEventListener('click', (e) => {
+            e.stopPropagation();
+            tauriInvoke('app_window_minimize').catch(() => {});
+        });
+    }
+    if (winMax) {
+        winMax.addEventListener('click', (e) => {
+            e.stopPropagation();
+            tauriInvoke('app_window_toggle_maximize').catch(() => {});
+        });
+    }
+    if (winClose) {
+        winClose.addEventListener('click', (e) => {
+            e.stopPropagation();
+            tauriInvoke('app_window_close').catch(() => {});
+        });
+    }
+
+    const topbar = document.querySelector('.studio-topbar');
+    if (topbar) {
+        topbar.addEventListener('dblclick', (e) => {
+            if (e.target.closest('button, input, select, a, .win-btn, [role="button"]')) return;
+            tauriInvoke('app_window_toggle_maximize').catch(() => {});
+        });
+    }
+
     // Decorative intro never becomes a new application loading gate.
     setTimeout(finishBoot, 4500);
 

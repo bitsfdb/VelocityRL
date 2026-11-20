@@ -18,9 +18,9 @@
         </div>
     </div>
     <aside class="sidebar">
-        <div class="logo-section">
-            <img src="logo.svg" width="28" height="28" alt="">
-            <span class="logo-name">VelocityRL</span>
+        <div class="logo-section" data-tauri-drag-region>
+            <img src="logo.svg" width="28" height="28" alt="" data-tauri-drag-region>
+            <span class="logo-name" data-tauri-drag-region>VelocityRL</span>
         </div>
 
         <nav class="nav-links">
@@ -74,9 +74,22 @@
     </aside>
 
     <div class="main-wrap">
-        <header class="studio-topbar">
-            <div class="studio-breadcrumb">Your workspace <span>/</span> <strong id="studio-page-name">Spawner</strong></div>
-            <span class="studio-signature" aria-hidden="true"><i></i><i></i><i></i> BUILT TO MOVE</span>
+        <header class="studio-topbar" data-tauri-drag-region>
+            <div class="studio-breadcrumb" data-tauri-drag-region>Your workspace <span>/</span> <strong id="studio-page-name">Spawner</strong></div>
+            <div class="studio-topbar-right">
+                <span class="studio-signature" aria-hidden="true"><i></i><i></i><i></i> BUILT TO MOVE</span>
+                <div class="window-controls" aria-label="Window controls">
+                    <button type="button" class="win-btn win-btn-minimize" id="win-btn-minimize" aria-label="Minimize" title="Minimize">
+                        <svg width="10" height="2" viewBox="0 0 10 2"><rect width="10" height="2" rx="1" fill="currentColor"/></svg>
+                    </button>
+                    <button type="button" class="win-btn win-btn-maximize" id="win-btn-maximize" aria-label="Maximize / Restore" title="Maximize">
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="0.6" y="0.6" width="8.8" height="8.8" rx="1.5"/></svg>
+                    </button>
+                    <button type="button" class="win-btn win-btn-close" id="win-btn-close" aria-label="Close" title="Close">
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><line x1="1.5" y1="1.5" x2="8.5" y2="8.5"/><line x1="8.5" y1="1.5" x2="1.5" y2="8.5"/></svg>
+                    </button>
+                </div>
+            </div>
         </header>
         <main>
             <div class="repair-banner" style="border-left-color: #2196f3; margin-bottom: 12px; background: rgba(33, 150, 243, 0.05);">
@@ -94,7 +107,7 @@
                         <p>Every detail. Every possibility. Your next signature look.</p>
                         <button type="button" class="studio-explore" id="studio-explore">Explore car bodies <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></button>
                     </div>
-                    <div class="studio-orbit" aria-hidden="true"><div class="orbit-ring orbit-ring-one"></div><div class="orbit-ring orbit-ring-two"></div><div class="orbit-ring orbit-ring-three"></div><img src="logo.svg" class="orbit-mark" alt=""><span class="orbit-caption">VELOCITY / LIMITLESS BY DESIGN</span></div>
+                    <div class="studio-orbit" aria-hidden="true"><div class="orbit-ring orbit-ring-one"></div><div class="orbit-ring orbit-ring-two"></div><div class="orbit-ring orbit-ring-three"></div><img src="logo.svg" class="orbit-mark" alt=""></div>
                 </section>
                 <div class="subtab-strip" role="tablist">
                     <button type="button" class="subtab-btn active" data-subtab="spawner-pane" data-i18n="subtabs.spawner">Spawner</button>
@@ -1358,6 +1371,7 @@
         </div>
     </div>
 
+    <div class="window-underglow" aria-hidden="true"></div>
     <script src="main.js"></script>
     <script src="studio.js"></script>
 </body>
