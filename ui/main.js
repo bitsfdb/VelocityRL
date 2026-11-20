@@ -2075,12 +2075,18 @@ function getFilteredCatalogItems() {
                     return cat.includes(catalogTitleCategory.toLowerCase());
                 });
             }
-            list = [...list.filter(i => (i?.slot || i?.Slot) === 'Player Title'), ...mappedTitles];
+            list = [...list.filter(i => (i?.slot || i?.Slot) === 'Player Title' && !i?.isTitle), ...mappedTitles];
         } else {
             list = list.filter(i => {
                 const s = (i?.slot || i?.Slot || '');
                 return s.toLowerCase() === catalogCategory.toLowerCase();
             });
+        }
+    } else {
+        const catalogTitles = (typeof titlesDb !== 'undefined' && titlesDb && Array.isArray(titlesDb.titles)) ? titlesDb.titles : [];
+        if (catalogTitles.length > 0) {
+            const mappedTitles = catalogTitles.map(t => (typeof getTitleAsItem === 'function' ? getTitleAsItem(t) : t)).filter(Boolean);
+            list = [...list.filter(i => (i?.slot || i?.Slot) !== 'Player Title'), ...mappedTitles];
         }
     }
 
@@ -2109,7 +2115,9 @@ function getFilteredCatalogItems() {
             if (isFDev && (q.includes('fdev') || 'fdev'.includes(q) || q.includes('dev boost') || q.includes('alpha dev') || q.includes('the boost'))) {
                 return true;
             }
-            return name.includes(q) || slot.includes(q) || label.includes(q) || pkg.includes(q) || path.includes(q) || id === q;
+            const tText = (i?.titleText || '').toLowerCase();
+            const tId = (i?.titleId || '').toLowerCase();
+            return name.includes(q) || slot.includes(q) || label.includes(q) || pkg.includes(q) || path.includes(q) || id === q || tText.includes(q) || tId.includes(q);
         });
     }
 
@@ -2399,6 +2407,14 @@ function initCatalogGrid() {
     }
     catalogInitialized = true;
 
+    if (typeof loadTitlesDatabase === 'function' && (!titlesDb || !titlesDb.titles || !titlesDb.titles.length)) {
+        loadTitlesDatabase().then(() => {
+            if (catalogCategory === 'All') {
+                renderCatalogGridPage();
+            }
+        }).catch(() => {});
+    }
+
     const catSelect = document.getElementById('catalog-category-select');
     const titleCatSelect = document.getElementById('catalog-title-category-select');
     const titleCatWrap = document.getElementById('catalog-title-category-wrap');
@@ -2416,7 +2432,7 @@ function initCatalogGrid() {
             if (titleCatWrap) {
                 titleCatWrap.style.display = catalogCategory === 'Player Title' ? 'inline-flex' : 'none';
             }
-            if (catalogCategory === 'Player Title') {
+            if (catalogCategory === 'Player Title' || catalogCategory === 'All') {
                 if (typeof loadTitlesDatabase === 'function' && (!titlesDb || !titlesDb.titles || !titlesDb.titles.length)) {
                     await loadTitlesDatabase();
                 }
@@ -3119,7 +3135,7 @@ function updateRocketLeagueHeroStatus(isRunning) {
     const desc = document.getElementById('studio-hero-desc');
 
     if (isRunning) {
-        if (heading) heading.innerHTML = 'Rocket League is <em class="is-game-active">running.</em>';
+        if (heading) heading.innerHTML = 'Never <em>blend in.</em>';
         if (eyebrow) {
             eyebrow.classList.add('is-game-running');
             eyebrow.innerHTML = '<span class="studio-status-pulse"></span> GAME DETECTED';
@@ -7382,6 +7398,9 @@ async function initTitlesTab() {
     titlesTabReady = true;
     wireTitleSpoofControls();
     await loadTitlesDatabase();
+    if (catalogCategory === 'All') {
+        renderCatalogGridPage();
+    }
     loadTitleSpoofForm();
     updateTitlePreview();
     attachCloseGuard();

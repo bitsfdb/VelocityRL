@@ -107,7 +107,34 @@
                         <p id="studio-hero-desc">Every detail. Every possibility. Your next signature look.</p>
                         <button type="button" class="studio-explore" id="studio-explore">Explore car bodies <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></button>
                     </div>
-                    <div class="studio-orbit" aria-hidden="true"><div class="orbit-ring orbit-ring-one"></div><div class="orbit-ring orbit-ring-two"></div><div class="orbit-ring orbit-ring-three"></div><img src="logo.svg" class="orbit-mark" alt=""></div>
+                    <div class="studio-speed-stage studio-orbit" aria-hidden="true">
+                        <div class="speed-lines-wrap">
+                            <svg class="speed-chevrons" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <defs>
+                                    <linearGradient id="speed-grad-1" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stop-color="#ffffff"/>
+                                        <stop offset="100%" stop-color="#dce3ee"/>
+                                    </linearGradient>
+                                    <linearGradient id="speed-grad-2" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stop-color="#dce3ee"/>
+                                        <stop offset="100%" stop-color="#9aa4b7"/>
+                                    </linearGradient>
+                                    <linearGradient id="speed-grad-3" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stop-color="#9aa4b7"/>
+                                        <stop offset="100%" stop-color="#677184"/>
+                                    </linearGradient>
+                                    <linearGradient id="speed-stream-grad" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stop-color="#ffffff" stop-opacity="0.08"/>
+                                        <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+                                    </linearGradient>
+                                </defs>
+                                <path class="speed-stream" d="M 100 35 L 165 175 L 35 175 Z" fill="url(#speed-stream-grad)"/>
+                                <path class="speed-line speed-line-1" d="M 50 62 L 100 90 L 150 62" stroke="url(#speed-grad-1)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+                                <path class="speed-line speed-line-2" d="M 50 96 L 100 124 L 150 96" stroke="url(#speed-grad-2)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+                                <path class="speed-line speed-line-3" d="M 50 130 L 100 158 L 150 130" stroke="url(#speed-grad-3)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </div>
+                    </div>
                 </section>
                 <div class="subtab-strip" role="tablist">
                     <button type="button" class="subtab-btn active" data-subtab="spawner-pane" data-i18n="subtabs.spawner">Spawner</button>
