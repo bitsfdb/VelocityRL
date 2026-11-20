@@ -275,7 +275,8 @@
     "debug_panel": "Panneau de débogage",
     "export_diagnostics": "Exporter les diagnostics",
     "privacy_policy": "Politique de confidentialité",
-    "save": "Enregistrer"
+    "save": "Enregistrer",
+    "revert_game_patches": "Revert game patches"
   },
   "preset_modal": {
     "title": "Détails du préréglage",

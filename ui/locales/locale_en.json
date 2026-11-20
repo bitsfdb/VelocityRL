@@ -68,7 +68,6 @@
     "scanning": "Scanning for backups...",
     "restore_all": "Restore All Items",
     "reswap_all": "Reswap All Items",
-    "redownload_assets": "Redownload assets",
     "no_backups": "No backups found."
   },
   "presets": {
@@ -286,7 +285,8 @@
     "debug_panel": "Debug Panel",
     "export_diagnostics": "Export Diagnostics",
     "privacy_policy": "Privacy Policy",
-    "save": "Save"
+    "save": "Save",
+    "revert_game_patches": "Revert game patches"
   },
   "preset_modal": {
     "title": "Preset Details",

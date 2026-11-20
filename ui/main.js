@@ -121,10 +121,15 @@ let localeData = {};
 
 async function loadLocale(lang) {
     try {
-        const res = await fetch(`locales/locale_${lang}.json`);
-        if (res.ok) {
-            return await res.json();
+        if (window.__TAURI__?.core?.invoke) {
+            return await invoke('load_locale', { lang });
         }
+    } catch (e) {
+        console.warn('Locale command failed, trying fetch:', e);
+    }
+    try {
+        const res = await fetch(`locales/locale_${lang}.json`);
+        if (res.ok) return await res.json();
     } catch (e) {
         console.warn('Failed to load locale file:', e);
     }
@@ -860,25 +865,20 @@ async function init() {
     if (applyBtn) applyBtn.onclick = handleApply;
     const restoreBtnEl = document.getElementById('restore-btn');
     if (restoreBtnEl) restoreBtnEl.onclick = handleRestore;
-    const checkPatchBtn = document.getElementById("settings-patch-status-btn");
-    if (checkPatchBtn) {
-        checkPatchBtn.onclick = async () => {
-            const btnText = document.getElementById("settings-patch-btn-text");
-            if (btnText) btnText.textContent = "Patching...";
-            try {
-                const patched = await invoke("ensure_game_patches");
-                await updateGamePatchStatusUI();
-                showToast(patched ? "Game files patched successfully!" : "ProjectX is already patched.", "success");
-            } catch (err) {
-                showToast("Failed to patch game files: " + err, "error");
-            }
-        };
-    }
+    const revertPatchesBtn = document.getElementById('dev-revert-patches-btn');
+    if (revertPatchesBtn) revertPatchesBtn.onclick = async () => {
+        if (isAppLoading()) return;
+        revertPatchesBtn.disabled = true;
+        try {
+            const result = await invoke('revert_game_patches');
+            showToast(result, 'success');
+        } catch (err) {
+            showToast(String(err), 'error');
+        } finally {
+            revertPatchesBtn.disabled = false;
+        }
+    };
 
-    const settingsRedownloadBtn = document.getElementById('settings-redownload-assets-btn');
-    if (settingsRedownloadBtn) settingsRedownloadBtn.onclick = handleRedownloadAssets;
-    const devRedownloadBtn = document.getElementById('dev-redownload-assets-btn');
-    if (devRedownloadBtn) devRedownloadBtn.onclick = handleRedownloadAssets;
     document.getElementById('website-btn').onclick = () => {
         if (isAppLoading()) return;
         window.__TAURI__.core.invoke('plugin:shell|open', { path: 'https://velocityrl.tech' });
@@ -3121,60 +3121,6 @@ async function handleRestore() {
         if (restoreBtn) {
             restoreBtn.disabled = false;
             delete restoreBtn.dataset.busy;
-        }
-    }
-}
-
-async function handleRedownloadAssets() {
-    if (isAppLoading()) return;
-    const btns = [
-        document.getElementById('settings-redownload-assets-btn'),
-        document.getElementById('dev-redownload-assets-btn'),
-    ].filter(Boolean);
-
-    for (const b of btns) {
-        b.disabled = true;
-        b.dataset.busy = '1';
-    }
-
-    let unlisten = null;
-    try {
-        await refreshSwapRlHint();
-        updateStatus('Downloading clean assets (0%)...', false);
-        showProgress(true, 0);
-
-        if (window.__TAURI__?.event?.listen) {
-            unlisten = await window.__TAURI__.event.listen('assets-download-progress', (evt) => {
-                const { file, percent, downloaded, total } = evt.payload || {};
-                const mbDown = (downloaded / (1024 * 1024)).toFixed(1);
-                const mbTot = (total / (1024 * 1024)).toFixed(1);
-                updateStatus(`Downloading ${file} (${percent}%) - ${mbDown}/${mbTot} MB`, false);
-                showProgress(true, percent || 0);
-            });
-        }
-
-        const result = await invoke('redownload_assets');
-        updateStatus(result, false);
-        showToast('Clean official game assets redownloaded and verified successfully.', 'success');
-        refreshBackups();
-        setTimeout(() => updateStatus('bitsfdb', false), 4000);
-    } catch (err) {
-        updateStatus('Redownload Failed', true);
-        const msg = String(err);
-        if (msg.includes('Game directory not set') || msg.includes('Game directory not configured') || msg.includes('game_dir')) {
-            showGameDirToast();
-        } else {
-            showToast(`Asset Redownload Error: ${msg}`, 'error');
-        }
-        console.error(err);
-    } finally {
-        if (unlisten) {
-            try { unlisten(); } catch {}
-        }
-        showProgress(false);
-        for (const b of btns) {
-            b.disabled = false;
-            delete b.dataset.busy;
         }
     }
 }

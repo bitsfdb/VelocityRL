@@ -251,7 +251,8 @@
     "debug_panel": "Pannello di debug",
     "export_diagnostics": "Esporta diagnostica",
     "privacy_policy": "Informativa sulla privacy",
-    "save": "Salva"
+    "save": "Salva",
+    "revert_game_patches": "Revert game patches"
   },
   "preset_modal": {
     "title": "Dettagli Preset",

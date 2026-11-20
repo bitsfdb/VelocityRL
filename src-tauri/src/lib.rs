@@ -2431,84 +2431,50 @@ async fn get_tagame_swapper_status(app: tauri::AppHandle) -> Result<upk::TagameS
     get_swapper_status(app).await
 }
 
-#[derive(Clone, serde::Serialize)]
-struct AssetDownloadProgress {
-    file: String,
-    downloaded: usize,
-    total: usize,
-    percent: u32,
-}
-
-#[derive(Clone, serde::Serialize)]
-struct TagameDownloadProgress {
-    downloaded: usize,
-    total: usize,
-    percent: u32,
+#[tauri::command]
+fn load_locale(app: tauri::AppHandle, lang: String) -> Result<serde_json::Value, String> {
+    let supported = ["en", "es", "fr", "de", "pt", "it", "nl", "tr", "ru"];
+    let lang = if supported.contains(&lang.as_str()) { lang } else { "en".into() };
+    let filename = format!("locale_{lang}.json");
+    let mut candidates = Vec::new();
+    if let Ok(res) = app.path().resource_dir() {
+        candidates.push(res.join("ui").join("locales").join(&filename));
+        candidates.push(res.join("locales").join(&filename));
+    }
+    candidates.push(PathBuf::from("ui").join("locales").join(&filename));
+    candidates.push(PathBuf::from("locales").join(&filename));
+    for path in candidates {
+        if let Ok(raw) = fs::read_to_string(&path) {
+            if let Ok(value) = serde_json::from_str(&raw) {
+                return Ok(value);
+            }
+        }
+    }
+    Err(format!("locale {lang} not found"))
 }
 
 #[tauri::command]
-async fn redownload_assets(app: tauri::AppHandle) -> Result<String, String> {
-    use tauri::Emitter;
+async fn revert_game_patches(app: tauri::AppHandle) -> Result<String, String> {
     let config = get_config(app.clone()).await?;
-    if config.game_dir.is_empty() {
-        return Err("Game directory not set. Open Settings and select CookedPCConsole folder.".into());
+    if config.game_dir.trim().is_empty() {
+        return Err("Rocket League directory not found. Set your game path in Settings.".into());
     }
     let cooked = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir))
-        .map_err(|e| e.to_string())?;
-
-    // 1. Download official TAGame.upk
-    let tagame_path = cooked.join("TAGame.upk");
-    let tagame_bak = cooked.join("TAGame.upk.bak");
-    let app_handle_tagame = app.clone();
-    let res_tagame = upk::swapper::download_official_tagame_upk(&tagame_path, move |downloaded, total| {
-        let percent = if total > 0 { ((downloaded as f64 / total as f64) * 100.0) as u32 } else { 0 };
-        let _ = app_handle_tagame.emit("assets-download-progress", AssetDownloadProgress {
-            file: "TAGame.upk".into(),
-            downloaded,
-            total,
-            percent,
-        });
-        let _ = app_handle_tagame.emit("tagame-download-progress", TagameDownloadProgress {
-            downloaded,
-            total,
-            percent,
-        });
-    }).await;
-
-    if let Err(e) = res_tagame {
-        applog::event(&format!("swapper: failed to download TAGame.upk: {e}"));
-        return Err(format!("Failed to download TAGame.upk: {e}"));
+        .map_err(|e| format!("Rocket League directory not found: {e}"))?;
+    let mut restored = Vec::new();
+    for (file, backup) in [
+        ("TAGame.upk", "TAGame.upk.bak"),
+        ("ProjectX.upk", "ProjectX.upk.bak"),
+    ] {
+        let live = cooked.join(file);
+        let bak = cooked.join(backup);
+        if bak.is_file() {
+            fs::copy(&bak, &live).map_err(|e| format!("Failed to restore {file}: {e}"))?;
+            restored.push(file);
+        }
     }
-    let _ = std::fs::copy(&tagame_path, &tagame_bak);
-
-    // 2. Download official ProjectX.upk
-    let projectx_path = cooked.join("ProjectX.upk");
-    let projectx_bak = cooked.join("ProjectX.upk.bak");
-    let app_handle_projectx = app.clone();
-    let res_projectx = upk::swapper::download_official_projectx_upk(&projectx_path, move |downloaded, total| {
-        let percent = if total > 0 { ((downloaded as f64 / total as f64) * 100.0) as u32 } else { 0 };
-        let _ = app_handle_projectx.emit("assets-download-progress", AssetDownloadProgress {
-            file: "ProjectX.upk".into(),
-            downloaded,
-            total,
-            percent,
-        });
-    }).await;
-
-    if let Err(e) = res_projectx {
-        applog::event(&format!("swapper: failed to download ProjectX.upk: {e}"));
-        return Err(format!("Failed to download ProjectX.upk: {e}"));
-    }
-    let _ = std::fs::copy(&projectx_path, &projectx_bak);
-    let _ = upk::ensure_projectx_patched(&cooked);
-
-    applog::event("swapper: official assets (TAGame.upk and ProjectX.upk) downloaded and backed up successfully");
-    Ok("Official assets (TAGame.upk and ProjectX.upk) downloaded and verified successfully.".into())
-}
-
-#[tauri::command]
-async fn download_official_tagame(app: tauri::AppHandle) -> Result<String, String> {
-    redownload_assets(app).await
+    applog::event(&format!("revert_game_patches: restored {}", restored.join(", ")));
+    Ok(format!("Reverted game patches: {}", restored.join(", ")))
 }
 
 #[tauri::command]
@@ -3996,20 +3962,6 @@ pub fn run() {
                     tokio::time::sleep(std::time::Duration::from_secs(300)).await;
                     let _ = features::get_features(ttl_app.clone()).await;
 
-                    // If game directory is configured, verify TAGame.upk integrity / updates
-                    if let Ok(config) = get_config(ttl_app.clone()).await {
-                        if !config.game_dir.is_empty() {
-                            if let Ok(cooked) = upk::swapper::resolve_cooked_dir(std::path::Path::new(&config.game_dir)) {
-                                let tagame = cooked.join("TAGame.upk");
-                                if !tagame.exists() {
-                                    applog::event("periodic_check: TAGame.upk missing, attempting automatic download...");
-                                    let _ = upk::swapper::download_official_tagame_upk(&tagame, |_, _| {}).await;
-                                } else {
-                                    // TAGame.upk exists; no periodic file rewrite needed
-                                }
-                            }
-                        }
-                    }
                 }
             });
 
@@ -4212,6 +4164,8 @@ pub fn run() {
             check_integrity,
             ensure_game_patches,
             apply_saved_spoof_values,
+            load_locale,
+            revert_game_patches,
             get_game_patch_status,
             acknowledge_repair,
             get_palette_status,
@@ -4275,8 +4229,6 @@ pub fn run() {
             restore_ping_spoof_upk,
             get_swapper_status,
             get_tagame_swapper_status,
-            redownload_assets,
-            download_official_tagame,
             get_detected_car_body,
             get_custom_decal_config,
             save_custom_decal_config,

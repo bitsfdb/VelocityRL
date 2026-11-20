@@ -276,7 +276,8 @@
     "export_diagnostics": "Tanılamaları Dışa Aktar",
     "privacy_policy": "Gizlilik Politikası",
     "save": "Kaydet",
-    "credits_turkish": "Türkçe Çeviri: Deniz"
+    "credits_turkish": "Türkçe Çeviri: Deniz",
+    "revert_game_patches": "Revert game patches"
   },
   "preset_modal": {
     "title": "Ön Ayar Detayları",
