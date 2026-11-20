@@ -420,6 +420,32 @@ pub fn save_envelope_to_file(envelope: &SaveEnvelope, path: &Path) -> Result<(),
     Ok(())
 }
 
+/// Rename every savedata key from S.* to R.* in place (same byte length).
+pub fn rename_all_saved_keys_to_rlim(envelope: &mut SaveEnvelope) -> usize {
+    let sd = &mut envelope.sd;
+    let mut i = 0;
+    let mut count = 0;
+    while i + 8 <= sd.len() {
+        let len = i32::from_le_bytes(sd[i..i + 4].try_into().unwrap());
+        if len > 2 {
+            let end = i + 4 + len as usize;
+            if end <= sd.len()
+                && sd[end - 1] == 0
+                && sd[i + 4] == b'S'
+                && sd[i + 5] == b'.'
+                && sd[i + 4..end - 1]
+                    .iter()
+                    .all(|b| b.is_ascii_alphanumeric() || *b == b'.' || *b == b'_')
+            {
+                sd[i + 4] = b'R';
+                count += 1;
+            }
+        }
+        i += 1;
+    }
+    count
+}
+
 /// Rename a savedata key in place (must be the same byte length).
 pub fn rename_saved_key(envelope: &mut SaveEnvelope, from: &str, to: &str) -> Result<(), String> {
     let old = write_ue3_string(from);
@@ -492,7 +518,7 @@ pub fn patch_saved_spoof_values(
 ) -> Result<(), String> {
     let save_path = locate_latest_save()?;
     let mut envelope = read_envelope(&save_path)?;
-    let mut changed = false;
+    let mut changed = rename_all_saved_keys_to_rlim(&mut envelope) > 0;
 
     for (old_key, new_key, value) in [
         ("S.Name.v1", "R.Name.v1", name),
@@ -501,9 +527,8 @@ pub fn patch_saved_spoof_values(
         ("S.LoadoutWire.v1.0", "R.LoadoutWire.v1.0", loadout_key),
         ("S.LoadoutWire.v1.1", "R.LoadoutWire.v1.1", loadout_key),
     ] {
-        if rename_saved_key(&mut envelope, old_key, new_key).is_ok()
-            && set_saved_string(&mut envelope, new_key, value).is_ok()
-        {
+        let _ = rename_saved_key(&mut envelope, old_key, new_key);
+        if set_saved_string(&mut envelope, new_key, value).is_ok() {
             changed = true;
         }
     }

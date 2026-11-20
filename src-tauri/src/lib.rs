@@ -1538,7 +1538,7 @@ async fn get_game_patch_status(app: tauri::AppHandle) -> Result<GamePatchStatus,
 }
 
 #[tauri::command]
-async fn apply_saved_spoof_values() -> Result<String, String> {
+fn apply_saved_spoof_values() -> Result<String, String> {
     let cfg = crate::psynet::load_active_spoof_from_disk();
     let name = cfg
         .as_ref()
@@ -1612,7 +1612,7 @@ async fn ensure_game_patches(app: tauri::AppHandle) -> Result<bool, String> {
     let tagame_patched = upk::ensure_tagame_patched(&cooked).await?;
     let swaps = load_swaps(&app);
     let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
-    let _ = apply_saved_spoof_values().await;
+    let _ = apply_saved_spoof_values();
     Ok(projectx_patched || tagame_patched)
 }
 
@@ -2379,6 +2379,7 @@ async fn apply_ping_spoof_upk(
         min_ms: min,
         max_ms: max,
     }));
+    let _ = apply_saved_spoof_values();
     applog::event(&format!("ping_spoof: enabled web ping [{min}..{max}] ms"));
     Ok(())
 }
@@ -2391,6 +2392,7 @@ async fn restore_ping_spoof_upk(app: tauri::AppHandle) -> Result<(), String> {
         min_ms: 16,
         max_ms: 24,
     }));
+    let _ = apply_saved_spoof_values();
     applog::event("ping_spoof: disabled web ping");
     Ok(())
 }
