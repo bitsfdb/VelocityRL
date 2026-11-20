@@ -6571,6 +6571,51 @@ let dropsTabWired = false;
 let loadedDropsCatalog = [];
 const selectedDropIds = new Set();
 
+async function refreshDropPresets() {
+    const list = document.getElementById('drop-presets-list');
+    if (!list) return;
+    try {
+        const presets = await invoke('get_drop_presets');
+        if (!presets.length) {
+            list.innerHTML = '<div class="backup-empty">No drop presets yet. Spawn drops/crates, then save them here.</div>';
+            return;
+        }
+        list.innerHTML = '';
+        presets.forEach(p => {
+            const row = document.createElement('div');
+            row.className = 'backup-item';
+            row.style.cssText = 'display:flex;align-items:center;gap:10px;';
+            const count = (p.swaps || []).length;
+            row.innerHTML = `<div style="flex:1;min-width:0;">
+                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                    <strong>${escHtml(p.name)}</strong>
+                    <span class="preset-stat-badge" style="font-size:10px;padding:2px 6px;">${count} items</span>
+                </div>
+                <div style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;">${escHtml((p.swaps||[]).slice(0,4).map(s=>s.wanted_name||s.wanted_id).join(', '))}</div>
+            </div>`;
+            const mk = (label, cls, fn) => {
+                const b = document.createElement('button');
+                b.className = `action-btn ${cls}`;
+                b.textContent = label;
+                b.style.cssText = 'padding:6px 12px;font-size:12px;';
+                b.onclick = fn;
+                return b;
+            };
+            row.appendChild(mk('Restore', '', async () => {
+                try { const r = await invoke('apply_drop_preset', { id: p.id }); showToast(`Restored ${r.length} drop(s)`, 'success'); }
+                catch (e) { showToast(formatError(e), 'error'); }
+            }));
+            row.appendChild(mk('Delete', 'action-btn-secondary', async () => {
+                await invoke('delete_drop_preset', { id: p.id });
+                refreshDropPresets();
+            }));
+            list.appendChild(row);
+        });
+    } catch (e) {
+        list.innerHTML = `<div style="color:#ff5555;">${escHtml(formatError(e))}</div>`;
+    }
+}
+
 function getDropThumbnail(item) {
     if (item?.icon) {
         return item.icon;
@@ -6620,6 +6665,26 @@ function initDropsTab() {
     const deselectAllBtn = document.getElementById('deselect-all-drops-btn');
 
     if (!grid || !spawnBtn) return;
+
+    document.getElementById('drop-save-preset-btn')?.addEventListener('click', async () => {
+        const nameInput = document.getElementById('drop-preset-name');
+        const name = (nameInput?.value || '').trim();
+        if (!name) { showToast('Enter a preset name first.', 'warning'); return; }
+        try {
+            await invoke('save_drop_preset', { name });
+            showToast('Drop preset saved', 'success');
+            if (nameInput) nameInput.value = '';
+            refreshDropPresets();
+        } catch (e) { showToast(formatError(e), 'error'); }
+    });
+    document.getElementById('drop-clear-spawned-btn')?.addEventListener('click', async () => {
+        try {
+            await invoke('clear_spawned_items');
+            showToast('Cleared spawned drops', 'success');
+            refreshDropPresets();
+        } catch (e) { showToast(formatError(e), 'error'); }
+    });
+    refreshDropPresets();
 
     async function loadDropsData() {
         try {

@@ -1927,6 +1927,25 @@ async fn make_savedata(_app: tauri::AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn clear_spawned_items(app: tauri::AppHandle) -> Result<(), String> {
+    crate::proxy::clear_dynamic_spawned_items();
+    let mut cfg = crate::psynet::load_active_spoof_from_disk().unwrap_or_default();
+    if let Some(mut inv) = cfg.inventory_spoof.take() {
+        inv.items.clear();
+        inv.enabled = false;
+        cfg.inventory_spoof = Some(inv);
+        if let Ok(dir) = crate::psynet::find_proxy_dir() {
+            let _ = crate::psynet::write_spoof(&dir, &cfg);
+        }
+    }
+    let mut swaps = load_swaps(&app);
+    swaps.retain(|s| !presets::is_drop_item(s));
+    save_swaps(&app, &swaps);
+    let _ = app;
+    Ok(())
+}
+
+#[tauri::command]
 async fn spawn_items_batch(
     app: tauri::AppHandle,
     items: Vec<SpawnBatchItem>,
@@ -4140,6 +4159,11 @@ pub fn run() {
             presets::save_preset,
             presets::delete_preset,
             presets::apply_preset,
+            presets::get_drop_presets,
+            presets::save_drop_preset,
+            presets::apply_drop_preset,
+            presets::delete_drop_preset,
+            clear_spawned_items,
             presets::export_preset_code,
             presets::import_preset_code,
             presets::peek_preset_code,

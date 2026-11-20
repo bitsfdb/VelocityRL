@@ -713,8 +713,21 @@
                         </div>
                     </div>
 
-                    <div id="drops-grid-container" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; max-height: calc(100vh - 280px); overflow-y: auto; padding-right: 6px;">
+                    <div id="drops-grid-container" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; max-height: calc(100vh - 400px); overflow-y: auto; padding-right: 6px;">
                         <!-- Dynamically populated -->
+                    </div>
+
+                    <div class="card spoof-card" style="margin-top: 16px;">
+                        <h3 class="section-subtitle">Drop Presets & Restore</h3>
+                        <p class="section-desc">Save and restore spawned drops/crates separately from the main spawner presets.</p>
+                        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px;">
+                            <input type="text" id="drop-preset-name" placeholder="Preset name..." style="flex: 1; min-width: 180px; padding: 7px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.3); color: #fff;">
+                            <button type="button" id="drop-save-preset-btn" class="action-btn">Save Drop Preset</button>
+                            <button type="button" id="drop-clear-spawned-btn" class="action-btn action-btn-secondary">Clear Spawned Drops</button>
+                        </div>
+                        <div id="drop-presets-list" class="presets-list-container" style="display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto;">
+                            <!-- Dynamically populated -->
+                        </div>
                     </div>
                 </div>
             </div>

@@ -22,7 +22,7 @@ const SHARE_KEY: &[u8] = b"VelocityRL::preset-share::v1::A0A523581C0125D1";
 
 pub const MAX_PRESETS: usize = 50;
 pub const MAX_HISTORY: usize = 200;
-pub const MAX_PRESET_ITEMS: usize = 50;
+pub const MAX_PRESET_ITEMS: usize = 3000;
 pub const MAX_PRESET_MAPS: usize = 30;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -67,6 +67,12 @@ struct PresetFile {
 }
 
 #[derive(Serialize, Deserialize, Clone, Default)]
+struct DropPresetFile {
+    #[serde(default)]
+    presets: Vec<Preset>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Default)]
 struct HistoryFile {
     #[serde(default)]
     history: Vec<HistoryEntry>,
@@ -76,8 +82,34 @@ fn presets_path(app: &tauri::AppHandle) -> Option<PathBuf> {
     app_config_dir_of(app).map(|d| d.join("presets.json"))
 }
 
+fn drop_presets_path(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app_config_dir_of(app).map(|d| d.join("drop_presets.json"))
+}
+
 fn history_path(app: &tauri::AppHandle) -> Option<PathBuf> {
     app_config_dir_of(app).map(|d| d.join("history.json"))
+}
+
+fn load_drop_presets(app: &tauri::AppHandle) -> DropPresetFile {
+    drop_presets_path(app)
+        .and_then(|p| fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn save_drop_presets(app: &tauri::AppHandle, f: &DropPresetFile) {
+    if let Some(path) = drop_presets_path(app) {
+        if let Ok(json) = serde_json::to_string_pretty(f) {
+            let _ = fs::create_dir_all(path.parent().unwrap_or(&path));
+            let _ = fs::write(path, json);
+        }
+    }
+}
+
+/// Spawner/drop items are self-donor swaps (owned_id == wanted_id). They belong
+/// in the Drops & Crates subtab, not in the main spawner Presets/Restore.
+pub fn is_drop_item(s: &SwapEntry) -> bool {
+    s.owned_id == s.wanted_id
 }
 
 fn load_preset_file(app: &tauri::AppHandle) -> PresetFile {
@@ -220,6 +252,8 @@ pub async fn save_preset(
         return Err("Preset name must be 1–64 characters.".into());
     }
     let mut current_swaps = swaps.unwrap_or_else(|| crate::load_swaps(&app));
+    // Drops/crates have their own Presets/Restore in the Drops & Crates subtab.
+    current_swaps.retain(|s| !is_drop_item(s));
 
     let items = crate::get_items(app.clone(), None).await.unwrap_or_default();
     sanitize_swaps(&mut current_swaps, &items);
@@ -360,6 +394,83 @@ pub async fn apply_preset(app: tauri::AppHandle, id: String) -> Result<Vec<Strin
         return Err(format!("All {} actions failed:\n{}", results.len(), results.join("\n")));
     }
     Ok(results)
+}
+
+#[tauri::command]
+pub async fn get_drop_presets(app: tauri::AppHandle) -> Result<Vec<Preset>, String> {
+    Ok(load_drop_presets(&app).presets)
+}
+
+#[tauri::command]
+pub async fn save_drop_preset(
+    app: tauri::AppHandle,
+    name: String,
+    swaps: Option<Vec<SwapEntry>>,
+) -> Result<Preset, String> {
+    let name = name.trim().to_string();
+    if name.is_empty() || name.len() > 64 {
+        return Err("Preset name must be 1–64 characters.".into());
+    }
+    let mut current = swaps.unwrap_or_else(|| crate::load_swaps(&app));
+    current.retain(|s| is_drop_item(s));
+    if current.is_empty() {
+        return Err("No spawned drops/crates to save. Spawn some first.".into());
+    }
+    if current.len() > MAX_PRESET_ITEMS {
+        return Err(format!("Preset exceeds maximum limit of {MAX_PRESET_ITEMS} items (has {}).", current.len()));
+    }
+    let mut f = load_drop_presets(&app);
+    let preset = Preset {
+        id: generate_preset_uuid(),
+        name: name.clone(),
+        created_at: crate::now_iso8601_utc(),
+        swaps: current,
+        maps: Vec::new(),
+        active_map_id: None,
+    };
+    f.presets.retain(|p| p.name.trim().eq_ignore_ascii_case(&name));
+    f.presets.push(preset.clone());
+    save_drop_presets(&app, &f);
+    Ok(preset)
+}
+
+#[tauri::command]
+pub async fn apply_drop_preset(app: tauri::AppHandle, id: String) -> Result<Vec<String>, String> {
+    let f = load_drop_presets(&app);
+    let preset = f.presets.into_iter().find(|p| p.id == id)
+        .ok_or_else(|| "Drop preset not found.".to_string())?;
+    let items = preset.swaps.iter().filter(|s| is_drop_item(s)).cloned().collect::<Vec<_>>();
+    if items.is_empty() {
+        return Err("Drop preset has no items.".into());
+    }
+    let tuples: Vec<(i32, i32)> = items.iter().map(|s| (s.wanted_id, s.paint_id)).collect();
+    crate::proxy::clear_dynamic_spawned_items();
+    crate::proxy::register_spawned_items(&tuples);
+    let mut cfg = crate::psynet::load_active_spoof_from_disk().unwrap_or_default();
+    let mut inv = cfg.inventory_spoof.unwrap_or_default();
+    inv.enabled = true;
+    inv.items.clear();
+    for &(pid, paint) in &tuples {
+        if !inv.items.iter().any(|it| it.product_id == pid && it.paint_id == paint) {
+            inv.items.push(crate::psynet::InventorySpoofItemPayload {
+                product_id: pid, paint_id: paint, series_id: 0, slot: String::new(), dlc: false,
+            });
+        }
+    }
+    cfg.inventory_spoof = Some(inv);
+    if let Ok(dir) = crate::psynet::find_proxy_dir() {
+        let _ = crate::psynet::write_spoof(&dir, &cfg);
+    }
+    let _ = crate::proxy::inject_reward_drop(&tuples).await;
+    Ok(items.iter().map(|s| format!("OK  {} (paint {})", s.wanted_name, s.paint_id)).collect())
+}
+
+#[tauri::command]
+pub async fn delete_drop_preset(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let mut f = load_drop_presets(&app);
+    f.presets.retain(|p| p.id != id);
+    save_drop_presets(&app, &f);
+    Ok(())
 }
 
 #[allow(dead_code)]
@@ -603,7 +714,10 @@ fn parse_zlib_code(rest: &str) -> Result<(String, Vec<SwapEntry>, Vec<PresetMapE
 }
 
 fn code_for_preset(p: &Preset) -> Result<String, String> {
-    if p.maps.is_empty() {
+    // The compact 14-slot binary code holds at most one item per equipment
+    // slot. Presets with more swaps (e.g. spawned crates/keys) must use the
+    // full JSON code or items would be silently dropped.
+    if p.maps.is_empty() && p.swaps.len() <= 14 {
         Ok(encode_14slot_binary(&p.swaps))
     } else {
         let payload = serde_json::json!({
