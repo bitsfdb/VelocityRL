@@ -805,12 +805,14 @@ async function init() {
                     initCatalogGrid();
                     renderCatalogGridPage();
                 }
-                refreshSwapRlHint();
+                refreshSwapRlHint().catch(() => {});
             }
             if (btn.dataset.tab === 'avatars-tab') initAvatarTab();
             if (btn.dataset.tab === 'decals-tab') initDecalsTab();
             if (btn.dataset.tab === 'boost-tab') initBoostMeterTab();
-            if (btn.dataset.tab === 'titles-tab') initTitlesTab();
+            if (btn.dataset.tab === 'titles-tab') {
+                if (!titlesTabReady) initTitlesTab();
+            }
             if (btn.dataset.tab === 'customization-tab' || btn.dataset.tab === 'names-tab') initCustomizationTab();
             if (btn.dataset.tab === 'ranks-tab') initRanksTab();
             if (btn.dataset.tab === 'tracker-tab') initTrackerTab();
@@ -1220,6 +1222,9 @@ async function loadData() {
         }
         renderCatalogGridPage();
         updateCatalogSelectionUi();
+
+        updateLoadingText('Pre-warming titles & tools...');
+        await initTitlesTab().catch(e => console.warn('Pre-warming titles failed:', e));
 
         updateLoadingText('Starting up...');
         loadingPercent = 100;
@@ -3102,9 +3107,13 @@ function validateSwapInputs() {
 
 const validate = validateSwapInputs;
 
-async function refreshSwapRlHint() {
+let lastRlHintCheck = 0;
+async function refreshSwapRlHint(force = false) {
     const hint = document.getElementById('swap-rl-hint');
     if (!hint) return;
+    const now = Date.now();
+    if (!force && now - lastRlHintCheck < 5000) return;
+    lastRlHintCheck = now;
     try {
         hint.hidden = !(await invoke('is_rocket_league_running'));
     } catch {
@@ -7324,17 +7333,19 @@ function wirePaintSwatches(swatchId, selectId, selectedLabelId) {
 }
 
 async function initTitlesTab() {
-    if (!titlesTabReady) {
-        titlesTabReady = true;
-        wireTitleSpoofControls();
-        await loadTitlesDatabase();
-        loadTitleSpoofForm();
-        renderDonorList('');
-        renderDisplayList('');
-        updateTitlePreview();
-        attachCloseGuard();
+    if (titlesTabReady) {
+        refreshProxyStatus().catch(() => {});
+        return;
     }
-    await refreshProxyStatus();
+    titlesTabReady = true;
+    wireTitleSpoofControls();
+    await loadTitlesDatabase();
+    loadTitleSpoofForm();
+    renderDonorList('');
+    renderDisplayList('');
+    updateTitlePreview();
+    attachCloseGuard();
+    refreshProxyStatus().catch(() => {});
 }
 
 function findTitleById(id) {
@@ -7699,42 +7710,42 @@ function categoriesMapFromPayload(data) {
 }
 
 async function loadTitlesDatabase() {
+    if (titlesDb && titlesDb.titles && titlesDb.titles.length) return;
     const lists = [document.getElementById('donor-list'), document.getElementById('display-list')];
     const onTitlesLoadFailed = (msg) => lists.forEach(list => { if (list) list.innerHTML = `<div class="backup-empty">${escHtml(msg)}</div>`; });
     const bundledCats = await loadBundledCategories();
     const applyLoadedTitles = (raw) => {
         titlesDb = normalizeTitlesPayload(raw);
-
         titlesDb.categories = { ...titlesDb.categories, ...bundledCats };
     };
     try {
-        const res = await fetch(`https://api.velocityrl.tech/titles.json?t=${Date.now()}`, { cache: 'no-store' });
+        const res = await fetch('titles.json');
         if (res.ok) {
             applyLoadedTitles(await res.json());
             return;
         }
-    } catch {  }
+    } catch { }
     try {
-        const res = await fetch(`${API_BASE}/v2/rl/titles?t=${Date.now()}`, { cache: 'no-store' });
+        const res = await fetch(`https://api.velocityrl.tech/titles.json?t=${Date.now()}`);
         if (res.ok) {
             applyLoadedTitles(await res.json());
             return;
         }
-    } catch {  }
+    } catch { }
     try {
-        const res = await fetch(`https://raw.githubusercontent.com/bitsfdb/VelocityRL/main/tools/psynet_proxy/titles.json?t=${Date.now()}`, { cache: 'no-store' });
+        const res = await fetch(`${API_BASE}/v2/rl/titles?t=${Date.now()}`);
         if (res.ok) {
             applyLoadedTitles(await res.json());
             return;
         }
-    } catch {  }
+    } catch { }
     try {
-        const res = await fetch('titles.json', { cache: 'no-store' });
+        const res = await fetch(`https://raw.githubusercontent.com/bitsfdb/VelocityRL/main/tools/psynet_proxy/titles.json?t=${Date.now()}`);
         if (res.ok) {
             applyLoadedTitles(await res.json());
             return;
         }
-    } catch {  }
+    } catch { }
     onTitlesLoadFailed('Could not load titles database.');
 }
 
