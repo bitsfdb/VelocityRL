@@ -6491,6 +6491,9 @@ pub async fn inject_reward_drop(items: &[(i32, i32)]) -> Result<bool, String> {
         let mut prod_obj = serde_json::json!({
             "ProductID": pid,
             "InstanceID": inst_hex,
+            "Amount": 1,
+            "ExpirationTime": -1,
+            "IsTradable": false,
             "TradeHold": -1,
             "AddedTimestamp": now,
             "UpdatedTimestamp": now,
@@ -7511,6 +7514,9 @@ pub fn patch_player_products_json(
             let mut prod_obj = serde_json::json!({
                 "ProductID": wanted_id,
                 "InstanceID": inst_hex,
+                "Amount": 1,
+                "ExpirationTime": -1,
+                "IsTradable": false,
                 "TradeHold": -1,
                 "AddedTimestamp": static_ts,
                 "UpdatedTimestamp": static_ts,
