@@ -5,8 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VelocityRL</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="studio.css">
 </head>
 <body class="is-loading">
+    <canvas id="velocity-field" aria-hidden="true"></canvas>
+    <div class="velocity-boot" id="velocity-boot" aria-hidden="true">
+        <div class="boot-lockup">
+            <svg class="boot-mark" viewBox="0 0 120 120" fill="none"><path d="M28 32 60 50 92 32"/><path d="M28 55 60 73 92 55"/><path d="M28 78 60 96 92 78"/></svg>
+            <div class="boot-word"><span>Velocity</span><b>RL</b></div>
+            <div class="boot-track"><i></i></div>
+            <span class="boot-caption">MAKE IT YOURS.</span>
+        </div>
+    </div>
     <aside class="sidebar">
         <div class="logo-section">
             <img src="logo.svg" width="28" height="28" alt="">
@@ -64,6 +74,10 @@
     </aside>
 
     <div class="main-wrap">
+        <header class="studio-topbar">
+            <div class="studio-breadcrumb">Your workspace <span>/</span> <strong id="studio-page-name">Spawner</strong></div>
+            <span class="studio-signature" aria-hidden="true"><i></i><i></i><i></i> BUILT TO MOVE</span>
+        </header>
         <main>
             <div class="repair-banner" style="border-left-color: #2196f3; margin-bottom: 12px; background: rgba(33, 150, 243, 0.05);">
                 <div class="repair-banner-text">
@@ -73,6 +87,15 @@
             </div>
 
             <div id="spawner-tab" class="tab-content active">
+                <section class="studio-hero" aria-labelledby="studio-heading">
+                    <div class="studio-hero-copy">
+                        <span class="studio-eyebrow">THE GARAGE, REIMAGINED</span>
+                        <h1 id="studio-heading">Make it <em>yours.</em></h1>
+                        <p>Every detail. Every possibility. Your next signature look.</p>
+                        <button type="button" class="studio-explore" id="studio-explore">Explore car bodies <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg></button>
+                    </div>
+                    <div class="studio-orbit" aria-hidden="true"><div class="orbit-ring orbit-ring-one"></div><div class="orbit-ring orbit-ring-two"></div><div class="orbit-ring orbit-ring-three"></div><img src="logo.svg" class="orbit-mark" alt=""><span class="orbit-caption">VELOCITY / LIMITLESS BY DESIGN</span></div>
+                </section>
                 <div class="subtab-strip" role="tablist">
                     <button type="button" class="subtab-btn active" data-subtab="spawner-pane" data-i18n="subtabs.spawner">Spawner</button>
                     <button type="button" class="subtab-btn" data-subtab="restore-pane" data-i18n="subtabs.restore">Restore</button>
@@ -1336,5 +1359,6 @@
     </div>
 
     <script src="main.js"></script>
+    <script src="studio.js"></script>
 </body>
 </html>

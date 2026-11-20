@@ -155,7 +155,7 @@ async function setAppLanguage(lang) {
     const loaded = await loadLocale(lang);
     if (loaded) {
         localeData = loaded;
-        if (loaded.logs && typeof loaded.logs === 'object') {
+        if (window.__TAURI__?.core?.invoke && loaded.logs && typeof loaded.logs === 'object') {
             invoke('set_app_locale_logs', { logs: loaded.logs }).catch(() => {});
         }
     }
@@ -164,7 +164,9 @@ async function setAppLanguage(lang) {
         const key = el.getAttribute('data-i18n');
         const translation = getNestedTranslation(localeData, key);
         if (translation) {
-            el.textContent = translation;
+            const label = el.matches('.nav-item') ? el.querySelector('span') : null;
+            (label || el).textContent = translation;
+            if (el.matches('.nav-item')) el.setAttribute('aria-label', translation);
         }
     });
 
@@ -2154,6 +2156,16 @@ function renderCatalogGridPage() {
         card.className = `catalog-card${isSelected ? ' is-selected' : ''}${item.isTitle ? ' is-title-card' : ''}`;
         card.dataset.id = String(rawId);
         card.dataset.quality = quality;
+        card.tabIndex = 0;
+        card.setAttribute('role', 'button');
+        card.setAttribute('aria-label', name);
+        card.setAttribute('aria-pressed', String(isSelected));
+        card.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                card.click();
+            }
+        });
 
         let paintBadgeHtml = '';
         if (isSelected && (cardPaint === 'all' || cardPaint > 0)) {
@@ -2194,6 +2206,7 @@ function renderCatalogGridPage() {
 
         card.addEventListener('click', () => {
             const isToggledOn = !selectedCatalogItems.has(rawId);
+            card.setAttribute('aria-pressed', String(isToggledOn));
             if (!isToggledOn) {
                 selectedCatalogItems.delete(rawId);
                 card.classList.remove('is-selected');
@@ -9002,6 +9015,12 @@ async function saveTrackerSession(session) {
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 
 async function startApp() {
+    // Explicit, read-only browser preview; never intercept a native Tauri session.
+    if (!window.__TAURI__ && new URLSearchParams(location.search).has('preview')) {
+        const { startPreview } = await import('./preview.js');
+        await startPreview();
+        return;
+    }
     setTimeout(() => {
         if (appLoading) {
             console.warn('App loading safety watchdog triggered — releasing overlay');
