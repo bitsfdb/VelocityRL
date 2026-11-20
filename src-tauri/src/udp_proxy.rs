@@ -22,6 +22,11 @@ type Aes256CbcEnc = Encryptor<Aes256>;
 /// How many recently seen reservation keys to keep trying per datagram.
 const MAX_CRYPTO_CANDIDATES: usize = 4;
 
+/// Analysis mode: decrypt datagrams for the monitor/dump, but forward the
+/// original wire bytes untouched. No name rewrite, no re-encryption. This
+/// keeps the relay transparent while we study the protocol.
+pub const UDP_ANALYSIS_ONLY: bool = true;
+
 /// Modern Rocket League UDP Match Security Session Keys
 #[derive(Clone, Debug)]
 pub struct ReservationCrypto {
@@ -275,6 +280,49 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                         let cryptos = state_c2s.active_crypto.read().await.clone();
 
                         let encrypted = !cryptos.is_empty();
+                        let original = buf[..len].to_vec();
+
+                        if UDP_ANALYSIS_ONLY {
+                            // Decrypt a copy purely so the monitor/dump shows the
+                            // real payload, then forward the original datagram
+                            // byte-for-byte. Never patch or re-encrypt.
+                            let plaintext = if !cryptos.is_empty() {
+                                decrypt_datagram_payload(&original, &cryptos)
+                            } else {
+                                Some(original.clone())
+                            };
+                            let captured: &[u8] = plaintext.as_deref().unwrap_or(&original);
+                            record_udp_capture(
+                                "C2S",
+                                &format!("{target}"),
+                                encrypted,
+                                plaintext.is_some(),
+                                captured,
+                            );
+
+                            c2s_pkt_count += 1;
+                            if c2s_pkt_count <= 5 || c2s_pkt_count % 120 == 0 {
+                                let (summary, decoded_info) =
+                                    decode_udp_packet_summary(captured, true);
+                                crate::proxy::record_network_event(
+                                    "UDP",
+                                    "OUTBOUND",
+                                    &format!("{target}"),
+                                    if plaintext.is_some() {
+                                        "C2S_DECRYPTED"
+                                    } else {
+                                        "C2S_ENCRYPTED"
+                                    },
+                                    &summary,
+                                    &decoded_info,
+                                    false,
+                                );
+                            }
+
+                            let _ = us_c2s.send_to(&original, target).await;
+                            continue;
+                        }
+
                         let (final_buf, plaintext, was_patched) = if !cryptos.is_empty() {
                             // Datagram proxying pipeline:
                             // 1. Decrypt C2S datagram with AES-256-CBC (whole datagram,
