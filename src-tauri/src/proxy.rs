@@ -2383,7 +2383,8 @@ fn generate_simulated_unlock_container_payload(_body: &[u8]) -> Option<serde_jso
     let resp_obj = serde_json::json!({
         "Result": {
             "Drops": [drop_obj]
-        }
+        },
+        "bSuccess": true
     });
 
     Some(resp_obj)
@@ -8655,6 +8656,7 @@ mod tests {
             .and_then(|d| d.as_array())
             .expect("Result.Drops array");
         assert_eq!(drops.len(), 1);
+        assert_eq!(resp.get("bSuccess").and_then(|v| v.as_bool()), Some(true));
         let drop = &drops[0];
         assert!(drop.get("ProductID").unwrap().is_i64());
         assert!(drop.get("InstanceID").unwrap().is_null(), "real drops have null InstanceID");
