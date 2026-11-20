@@ -3004,25 +3004,6 @@ async fn handle_broker_request(
             }
         }
 
-        // The in-game sidecar URL is the local player's avatar request. When a
-        // custom avatar is active, always serve it there so the applied picture
-        // actually shows up in game.
-        if path_str.contains("/content/images/players/avatars/") {
-            if let Some(png_bytes) = crate::avatar::get_active_avatar_png() {
-                crate::applog::event(&format!(
-                    "broker: {path_str} -> active custom avatar PNG ({} bytes)",
-                    png_bytes.len()
-                ));
-                return Ok(Response::builder()
-                    .status(StatusCode::OK)
-                    .header("Content-Type", "image/png")
-                    .header("Content-Length", png_bytes.len().to_string())
-                    .header("Cache-Control", "no-cache, no-store")
-                    .body(full_body(png_bytes))
-                    .unwrap());
-            }
-        }
-
         if let Some(steam_id) = target_steam_id {
             // The linked account's own ID always resolves to the local avatar.
             if Some(steam_id) == authenticated_steam_id || Some(steam_id) == learned_steam_id {

@@ -161,7 +161,7 @@
     "avatar_image_file": "Custom Image / PNG (Optional)",
     "avatar_preview": "Profile Picture Preview",
     "avatar_status_ready": "Ready to apply profile picture",
-    "apply_avatar": "Apply Custom Profile Picture",
+    "apply_avatar": "Apply Custom PFP",
     "restore_avatar": "Restore Default",
     "steam_auth_label": "Steam Account Authentication",
     "steam_auth_desc": "Sign in via Steam OpenID to link your authenticated Steam avatar and display name directly.",
