@@ -2382,7 +2382,8 @@ fn generate_simulated_unlock_container_payload(_body: &[u8]) -> Option<serde_jso
 
     let resp_obj = serde_json::json!({
         "Result": {
-            "Drops": [drop_obj]
+            "Drops": [drop_obj],
+            "bSkipRoulette": false
         },
         "bSuccess": true
     });
@@ -3135,11 +3136,12 @@ async fn handle_broker_request(
         || path_lower.contains("products/opencontainer")
         || path_lower.contains("opencontainer")
     {
+        crate::applog::event(&format!("broker: intercepted unlock container request {path_lower} body={}", String::from_utf8_lossy(&body_bytes)));
         if let Some(resp_json) = generate_simulated_unlock_container_payload(&body_bytes) {
             let resp_bytes = serde_json::to_vec(&resp_json).unwrap_or_default();
             let psy_time = format!("{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(1755399374));
             let sig = resign_rpc_response(&psy_time, &resp_bytes);
-            crate::applog::event("broker: simulated Products/UnlockContainer -> drop granted & registered to inventory");
+            crate::applog::event(&format!("broker: simulated Products/UnlockContainer -> {}", String::from_utf8_lossy(&resp_bytes)));
             record_network_event(
                 "HTTP",
                 "INBOUND",
@@ -3927,6 +3929,7 @@ pub async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         || svc_lower.contains("opencontainer");
 
     if is_unlock_container {
+        crate::applog::event(&format!("proxy: WS unlock container service={svc} body={}", String::from_utf8_lossy(body_part)));
         if let Some(resp_json) = generate_simulated_unlock_container_payload(body_part) {
             let resp_bytes = serde_json::to_vec(&resp_json).unwrap_or_default();
             current_body = resp_bytes;
