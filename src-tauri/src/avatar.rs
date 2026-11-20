@@ -117,13 +117,14 @@ pub fn get_active_avatar_png() -> Option<Vec<u8>> {
             return Some(bytes.clone());
         }
     }
-    let candidates = [
-        "/root/avatar.png",
-        "custom_avatars/active_avatar.png",
-        "/root/.config/com.velocityrl.app/custom_avatars/active_avatar.png",
+    let mut candidates: Vec<PathBuf> = vec![
+        PathBuf::from("/root/avatar.png"),
+        PathBuf::from("custom_avatars/active_avatar.png"),
+        PathBuf::from("/root/.config/com.velocityrl.app/custom_avatars/active_avatar.png"),
     ];
-    for c in &candidates {
-        let p = Path::new(c);
+    let config_dir = crate::psynet::config_dir();
+    candidates.push(config_dir.join("custom_avatars").join("active_avatar.png"));
+    for p in &candidates {
         if p.is_file() {
             if let Ok(b) = fs::read(p) {
                 return Some(b);

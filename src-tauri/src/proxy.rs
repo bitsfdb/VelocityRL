@@ -2932,6 +2932,7 @@ async fn handle_broker_request(
         || path_str == "/s/pfp" || path_str.starts_with("/s/pfp/") || path_str.starts_with("/rlim/pfp/")
         || path_str.contains("/avatars/")
         || path_str.contains("/content/images/players/avatars/") {
+        crate::applog::event(&format!("broker: avatar request {path_str}"));
         // 1. Check if a specific Steam ID is requested in path or query.
         //    Sidecar avatar URLs look like
         //    /Content/Images/Players/Avatars/Large/<id>/0?buildSecret=..&tab=1
