@@ -801,7 +801,10 @@ async function init() {
             btn.classList.add('active');
             document.getElementById(btn.dataset.tab).classList.add('active');
             if (btn.dataset.tab === 'spawner-tab') {
-                initCatalogGrid();
+                if (!catalogInitialized) {
+                    initCatalogGrid();
+                    renderCatalogGridPage();
+                }
                 refreshSwapRlHint();
             }
             if (btn.dataset.tab === 'avatars-tab') initAvatarTab();
@@ -834,7 +837,10 @@ async function init() {
             btn.classList.add('active');
             document.getElementById(paneId)?.classList.add('active');
             if (paneId === 'spawner-pane') {
-                initCatalogGrid();
+                if (!catalogInitialized) {
+                    initCatalogGrid();
+                    renderCatalogGridPage();
+                }
             }
             if (paneId === 'custom-avatar-pane') initAvatarTab();
             if (paneId === 'custom-palette-pane') initMiscTab();
@@ -1206,6 +1212,15 @@ async function loadData() {
             try { await invoke('stop_psynet_proxy', { revertHosts: true }); } catch (_) {}
         });
 
+        updateLoadingText('Caching item catalog...');
+        wirePresetsUI();
+        initCatalogGrid();
+        if (items && items.length) {
+            await preloadCatalogImages(items, 120);
+        }
+        renderCatalogGridPage();
+        updateCatalogSelectionUi();
+
         updateLoadingText('Starting up...');
         loadingPercent = 100;
         const fill = document.getElementById('app-loading-fill');
@@ -1214,10 +1229,6 @@ async function loadData() {
         if (pct) pct.textContent = '100%';
         await new Promise(r => setTimeout(r, 150));
         releaseAppLoading();
-        wirePresetsUI();
-        initCatalogGrid();
-        renderCatalogGridPage();
-        updateCatalogSelectionUi();
     } catch (err) {
         releaseAppLoading();
         updateStatus('Init Failure', true);
@@ -2098,6 +2109,88 @@ function getFilteredCatalogItems() {
     return list;
 }
 
+// Session Image Cache: caches and pre-decodes images in memory so they never reload on tab swaps
+const imageSessionCache = new Map();
+const imagePreloadPromises = new Map();
+
+function getCachedImageSrc(url) {
+    if (!url) return '';
+    return imageSessionCache.get(url) || url;
+}
+
+function preloadImage(url) {
+    if (!url) return Promise.resolve('');
+    if (imageSessionCache.has(url)) return Promise.resolve(imageSessionCache.get(url));
+    if (imagePreloadPromises.has(url)) return imagePreloadPromises.get(url);
+
+    const promise = new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+            imageSessionCache.set(url, url);
+            if (img.decode) {
+                img.decode().catch(() => {}).finally(() => resolve(url));
+            } else {
+                resolve(url);
+            }
+        };
+        img.onerror = () => {
+            const fallback = 'https://raw.githubusercontent.com/itemchanger/assets/main/assets/' + url.split('/').pop().replace('_t.png', '.png');
+            const fallbackImg = new Image();
+            fallbackImg.onload = () => {
+                imageSessionCache.set(url, fallback);
+                if (fallbackImg.decode) {
+                    fallbackImg.decode().catch(() => {}).finally(() => resolve(fallback));
+                } else {
+                    resolve(fallback);
+                }
+            };
+            fallbackImg.onerror = () => {
+                imageSessionCache.set(url, url);
+                resolve(url);
+            };
+            fallbackImg.src = fallback;
+        };
+        img.src = url;
+    });
+
+    imagePreloadPromises.set(url, promise);
+    return promise;
+}
+
+async function preloadCatalogImages(itemsList, count = 120) {
+    if (!Array.isArray(itemsList) || !itemsList.length) return;
+    const urls = [];
+    for (let i = 0; i < itemsList.length && urls.length < count; i++) {
+        const u = itemsList[i]?.image_url || itemsList[i]?.src;
+        if (u && !imageSessionCache.has(u)) {
+            urls.push(u);
+        }
+    }
+    const batchSize = 16;
+    for (let i = 0; i < urls.length; i += batchSize) {
+        const batch = urls.slice(i, i + batchSize);
+        await Promise.allSettled(batch.map(preloadImage));
+    }
+
+    setTimeout(() => {
+        const remainingUrls = [];
+        for (let i = count; i < Math.min(itemsList.length, 600); i++) {
+            const u = itemsList[i]?.image_url || itemsList[i]?.src;
+            if (u && !imageSessionCache.has(u)) remainingUrls.push(u);
+        }
+        let rIdx = 0;
+        function pumpBackground() {
+            if (rIdx >= remainingUrls.length) return;
+            const slice = remainingUrls.slice(rIdx, rIdx + 12);
+            rIdx += 12;
+            Promise.allSettled(slice.map(preloadImage)).then(() => {
+                setTimeout(pumpBackground, 60);
+            });
+        }
+        pumpBackground();
+    }, 100);
+}
+
 function renderCatalogGridPage() {
     const grid = document.getElementById('catalog-grid');
     const countInfo = document.getElementById('catalog-count-info');
@@ -2186,7 +2279,7 @@ function renderCatalogGridPage() {
                  ${item.titleCategory ? `<span style="font-size:9px;color:rgba(255,255,255,0.45);margin-top:4px;">${escHtml(item.titleCategory)}</span>` : ''}
                </div>`
             : (img
-                ? `<img src="${escHtml(img)}" class="catalog-card-thumb" alt="${escHtml(name)}" loading="lazy" onerror="if(this.dataset.fallback){this.style.opacity='0';}else{this.dataset.fallback='1';this.src='https://raw.githubusercontent.com/itemchanger/assets/main/assets/'+this.src.split('/').pop().replace('_t.png','.png');}" />`
+                ? `<img src="${escHtml(getCachedImageSrc(img))}" class="catalog-card-thumb" alt="${escHtml(name)}" loading="eager" onerror="if(this.dataset.fallback){this.style.opacity='0';}else{this.dataset.fallback='1';const fb='https://raw.githubusercontent.com/itemchanger/assets/main/assets/'+this.src.split('/').pop().replace('_t.png','.png');imageSessionCache.set('${escHtml(img)}',fb);this.src=fb;}" />`
                 : `<div style="display:flex;align-items:center;justify-content:center;height:100%;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#444" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>`);
 
         card.innerHTML = `
@@ -2295,7 +2388,6 @@ function renderCatalogPagination(container, current, total) {
 
 function initCatalogGrid() {
     if (catalogInitialized) {
-        renderCatalogGridPage();
         return;
     }
     catalogInitialized = true;
@@ -4966,6 +5058,9 @@ function loadFakeRanksFromSaved(saved) {
 }
 
 function initRanksTab() {
+    if (ranksTabReady) return;
+    ranksTabReady = true;
+
     const enabledEl = document.getElementById('fake-ranks-enabled');
     const saveBtn = document.getElementById('fake-ranks-save-btn');
     if (!enabledEl || !saveBtn) return;
@@ -4973,9 +5068,6 @@ function initRanksTab() {
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(FAKE_RANKS_KEY) || '{}'); } catch {  }
     loadFakeRanksFromSaved(saved);
-
-    if (ranksTabReady) return;
-    ranksTabReady = true;
 
     enabledEl.addEventListener('change', () => syncNameSpoofSwitchAria(enabledEl));
 
@@ -6100,6 +6192,8 @@ function initBallsTab() {
 }
 
 function initCustomizationTab() {
+    if (customizationTabReady) return;
+    customizationTabReady = true;
     initNamesTab();
     initCreditsTab();
     initAvatarTab();
@@ -6110,8 +6204,6 @@ function initCustomizationTab() {
     initPingSpoofPane();
     initLeaderboardTab();
     initDropsTab();
-    if (customizationTabReady) return;
-    customizationTabReady = true;
 }
 
 let avatarTabWired = false;
@@ -8317,10 +8409,13 @@ async function initWorkshopTab() {
         });
     }
 
-    loadWorkshopCatalog(workshopCatalogPage, workshopCatalogQuery);
-    await refreshWorkshopLibrary();
-    await refreshWorkshopInstalled();
-    await refreshWorkshopPresets();
+    if (!initWorkshopTab._loaded) {
+        initWorkshopTab._loaded = true;
+        loadWorkshopCatalog(workshopCatalogPage, workshopCatalogQuery);
+        await refreshWorkshopLibrary();
+        await refreshWorkshopInstalled();
+        await refreshWorkshopPresets();
+    }
 }
 
 function resolveThumbnailSrc(src) {
