@@ -8,6 +8,8 @@
   },
   "description": "VelocityRL Asset Swapping Tool",
   "scripts": {
+    "preview": "python -m http.server 4174 --bind 127.0.0.1",
+    "check:ui": "node --check ui/main.js && node --check ui/studio.js && node --check ui/preview.js",
     "build": "echo 'Building UI...'; node -v",
     "dev": "tauri dev",
     "tauri": "tauri"
