@@ -2280,7 +2280,7 @@ async fn restore_tagame_swaps(app: tauri::AppHandle) -> Result<upk::TagameSwappe
 
 #[tauri::command]
 async fn apply_ping_spoof_upk(
-    app: tauri::AppHandle,
+    _app: tauri::AppHandle,
     min_ms: Option<u32>,
     max_ms: Option<u32>,
     #[allow(non_snake_case)]
@@ -2290,37 +2290,24 @@ async fn apply_ping_spoof_upk(
 ) -> Result<(), String> {
     let min = min_ms.or(minMs).unwrap_or(16);
     let max = max_ms.or(maxMs).unwrap_or(24);
-    let config = get_config(app.clone()).await?;
-    if config.game_dir.is_empty() {
-        return Ok(());
-    }
-    let cooked = match upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
-        Ok(c) => c,
-        Err(_) => return Ok(()),
-    };
-    let keys_txt = include_str!("../resources/keys.txt");
-    let keys_map_json = include_str!("../resources/keys_map.json");
-    upk::swapper::apply_tagame_ping_spoof(&cooked, min, max, keys_txt, keys_map_json)
-        .map_err(|e| e.to_string())?;
-    applog::event(&format!("ping_spoof: applied TAGame.upk GetPing spoof [{min}..{max}] ms"));
+    crate::udp_proxy::set_ping_spoof(Some(crate::psynet::PingSpoofPayload {
+        enabled: true,
+        min_ms: min,
+        max_ms: max,
+    }));
+    applog::event(&format!("ping_spoof: enabled web ping [{min}..{max}] ms"));
     Ok(())
 }
 
 #[tauri::command]
 async fn restore_ping_spoof_upk(app: tauri::AppHandle) -> Result<(), String> {
-    let config = get_config(app.clone()).await?;
-    if config.game_dir.is_empty() {
-        return Ok(());
-    }
-    let cooked = match upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
-        Ok(c) => c,
-        Err(_) => return Ok(()),
-    };
-    let keys_txt = include_str!("../resources/keys.txt");
-    let keys_map_json = include_str!("../resources/keys_map.json");
-    upk::swapper::restore_tagame_ping_spoof(&cooked, keys_txt, keys_map_json)
-        .map_err(|e| e.to_string())?;
-    applog::event("ping_spoof: restored vanilla TAGame.upk GetPing");
+    let _ = app;
+    crate::udp_proxy::set_ping_spoof(Some(crate::psynet::PingSpoofPayload {
+        enabled: false,
+        min_ms: 16,
+        max_ms: 24,
+    }));
+    applog::event("ping_spoof: disabled web ping");
     Ok(())
 }
 
