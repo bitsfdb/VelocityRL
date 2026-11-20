@@ -291,15 +291,39 @@
             new MutationObserver(populateOptions).observe(select, { childList: true });
             select.addEventListener('change', syncSelection);
 
+            function updateMenuPosition() {
+                const rect = wrap.getBoundingClientRect();
+                const spaceBelow = window.innerHeight - rect.bottom;
+                const spaceAbove = rect.top;
+                const openUp = spaceBelow < 280 && spaceAbove > spaceBelow;
+
+                menu.style.left = `${Math.round(rect.left)}px`;
+                menu.style.minWidth = `${Math.round(rect.width)}px`;
+                if (openUp) {
+                    menu.style.top = 'auto';
+                    menu.style.bottom = `${Math.round(window.innerHeight - rect.top + 6)}px`;
+                    menu.style.maxHeight = `${Math.max(160, Math.min(320, spaceAbove - 24))}px`;
+                } else {
+                    menu.style.top = `${Math.round(rect.bottom + 6)}px`;
+                    menu.style.bottom = 'auto';
+                    menu.style.maxHeight = `${Math.max(160, Math.min(320, spaceBelow - 24))}px`;
+                }
+            }
+
+            function openMenu() {
+                updateMenuPosition();
+                wrap.classList.add('is-open');
+                trigger.setAttribute('aria-expanded', 'true');
+                const sel = menu.querySelector('.custom-select-option.is-selected');
+                if (sel) sel.scrollIntoView({ block: 'nearest' });
+            }
+
             trigger.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const isOpen = wrap.classList.contains('is-open');
                 closeAllCustomSelects();
                 if (!isOpen) {
-                    wrap.classList.add('is-open');
-                    trigger.setAttribute('aria-expanded', 'true');
-                    const sel = menu.querySelector('.custom-select-option.is-selected');
-                    if (sel) sel.scrollIntoView({ block: 'nearest' });
+                    openMenu();
                 }
             });
 
@@ -320,8 +344,7 @@
                     let nextIndex = e.key === 'ArrowDown' ? currentIndex + 1 : currentIndex - 1;
                     if (nextIndex >= 0 && nextIndex < items.length) {
                         items[nextIndex].click();
-                        wrap.classList.add('is-open');
-                        trigger.setAttribute('aria-expanded', 'true');
+                        openMenu();
                     }
                 }
             });
@@ -335,6 +358,8 @@
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') closeAllCustomSelects();
     });
+    document.addEventListener('scroll', closeAllCustomSelects, true);
+    window.addEventListener('resize', closeAllCustomSelects, { passive: true });
 
     // Pointer-linked depth is local to the hovered card, with a soft return to rest.
     let hoveredCard;
