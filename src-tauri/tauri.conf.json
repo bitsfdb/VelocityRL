@@ -21,7 +21,8 @@
         "devtools": false,
         "create": false,
         "visible": true,
-        "focus": true
+        "focus": true,
+        "decorations": false
       }
     ],
     "security": {

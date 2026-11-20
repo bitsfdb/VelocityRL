@@ -3687,6 +3687,38 @@ async fn save_rlim_config(app: tauri::AppHandle, config: upk::RlimMasterConfig) 
     fs::write(cfg_dir.join("rlim_config.json"), content).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn app_window_minimize(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("main") {
+        win.minimize().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn app_window_toggle_maximize(app: tauri::AppHandle) -> Result<bool, String> {
+    if let Some(win) = app.get_webview_window("main") {
+        let is_max = win.is_maximized().map_err(|e| e.to_string())?;
+        if is_max {
+            win.unmaximize().map_err(|e| e.to_string())?;
+            Ok(false)
+        } else {
+            win.maximize().map_err(|e| e.to_string())?;
+            Ok(true)
+        }
+    } else {
+        Ok(false)
+    }
+}
+
+#[tauri::command]
+fn app_window_close(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("main") {
+        win.close().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 fn create_main_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let cfg = app
         .config()
@@ -4152,6 +4184,9 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            app_window_minimize,
+            app_window_toggle_maximize,
+            app_window_close,
             get_items,
             force_refresh_catalog,
             get_config,

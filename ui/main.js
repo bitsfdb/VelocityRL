@@ -155,7 +155,7 @@ async function setAppLanguage(lang) {
     const loaded = await loadLocale(lang);
     if (loaded) {
         localeData = loaded;
-        if (loaded.logs && typeof loaded.logs === 'object') {
+        if (window.__TAURI__?.core?.invoke && loaded.logs && typeof loaded.logs === 'object') {
             invoke('set_app_locale_logs', { logs: loaded.logs }).catch(() => {});
         }
     }
@@ -164,7 +164,9 @@ async function setAppLanguage(lang) {
         const key = el.getAttribute('data-i18n');
         const translation = getNestedTranslation(localeData, key);
         if (translation) {
-            el.textContent = translation;
+            const label = el.matches('.nav-item') ? el.querySelector('span') : null;
+            (label || el).textContent = translation;
+            if (el.matches('.nav-item')) el.setAttribute('aria-label', translation);
         }
     });
 
@@ -799,14 +801,18 @@ async function init() {
             btn.classList.add('active');
             document.getElementById(btn.dataset.tab).classList.add('active');
             if (btn.dataset.tab === 'spawner-tab') {
-                initCatalogGrid();
-                renderCatalogGridPage();
-                refreshSwapRlHint();
+                if (!catalogInitialized) {
+                    initCatalogGrid();
+                    renderCatalogGridPage();
+                }
+                refreshSwapRlHint().catch(() => {});
             }
             if (btn.dataset.tab === 'avatars-tab') initAvatarTab();
             if (btn.dataset.tab === 'decals-tab') initDecalsTab();
             if (btn.dataset.tab === 'boost-tab') initBoostMeterTab();
-            if (btn.dataset.tab === 'titles-tab') initTitlesTab();
+            if (btn.dataset.tab === 'titles-tab') {
+                if (!titlesTabReady) initTitlesTab();
+            }
             if (btn.dataset.tab === 'customization-tab' || btn.dataset.tab === 'names-tab') initCustomizationTab();
             if (btn.dataset.tab === 'ranks-tab') initRanksTab();
             if (btn.dataset.tab === 'tracker-tab') initTrackerTab();
@@ -833,8 +839,10 @@ async function init() {
             btn.classList.add('active');
             document.getElementById(paneId)?.classList.add('active');
             if (paneId === 'spawner-pane') {
-                initCatalogGrid();
-                renderCatalogGridPage();
+                if (!catalogInitialized) {
+                    initCatalogGrid();
+                    renderCatalogGridPage();
+                }
             }
             if (paneId === 'custom-avatar-pane') initAvatarTab();
             if (paneId === 'custom-palette-pane') initMiscTab();
@@ -1206,6 +1214,20 @@ async function loadData() {
             try { await invoke('stop_psynet_proxy', { revertHosts: true }); } catch (_) {}
         });
 
+        updateLoadingText('Caching item catalog...');
+        wirePresetsUI();
+        initCatalogGrid();
+        if (items && items.length) {
+            await preloadCatalogImages(items, 120);
+        }
+        renderCatalogGridPage();
+        updateCatalogSelectionUi();
+
+        updateLoadingText('Pre-warming titles & tools...');
+        await initTitlesTab().catch(e => console.warn('Pre-warming titles failed:', e));
+        refreshSwapRlHint(true).catch(() => {});
+        startRlRunningPoll();
+
         updateLoadingText('Starting up...');
         loadingPercent = 100;
         const fill = document.getElementById('app-loading-fill');
@@ -1214,10 +1236,6 @@ async function loadData() {
         if (pct) pct.textContent = '100%';
         await new Promise(r => setTimeout(r, 150));
         releaseAppLoading();
-        wirePresetsUI();
-        initCatalogGrid();
-        renderCatalogGridPage();
-        updateCatalogSelectionUi();
     } catch (err) {
         releaseAppLoading();
         updateStatus('Init Failure', true);
@@ -2057,12 +2075,18 @@ function getFilteredCatalogItems() {
                     return cat.includes(catalogTitleCategory.toLowerCase());
                 });
             }
-            list = [...list.filter(i => (i?.slot || i?.Slot) === 'Player Title'), ...mappedTitles];
+            list = [...list.filter(i => (i?.slot || i?.Slot) === 'Player Title' && !i?.isTitle), ...mappedTitles];
         } else {
             list = list.filter(i => {
                 const s = (i?.slot || i?.Slot || '');
                 return s.toLowerCase() === catalogCategory.toLowerCase();
             });
+        }
+    } else {
+        const catalogTitles = (typeof titlesDb !== 'undefined' && titlesDb && Array.isArray(titlesDb.titles)) ? titlesDb.titles : [];
+        if (catalogTitles.length > 0) {
+            const mappedTitles = catalogTitles.map(t => (typeof getTitleAsItem === 'function' ? getTitleAsItem(t) : t)).filter(Boolean);
+            list = [...list.filter(i => (i?.slot || i?.Slot) !== 'Player Title'), ...mappedTitles];
         }
     }
 
@@ -2091,11 +2115,95 @@ function getFilteredCatalogItems() {
             if (isFDev && (q.includes('fdev') || 'fdev'.includes(q) || q.includes('dev boost') || q.includes('alpha dev') || q.includes('the boost'))) {
                 return true;
             }
-            return name.includes(q) || slot.includes(q) || label.includes(q) || pkg.includes(q) || path.includes(q) || id === q;
+            const tText = (i?.titleText || '').toLowerCase();
+            const tId = (i?.titleId || '').toLowerCase();
+            return name.includes(q) || slot.includes(q) || label.includes(q) || pkg.includes(q) || path.includes(q) || id === q || tText.includes(q) || tId.includes(q);
         });
     }
 
     return list;
+}
+
+// Session Image Cache: caches and pre-decodes images in memory so they never reload on tab swaps
+const imageSessionCache = new Map();
+const imagePreloadPromises = new Map();
+
+function getCachedImageSrc(url) {
+    if (!url) return '';
+    return imageSessionCache.get(url) || url;
+}
+
+function preloadImage(url) {
+    if (!url) return Promise.resolve('');
+    if (imageSessionCache.has(url)) return Promise.resolve(imageSessionCache.get(url));
+    if (imagePreloadPromises.has(url)) return imagePreloadPromises.get(url);
+
+    const promise = new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+            imageSessionCache.set(url, url);
+            if (img.decode) {
+                img.decode().catch(() => {}).finally(() => resolve(url));
+            } else {
+                resolve(url);
+            }
+        };
+        img.onerror = () => {
+            const fallback = 'https://raw.githubusercontent.com/itemchanger/assets/main/assets/' + url.split('/').pop().replace('_t.png', '.png');
+            const fallbackImg = new Image();
+            fallbackImg.onload = () => {
+                imageSessionCache.set(url, fallback);
+                if (fallbackImg.decode) {
+                    fallbackImg.decode().catch(() => {}).finally(() => resolve(fallback));
+                } else {
+                    resolve(fallback);
+                }
+            };
+            fallbackImg.onerror = () => {
+                imageSessionCache.set(url, url);
+                resolve(url);
+            };
+            fallbackImg.src = fallback;
+        };
+        img.src = url;
+    });
+
+    imagePreloadPromises.set(url, promise);
+    return promise;
+}
+
+async function preloadCatalogImages(itemsList, count = 120) {
+    if (!Array.isArray(itemsList) || !itemsList.length) return;
+    const urls = [];
+    for (let i = 0; i < itemsList.length && urls.length < count; i++) {
+        const u = itemsList[i]?.image_url || itemsList[i]?.src;
+        if (u && !imageSessionCache.has(u)) {
+            urls.push(u);
+        }
+    }
+    const batchSize = 16;
+    for (let i = 0; i < urls.length; i += batchSize) {
+        const batch = urls.slice(i, i + batchSize);
+        await Promise.allSettled(batch.map(preloadImage));
+    }
+
+    setTimeout(() => {
+        const remainingUrls = [];
+        for (let i = count; i < Math.min(itemsList.length, 600); i++) {
+            const u = itemsList[i]?.image_url || itemsList[i]?.src;
+            if (u && !imageSessionCache.has(u)) remainingUrls.push(u);
+        }
+        let rIdx = 0;
+        function pumpBackground() {
+            if (rIdx >= remainingUrls.length) return;
+            const slice = remainingUrls.slice(rIdx, rIdx + 12);
+            rIdx += 12;
+            Promise.allSettled(slice.map(preloadImage)).then(() => {
+                setTimeout(pumpBackground, 60);
+            });
+        }
+        pumpBackground();
+    }, 100);
 }
 
 function renderCatalogGridPage() {
@@ -2156,6 +2264,16 @@ function renderCatalogGridPage() {
         card.className = `catalog-card${isSelected ? ' is-selected' : ''}${item.isTitle ? ' is-title-card' : ''}`;
         card.dataset.id = String(rawId);
         card.dataset.quality = quality;
+        card.tabIndex = 0;
+        card.setAttribute('role', 'button');
+        card.setAttribute('aria-label', name);
+        card.setAttribute('aria-pressed', String(isSelected));
+        card.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                card.click();
+            }
+        });
 
         let paintBadgeHtml = '';
         if (isSelected && (cardPaint === 'all' || cardPaint > 0)) {
@@ -2176,7 +2294,7 @@ function renderCatalogGridPage() {
                  ${item.titleCategory ? `<span style="font-size:9px;color:rgba(255,255,255,0.45);margin-top:4px;">${escHtml(item.titleCategory)}</span>` : ''}
                </div>`
             : (img
-                ? `<img src="${escHtml(img)}" class="catalog-card-thumb" alt="${escHtml(name)}" loading="lazy" onerror="if(this.dataset.fallback){this.style.opacity='0';}else{this.dataset.fallback='1';this.src='https://raw.githubusercontent.com/itemchanger/assets/main/assets/'+this.src.split('/').pop().replace('_t.png','.png');}" />`
+                ? `<img src="${escHtml(getCachedImageSrc(img))}" class="catalog-card-thumb" alt="${escHtml(name)}" loading="eager" onerror="if(this.dataset.fallback){this.style.opacity='0';}else{this.dataset.fallback='1';const fb='https://raw.githubusercontent.com/itemchanger/assets/main/assets/'+this.src.split('/').pop().replace('_t.png','.png');imageSessionCache.set('${escHtml(img)}',fb);this.src=fb;}" />`
                 : `<div style="display:flex;align-items:center;justify-content:center;height:100%;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#444" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>`);
 
         card.innerHTML = `
@@ -2196,6 +2314,7 @@ function renderCatalogGridPage() {
 
         card.addEventListener('click', () => {
             const isToggledOn = !selectedCatalogItems.has(rawId);
+            card.setAttribute('aria-pressed', String(isToggledOn));
             if (!isToggledOn) {
                 selectedCatalogItems.delete(rawId);
                 card.classList.remove('is-selected');
@@ -2284,10 +2403,17 @@ function renderCatalogPagination(container, current, total) {
 
 function initCatalogGrid() {
     if (catalogInitialized) {
-        renderCatalogGridPage();
         return;
     }
     catalogInitialized = true;
+
+    if (typeof loadTitlesDatabase === 'function' && (!titlesDb || !titlesDb.titles || !titlesDb.titles.length)) {
+        loadTitlesDatabase().then(() => {
+            if (catalogCategory === 'All') {
+                renderCatalogGridPage();
+            }
+        }).catch(() => {});
+    }
 
     const catSelect = document.getElementById('catalog-category-select');
     const titleCatSelect = document.getElementById('catalog-title-category-select');
@@ -2306,7 +2432,7 @@ function initCatalogGrid() {
             if (titleCatWrap) {
                 titleCatWrap.style.display = catalogCategory === 'Player Title' ? 'inline-flex' : 'none';
             }
-            if (catalogCategory === 'Player Title') {
+            if (catalogCategory === 'Player Title' || catalogCategory === 'All') {
                 if (typeof loadTitlesDatabase === 'function' && (!titlesDb || !titlesDb.titles || !titlesDb.titles.length)) {
                     await loadTitlesDatabase();
                 }
@@ -2999,17 +3125,56 @@ function validateSwapInputs() {
 
 const validate = validateSwapInputs;
 
-async function refreshSwapRlHint() {
-    const hint = document.getElementById('swap-rl-hint');
-    if (!hint) return;
-    try {
-        hint.hidden = !(await invoke('is_rocket_league_running'));
-    } catch {
-        hint.hidden = true;
+let currentRlRunningState = null;
+function updateRocketLeagueHeroStatus(isRunning) {
+    if (currentRlRunningState === isRunning) return;
+    currentRlRunningState = isRunning;
+
+    const heading = document.getElementById('studio-heading');
+    const eyebrow = document.getElementById('studio-eyebrow');
+    const desc = document.getElementById('studio-hero-desc');
+
+    if (isRunning) {
+        if (heading) heading.innerHTML = 'Never <em>blend in.</em>';
+        if (eyebrow) {
+            eyebrow.classList.add('is-game-running');
+            eyebrow.innerHTML = '<span class="studio-status-pulse"></span> GAME DETECTED';
+        }
+        if (desc) desc.textContent = 'Live session detected. Items and titles will appear in real time.';
+    } else {
+        if (heading) heading.innerHTML = 'Never <em>blend in.</em>';
+        if (eyebrow) {
+            eyebrow.classList.remove('is-game-running');
+            eyebrow.textContent = 'THE GARAGE, REIMAGINED';
+        }
+        if (desc) desc.textContent = 'Every detail. Every possibility. Your next signature look.';
     }
 }
 
-function startRlRunningPoll() {}
+let lastRlHintCheck = 0;
+async function refreshSwapRlHint(force = false) {
+    const now = Date.now();
+    if (!force && now - lastRlHintCheck < 3000) return;
+    lastRlHintCheck = now;
+    try {
+        const isRunning = await invoke('is_rocket_league_running');
+        updateRocketLeagueHeroStatus(!!isRunning);
+        const hint = document.getElementById('swap-rl-hint');
+        if (hint) hint.hidden = !isRunning;
+    } catch {
+        updateRocketLeagueHeroStatus(false);
+    }
+}
+
+let rlPollInterval = null;
+function startRlRunningPoll() {
+    if (rlPollInterval) return;
+    rlPollInterval = setInterval(() => {
+        if (!document.hidden) {
+            refreshSwapRlHint().catch(() => {});
+        }
+    }, 3500);
+}
 function showRlRunningToast() {}
 
 async function openSettingsForPath() {
@@ -4092,7 +4257,7 @@ function titleLabel(id, fallbackText) {
 
 function titleTextShadow(glow) {
     if (!glow) return 'none';
-    return `0 0 4px ${glow}, 0 0 10px ${glow}, 0 0 20px ${glow}cc, 0 0 36px ${glow}66`;
+    return `0 0 5px ${glow}, 0 0 12px ${glow}b3`;
 }
 
 function titleColors(title) {
@@ -4107,9 +4272,14 @@ function titleColors(title) {
     return { color: color || '#c8c8c8', glow: glow || '', cat };
 }
 
+const titleStyleCache = new Map();
 function titleInlineStyle(title) {
+    const key = title ? (title.id || title.Id || title.text || title.category || '') : '';
+    if (key && titleStyleCache.has(key)) return titleStyleCache.get(key);
     const { color, glow } = titleColors(title);
-    return `color:${color};text-shadow:${titleTextShadow(glow)}`;
+    const res = `color:${color};text-shadow:${titleTextShadow(glow)}`;
+    if (key) titleStyleCache.set(key, res);
+    return res;
 }
 
 function titleChipInlineStyle(catId) {
@@ -4955,6 +5125,9 @@ function loadFakeRanksFromSaved(saved) {
 }
 
 function initRanksTab() {
+    if (ranksTabReady) return;
+    ranksTabReady = true;
+
     const enabledEl = document.getElementById('fake-ranks-enabled');
     const saveBtn = document.getElementById('fake-ranks-save-btn');
     if (!enabledEl || !saveBtn) return;
@@ -4962,9 +5135,6 @@ function initRanksTab() {
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(FAKE_RANKS_KEY) || '{}'); } catch {  }
     loadFakeRanksFromSaved(saved);
-
-    if (ranksTabReady) return;
-    ranksTabReady = true;
 
     enabledEl.addEventListener('change', () => syncNameSpoofSwitchAria(enabledEl));
 
@@ -6089,6 +6259,8 @@ function initBallsTab() {
 }
 
 function initCustomizationTab() {
+    if (customizationTabReady) return;
+    customizationTabReady = true;
     initNamesTab();
     initCreditsTab();
     initAvatarTab();
@@ -6099,8 +6271,6 @@ function initCustomizationTab() {
     initPingSpoofPane();
     initLeaderboardTab();
     initDropsTab();
-    if (customizationTabReady) return;
-    customizationTabReady = true;
 }
 
 let avatarTabWired = false;
@@ -7221,17 +7391,20 @@ function wirePaintSwatches(swatchId, selectId, selectedLabelId) {
 }
 
 async function initTitlesTab() {
-    if (!titlesTabReady) {
-        titlesTabReady = true;
-        wireTitleSpoofControls();
-        await loadTitlesDatabase();
-        loadTitleSpoofForm();
-        renderDonorList('');
-        renderDisplayList('');
-        updateTitlePreview();
-        attachCloseGuard();
+    if (titlesTabReady) {
+        refreshProxyStatus().catch(() => {});
+        return;
     }
-    await refreshProxyStatus();
+    titlesTabReady = true;
+    wireTitleSpoofControls();
+    await loadTitlesDatabase();
+    if (catalogCategory === 'All') {
+        renderCatalogGridPage();
+    }
+    loadTitleSpoofForm();
+    updateTitlePreview();
+    attachCloseGuard();
+    refreshProxyStatus().catch(() => {});
 }
 
 function findTitleById(id) {
@@ -7388,8 +7561,12 @@ function formatTitleText(text) {
         .replace(/\bFLAG_([A-Z]{2})\b/gi, (m, cc) => (APPLE_FLAG_PNG.has(String(cc).toLowerCase()) ? flagEmoji(cc) : m));
 }
 
+const titleHtmlCache = new Map();
 function formatTitleHtml(text) {
-    let raw = String(text || '')
+    const key = String(text || '');
+    const cached = titleHtmlCache.get(key);
+    if (cached !== undefined) return cached;
+    let raw = key
         .replace(/\{flag_([a-z]{2})\}/gi, (m, cc) => (APPLE_FLAG_PNG.has(String(cc).toLowerCase()) ? flagEmoji(cc) : m))
         .replace(/\bFLAG_([A-Z]{2})\b/gi, (m, cc) => (APPLE_FLAG_PNG.has(String(cc).toLowerCase()) ? flagEmoji(cc) : m));
 
@@ -7428,6 +7605,7 @@ function formatTitleHtml(text) {
         }
     }
 
+    titleHtmlCache.set(key, out);
     return out;
 }
 
@@ -7572,7 +7750,7 @@ function selectDisplay(title, toast) {
 
 async function loadBundledCategories() {
     try {
-        const res = await fetch('categories.json', { cache: 'no-store' });
+        const res = await fetch('categories.json');
         if (!res.ok) return {};
         return categoriesMapFromPayload(await res.json());
     } catch {
@@ -7596,42 +7774,42 @@ function categoriesMapFromPayload(data) {
 }
 
 async function loadTitlesDatabase() {
+    if (titlesDb && titlesDb.titles && titlesDb.titles.length) return;
     const lists = [document.getElementById('donor-list'), document.getElementById('display-list')];
     const onTitlesLoadFailed = (msg) => lists.forEach(list => { if (list) list.innerHTML = `<div class="backup-empty">${escHtml(msg)}</div>`; });
     const bundledCats = await loadBundledCategories();
     const applyLoadedTitles = (raw) => {
         titlesDb = normalizeTitlesPayload(raw);
-
         titlesDb.categories = { ...titlesDb.categories, ...bundledCats };
     };
     try {
-        const res = await fetch(`https://api.velocityrl.tech/titles.json?t=${Date.now()}`, { cache: 'no-store' });
+        const res = await fetch('titles.json');
         if (res.ok) {
             applyLoadedTitles(await res.json());
             return;
         }
-    } catch {  }
+    } catch { }
     try {
-        const res = await fetch(`${API_BASE}/v2/rl/titles?t=${Date.now()}`, { cache: 'no-store' });
+        const res = await fetch(`https://api.velocityrl.tech/titles.json?t=${Date.now()}`);
         if (res.ok) {
             applyLoadedTitles(await res.json());
             return;
         }
-    } catch {  }
+    } catch { }
     try {
-        const res = await fetch(`https://raw.githubusercontent.com/bitsfdb/VelocityRL/main/tools/psynet_proxy/titles.json?t=${Date.now()}`, { cache: 'no-store' });
+        const res = await fetch(`${API_BASE}/v2/rl/titles?t=${Date.now()}`);
         if (res.ok) {
             applyLoadedTitles(await res.json());
             return;
         }
-    } catch {  }
+    } catch { }
     try {
-        const res = await fetch('titles.json', { cache: 'no-store' });
+        const res = await fetch(`https://raw.githubusercontent.com/bitsfdb/VelocityRL/main/tools/psynet_proxy/titles.json?t=${Date.now()}`);
         if (res.ok) {
             applyLoadedTitles(await res.json());
             return;
         }
-    } catch {  }
+    } catch { }
     onTitlesLoadFailed('Could not load titles database.');
 }
 
@@ -7714,7 +7892,7 @@ function filterTitles(q) {
         const pretty = formatTitleText(t.text || t.Text || '').toLowerCase();
         if (!query) return true;
         return id.includes(query) || text.includes(query) || cat.includes(query) || pretty.includes(query);
-    }).slice(0, 200);
+    }).slice(0, 60);
 }
 
 function renderTitleRows(listEl, rows, activeId, onPick) {
@@ -8306,10 +8484,13 @@ async function initWorkshopTab() {
         });
     }
 
-    loadWorkshopCatalog(workshopCatalogPage, workshopCatalogQuery);
-    await refreshWorkshopLibrary();
-    await refreshWorkshopInstalled();
-    await refreshWorkshopPresets();
+    if (!initWorkshopTab._loaded) {
+        initWorkshopTab._loaded = true;
+        loadWorkshopCatalog(workshopCatalogPage, workshopCatalogQuery);
+        await refreshWorkshopLibrary();
+        await refreshWorkshopInstalled();
+        await refreshWorkshopPresets();
+    }
 }
 
 function resolveThumbnailSrc(src) {
@@ -9004,6 +9185,12 @@ async function saveTrackerSession(session) {
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 
 async function startApp() {
+    // Explicit, read-only browser preview; never intercept a native Tauri session.
+    if (!window.__TAURI__ && new URLSearchParams(location.search).has('preview')) {
+        const { startPreview } = await import('./preview.js');
+        await startPreview();
+        return;
+    }
     setTimeout(() => {
         if (appLoading) {
             console.warn('App loading safety watchdog triggered — releasing overlay');
