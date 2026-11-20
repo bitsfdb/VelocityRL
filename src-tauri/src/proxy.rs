@@ -2514,6 +2514,7 @@ async fn handle_broker_request(
                     })
             })
             .unwrap_or_default();
+        let _ = crate::savedata::patch_saved_ping(&ping_val);
         crate::applog::event(&format!("broker: {path_str} queried -> responding '{ping_val}'"));
         return Ok(Response::builder()
             .status(StatusCode::OK)

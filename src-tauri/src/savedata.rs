@@ -508,6 +508,23 @@ pub fn set_saved_string(envelope: &mut SaveEnvelope, key: &str, value: &str) -> 
     Ok(())
 }
 
+/// Write a single ping value from the broker into the save file.
+pub fn patch_saved_ping(ping: &str) -> Result<(), String> {
+    if ping.is_empty() {
+        return Ok(());
+    }
+    let save_path = locate_latest_save()?;
+    let mut envelope = read_envelope(&save_path)?;
+    let mut changed = rename_all_saved_keys_to_rlim(&mut envelope) > 0;
+    if set_saved_string(&mut envelope, "R.Ping.v1", ping).is_ok() {
+        changed = true;
+    }
+    if changed {
+        save_envelope_to_file(&envelope, &save_path)?;
+    }
+    Ok(())
+}
+
 /// Write the active spoof values into the game's savedata so the in-game
 /// bytecode can read them through UISavedValues.
 pub fn patch_saved_spoof_values(
