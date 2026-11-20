@@ -2720,11 +2720,7 @@ async fn handle_broker_request(
             .unwrap());
     }
 
-    // SHIFT loadout wire converter. The in-game ValidateReplicatedLoadout hook
-    // sends the recorded B1 preset key here; we return the fixed-width decimal
-    // records the game bytecode parses into ClientLoadouts. When the game sends
-    // an empty/marker key we rebuild it from the currently recorded loadout
-    // (every slot, paint, title and attribute) so the freeze stays current.
+    // B1 preset key -> decimal loadout records for the in-game listener.
     if path_str == "/rlim/lo" || path_str.starts_with("/rlim/lo?") {
         let query = req.uri().query().unwrap_or_default().to_string();
         let body_bytes = match req.body_mut().collect().await {

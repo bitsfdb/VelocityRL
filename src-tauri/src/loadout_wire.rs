@@ -5,20 +5,12 @@
  * Licensed under the GNU General Public License v3.0.
  * unauthorized rebranding or stripping of this copyright notice is strictly prohibited.
  *
- * SHIFT-compatible loadout wire format.
- *
- * The transplanted PRI_TA::ValidateReplicatedLoadout asks the broker for
- * /rlim/lo with a `B1:` preset key.  The broker decodes the key into fixed
- * width decimal records ("D..." format) and the game's bytecode applies them
- * to ClientLoadouts.  Keeping the encoder here means the full loadout —
- * every slot, paint, title and attribute — is recorded once before the match
- * and replayed verbatim every time the loadout is re-validated (kickoffs,
- * goals, respawns).
+ * B1 preset key -> fixed-width decimal loadout records.
  */
 
 use base64::Engine;
 
-/// Attribute key table used by SHIFT's B1 records (off_140B09820).
+/// Attribute keys for B1 records.
 pub const ATTR_KEYS: [&str; 10] = [
     "Painted",
     "SpecialEdition",
