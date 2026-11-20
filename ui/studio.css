@@ -44,7 +44,6 @@ button { touch-action: manipulation; }
 .win-btn:active { transform: translateY(0); }
 .win-btn.win-btn-close:hover { background: #e81123; border-color: #ff3344; color: #ffffff; }
 [data-tauri-drag-region] { -webkit-app-region: drag; }
-.window-underglow { position: fixed; bottom: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, transparent 0%, rgba(56, 189, 248, 0.25) 10%, rgba(56, 189, 248, 0.95) 28%, rgba(129, 140, 248, 1) 50%, rgba(56, 189, 248, 0.95) 72%, rgba(56, 189, 248, 0.25) 90%, transparent 100%); box-shadow: 0 0 10px 2px rgba(56, 189, 248, 0.75), 0 0 26px 6px rgba(99, 102, 241, 0.45), 0 -2px 16px 2px rgba(56, 189, 248, 0.35); pointer-events: none; z-index: 999999; }
 .studio-breadcrumb { color: #92959f; font-size: 12px; display: flex; align-items: center; gap: 14px; }
 .studio-breadcrumb span { color: #555861; }
 .studio-breadcrumb strong { font-weight: 500; color: #e6e7ec; }
