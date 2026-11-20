@@ -1795,6 +1795,128 @@ pub fn is_tagame_file_crash_patched(file_bytes: &[u8]) -> bool {
     false
 }
 
+/// True when TAGame contains the transplanted loadout hook (its rewritten broker URL).
+pub fn tagame_has_rlim_patch(file_bytes: &[u8]) -> bool {
+    if file_bytes.len() < 0x20 {
+        return false;
+    }
+    let total_header_size = u32::from_le_bytes(file_bytes[8..12].try_into().unwrap_or([0; 4])) as usize;
+    let flen = i32::from_le_bytes(file_bytes.get(12..16).and_then(|s| s.try_into().ok()).unwrap_or([0; 4]));
+    let prefix_sz = 16 + (if flen > 0 { flen as usize } else { (-flen * 2) as usize });
+    let name_offset = u32::from_le_bytes(
+        file_bytes.get(prefix_sz + 8..prefix_sz + 12).and_then(|s| s.try_into().ok()).unwrap_or([0; 4])
+    ) as usize;
+    let p_sum = prefix_sz + 12;
+    let depends_offset = i32::from_le_bytes(
+        file_bytes.get(p_sum + 16..p_sum + 20).and_then(|s| s.try_into().ok()).unwrap_or([0; 4])
+    ) as usize;
+    let enc_size = (total_header_size.saturating_sub(name_offset) + 15) & !15;
+    let enc_end = name_offset + enc_size;
+    if enc_end > file_bytes.len() || depends_offset < name_offset {
+        return false;
+    }
+    let plain_header = crypto::decrypt_ecb(&TAGAME_KEY, &file_bytes[name_offset..enc_end]);
+    let chunks_rel = depends_offset - name_offset;
+    if chunks_rel + 4 > plain_header.len() {
+        return false;
+    }
+    let num_chunks = u32::from_le_bytes(plain_header[chunks_rel..chunks_rel + 4].try_into().unwrap_or([0; 4])) as usize;
+    for i in 0..num_chunks {
+        let pos = chunks_rel + 4 + i * 36;
+        if pos + 24 > plain_header.len() {
+            break;
+        }
+        let c_off = u64::from_le_bytes(plain_header[pos + 12..pos + 20].try_into().unwrap_or([0; 8])) as usize;
+        let c_sz = i32::from_le_bytes(plain_header[pos + 20..pos + 24].try_into().unwrap_or([0; 4])) as usize;
+        if c_sz == 0 || c_off.checked_add(c_sz).map_or(true, |e| e > file_bytes.len()) {
+            continue;
+        }
+        if let Ok(decomp) = crate::upk::compression::decompress_chunk(&file_bytes[c_off..c_off + c_sz]) {
+            if decomp.windows(12).any(|w| w == b"15759/r/lo?") {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Rewrite S.* savedata keys to R.* directly inside the cooked chunks.
+/// Same-length edit: no offsets, sizes or jump targets change.
+pub fn rewrite_tagame_keys_to_rlim(path: &Path) -> Result<usize, String> {
+    let mut file_bytes = fs::read(path).map_err(|e| e.to_string())?;
+    let total_header_size = u32::from_le_bytes(file_bytes.get(8..12).and_then(|s| s.try_into().ok()).unwrap_or([0; 4])) as usize;
+    let flen = i32::from_le_bytes(file_bytes.get(12..16).and_then(|s| s.try_into().ok()).unwrap_or([0; 4]));
+    let prefix_sz = 16 + (if flen > 0 { flen as usize } else { (-flen * 2) as usize });
+    let name_offset = u32::from_le_bytes(
+        file_bytes.get(prefix_sz + 8..prefix_sz + 12).and_then(|s| s.try_into().ok()).unwrap_or([0; 4])
+    ) as usize;
+    let p_sum = prefix_sz + 12;
+    let depends_offset = i32::from_le_bytes(
+        file_bytes.get(p_sum + 16..p_sum + 20).and_then(|s| s.try_into().ok()).unwrap_or([0; 4])
+    ) as usize;
+    let enc_size = (total_header_size.saturating_sub(name_offset) + 15) & !15;
+    let enc_end = name_offset + enc_size;
+    if enc_end > file_bytes.len() || depends_offset < name_offset {
+        return Ok(0);
+    }
+    let plain_header = crypto::decrypt_ecb(&TAGAME_KEY, &file_bytes[name_offset..enc_end]);
+    let chunks_rel = depends_offset - name_offset;
+    if chunks_rel + 4 > plain_header.len() {
+        return Ok(0);
+    }
+    let num_chunks = u32::from_le_bytes(plain_header[chunks_rel..chunks_rel + 4].try_into().unwrap_or([0; 4])) as usize;
+
+    let mut total = 0;
+    for i in 0..num_chunks {
+        let pos = chunks_rel + 4 + i * 36;
+        if pos + 24 > plain_header.len() {
+            break;
+        }
+        let c_off = u64::from_le_bytes(plain_header[pos + 12..pos + 20].try_into().unwrap_or([0; 8])) as usize;
+        let c_sz = i32::from_le_bytes(plain_header[pos + 20..pos + 24].try_into().unwrap_or([0; 4])) as usize;
+        if c_sz == 0 || c_off.checked_add(c_sz).map_or(true, |e| e > file_bytes.len()) {
+            continue;
+        }
+        let Ok(mut decomp) = crate::upk::compression::decompress_chunk(&file_bytes[c_off..c_off + c_sz]) else {
+            continue;
+        };
+        let mut j = 0;
+        let mut changed = 0;
+        while j + 6 <= decomp.len() {
+            let len = i32::from_le_bytes(decomp[j..j + 4].try_into().unwrap_or([0; 4]));
+            if len > 2 {
+                let end = j + 4 + len as usize;
+                if end <= decomp.len()
+                    && decomp[end - 1] == 0
+                    && decomp[j + 4] == b'S'
+                    && decomp[j + 5] == b'.'
+                    && decomp[j + 4..end - 1]
+                        .iter()
+                        .all(|b| b.is_ascii_alphanumeric() || *b == b'.' || *b == b'_')
+                {
+                    decomp[j + 4] = b'R';
+                    changed += 1;
+                }
+            }
+            j += 1;
+        }
+        if changed == 0 {
+            continue;
+        }
+        let mut recomp = crate::upk::compression::compress_chunk(&decomp).map_err(|e| e.to_string())?;
+        if recomp.len() > c_sz {
+            continue;
+        }
+        recomp.resize(c_sz, 0);
+        file_bytes[c_off..c_off + c_sz].copy_from_slice(&recomp);
+        total += changed;
+    }
+    if total > 0 {
+        fs::write(path, &file_bytes).map_err(|e| e.to_string())?;
+    }
+    Ok(total)
+}
+
 pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
     let px_path = if cooked_dir.join("ProjectX.upk").is_file() {
         cooked_dir.join("ProjectX.upk")
@@ -2225,7 +2347,11 @@ pub async fn ensure_tagame_patched(cooked_dir: &Path) -> Result<bool, String> {
     };
 
     if let Ok(cur_tg_bytes) = fs::read(&tg_path) {
-        if is_tagame_file_crash_patched(&cur_tg_bytes) {
+        if tagame_has_rlim_patch(&cur_tg_bytes) {
+            let rewritten = rewrite_tagame_keys_to_rlim(&tg_path).unwrap_or(0);
+            if rewritten > 0 {
+                crate::applog::event(&format!("upk: rewrote {rewritten} savedata keys S.* -> R.* in TAGame"));
+            }
             return Ok(true);
         }
     }
