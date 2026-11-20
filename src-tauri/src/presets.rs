@@ -1194,9 +1194,9 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_code_exceeding_50_swaps_rejected() {
+    fn test_parse_code_exceeding_limit_swaps_rejected() {
         let mut swaps = Vec::new();
-        for _ in 0..51 {
+        for _ in 0..(MAX_PRESET_ITEMS + 1) {
             swaps.push(SwapEntry {
                 owned_id: 23,
                 wanted_id: 4284,
@@ -1222,8 +1222,8 @@ mod tests {
         let code = format!("1.{}.{}", B64.encode(payload.as_bytes()), B64.encode(sig));
 
         let res = parse_code(&code);
-        assert!(res.is_err(), "Must reject preset with >50 swaps");
-        assert!(res.unwrap_err().contains("contains more than 50 swaps"));
+        assert!(res.is_err(), "Must reject preset with more than MAX_PRESET_ITEMS swaps");
+        assert!(res.unwrap_err().contains(&format!("contains more than {MAX_PRESET_ITEMS} swaps")));
     }
 
     #[test]
