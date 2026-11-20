@@ -2973,6 +2973,33 @@ async fn handle_broker_request(
             .map(|id| normalize_player_id(&id))
             .and_then(|id| crate::avatar::parse_steam_id(&id));
 
+        // Epic PlayerIDs look like "Epic|<32-hex account id>|0". They are not
+        // Steam IDs, so parse_steam_id() returns None for them. Match the
+        // account id from the request path against the learned local PlayerID
+        // directly so the custom avatar resolves for those requests too.
+        let learned_player_id = crate::proxy::get_learned_player_id().unwrap_or_default();
+        let learned_account_id = normalize_player_id(&learned_player_id);
+        let target_is_local_pid = !learned_account_id.is_empty()
+            && path_str.split(&['/', '?', '&'][..]).any(|part| {
+                let candidate = normalize_player_id(part);
+                !candidate.is_empty() && candidate == learned_account_id
+            });
+        if target_is_local_pid {
+            if let Some(png_bytes) = crate::avatar::get_active_avatar_png() {
+                crate::applog::event(&format!(
+                    "broker: {path_str} queried for local Epic player ID -> active avatar PNG ({} bytes)",
+                    png_bytes.len()
+                ));
+                return Ok(Response::builder()
+                    .status(StatusCode::OK)
+                    .header("Content-Type", "image/png")
+                    .header("Content-Length", png_bytes.len().to_string())
+                    .header("Cache-Control", "no-cache, no-store")
+                    .body(full_body(png_bytes))
+                    .unwrap());
+            }
+        }
+
         if let Some(steam_id) = target_steam_id {
             // The linked account's own ID always resolves to the local avatar.
             if Some(steam_id) == authenticated_steam_id || Some(steam_id) == learned_steam_id {
@@ -8682,6 +8709,14 @@ mod tests {
         let id = 76561198012345678u64;
         let path = format!("/content/images/players/avatars/large/{id}.png");
         assert_eq!(super::avatar_player_id_from_path(&path), Some(id));
+    }
+
+    #[test]
+    fn test_epic_player_id_normalizes_to_account_id() {
+        assert_eq!(
+            super::normalize_player_id("Epic|37674b519c3544beb544f437f539ebf2|0"),
+            "37674b519c3544beb544f437f539ebf2"
+        );
     }
 
     #[test]
