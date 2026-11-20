@@ -5526,7 +5526,7 @@ fn upsert_title_entry(body: &[u8], title_id: &str, text: &str, category: &str) -
 fn configured_title() -> (String, String) {
     let fallback = ("VelocityRL_Developer".to_string(), "VelocityRL Developer".to_string());
     match crate::psynet::load_active_spoof_from_disk() {
-        Some(cfg) if cfg.enabled => {
+        Some(cfg) => {
             let id = if !cfg.equip_title_id.trim().is_empty() {
                 cfg.equip_title_id.trim()
             } else {
@@ -5564,7 +5564,7 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
         any_change = true;
     }
 
-    if cfg.enabled {
+    {
         let equip_id = if !cfg.equip_title_id.trim().is_empty() {
             cfg.equip_title_id.trim()
         } else {
@@ -7182,7 +7182,7 @@ fn patch_reservation_value_sync(
                         if is_local && !is_bits {
                             // Inject custom title and name if active spoof config defines one
                             if let Some(spoof) = crate::psynet::load_active_spoof_from_disk() {
-                                if spoof.enabled {
+                                {
                                     let equip_id = if !spoof.equip_title_id.trim().is_empty() {
                                         spoof.equip_title_id.trim()
                                     } else {
@@ -7311,7 +7311,7 @@ fn patch_reservation_value_sync(
                             event_data.insert("Title".to_string(), serde_json::json!(title_text));
                             *changed = true;
                         } else if let Some(spoof) = crate::psynet::load_active_spoof_from_disk() {
-                            if spoof.enabled {
+                            {
                                 let equip_id = if !spoof.equip_title_id.trim().is_empty() {
                                     spoof.equip_title_id.trim()
                                 } else {
