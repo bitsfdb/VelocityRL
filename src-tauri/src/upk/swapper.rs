@@ -14,6 +14,7 @@ pub use super::legacy_swapper::{
     Item, SwapOptions,
 };
 use serde::{Deserialize, Serialize};
+use tauri::Manager;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -2220,7 +2221,7 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
 
 /// Check if TAGame.upk and ProjectX.upk are patched.
 /// Never download external 82MB binaries on startup or overwrite files automatically.
-pub async fn ensure_tagame_patched(cooked_dir: &Path) -> Result<bool, String> {
+pub async fn ensure_tagame_patched(app: &tauri::AppHandle, cooked_dir: &Path) -> Result<bool, String> {
     let tg_path = if cooked_dir.join("TAGame.upk").is_file() {
         cooked_dir.join("TAGame.upk")
     } else if cooked_dir.join("TAGame/CookedPCConsole/TAGame.upk").is_file() {
@@ -2239,7 +2240,20 @@ pub async fn ensure_tagame_patched(cooked_dir: &Path) -> Result<bool, String> {
         }
     }
 
-    Ok(false)
+    let mut bundled = app.path().resource_dir().ok().map(|dir| dir.join("TAGame.upk"));
+    if bundled.as_ref().map_or(true, |p| !p.is_file()) {
+        bundled = Some(PathBuf::from("resources/TAGame.upk"));
+    }
+    let bundled = bundled.filter(|p| p.is_file()).ok_or("bundled patched TAGame.upk not found")?;
+
+    let backup = cooked_dir.join(TAGAME_BACKUP_NAME);
+    if !backup.is_file() {
+        let _ = fs::copy(&tg_path, &backup);
+    }
+    fs::copy(&bundled, &tg_path).map_err(|e| format!("Failed to install bundled TAGame patch: {e}"))?;
+    let _ = rewrite_tagame_keys_to_rlim(&tg_path);
+    crate::applog::event("upk: installed bundled patched TAGame on startup");
+    Ok(true)
 }
 
 

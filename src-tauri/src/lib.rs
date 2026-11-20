@@ -1609,7 +1609,7 @@ async fn ensure_game_patches(app: tauri::AppHandle) -> Result<bool, String> {
     let game = PathBuf::from(&config.game_dir);
     let cooked = upk::palette::resolve_cooked_dir(&game).unwrap_or(game);
     let projectx_patched = upk::ensure_projectx_patched(&cooked)?;
-    let tagame_patched = upk::ensure_tagame_patched(&cooked).await?;
+    let tagame_patched = upk::ensure_tagame_patched(&app, &cooked).await?;
     let swaps = load_swaps(&app);
     let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
     let _ = apply_saved_spoof_values();
