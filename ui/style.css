@@ -2787,7 +2787,7 @@ select::-ms-expand { display: none; }
     border: 1px solid var(--border);
     border-radius: 6px;
     background: var(--bg);
-
+    contain: content;
     font-family: var(--emoji-font), system-ui, -apple-system, Segoe UI, sans-serif;
 }
 
@@ -2804,6 +2804,8 @@ select::-ms-expand { display: none; }
     border-bottom: 1px solid var(--border);
     cursor: pointer;
     min-width: 0;
+    content-visibility: auto;
+    contain-intrinsic-size: 0 42px;
 }
 
 .title-row:hover { background: var(--panel-hover); }

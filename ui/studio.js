@@ -77,7 +77,9 @@
                 document.querySelector('main').scrollTop = 0;
                 moveTrack();
             }
-            const strip = target.parentElement.querySelector('.subtab-strip');
+            const strip = target.matches('.subtab-pane')
+                ? target.parentElement.querySelector('.subtab-strip')
+                : target.querySelector('.subtab-strip');
             if (strip) updateSegment(strip);
         }
     });

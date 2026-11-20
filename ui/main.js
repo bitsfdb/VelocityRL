@@ -4204,7 +4204,7 @@ function titleLabel(id, fallbackText) {
 
 function titleTextShadow(glow) {
     if (!glow) return 'none';
-    return `0 0 4px ${glow}, 0 0 10px ${glow}, 0 0 20px ${glow}cc, 0 0 36px ${glow}66`;
+    return `0 0 5px ${glow}, 0 0 12px ${glow}b3`;
 }
 
 function titleColors(title) {
@@ -4219,9 +4219,14 @@ function titleColors(title) {
     return { color: color || '#c8c8c8', glow: glow || '', cat };
 }
 
+const titleStyleCache = new Map();
 function titleInlineStyle(title) {
+    const key = title ? (title.id || title.Id || title.text || title.category || '') : '';
+    if (key && titleStyleCache.has(key)) return titleStyleCache.get(key);
     const { color, glow } = titleColors(title);
-    return `color:${color};text-shadow:${titleTextShadow(glow)}`;
+    const res = `color:${color};text-shadow:${titleTextShadow(glow)}`;
+    if (key) titleStyleCache.set(key, res);
+    return res;
 }
 
 function titleChipInlineStyle(catId) {
@@ -7341,8 +7346,6 @@ async function initTitlesTab() {
     wireTitleSpoofControls();
     await loadTitlesDatabase();
     loadTitleSpoofForm();
-    renderDonorList('');
-    renderDisplayList('');
     updateTitlePreview();
     attachCloseGuard();
     refreshProxyStatus().catch(() => {});
@@ -7502,8 +7505,12 @@ function formatTitleText(text) {
         .replace(/\bFLAG_([A-Z]{2})\b/gi, (m, cc) => (APPLE_FLAG_PNG.has(String(cc).toLowerCase()) ? flagEmoji(cc) : m));
 }
 
+const titleHtmlCache = new Map();
 function formatTitleHtml(text) {
-    let raw = String(text || '')
+    const key = String(text || '');
+    const cached = titleHtmlCache.get(key);
+    if (cached !== undefined) return cached;
+    let raw = key
         .replace(/\{flag_([a-z]{2})\}/gi, (m, cc) => (APPLE_FLAG_PNG.has(String(cc).toLowerCase()) ? flagEmoji(cc) : m))
         .replace(/\bFLAG_([A-Z]{2})\b/gi, (m, cc) => (APPLE_FLAG_PNG.has(String(cc).toLowerCase()) ? flagEmoji(cc) : m));
 
@@ -7542,6 +7549,7 @@ function formatTitleHtml(text) {
         }
     }
 
+    titleHtmlCache.set(key, out);
     return out;
 }
 
@@ -7686,7 +7694,7 @@ function selectDisplay(title, toast) {
 
 async function loadBundledCategories() {
     try {
-        const res = await fetch('categories.json', { cache: 'no-store' });
+        const res = await fetch('categories.json');
         if (!res.ok) return {};
         return categoriesMapFromPayload(await res.json());
     } catch {
@@ -7828,7 +7836,7 @@ function filterTitles(q) {
         const pretty = formatTitleText(t.text || t.Text || '').toLowerCase();
         if (!query) return true;
         return id.includes(query) || text.includes(query) || cat.includes(query) || pretty.includes(query);
-    }).slice(0, 200);
+    }).slice(0, 60);
 }
 
 function renderTitleRows(listEl, rows, activeId, onPick) {
