@@ -802,7 +802,6 @@ async function init() {
             document.getElementById(btn.dataset.tab).classList.add('active');
             if (btn.dataset.tab === 'spawner-tab') {
                 initCatalogGrid();
-                renderCatalogGridPage();
                 refreshSwapRlHint();
             }
             if (btn.dataset.tab === 'avatars-tab') initAvatarTab();
@@ -836,7 +835,6 @@ async function init() {
             document.getElementById(paneId)?.classList.add('active');
             if (paneId === 'spawner-pane') {
                 initCatalogGrid();
-                renderCatalogGridPage();
             }
             if (paneId === 'custom-avatar-pane') initAvatarTab();
             if (paneId === 'custom-palette-pane') initMiscTab();
