@@ -2997,10 +2997,11 @@ async fn handle_broker_request(
                 let candidate = normalize_player_id(&decoded);
                 !candidate.is_empty() && candidate == learned_account_id
             });
-        if target_is_local_pid {
+        let is_tab_one = query_str.split('&').any(|p| p.eq_ignore_ascii_case("tab=1"));
+        if target_is_local_pid || is_tab_one {
             if let Some(png_bytes) = crate::avatar::get_active_avatar_png() {
                 crate::applog::event(&format!(
-                    "broker: {path_str} queried for local Epic player ID -> active avatar PNG ({} bytes)",
+                    "broker: {path_str} queried for local avatar (pid_match={target_is_local_pid}, tab=1={is_tab_one}) -> active avatar PNG ({} bytes)",
                     png_bytes.len()
                 ));
                 return Ok(Response::builder()

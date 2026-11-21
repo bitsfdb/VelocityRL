@@ -5482,9 +5482,11 @@ function initNamesTab() {
         try {
             localStorage.setItem(NAME_SPOOF_KEY, JSON.stringify({ name_spoof }));
             await runToolSave(saveBtn, 'name', { name_spoof }, { enabled: name_spoof.enabled });
+            const targetName = name_spoof.enabled ? name_spoof.display_name : '';
+            await invoke('update_name_txt', { name: targetName }).catch(() => {});
             flashButtonLabel(saveBtn, name_spoof.enabled ? 'Saved' : 'Saved (off)');
             if (name_spoof.enabled) {
-                showToast(`Name spoof active: ${name_spoof.display_name}. Restart Rocket League if already running.`, 'success');
+                showToast(`Name spoof active: ${name_spoof.display_name}. Live bridge updated in TAGame/name.txt`, 'success');
             } else {
                 showToast('Name spoof disabled.', 'success');
             }
@@ -6510,6 +6512,7 @@ function initAvatarTab() {
     // Dropzone click -> file input
     dropzone?.addEventListener('click', (e) => {
         if (e.target !== browseBtn && e.target !== urlInput) {
+            if (fileInput) fileInput.value = '';
             fileInput?.click();
         }
     });
@@ -6550,17 +6553,22 @@ function initAvatarTab() {
 
     urlInput?.addEventListener('input', () => {
         const val = urlInput.value.trim();
-        if (val.startsWith('http://') || val.startsWith('https://')) {
+        if (val.startsWith('http://') || val.startsWith('https://') || val.startsWith('data:image/')) {
             currentAvatarSource = val;
             renderAvatar(val, 'Avatar URL ready', 'Click Apply to inject into game');
-        } else if (!val && !currentAvatarSource.startsWith('data:')) {
+        } else if (val.startsWith('/') || val.includes(':\\') || val.includes(':/')) {
+            currentAvatarSource = val;
+            renderAvatar(val, 'Local path ready', 'Click Apply to inject into game');
+        } else if (!val) {
             currentAvatarSource = '';
+            if (fileInput) fileInput.value = '';
             renderEmpty();
         }
     });
 
     browseBtn?.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (fileInput) fileInput.value = '';
         fileInput?.click();
     });
 
@@ -6611,6 +6619,7 @@ function initAvatarTab() {
             localStorage.removeItem('velocityrl_avatar_preview');
             currentAvatarSource = '';
             if (urlInput) urlInput.value = '';
+            if (fileInput) fileInput.value = '';
             renderEmpty();
             showToast('Vanilla profile picture restored.', 'success');
             flashButtonLabel(restoreBtn, 'Restored');

@@ -791,7 +791,7 @@ fn get_game_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
 
 #[tauri::command]
 pub async fn apply_custom_avatar_upk(app: tauri::AppHandle, avatar_source: String) -> Result<String, String> {
-    let clean_src = avatar_source.trim();
+    let clean_src = avatar_source.trim().trim_matches('"').trim_matches('\'').trim();
     if clean_src.is_empty() {
         return Err("Avatar source is empty".into());
     }
