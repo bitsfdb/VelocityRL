@@ -383,21 +383,22 @@
     // Opaque startup lockup: chevrons assemble, accelerate, then the shell unfolds.
     const boot = document.getElementById('velocity-boot');
     let bootFinished = false;
+    const bootStartedAt = performance.now();
     function finishBoot() {
         if (bootFinished) return;
         bootFinished = true;
-        const delay = 0;
+        const delay = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : Math.max(0, 1350 - (performance.now() - bootStartedAt));
         setTimeout(() => {
             boot.classList.add('is-leaving');
-            boot.style.animationDuration = '160ms';
+            boot.style.animationDuration = '420ms';
             animate(document.querySelector('.sidebar'), [
                 { transform: 'translateX(-42px)' }, { transform: 'translateX(2px)', offset: .75 }, { transform: 'translateX(0)' }
-            ], { duration: 160 });
+            ], { duration: 420 });
             animate(document.querySelector('.main-wrap'), [
                 { transform: 'perspective(1400px) rotateY(-3deg) translateX(50px)', transformOrigin: 'left center' },
                 { transform: 'perspective(1400px) rotateY(0deg) translateX(0)', transformOrigin: 'left center' }
-            ], { duration: 160 });
-            setTimeout(() => boot.remove(), 180);
+            ], { duration: 420 });
+            setTimeout(() => boot.remove(), 450);
         }, delay);
     }
     const bootObserver = new MutationObserver(() => {

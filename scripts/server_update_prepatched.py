@@ -84,25 +84,15 @@ def main():
     tagame_path = args.tagame or (args.incoming / "TAGame.upk" if (args.incoming / "TAGame.upk").is_file() else None)
     projectx_path = args.projectx or (args.incoming / "ProjectX.upk" if (args.incoming / "ProjectX.upk").is_file() else None)
 
-    # If no files in incoming, check if files are already in prepatched directory
-    if not tagame_path and not projectx_path:
-        print(f"[*] No new files found in incoming directory '{args.incoming}'.")
-        print("    Checking existing files in prepatched dir...")
-        if (PREPATCHED_DIR / "TAGame.upk").is_file():
-            tagame_path = PREPATCHED_DIR / "TAGame.upk"
-        if (PREPATCHED_DIR / "ProjectX.upk").is_file():
-            projectx_path = PREPATCHED_DIR / "ProjectX.upk"
-
-    if not tagame_path and not projectx_path:
-        print("[ERROR] No UPK files found to update.")
-        sys.exit(1)
+    if not tagame_path or not projectx_path or not tagame_path.is_file() or not projectx_path.is_file():
+        raise SystemExit("A complete freshly prepared TAGame.upk + ProjectX.upk pair is required. Never combine files from different game updates.")
 
     # Game version detection
     game_version = args.version
     prime_version = args.prime_version
 
     if not game_version:
-        exe_candidates = [args.incoming / "RocketLeague.exe"] + KNOWN_SERVER_EXE_PATHS
+        exe_candidates = [args.incoming / "RocketLeague.exe"]
         if args.exe:
             exe_candidates.insert(0, args.exe)
 
@@ -116,22 +106,15 @@ def main():
                     print(f"[+] Detected game version {gv} from {c}")
                     break
 
-    if not game_version and MANIFEST_FILE.is_file():
-        try:
-            curr = json.loads(MANIFEST_FILE.read_text())
-            game_version = curr.get("game_version")
-            if not prime_version:
-                prime_version = curr.get("prime_version")
-            print(f"[*] Using existing manifest game version: {game_version}")
-        except Exception:
-            pass
-
     if not game_version:
-        game_version = "261031.63733.533021"
-        print(f"[!] Falling back to default version {game_version}")
+        raise SystemExit("Supply --version or the matching RocketLeague.exe; previous/default versions are never reused.")
+    if not re.fullmatch(r"[0-9]{6}\.[0-9]{5}\.[0-9]{6}", game_version):
+        raise SystemExit("Invalid exact Rocket League build version")
+    prime_version = prime_version or ""
 
-    if not prime_version:
-        prime_version = "++Prime+Update60-CL-529371"
+    for artifact in (tagame_path, projectx_path):
+        if not 100_000 <= artifact.stat().st_size <= 4 * 1024 * 1024 * 1024:
+            raise SystemExit("Invalid artifact size; no release published")
 
     deploy_files = {}
 
@@ -155,19 +138,6 @@ def main():
                 "url": f"https://api.velocityrl.tech/v2/rl/prepatched/{name}",
             }
             print(f"    - {name}: {sha256} ({size / (1024*1024):.2f} MB)")
-
-    # Read existing manifest to preserve any untouched files
-    existing_files = {}
-    if MANIFEST_FILE.is_file():
-        try:
-            ex_data = json.loads(MANIFEST_FILE.read_text())
-            existing_files = ex_data.get("files", {})
-        except Exception:
-            pass
-
-    for k, v in existing_files.items():
-        if k not in deploy_files:
-            deploy_files[k] = v
 
     manifest_data = {
         "game_version": game_version,

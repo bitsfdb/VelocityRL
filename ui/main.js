@@ -1133,6 +1133,26 @@ async function init() {
             showToast('Export failed: ' + e, 'error');
         }
     };
+    document.getElementById('settings-patch-btn')?.addEventListener('click', async () => {
+        const btnText = document.getElementById('settings-patch-btn-text');
+        if (btnText) btnText.textContent = 'Verifying API files...';
+        try {
+            const res = await invoke('ensure_game_patches');
+            if (res && res.status === 'Success') {
+                showToast('Game files (TAGame & ProjectX) patched successfully!', 'success');
+            } else if (res && res.status === 'VersionMismatch') {
+                showToast('Rocket League version mismatch. API installation blocked.', 'warning');
+            } else {
+                if (res?.status === 'UpToDate') showToast('API files verified and up to date.', 'success');
+                else if (res?.status === 'Deferred') showToast('Close Rocket League, then retry API file installation.', 'warning');
+                else showToast(res?.details?.error || 'API verification failed. Retry before launching the game.', 'error', 9000);
+            }
+        } catch (e) {
+            showToast('Patch failed: ' + e, 'error');
+        } finally {
+            await updateGamePatchStatusUI();
+        }
+    });
     document.getElementById('settings-dev-panel-btn')?.addEventListener('click', async () => {
         document.getElementById('dev-modal')?.classList.add('active');
         await refreshDevPanel();
@@ -1193,9 +1213,9 @@ async function loadBackups() {
 
 async function loadData() {
     const loadWatchdog = setTimeout(() => {
-        console.warn('loadData safety watchdog triggered after 4s');
+        console.warn('loadData safety watchdog triggered after 15s — releasing overlay');
         releaseAppLoading();
-    }, 4000);
+    }, 15000);
 
     try {
         updateStatus('Please Wait...', false);
@@ -1282,24 +1302,24 @@ async function loadData() {
                     const res = await invoke('ensure_game_patches');
                     if (res) {
                         if (res.status === 'Deferred') {
-                            showToast('Game-file checks will run after Rocket League closes.', 'info', 6000);
+                            showToast('Close Rocket League, then use Settings → Install API Files to verify this build.', 'warning', 6000);
                             return;
                         } else if (res.status === 'VersionMismatch') {
                             const localV = res.details?.local_version || 'Unknown';
                             const serverV = res.details?.server_version || 'Unknown';
-                            showToast(`RL Version Mismatch: Game ${localV} vs API ${serverV}. Auto-patching paused to prevent game instability.`, 'warning', 9000);
+                            showToast(`RL Version Mismatch: Game ${localV} vs API ${serverV}. API installation blocked to prevent game instability.`, 'warning', 9000);
                         } else if (res.status === 'Success') {
                             showToast('Pre-patched game files verified & updated.', 'success');
                             refreshPaletteStatus();
                         } else if (res.status === 'UpToDate') {
                             refreshPaletteStatus();
                         } else if (res.status === 'Failed') {
-                            console.warn('Pre-patched sync:', res.details?.error);
+                            showToast(res.details?.error || 'API verification failed. No new files installed.', 'error', 9000);
                         }
                     }
                     await updateGamePatchStatusUI();
                 } catch (err) {
-                    console.warn('Game patch check failed:', err);
+                    showToast('API file check failed: ' + err, 'error', 9000);
                 }
             }
 
@@ -3747,7 +3767,7 @@ const CREDIT_SPOOF_KEY = 'velocityrl_credit_spoof';
 const LEADERBOARD_SPOOF_KEY = 'velocityrl_leaderboard_spoof';
 const MENU_BG_SPOOF_KEY = 'velocityrl_menu_bg_spoof';
 const BOOST_METER_SPOOF_KEY = 'velocityrl_boost_meter_spoof';
-const DEFAULT_SEASON23_LOGO_URL = 'https://api.velocityrl.tech/thumbnails/rl_japan.png';
+const DEFAULT_SEASON23_LOGO_URL = 'assets/rl_japan.png';
 const DEFAULT_BLOG_MOTD = 'Use VelocityRL';
 const DEFAULT_CAMERA_LIMITS = {
     fov: { min: 60, max: 1000, interval: 1 },
@@ -4094,7 +4114,7 @@ async function hydrateSpoofToolsFromDisk() {
             if (enabled && !logo_url) logo_url = DEFAULT_SEASON23_LOGO_URL;
             logo_spoof = { enabled, logo_url };
         } else {
-            logo_spoof = { enabled: false, logo_url: DEFAULT_SEASON23_LOGO_URL };
+            logo_spoof = { enabled: true, logo_url: DEFAULT_SEASON23_LOGO_URL };
         }
         localStorage.setItem(LOGO_SPOOF_KEY, JSON.stringify({ logo_spoof }));
     }
@@ -4103,7 +4123,7 @@ async function hydrateSpoofToolsFromDisk() {
         const bs = toolSliceFromDiskOrLocal(disk, BLOG_SPOOF_KEY, 'blog_spoof');
         const blog_spoof = (bs && typeof bs === 'object' && ('enabled' in bs || bs.motd != null))
             ? { enabled: !!bs.enabled, motd: bs.motd || '' }
-            : { enabled: false, motd: DEFAULT_BLOG_MOTD };
+            : { enabled: true, motd: DEFAULT_BLOG_MOTD };
         localStorage.setItem(BLOG_SPOOF_KEY, JSON.stringify({ blog_spoof }));
     }
 
@@ -4147,6 +4167,15 @@ async function hydrateSpoofToolsFromDisk() {
         localStorage.setItem(BOOST_METER_SPOOF_KEY, JSON.stringify({ boost_meter_spoof }));
     }
 
+    // One-time migration: enable the two requested defaults for existing installs too.
+    // Subsequent user choices remain persistent.
+    if (!localStorage.getItem('velocityrl_menu_defaults_v1')) {
+        const logo = readLocalJson(LOGO_SPOOF_KEY).logo_spoof || {};
+        const blog = readLocalJson(BLOG_SPOOF_KEY).blog_spoof || {};
+        localStorage.setItem(LOGO_SPOOF_KEY, JSON.stringify({ logo_spoof: { ...logo, enabled: true, logo_url: logo.logo_url || DEFAULT_SEASON23_LOGO_URL } }));
+        localStorage.setItem(BLOG_SPOOF_KEY, JSON.stringify({ blog_spoof: { ...blog, enabled: true, motd: blog.motd || DEFAULT_BLOG_MOTD } }));
+        localStorage.setItem('velocityrl_menu_defaults_v1', '1');
+    }
     applyHydratedToolsToUi();
 
     return payloadFromHydratedLocal();
@@ -5492,7 +5521,7 @@ function initNamesTab() {
             await runToolSave(saveBtn, 'name', { name_spoof }, { enabled: name_spoof.enabled });
             flashButtonLabel(saveBtn, name_spoof.enabled ? 'Saved' : 'Saved (off)');
             if (name_spoof.enabled) {
-                showToast(`Name spoof active: ${name_spoof.display_name}. Restart Rocket League if already running.`, 'success');
+                showToast(`Name spoof active: ${name_spoof.display_name}.`, 'success');
             } else {
                 showToast('Name spoof disabled.', 'success');
             }
@@ -6359,11 +6388,7 @@ function initCustomizationTab() {
 let avatarTabWired = false;
 let currentAvatarSource = '';
 
-const DEFAULT_AVATAR_SVG = `<svg class="avatar-default-svg" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="32" cy="32" r="32" fill="rgba(255, 255, 255, 0.08)"/>
-  <circle cx="32" cy="24" r="11" fill="rgba(255, 255, 255, 0.5)"/>
-  <path d="M14 54C14 43.5 22 38 32 38C42 38 50 43.5 50 54C45 58.5 38.8 61 32 61C25.2 61 19 58.5 14 54Z" fill="rgba(255, 255, 255, 0.5)"/>
-</svg>`;
+const DEFAULT_AVATAR_SVG = `<svg class="avatar-default-svg" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15C3 17.8284 3 19.2426 3.87868 20.1213C4.75736 21 6.17157 21 9 21H15C17.8284 21 19.2426 21 20.1213 20.1213C21 19.2426 21 17.8284 21 15"/><path d="M12 16V3M12 3L16 7.375M12 3L8 7.375"/></svg>`;
 
 function initAvatarTab() {
     const urlInput = document.getElementById('avatar-url-input');
@@ -6520,6 +6545,7 @@ function initAvatarTab() {
     // Dropzone click -> file input
     dropzone?.addEventListener('click', (e) => {
         if (e.target !== browseBtn && e.target !== urlInput) {
+            if (fileInput) fileInput.value = '';
             fileInput?.click();
         }
     });
@@ -6560,17 +6586,22 @@ function initAvatarTab() {
 
     urlInput?.addEventListener('input', () => {
         const val = urlInput.value.trim();
-        if (val.startsWith('http://') || val.startsWith('https://')) {
+        if (val.startsWith('http://') || val.startsWith('https://') || val.startsWith('data:image/')) {
             currentAvatarSource = val;
             renderAvatar(val, 'Avatar URL ready', 'Click Apply to inject into game');
-        } else if (!val && !currentAvatarSource.startsWith('data:')) {
+        } else if (val.startsWith('/') || val.includes(':\\') || val.includes(':/')) {
+            currentAvatarSource = val;
+            renderAvatar(val, 'Local path ready', 'Click Apply to inject into game');
+        } else if (!val) {
             currentAvatarSource = '';
+            if (fileInput) fileInput.value = '';
             renderEmpty();
         }
     });
 
     browseBtn?.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (fileInput) fileInput.value = '';
         fileInput?.click();
     });
 
@@ -6621,6 +6652,7 @@ function initAvatarTab() {
             localStorage.removeItem('velocityrl_avatar_preview');
             currentAvatarSource = '';
             if (urlInput) urlInput.value = '';
+            if (fileInput) fileInput.value = '';
             renderEmpty();
             showToast('Vanilla profile picture restored.', 'success');
             flashButtonLabel(restoreBtn, 'Restored');
@@ -9526,6 +9558,23 @@ function setupNetworkInspectorListeners() {
         };
     }
 
+    const bunchesBtn = document.getElementById('net-bunches-btn');
+    if (bunchesBtn) {
+        bunchesBtn.onclick = async () => {
+            bunchesBtn.disabled = true;
+            bunchesBtn.textContent = 'Capturing';
+            try {
+                const result = await invoke('capture_bunches');
+                showToast(result, 'success');
+            } catch (e) {
+                showToast(`Bunch capture failed: ${e}`, 'error');
+            } finally {
+                bunchesBtn.disabled = false;
+                bunchesBtn.textContent = 'Capture Bunches';
+            }
+        };
+    }
+
     const dumpBtn = document.getElementById('net-dump-btn');
     if (dumpBtn) {
         dumpBtn.onclick = async () => {
@@ -9649,7 +9698,7 @@ async function updateGamePatchStatusUI() {
         if (btnText && patchStatus) {
             btnText.textContent = patchStatus.version_mismatch
                 ? "Version Mismatched (Paused)"
-                : (patchStatus.projectx_patched ? "Pre-patched: Active" : "Patch Game Files");
+                : (patchStatus.projectx_patched ? "Pre-patched: Active" : "Install API Files");
         }
     } catch (_) {}
 }

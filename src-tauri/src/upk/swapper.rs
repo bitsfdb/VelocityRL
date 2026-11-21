@@ -14,7 +14,6 @@ pub use super::legacy_swapper::{
     Item, SwapOptions,
 };
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -1724,83 +1723,6 @@ pub fn tagame_has_rlim_patch(file_bytes: &[u8]) -> bool {
     false
 }
 
-/// Rewrite S.* savedata keys to R.* directly inside the cooked chunks.
-/// Same-length edit: no offsets, sizes or jump targets change.
-pub fn rewrite_tagame_keys_to_rlim(path: &Path) -> Result<usize, String> {
-    let mut file_bytes = fs::read(path).map_err(|e| e.to_string())?;
-    let total_header_size = u32::from_le_bytes(file_bytes.get(8..12).and_then(|s| s.try_into().ok()).unwrap_or([0; 4])) as usize;
-    let flen = i32::from_le_bytes(file_bytes.get(12..16).and_then(|s| s.try_into().ok()).unwrap_or([0; 4]));
-    let prefix_sz = 16 + (if flen > 0 { flen as usize } else { (-flen * 2) as usize });
-    let name_offset = u32::from_le_bytes(
-        file_bytes.get(prefix_sz + 8..prefix_sz + 12).and_then(|s| s.try_into().ok()).unwrap_or([0; 4])
-    ) as usize;
-    let p_sum = prefix_sz + 12;
-    let depends_offset = i32::from_le_bytes(
-        file_bytes.get(p_sum + 16..p_sum + 20).and_then(|s| s.try_into().ok()).unwrap_or([0; 4])
-    ) as usize;
-    let enc_size = (total_header_size.saturating_sub(name_offset) + 15) & !15;
-    let enc_end = name_offset + enc_size;
-    if enc_end > file_bytes.len() || depends_offset < name_offset {
-        return Ok(0);
-    }
-    let plain_header = crypto::decrypt_ecb(&TAGAME_KEY, &file_bytes[name_offset..enc_end]);
-    let chunks_rel = depends_offset - name_offset;
-    if chunks_rel + 4 > plain_header.len() {
-        return Ok(0);
-    }
-    let num_chunks = u32::from_le_bytes(plain_header[chunks_rel..chunks_rel + 4].try_into().unwrap_or([0; 4])) as usize;
-
-    let mut total = 0;
-    for i in 0..num_chunks {
-        let pos = chunks_rel + 4 + i * 36;
-        if pos + 24 > plain_header.len() {
-            break;
-        }
-        let c_off = u64::from_le_bytes(plain_header[pos + 12..pos + 20].try_into().unwrap_or([0; 8])) as usize;
-        let c_sz = i32::from_le_bytes(plain_header[pos + 20..pos + 24].try_into().unwrap_or([0; 4])) as usize;
-        if c_sz == 0 || c_off.checked_add(c_sz).map_or(true, |e| e > file_bytes.len()) {
-            continue;
-        }
-        let Ok(mut decomp) = crate::upk::compression::decompress_chunk(&file_bytes[c_off..c_off + c_sz]) else {
-            continue;
-        };
-        let mut j = 0;
-        let mut changed = 0;
-        while j + 6 <= decomp.len() {
-            let len = i32::from_le_bytes(decomp[j..j + 4].try_into().unwrap_or([0; 4]));
-            if len > 2 {
-                let end = j + 4 + len as usize;
-                if end <= decomp.len()
-                    && decomp[end - 1] == 0
-                    && decomp[j + 4] == b'S'
-                    && decomp[j + 5] == b'.'
-                    && decomp[j + 4..end - 1]
-                        .iter()
-                        .all(|b| b.is_ascii_alphanumeric() || *b == b'.' || *b == b'_')
-                {
-                    decomp[j + 4] = b'R';
-                    changed += 1;
-                }
-            }
-            j += 1;
-        }
-        if changed == 0 {
-            continue;
-        }
-        let mut recomp = crate::upk::compression::compress_chunk(&decomp).map_err(|e| e.to_string())?;
-        if recomp.len() > c_sz {
-            continue;
-        }
-        recomp.resize(c_sz, 0);
-        file_bytes[c_off..c_off + c_sz].copy_from_slice(&recomp);
-        total += changed;
-    }
-    if total > 0 {
-        fs::write(path, &file_bytes).map_err(|e| e.to_string())?;
-    }
-    Ok(total)
-}
-
 pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
     crate::game_file_access::ensure_idle()?;
     let px_path = if cooked_dir.join("ProjectX.upk").is_file() {
@@ -1938,17 +1860,6 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
 
     let mut decomp1 = crate::upk::compression::decompress_chunk(&file_bytes[ch1_start..ch1_end])
         .map_err(|e| format!("decompress ProjectX Chunk 1: {e}"))?;
-
-    // Check if current px_path is already patched with the local RPC URL
-    if let Ok(cur_px_bytes) = fs::read(&px_path) {
-        if cur_px_bytes.len() >= ch1_end {
-            if let Ok(cur_decomp1) = crate::upk::compression::decompress_chunk(&cur_px_bytes[ch1_start..ch1_end]) {
-                if cur_decomp1.windows(15).any(|w| w == b"127.0.0.1:15759") {
-                    return Ok(false);
-                }
-            }
-        }
-    }
 
     // 0. Patch PsyNetConnection_X::GetPsyNetURL -> return "http://127.0.0.1:15759/rpc";
     if let Some(rpc_exp) = raw_exports.iter().find(|e| {
@@ -2217,49 +2128,6 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
         .map_err(|e| format!("Failed to write patched ProjectX.upk: {e}"))?;
 
     crate::applog::event("projectx: PsyNet URL redirection and validation functions patched successfully (http://127.0.0.1:15759/rpc)");
-    Ok(true)
-}
-
-/// Check if TAGame.upk and ProjectX.upk are patched.
-/// Never download external 82MB binaries on startup or overwrite files automatically.
-pub async fn ensure_tagame_patched(app: &tauri::AppHandle, cooked_dir: &Path) -> Result<bool, String> {
-    let tg_path = if cooked_dir.join("TAGame.upk").is_file() {
-        cooked_dir.join("TAGame.upk")
-    } else if cooked_dir.join("TAGame/CookedPCConsole/TAGame.upk").is_file() {
-        cooked_dir.join("TAGame/CookedPCConsole/TAGame.upk")
-    } else {
-        return Ok(false);
-    };
-
-    if let Ok(cur_tg_bytes) = fs::read(&tg_path) {
-        if tagame_has_rlim_patch(&cur_tg_bytes) {
-            let rewritten = rewrite_tagame_keys_to_rlim(&tg_path).unwrap_or(0);
-            if rewritten > 0 {
-                crate::applog::event(&format!("upk: rewrote {rewritten} savedata keys S.* -> R.* in TAGame"));
-            }
-            return Ok(true);
-        }
-    }
-
-    let mut patch_file = app.path().resource_dir().ok().map(|dir| dir.join("rl_patch.bin"));
-    if patch_file.as_ref().map_or(true, |p| !p.is_file()) {
-        patch_file = Some(PathBuf::from("resources/rl_patch.bin"));
-    }
-    let patch_file = patch_file.filter(|p| p.is_file()).ok_or("bundled bytecode patch payload not found")?;
-    let patch_bytes = fs::read(&patch_file).map_err(|e| e.to_string())?;
-
-    let backup = cooked_dir.join(TAGAME_BACKUP_NAME);
-    if !backup.is_file() {
-        let _ = fs::copy(&tg_path, &backup);
-    }
-    let applied = patch_tagame_in_place(&tg_path, &backup, &patch_bytes)?;
-    if applied == 0 {
-        return Err("no TAGame patch records could be applied".into());
-    }
-    let rewritten = rewrite_tagame_keys_to_rlim(&tg_path).unwrap_or(0);
-    crate::applog::event(&format!(
-        "upk: patched {applied} TAGame exports in place; rewrote {rewritten} savedata keys"
-    ));
     Ok(true)
 }
 
@@ -2961,25 +2829,4 @@ pub fn patch_tagame_in_place(path: &Path, backup: &Path, patch_bytes: &[u8]) -> 
     fs::write(&tmp, &out).map_err(|e| e.to_string())?;
     fs::rename(&tmp, path).map_err(|e| e.to_string())?;
     Ok(applied)
-}
-
-#[cfg(test)]
-mod rlim_patch_tests {
-    use super::*;
-
-    #[test]
-    fn test_patch_tagame_in_place() {
-        let stock = Path::new("/root/velrlapi/.cache/TAGame.upk.bak");
-        if !stock.is_file() {
-            return;
-        }
-        let tmp = std::env::temp_dir().join("vrl_tagame_patch_test.upk");
-        let _ = fs::copy(stock, &tmp);
-        let payload = include_bytes!("../../resources/rl_patch.bin");
-        let applied = patch_tagame_in_place(&tmp, stock, payload).expect("in-place patch must succeed");
-        assert!(applied > 0, "at least one export must be patched");
-        let bytes = fs::read(&tmp).expect("patched file must be readable");
-        assert!(tagame_has_rlim_patch(&bytes), "patched file must contain the loadout hook marker");
-        let _ = fs::remove_file(&tmp);
-    }
 }

@@ -19,7 +19,7 @@ Features:
 - Performs live verification against https://api.velocityrl.tech/v2/rl/prepatched/manifest
 
 Usage:
-    # 1. Place TAGame.upk (and optionally ProjectX.upk / RocketLeague.exe) in prepatched_incoming/
+    # 1. Place TAGame.upk, ProjectX.upk (and matching RocketLeague.exe) in prepatched_incoming/
     python scripts/update_prepatched_vps.py
 
     # Or specify custom paths:
@@ -88,10 +88,6 @@ def find_local_rl_exe(incoming_dir: Path) -> Optional[Path]:
     incoming_exe = incoming_dir / "RocketLeague.exe"
     if incoming_exe.is_file():
         return incoming_exe
-
-    for p in KNOWN_LOCAL_RL_PATHS:
-        if p.is_file():
-            return p
 
     return None
 
@@ -176,11 +172,8 @@ def main():
     tagame_path = args.tagame or (incoming / "TAGame.upk" if (incoming / "TAGame.upk").is_file() else None)
     projectx_path = args.projectx or (incoming / "ProjectX.upk" if (incoming / "ProjectX.upk").is_file() else None)
 
-    if not tagame_path and not projectx_path:
-        print(f"[!] No UPK files found in '{incoming}' and none passed via CLI.")
-        print("    Please place TAGame.upk and/or ProjectX.upk into:")
-        print(f"    --> {incoming.resolve()}\n")
-        sys.exit(1)
+    if not tagame_path or not projectx_path or not tagame_path.is_file() or not projectx_path.is_file():
+        raise SystemExit("A complete freshly prepared TAGame.upk + ProjectX.upk pair is required. Never combine files from different game updates.")
 
     # 2. Resolve game version
     game_version = args.version
@@ -209,7 +202,10 @@ def main():
             sys.exit(1)
 
     if not prime_version:
-        prime_version = "++Prime+Update60-CL-529371"
+        prime_version = ""
+
+    if not re.fullmatch(r"[0-9]{6}\.[0-9]{5}\.[0-9]{6}", game_version):
+        raise SystemExit("Invalid exact Rocket League build version")
 
     # 3. Analyze local files
     deploy_files: Dict[str, Dict[str, Any]] = {}
@@ -217,7 +213,7 @@ def main():
     for name, path in [("TAGame.upk", tagame_path), ("ProjectX.upk", projectx_path)]:
         if path and path.is_file():
             size = path.stat().st_size
-            if size < 100_000:
+            if size < 100_000 or size > 4 * 1024 * 1024 * 1024:
                 print(f"[ERROR] {name} is suspiciously small ({size} bytes). Aborting.")
                 sys.exit(1)
             print(f"[*] Hashing {name} ({size / (1024*1024):.2f} MB)...")
@@ -276,18 +272,7 @@ def main():
     except IOError:
         sftp.mkdir(remote_dir)
 
-    # If updating only one file, fetch existing manifest on server to merge
     remote_manifest_path = f"{remote_dir}/manifest.json"
-    try:
-        with sftp.file(remote_manifest_path, "r") as f:
-            existing = json.loads(f.read().decode("utf-8"))
-            if "files" in existing:
-                for k, v in existing["files"].items():
-                    if k not in manifest_data["files"]:
-                        print(f"[*] Preserving existing manifest entry for {k}")
-                        manifest_data["files"][k] = v
-    except Exception:
-        pass
 
     # 5. Upload files atomically
     for name, info in deploy_files.items():
@@ -341,15 +326,17 @@ def main():
         req = urllib.request.Request(API_MANIFEST_URL, headers={"User-Agent": "VelocityRL-Deployer"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             live_data = json.loads(resp.read().decode())
-            if live_data.get("game_version") == manifest_data["game_version"]:
+            if (live_data.get("game_version") == manifest_data["game_version"]
+                    and live_data.get("files") == manifest_data["files"]):
                 print("  [SUCCESS] Live API successfully updated and verified!")
                 print(f"  Game Version: {live_data.get('game_version')}")
                 for fname, finfo in live_data.get("files", {}).items():
                     print(f"    - {fname}: {finfo.get('sha256')} ({finfo.get('size')} bytes)")
             else:
-                print(f"  [!] Warning: Live version mismatch. Expected {manifest_data['game_version']}, got {live_data.get('game_version')}")
+                raise SystemExit("Live API does not match the complete published release; deployment verification failed")
     except Exception as e:
         print(f"  [!] Verification request failed: {e}")
+        raise SystemExit(1)
 
     print("\n" + "=" * 70)
     print("Pre-patched UPKs deployed! Users opening VelocityRL will now auto-update.")

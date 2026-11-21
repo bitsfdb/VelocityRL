@@ -13,6 +13,7 @@ use tauri::Manager;
 
 mod applog;
 mod integrity;
+mod prepatched;
 mod game_file_access;
 mod jobobject;
 mod network_dump;
@@ -1476,7 +1477,7 @@ async fn check_integrity(app: tauri::AppHandle) -> Result<integrity::RepairRepor
         let game = PathBuf::from(&config.game_dir);
         if game.is_dir() {
             if let Ok(cooked) = upk::palette::resolve_cooked_dir(&game) {
-                let _ = upk::ensure_projectx_patched(&cooked);
+                let _ = cooked; // Integrity inspection is read-only.
             }
         }
         integrity::check_repair(&game, &state)
@@ -1529,21 +1530,24 @@ async fn get_game_patch_status(app: tauri::AppHandle) -> Result<GamePatchStatus,
         cooked.join("TAGame/CookedPCConsole/TAGame.upk")
     };
 
-    let px_hash = integrity::compute_file_sha256_cached(&px_path);
-    let px_exists = px_hash.is_some() || px_path.is_file();
-    let px_patched = px_hash.as_deref() == Some("4c7f6a3f62072acd1205541f5d9292a2efd3058c2f88906bb8f12bb210abec74")
-        || std::fs::read(&px_path).map(|b| upk::is_projectx_file_patched(&b)).unwrap_or(false);
-
-    let tg_meta = std::fs::metadata(&tg_path).ok();
-    let tg_exists = tg_meta.is_some();
-    let tg_size = tg_meta.as_ref().map(|m| m.len()).unwrap_or(0);
-    let tg_hash = integrity::compute_file_sha256_cached(&tg_path);
-    let tg_crash_fixed = tg_hash.as_deref() == Some("51fe6cf112480f2c7c3c5cf3fe02b24d7ba1a14800bbe4281814c7566aedd2d1")
-        || tg_hash.as_deref() == Some("2daa86b97fb7543ac0045867f350c5c3caab19681ee1590e51a6851d93dd36a9")
-        || (tg_size > 1_000_000 && std::fs::read(&tg_path).map(|b| upk::is_tagame_file_crash_patched(&b)).unwrap_or(false));
-
-    let tg_valid = tg_exists && tg_size > 1_000_000;
     let game_version = integrity::detect_local_game_version(Path::new(&config.game_dir)).unwrap_or_default();
+    let manifest = std::fs::read(cooked.join(".velocity-prepatched/verified-manifest.json")).ok()
+        .and_then(|bytes| serde_json::from_slice::<integrity::PrepatchedManifest>(&bytes).ok());
+    let manifest_valid = manifest.as_ref().is_some_and(|m| prepatched::validate_manifest(m, &game_version).is_ok());
+    let matches = |name: &str, path: &Path| -> bool {
+        manifest_valid && manifest.as_ref().and_then(|m| m.files.get(name)).is_some_and(|info| {
+            std::fs::metadata(path).is_ok_and(|meta| meta.len() == info.size)
+                && integrity::compute_file_sha256_cached(path).is_some_and(|hash| hash.eq_ignore_ascii_case(&info.sha256))
+        })
+    };
+    let px_exists = px_path.is_file();
+    let px_patched = matches("ProjectX.upk", &px_path);
+    let tg_exists = tg_path.is_file();
+    let tg_size = std::fs::metadata(&tg_path).map(|m| m.len()).unwrap_or(0);
+    let tg_crash_fixed = matches("TAGame.upk", &tg_path);
+    let tg_valid = tg_exists && tg_size > 1_000_000;
+    let version_mismatch = manifest.as_ref().is_some_and(|m| m.game_version != game_version);
+    let mismatch_warning = if version_mismatch { Some("Cached API files belong to a different Rocket League build. Install a matching API release.".into()) } else { None };
 
     Ok(GamePatchStatus {
         projectx_patched: px_patched,
@@ -1554,75 +1558,10 @@ async fn get_game_patch_status(app: tauri::AppHandle) -> Result<GamePatchStatus,
         tagame_crash_fixed: tg_crash_fixed,
         cooked_dir: cooked.to_string_lossy().to_string(),
         game_version,
-        version_mismatch: false,
-        mismatch_warning: None,
+        version_mismatch,
+        mismatch_warning,
     })
     }).await.map_err(|e| format!("Patch status check failed: {e}"))?
-}
-
-#[tauri::command]
-fn apply_saved_spoof_values() -> Result<String, String> {
-    game_file_access::ensure_idle()?;
-    let cfg = crate::psynet::load_active_spoof_from_disk();
-    let name = cfg
-        .as_ref()
-        .and_then(|c| c.name_spoof.as_ref())
-        .filter(|n| n.enabled && !n.display_name.trim().is_empty())
-        .map(|n| n.display_name.trim().to_string())
-        .or_else(|| {
-            cfg.as_ref()
-                .filter(|c| !c.custom_name.trim().is_empty())
-                .map(|c| c.custom_name.trim().to_string())
-        })
-        .unwrap_or_default();
-    let title = cfg
-        .as_ref()
-        .map(|c| {
-            if !c.equip_title_id.trim().is_empty() {
-                c.equip_title_id.trim().to_string()
-            } else {
-                c.display_title_id.trim().to_string()
-            }
-        })
-        .unwrap_or_default();
-    let ping = crate::udp_proxy::sample_spoofed_ping_ms()
-        .map(|v| v.to_string())
-        .or_else(|| {
-            cfg.as_ref()
-                .and_then(|c| c.ping_spoof.clone())
-                .filter(|p| p.enabled)
-                .map(|p| p.min_ms.to_string())
-        })
-        .unwrap_or_default();
-
-    let mut slots: Vec<(u32, Vec<(String, String)>)> =
-        vec![(0, Vec::new()); crate::presets::COSMETIC_SLOTS_COUNT + 7];
-    for rule in crate::proxy::load_active_swap_rules(None) {
-        let idx = crate::presets::upk_slot_index_from_str(&rule.slot) as usize;
-        if idx < slots.len() && rule.wanted_id > 0 {
-            let mut attrs = Vec::new();
-            if rule.paint_id > 0 {
-                attrs.push(("Painted".to_string(), rule.paint_id.to_string()));
-            }
-            slots[idx] = (rule.wanted_id as u32, attrs);
-        }
-    }
-    for (pid, paint) in crate::proxy::load_active_spawned_items(None) {
-        if pid <= 0 || slots.iter().any(|(p, _)| *p == pid as u32) {
-            continue;
-        }
-        if let Some(slot) = slots.iter_mut().find(|(p, _)| *p == 0) {
-            let mut attrs = Vec::new();
-            if paint > 0 {
-                attrs.push(("Painted".to_string(), paint.to_string()));
-            }
-            *slot = (pid as u32, attrs);
-        }
-    }
-    let key = crate::loadout_wire::encode_loadout(&slots, 1);
-    crate::savedata::patch_saved_spoof_values(&name, &ping, &title, &key)?;
-    crate::applog::event(&format!("startup: loadout wire synced to save ({key})"));
-    Ok(key)
 }
 
 #[tauri::command]
@@ -1635,18 +1574,8 @@ async fn ensure_game_patches(app: tauri::AppHandle) -> Result<serde_json::Value,
         }));
     }
     let game = PathBuf::from(&config.game_dir);
+    // The only package installation path: complete, version-matched API files.
     let sync_res = integrity::sync_prepatched_upks(Some(&app), &game).await?;
-    if matches!(&sync_res, integrity::PrepatchedSyncStatus::Deferred { .. }) {
-        queue_game_file_maintenance(app);
-        return Ok(serde_json::to_value(&sync_res).unwrap_or_default());
-    }
-    let cooked = upk::palette::resolve_cooked_dir(&game).unwrap_or(game);
-    let swaps = load_swaps(&app);
-    let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
-    let _ = apply_saved_spoof_values();
-    let avatar_app = app.clone();
-    tauri::async_runtime::spawn_blocking(move || avatar::ensure_lobby_avatar_applied(&avatar_app))
-        .await.map_err(|e| format!("Lobby avatar task failed: {e}"))??;
     Ok(serde_json::to_value(&sync_res).unwrap_or_default())
 }
 
@@ -1673,76 +1602,14 @@ async fn get_palette_status(app: tauri::AppHandle) -> Result<upk::PaletteStatus,
     Ok(upk::palette::read_palette_status(Path::new(&config.game_dir), fp))
 }
 
-fn explain_upk_lock(err: String, what: &str) -> String {
-    if err.contains("os error 32") || err.contains("os error 33") {
-        return format!(
-            "{err} — {what} is locked by another program. Close Rocket League and the Epic launcher, then retry."
-        );
-    }
-    err
-}
-
-fn explain_palette_error(err: String) -> String {
-    if err.contains("os error 32") || err.contains("os error 33") {
-        return format!(
-            "{err} — TAGame.upk is locked by another program. Close Rocket League and the Epic launcher, then retry."
-        );
-    }
-    err
+#[tauri::command]
+async fn apply_rich_palette(_app: tauri::AppHandle) -> Result<upk::PaletteStatus, String> {
+    Err("Local package modification is disabled. Palette support must be included in the matching API release.".into())
 }
 
 #[tauri::command]
-async fn apply_rich_palette(app: tauri::AppHandle) -> Result<upk::PaletteStatus, String> {
-    let config = get_config(app.clone()).await?;
-    if config.game_dir.is_empty() {
-        return Err("Game directory not set".into());
-    }
-    let st = upk::palette::apply_rich_palette_to_file(
-        Path::new(&config.game_dir),
-        include_str!("../resources/keys.txt"),
-        include_str!("../resources/keys_map.json"),
-    )
-    .map_err(|e| explain_palette_error(e.to_string()))?;
-    let mut state = load_integrity(&app);
-    let cooked = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let rl_fp = integrity::rl_update_fingerprint_for(Path::new(&cooked));
-    integrity::mark_palette_on_with_rl(&mut state, &st.fingerprint, &rl_fp);
-    save_integrity(&app, &state)?;
-    let _ = psynet::merge_palette_spoof(true);
-
-    let swaps = load_swaps(&app);
-    if !swaps.is_empty() {
-        if let Ok(cooked_path) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
-            let _ = sync_all_swaps_to_tagame(&app, &cooked_path, &swaps).await;
-        }
-    }
-
-    Ok(st)
-}
-
-#[tauri::command]
-async fn restore_rich_palette(app: tauri::AppHandle) -> Result<upk::PaletteStatus, String> {
-    let config = get_config(app.clone()).await?;
-    if config.game_dir.is_empty() {
-        return Err("Game directory not set".into());
-    }
-    let st = upk::palette::restore_palette_backup(Path::new(&config.game_dir))
-        .map_err(|e| explain_palette_error(e.to_string()))?;
-    let mut state = load_integrity(&app);
-    integrity::mark_palette_off(&mut state);
-    save_integrity(&app, &state)?;
-    let _ = psynet::merge_palette_spoof(false);
-
-    let swaps = load_swaps(&app);
-    if !swaps.is_empty() {
-        if let Ok(cooked_path) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
-            let _ = sync_all_swaps_to_tagame(&app, &cooked_path, &swaps).await;
-        }
-    }
-
-    Ok(st)
+async fn restore_rich_palette(_app: tauri::AppHandle) -> Result<upk::PaletteStatus, String> {
+    Err("Local package modification is disabled. Palette support must be included in the matching API release.".into())
 }
 
 #[tauri::command]
@@ -1831,32 +1698,9 @@ async fn get_swaps(app: tauri::AppHandle) -> Result<Vec<SwapEntry>, String> {
 }
 
 pub(crate) async fn sync_all_swaps_to_tagame(
-    _app: &tauri::AppHandle,
-    cooked: &Path,
-    _swaps: &[SwapEntry],
+    _app: &tauri::AppHandle, _cooked: &Path, _swaps: &[SwapEntry],
 ) -> Result<(), String> {
-    if game_file_access::ensure_idle().is_err() {
-        applog::event("game files: package synchronization deferred while Rocket League is running");
-        return Ok(());
-    }
-    // Restore any other UPKs from backups to keep game packages clean and stock (never overwrite ProjectX.upk or active prepatched TAGame)
-    if let Ok(entries) = std::fs::read_dir(cooked) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                let lower = file_name.to_lowercase();
-                if lower.ends_with(".upk.bak") && !lower.starts_with("projectx") && !lower.starts_with("tagame") {
-                    let live_name = file_name.trim_end_matches(".bak");
-                    let live_path = cooked.join(live_name);
-                    let _ = std::fs::copy(&path, &live_path);
-                }
-            }
-        }
-    }
-
-    // Verify ProjectX.upk broker hooks are active
-    let _ = upk::ensure_projectx_patched(cooked);
-
+    // Inventory changes are broker state; never rewrite installed packages.
     Ok(())
 }
 
@@ -1979,7 +1823,8 @@ async fn spawn_item(
     // Actively push downstream WebSocket RewardResult frame so the item pops up live in-game
     let _ = crate::proxy::inject_reward_drop(&[(wid, paint)]).await;
 
-    apply_swap(app, "0".to_string(), wanted_id, None, None, paint_id, None).await
+    applog::event(&format!("spawn_item: item {wid} (paint {paint}) registered in inventory and drop injected"));
+    Ok(format!("Item {wid} spawned into inventory"))
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
@@ -2175,13 +2020,6 @@ async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<St
         swaps.retain(|s| s.owned_id != id && s.wanted_id != id);
         save_swaps_checked(&app, &swaps)?;
         remove_proxy_inventory_items(Some(&ids))?;
-        // The menu hook also reads a persisted loadout key. Leaving this key
-        // unchanged makes a deleted item return when the garage reloads.
-        if game_file_access::ensure_idle().is_ok() {
-            apply_saved_spoof_values()?;
-        } else {
-            queue_game_file_maintenance(app.clone());
-        }
         record_swap_history(&app, "restore", &[], &format!("restored item #{id}"));
         applog::event(&format!("restore_single_backup: removed product {id} from inventory and loadout wire"));
         Ok("Item removed. Restart Rocket League to clear its current inventory cache.".to_string())
@@ -2194,11 +2032,6 @@ async fn restore_backups(app: tauri::AppHandle) -> Result<String, String> {
         let count = load_swaps(&app).len();
         save_swaps_checked(&app, &[])?;
         remove_proxy_inventory_items(None)?;
-        if game_file_access::ensure_idle().is_ok() {
-            apply_saved_spoof_values()?;
-        } else {
-            queue_game_file_maintenance(app.clone());
-        }
         record_swap_history(&app, "restore_all", &[], "restored all active items");
         applog::event(&format!("restore_backups: removed {count} entries and cleared loadout wire"));
         Ok(format!("Removed {count} item(s). Restart Rocket League to clear its current inventory cache."))
@@ -2275,26 +2108,8 @@ fn open_external_url(url: String) {
 }
 
 #[tauri::command]
-async fn reset_tagame_for_verify(app: tauri::AppHandle) -> Result<String, String> {
-    let config = get_config(app.clone()).await?;
-    if config.game_dir.is_empty() {
-        return Err("Game directory not set".to_string());
-    }
-    let game_dir = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir))
-        .unwrap_or_else(|_| PathBuf::from(&config.game_dir));
-    let tagame = game_dir.join("TAGame.upk");
-    let bak = integrity::bak_path_for(&tagame);
-    if !bak.exists() {
-        return Err("No TAGame.upk backup found — nothing to reset.".into());
-    }
-    std::fs::copy(&bak, &tagame)
-        .map_err(|e| explain_upk_lock(e.to_string(), "TAGame.upk"))?;
-
-    let mut swaps = load_swaps(&app);
-    swaps.clear();
-    save_swaps(&app, &swaps);
-    applog::event("reset_tagame_for_verify: TAGame.upk restored from backup (backup kept)");
-    Ok("TAGame.upk restored from backup. Kept TAGame.upk.bak intact.".into())
+async fn reset_tagame_for_verify(_app: tauri::AppHandle) -> Result<String, String> {
+    Err("Use Verify game files in Epic Games/Steam to restore the current build. Old local backups are never copied over updated game files.".into())
 }
 
 #[tauri::command]
@@ -2381,12 +2196,17 @@ async fn apply_ping_spoof_upk(
 ) -> Result<(), String> {
     let min = min_ms.or(minMs).unwrap_or(16);
     let max = max_ms.or(maxMs).unwrap_or(24);
-    crate::udp_proxy::set_ping_spoof(Some(crate::psynet::PingSpoofPayload {
+    let payload = crate::psynet::PingSpoofPayload {
         enabled: true,
         min_ms: min,
         max_ms: max,
-    }));
-    let _ = apply_saved_spoof_values();
+    };
+    crate::udp_proxy::set_ping_spoof(Some(payload.clone()));
+    let mut cfg = crate::psynet::load_active_spoof_from_disk().unwrap_or_default();
+    cfg.ping_spoof = Some(payload);
+    if let Ok(dir) = crate::psynet::find_proxy_dir() {
+        let _ = crate::psynet::write_spoof(&dir, &cfg);
+    }
     applog::event(&format!("ping_spoof: enabled web ping [{min}..{max}] ms"));
     Ok(())
 }
@@ -2399,10 +2219,17 @@ async fn restore_ping_spoof_upk(app: tauri::AppHandle) -> Result<(), String> {
         min_ms: 16,
         max_ms: 24,
     }));
-    let _ = apply_saved_spoof_values();
+    let mut cfg = crate::psynet::load_active_spoof_from_disk().unwrap_or_default();
+    if let Some(ref mut p) = cfg.ping_spoof {
+        p.enabled = false;
+    }
+    if let Ok(dir) = crate::psynet::find_proxy_dir() {
+        let _ = crate::psynet::write_spoof(&dir, &cfg);
+    }
     applog::event("ping_spoof: disabled web ping");
     Ok(())
 }
+
 
 #[tauri::command]
 async fn get_swapper_status(app: tauri::AppHandle) -> Result<upk::TagameSwapperStatus, String> {
@@ -2461,27 +2288,8 @@ fn load_locale(app: tauri::AppHandle, lang: String) -> Result<serde_json::Value,
 }
 
 #[tauri::command]
-async fn revert_game_patches(app: tauri::AppHandle) -> Result<String, String> {
-    let config = get_config(app.clone()).await?;
-    if config.game_dir.trim().is_empty() {
-        return Err("Rocket League directory not found. Set your game path in Settings.".into());
-    }
-    let cooked = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir))
-        .map_err(|e| format!("Rocket League directory not found: {e}"))?;
-    let mut restored = Vec::new();
-    for (file, backup) in [
-        ("TAGame.upk", "TAGame.upk.bak"),
-        ("ProjectX.upk", "ProjectX.upk.bak"),
-    ] {
-        let live = cooked.join(file);
-        let bak = cooked.join(backup);
-        if bak.is_file() {
-            fs::copy(&bak, &live).map_err(|e| format!("Failed to restore {file}: {e}"))?;
-            restored.push(file);
-        }
-    }
-    applog::event(&format!("revert_game_patches: restored {}", restored.join(", ")));
-    Ok(format!("Reverted game patches: {}", restored.join(", ")))
+async fn revert_game_patches(_app: tauri::AppHandle) -> Result<String, String> {
+    Err("Use Verify game files in Epic Games/Steam to restore the current build. Old local backups are never copied over updated game files.".into())
 }
 
 #[tauri::command]
@@ -3339,6 +3147,10 @@ async fn detect_game_dir() -> Result<Vec<DetectedInstall>, String> {
 
     #[cfg(target_os = "windows")]
     {
+        use winreg::enums::*;
+        use winreg::RegKey;
+
+        // 1. Check running Rocket League process first
         if let Some((_, pid)) = crate::psynet::rocket_league_process() {
             if let Some(exe_path) = crate::winprobe::process_path(pid) {
                 if let Ok(cooked) = upk::palette::resolve_cooked_dir(&exe_path) {
@@ -3346,84 +3158,153 @@ async fn detect_game_dir() -> Result<Vec<DetectedInstall>, String> {
                 }
             }
         }
-    }
 
-    for drive in ["C", "D", "E", "F", "G", "H", "X", "Z"] {
-        let steam_cands = [
-            format!(r"{drive}:\Program Files (x86)\Steam\steamapps\common\rocketleague\TAGame\CookedPCConsole"),
-            format!(r"{drive}:\Program Files\Steam\steamapps\common\rocketleague\TAGame\CookedPCConsole"),
-            format!(r"{drive}:\SteamLibrary\steamapps\common\rocketleague\TAGame\CookedPCConsole"),
-            format!(r"{drive}:\Steam\steamapps\common\rocketleague\TAGame\CookedPCConsole"),
-            format!(r"{drive}:\Games\Steam\steamapps\common\rocketleague\TAGame\CookedPCConsole"),
-        ];
-        for path in steam_cands {
-            let p = std::path::Path::new(&path);
-            if p.join("TAGame.upk").exists() {
-                add_unique(&mut results, "Steam", path);
+        // 2. Steam Registry lookup: HKCU\Software\Valve\Steam -> SteamPath & libraryfolders.vdf
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let mut steam_dirs: Vec<PathBuf> = Vec::new();
+        if let Ok(key) = hkcu.open_subkey(r"Software\Valve\Steam") {
+            if let Ok(steam_path) = key.get_value::<String, _>("SteamPath") {
+                steam_dirs.push(PathBuf::from(steam_path));
             }
         }
-
-        let epic_cands = [
-            format!(r"{drive}:\Program Files\Epic Games\rocketleague\TAGame\CookedPCConsole"),
-            format!(r"{drive}:\Program Files (x86)\Epic Games\rocketleague\TAGame\CookedPCConsole"),
-            format!(r"{drive}:\Epic Games\rocketleague\TAGame\CookedPCConsole"),
-            format!(r"{drive}:\rocketleague\TAGame\CookedPCConsole"),
-            format!(r"{drive}:\games\rocketleague\TAGame\CookedPCConsole"),
-            format!(r"{drive}:\Games\rocketleague\TAGame\CookedPCConsole"),
-            format!(r"{drive}:\Games\Epic Games\rocketleague\TAGame\CookedPCConsole"),
-        ];
-        for path in epic_cands {
-            let p = std::path::Path::new(&path);
-            if p.join("TAGame.upk").exists() {
-                add_unique(&mut results, "Epic Games", path);
-            }
-        }
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        use winreg::enums::*;
-        use winreg::RegKey;
-
         let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-        for subkey in &[
-            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 252950",
-            r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 252950",
-        ] {
+        for subkey in &[r"SOFTWARE\Valve\Steam", r"SOFTWARE\WOW6432Node\Valve\Steam"] {
             if let Ok(key) = hklm.open_subkey(subkey) {
-                if let Ok(loc) = key.get_value::<String, _>("InstallLocation") {
-                    let p = std::path::PathBuf::from(loc).join("TAGame").join("CookedPCConsole");
-                    if p.exists() {
-                        add_unique(&mut results, "Steam", p.to_string_lossy().into_owned());
+                if let Ok(install_path) = key.get_value::<String, _>("InstallPath") {
+                    steam_dirs.push(PathBuf::from(install_path));
+                }
+            }
+        }
+
+        for steam_root in steam_dirs {
+            let mut library_paths = vec![steam_root.join("steamapps")];
+            let vdf_path = steam_root.join("steamapps").join("libraryfolders.vdf");
+            if let Ok(vdf) = std::fs::read_to_string(&vdf_path) {
+                for line in vdf.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with("\"path\"") {
+                        if let Some(p) = trimmed.split('"').nth(3) {
+                            let clean_p = p.replace(r"\\", r"\");
+                            library_paths.push(PathBuf::from(clean_p).join("steamapps"));
+                        }
+                    }
+                }
+            }
+            for lib in library_paths {
+                for folder in &["rocketleague", "Rocket League"] {
+                    let candidate = lib.join("common").join(folder);
+                    if let Ok(cooked) = upk::palette::resolve_cooked_dir(&candidate) {
+                        add_unique(&mut results, "Steam", cooked.to_string_lossy().into_owned());
                     }
                 }
             }
         }
 
-        let manifest_dir = std::path::Path::new(r"C:\ProgramData\Epic\EpicGamesLauncher\Data\Manifests");
-        if manifest_dir.exists() {
-            if let Ok(entries) = fs::read_dir(manifest_dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.extension().and_then(|e| e.to_str()) != Some("item") { continue; }
-                    if let Ok(content) = fs::read_to_string(&path) {
-                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                            let is_rl = json.get("AppName")
-                                .and_then(|v| v.as_str())
-                                .map_or(false, |s| s.eq_ignore_ascii_case("Sugar"))
-                                || json.get("DisplayName")
-                                    .and_then(|v| v.as_str())
-                                    .map_or(false, |s| s.to_lowercase().contains("rocket league"));
-                            if is_rl {
-                                if let Some(loc) = json.get("InstallLocation").and_then(|v| v.as_str()) {
-                                    let p = std::path::PathBuf::from(loc).join("TAGame").join("CookedPCConsole");
-                                    if p.exists() {
-                                        add_unique(&mut results, "Epic Games", p.to_string_lossy().into_owned());
+        // 3. Scan Windows Uninstall Registry for Rocket League (Steam, Epic, standalone)
+        for hkey in &[HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER] {
+            let root = RegKey::predef(*hkey);
+            for uninstall_base in &[
+                r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+            ] {
+                if let Ok(key) = root.open_subkey(uninstall_base) {
+                    for subkey_name in key.enum_keys().filter_map(|k| k.ok()) {
+                        if let Ok(sub) = key.open_subkey(&subkey_name) {
+                            let display_name: String = sub.get_value("DisplayName").unwrap_or_default();
+                            let is_match = subkey_name.eq_ignore_ascii_case("Sugar")
+                                || subkey_name.eq_ignore_ascii_case("Steam App 252950")
+                                || display_name.to_lowercase().contains("rocket league");
+                            if is_match {
+                                if let Ok(loc) = sub.get_value::<String, _>("InstallLocation") {
+                                    if !loc.is_empty() {
+                                        if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&loc)) {
+                                            let label = if subkey_name.contains("252950") || loc.to_lowercase().contains("steam") {
+                                                "Steam"
+                                            } else {
+                                                "Epic Games"
+                                            };
+                                            add_unique(&mut results, label, cooked.to_string_lossy().into_owned());
+                                        }
                                     }
                                 }
                             }
                         }
                     }
+                }
+            }
+        }
+
+        // 4. Epic Games Launcher Manifests (.item files)
+        let mut manifest_dirs: Vec<PathBuf> = Vec::new();
+        if let Ok(pd) = std::env::var("ProgramData") {
+            manifest_dirs.push(PathBuf::from(pd).join("Epic").join("EpicGamesLauncher").join("Data").join("Manifests"));
+        }
+        manifest_dirs.push(PathBuf::from(r"C:\ProgramData\Epic\EpicGamesLauncher\Data\Manifests"));
+        if let Ok(key) = hklm.open_subkey(r"SOFTWARE\Epic Games\EpicGamesLauncher") {
+            if let Ok(app_data) = key.get_value::<String, _>("AppDataPath") {
+                manifest_dirs.push(PathBuf::from(app_data).join("Manifests"));
+            }
+        }
+        if let Ok(key) = hklm.open_subkey(r"SOFTWARE\WOW6432Node\Epic Games\EpicGamesLauncher") {
+            if let Ok(app_data) = key.get_value::<String, _>("AppDataPath") {
+                manifest_dirs.push(PathBuf::from(app_data).join("Manifests"));
+            }
+        }
+        if let Ok(key) = hkcu.open_subkey(r"Software\Epic Games\EpicGamesLauncher") {
+            if let Ok(app_data) = key.get_value::<String, _>("AppDataPath") {
+                manifest_dirs.push(PathBuf::from(app_data).join("Manifests"));
+            }
+        }
+        for manifest_dir in manifest_dirs {
+            if manifest_dir.is_dir() {
+                if let Ok(entries) = fs::read_dir(&manifest_dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.extension().and_then(|e| e.to_str()) != Some("item") { continue; }
+                        if let Ok(content) = fs::read_to_string(&path) {
+                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                                let is_rl = json.get("AppName")
+                                    .and_then(|v| v.as_str())
+                                    .map_or(false, |s| s.eq_ignore_ascii_case("Sugar"))
+                                    || json.get("DisplayName")
+                                        .and_then(|v| v.as_str())
+                                        .map_or(false, |s| s.to_lowercase().contains("rocket league"));
+                                if is_rl {
+                                    if let Some(loc) = json.get("InstallLocation").and_then(|v| v.as_str()) {
+                                        if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(loc)) {
+                                            add_unique(&mut results, "Epic Games", cooked.to_string_lossy().into_owned());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 5. Standard drive scanning fallback (checks all drive letters and folder variants)
+    for drive in ["C", "D", "E", "F", "G", "H", "I", "J", "K", "X", "Z"] {
+        for folder in &["rocketleague", "Rocket League", "RocketLeague"] {
+            let candidates = [
+                format!(r"{drive}:\Program Files\Epic Games\{folder}"),
+                format!(r"{drive}:\Program Files (x86)\Epic Games\{folder}"),
+                format!(r"{drive}:\Epic Games\{folder}"),
+                format!(r"{drive}:\{folder}"),
+                format!(r"{drive}:\Games\{folder}"),
+                format!(r"{drive}:\games\{folder}"),
+                format!(r"{drive}:\Games\Epic Games\{folder}"),
+                format!(r"{drive}:\Program Files (x86)\Steam\steamapps\common\{folder}"),
+                format!(r"{drive}:\Program Files\Steam\steamapps\common\{folder}"),
+                format!(r"{drive}:\SteamLibrary\steamapps\common\{folder}"),
+                format!(r"{drive}:\Steam\steamapps\common\{folder}"),
+                format!(r"{drive}:\Games\Steam\steamapps\common\{folder}"),
+            ];
+            for path in candidates {
+                if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&path)) {
+                    let label = if path.to_lowercase().contains("steam") { "Steam" } else { "Epic Games" };
+                    add_unique(&mut results, label, cooked.to_string_lossy().into_owned());
                 }
             }
         }
@@ -3816,6 +3697,29 @@ async fn dump_network_capture(app: tauri::AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn capture_bunches(_app: tauri::AppHandle) -> Result<String, String> {
+    let packets = crate::udp_proxy::get_udp_capture();
+    let mut rows = Vec::new();
+    for p in packets.iter().filter(|p| p.direction == "C2S") {
+        rows.push(serde_json::json!({
+            "timestamp": p.timestamp,
+            "endpoint": p.endpoint,
+            "decrypted": p.decrypted,
+            "len": p.payload.len(),
+            "hex": p.payload.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+        }));
+    }
+    let dir = crate::psynet::config_dir().join("bunch_captures");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+    let path = dir.join(format!("bunches-{stamp}.json"));
+    fs::write(&path, serde_json::to_vec_pretty(&rows).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    applog::event(&format!("capture: wrote {} C2S bunches to {}", rows.len(), path.display()));
+    Ok(format!("{} C2S bunches -> {}", rows.len(), path.display()))
+}
+
+#[tauri::command]
 async fn get_network_status() -> Result<serde_json::Value, String> {
     let cfg = psynet::load_active_spoof_from_disk().unwrap_or_default();
     let udp_port = udp_proxy::get_local_port().unwrap_or(0);
@@ -3834,91 +3738,6 @@ async fn get_network_status() -> Result<serde_json::Value, String> {
 }
 
 
-static GAME_MAINTENANCE_QUEUED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-fn queue_game_file_maintenance(app_handle: tauri::AppHandle) {
-    use std::sync::atomic::Ordering;
-    if GAME_MAINTENANCE_QUEUED.swap(true, Ordering::SeqCst) { return; }
-    std::thread::spawn(move || {
-        let mut deferred = false;
-        loop {
-            if game_file_access::ensure_idle().is_err() {
-                if !deferred { applog::event(game_file_access::DEFERRED_MESSAGE); }
-                deferred = true;
-                std::thread::sleep(std::time::Duration::from_secs(2));
-                continue;
-            }
-            let result = game_file_access::run_if_idle(|| {
-                maintain_idle_game_files(app_handle.clone());
-                let saved_values = apply_saved_spoof_values();
-                let lobby_avatar = avatar::ensure_lobby_avatar_applied(&app_handle);
-                saved_values?;
-                lobby_avatar.map(|_| ())
-            });
-            if result.is_err() && game_file_access::ensure_idle().is_err() { continue; }
-            if let Err(e) = result { applog::event(&format!("game files: maintenance skipped: {e}")); }
-            if deferred {
-                tauri::async_runtime::block_on(async {
-                    let _ = check_integrity(app_handle.clone()).await;
-                    let _ = ensure_game_patches(app_handle.clone()).await;
-                });
-            }
-            if game_file_access::ensure_idle().is_err() { deferred = true; continue; }
-            GAME_MAINTENANCE_QUEUED.store(false, Ordering::SeqCst);
-            break;
-        }
-    });
-}
-
-fn maintain_idle_game_files(app_handle: tauri::AppHandle) {
-    if game_file_access::ensure_idle().is_err() { return; }
-    let mut integrity = load_integrity(&app_handle);
-    let applied = if let Ok(config) = tauri::async_runtime::block_on(get_config(app_handle.clone())) {
-        if !config.game_dir.is_empty() {
-            let _ = tracker::commands::ensure_stats_api_files(&config.game_dir);
-            if integrity.palette_active && !integrity.rl_update_fingerprint.is_empty() {
-                if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                    let current_rl_fp = integrity::rl_update_fingerprint_for(&cooked);
-                    if !current_rl_fp.is_empty() && current_rl_fp != integrity.rl_update_fingerprint {
-                        applog::event(&format!(
-                            "startup: RL update detected (fingerprint changed {} -> {}), syncing palette",
-                            integrity.rl_update_fingerprint, current_rl_fp
-                        ));
-                        match upk::palette::restore_palette_backup(Path::new(&config.game_dir)) {
-                            Ok(_) => {
-                                integrity::mark_palette_off(&mut integrity);
-                                let _ = save_integrity(&app_handle, &integrity);
-                                applog::event("startup: palette synced after RL update");
-                            }
-                            Err(e) => {
-                                applog::event(&format!("startup: palette sync failed: {e}"));
-                            }
-                        }
-                    }
-                }
-            }
-
-            let st = upk::palette::read_palette_status(Path::new(&config.game_dir), None);
-            if integrity.palette_active != st.applied {
-                integrity.palette_active = st.applied;
-                if st.applied {
-                    integrity.palette_fingerprint = st.fingerprint;
-                } else {
-                    integrity.palette_fingerprint.clear();
-                    integrity.rl_update_fingerprint.clear();
-                }
-                let _ = save_integrity(&app_handle, &integrity);
-            }
-            st.applied
-        } else {
-            false
-        }
-    } else {
-        integrity.palette_active
-    };
-    let _ = psynet::merge_palette_spoof(applied);
-
-}
 
 pub fn run() {
     #[cfg(windows)]
@@ -4046,7 +3865,7 @@ pub fn run() {
             let app_handle = app.handle().clone();
 
             let _ = psynet::merge_palette_spoof(load_integrity(app.handle()).palette_active);
-            queue_game_file_maintenance(app.handle().clone());
+            // API synchronization is requested asynchronously by the frontend.
 
             applog::event(&format!(
                 "app setup complete; build {} (v{}, hash {}) logs at {}",
@@ -4065,15 +3884,7 @@ pub fn run() {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(300)).await;
                     let _ = features::get_features(ttl_app.clone()).await;
-
                 }
-            });
-
-            std::thread::spawn(|| {
-                if let Ok(()) = ctrlc::set_handler(|| {
-                    psynet::kill_proxy_on_exit();
-                    std::process::exit(0);
-                }) {}
             });
             std::thread::spawn(|| {
                 tauri::async_runtime::spawn(async {
@@ -4272,7 +4083,6 @@ pub fn run() {
             restore_single_backup,
             check_integrity,
             ensure_game_patches,
-            apply_saved_spoof_values,
             load_locale,
             revert_game_patches,
             get_game_patch_status,
@@ -4406,6 +4216,7 @@ pub fn run() {
             get_network_event,
             clear_network_events,
             dump_network_capture,
+            capture_bunches,
             get_network_status,
         ])
         .build(tauri::generate_context!())

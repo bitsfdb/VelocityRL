@@ -4421,3 +4421,13 @@ select option {
 }
 
 .net-empty { text-align: center; padding: 36px; color: var(--text-secondary); font-size: 12px; }
+
+.rl-info {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  color: var(--muted, #a1a1aa);
+  cursor: help;
+  vertical-align: middle;
+}
+.rl-info:hover { color: var(--accent, #60a5fa); }
