@@ -3004,13 +3004,18 @@ async fn handle_broker_request(
         // account id from the request path against the learned local PlayerID
         // directly so the custom avatar resolves for those requests too.
         let learned_player_id = crate::proxy::get_learned_player_id().unwrap_or_default();
-        let target_is_local_pid = avatar_path_matches_player(
-            &req.uri().to_string(), &learned_player_id);
-        let is_tab_one = query_str.split('&').any(|p| p.eq_ignore_ascii_case("tab=1"));
-        if target_is_local_pid || is_tab_one {
+        let config_player_id = crate::proxy::get_spoof_config().await
+            .and_then(|c| c.name_spoof)
+            .and_then(|ns| ns.player_id)
+            .unwrap_or_default();
+        let target_is_local_pid = avatar_path_matches_player(&req.uri().to_string(), &learned_player_id)
+            || (!config_player_id.is_empty() && avatar_path_matches_player(&req.uri().to_string(), &config_player_id))
+            || avatar_path_matches_player(&req.uri().to_string(), "0")
+            || avatar_path_matches_player(&req.uri().to_string(), "unknown");
+        if target_is_local_pid {
             if let Some(png_bytes) = crate::avatar::get_active_avatar_png() {
                 crate::applog::event(&format!(
-                    "broker: {path_str} queried for local avatar (pid_match={target_is_local_pid}, tab=1={is_tab_one}) -> active avatar PNG ({} bytes)",
+                    "broker: {path_str} queried for local avatar (pid_match=true) -> active avatar PNG ({} bytes)",
                     png_bytes.len()
                 ));
                 return Ok(Response::builder()
@@ -8833,6 +8838,26 @@ mod tests {
             });
 
         assert!(target_is_local_pid, "lobby path for local player ID must match as local");
+    }
+
+    #[test]
+    fn test_nonlocal_player_request_with_tab_one_is_not_local() {
+        let local_pid = "37674b519c3544beb544f437f539ebf2";
+        let other_pid = "ffffffffffffffffffffffffffffffff";
+        let uri = format!("/content/images/players/avatars/large/epic%7c{other_pid}%7c0/0?tab=1&buildSecret=abc123");
+
+        assert!(!super::avatar_path_matches_player(&uri, local_pid),
+            "nonlocal player request with tab=1 must never match as local PID");
+    }
+
+    #[test]
+    fn test_rlim_pfp_route_recognized_as_local() {
+        for path in &["/rlim/pfp", "/rlim/avatar", "/rlim/avatar.png", "/a.png"] {
+            assert!(super::is_local_avatar_route(path, None),
+                "{path} must be recognized as local route");
+        }
+        // A route with an explicit player id query param is NOT a purely local route
+        assert!(!super::is_local_avatar_route("/rlim/avatar", Some("player_id=123")));
     }
 }
 
