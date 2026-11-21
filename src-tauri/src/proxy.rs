@@ -514,14 +514,6 @@ pub fn persist_learned_identity_to_disk(learned_id: Option<&str>, learned_name: 
     }
 }
 
-pub const BITS_PLAYER_ID: &str = "37674b519c3544beb544f437f539ebf2";
-
-#[inline]
-pub fn is_bits_player_id(id: &str) -> bool {
-    let lower = id.trim().to_ascii_lowercase();
-    lower.contains(BITS_PLAYER_ID) || normalize_player_id(&lower) == BITS_PLAYER_ID
-}
-
 pub fn normalize_player_id(id: &str) -> String {
     let lower = id.trim().to_ascii_lowercase();
     let s = if let Some(first_bar) = lower.find('|') {
@@ -566,9 +558,16 @@ pub fn patch_eos_accounts_json(
                 .map(|s| s.to_string());
 
             let mut is_match = false;
-            if let Some(ref a) = acc {
-                if is_bits_player_id(a) {
-                    is_match = true;
+            if let Some(ref target) = clean_target {
+                if let Some(ref a) = acc {
+                    if normalize_player_id(a) == *target {
+                        is_match = true;
+                    }
+                }
+            } else if single_item {
+                is_match = true;
+                if let Some(ref a) = acc {
+                    learned_pid = Some(a.clone());
                 }
             }
             if !is_match {
@@ -577,20 +576,6 @@ pub fn patch_eos_accounts_json(
                         if disp.eq_ignore_ascii_case(real) {
                             is_match = true;
                         }
-                    }
-                }
-            }
-            if !is_match {
-                if let Some(ref target) = clean_target {
-                    if let Some(ref a) = acc {
-                        if normalize_player_id(a) == *target {
-                            is_match = true;
-                        }
-                    }
-                } else if single_item {
-                    is_match = true;
-                    if let Some(ref a) = acc {
-                        learned_pid = Some(a.clone());
                     }
                 }
             }
@@ -628,9 +613,16 @@ pub fn patch_eos_accounts_json(
             .map(|s| s.to_string());
 
         let mut is_match = false;
-        if let Some(ref a) = acc {
-            if is_bits_player_id(a) {
-                is_match = true;
+        if let Some(ref target) = clean_target {
+            if let Some(ref a) = acc {
+                if normalize_player_id(a) == *target {
+                    is_match = true;
+                }
+            }
+        } else {
+            is_match = true;
+            if let Some(ref a) = acc {
+                learned_pid = Some(a.clone());
             }
         }
         if !is_match {
@@ -639,20 +631,6 @@ pub fn patch_eos_accounts_json(
                     if disp.eq_ignore_ascii_case(real) {
                         is_match = true;
                     }
-                }
-            }
-        }
-        if !is_match {
-            if let Some(ref target) = clean_target {
-                if let Some(ref a) = acc {
-                    if normalize_player_id(a) == *target {
-                        is_match = true;
-                    }
-                }
-            } else {
-                is_match = true;
-                if let Some(ref a) = acc {
-                    learned_pid = Some(a.clone());
                 }
             }
         }
@@ -696,8 +674,7 @@ fn patch_ws_name_fields(
     let clean_pid = target_pid
         .map(normalize_player_id)
         .filter(|s| !s.is_empty() && s != "temp")
-        .or_else(|| get_learned_player_id().map(|s| normalize_player_id(&s)))
-        .or_else(|| Some(BITS_PLAYER_ID.to_string()));
+        .or_else(|| get_learned_player_id().map(|s| normalize_player_id(&s)));
 
     let learned_real_name = get_learned_real_name();
 
@@ -764,10 +741,6 @@ fn patch_ws_names_value(
             ] {
                 if let Some(id_val) = map.get(*id_key) {
                     if let Some(s) = id_val.as_str() {
-                        if is_bits_player_id(s) {
-                            is_own_obj = true;
-                            break;
-                        }
                         let norm = normalize_player_id(s);
                         if let Some(target) = clean_pid {
                             if norm == target {
@@ -780,10 +753,6 @@ fn patch_ws_names_value(
                     } else if let Some(sub_obj) = id_val.as_object() {
                         for sub_k in &["ID", "Id", "id", "PlayerID", "AccountId"] {
                             if let Some(s) = sub_obj.get(*sub_k).and_then(|v| v.as_str()) {
-                                if is_bits_player_id(s) {
-                                    is_own_obj = true;
-                                    break;
-                                }
                                 let norm = normalize_player_id(s);
                                 if let Some(target) = clean_pid {
                                     if norm == target {
@@ -2385,6 +2354,7 @@ fn generate_simulated_unlock_container_payload(_body: &[u8]) -> Option<serde_jso
     });
 
     let resp_obj = serde_json::json!({
+        "Drops": [drop_obj.clone()],
         "Result": {
             "Drops": [drop_obj],
             "bSkipRoulette": false
@@ -2982,11 +2952,7 @@ async fn handle_broker_request(
 
         // Epic PlayerIDs look like "Epic|<32-hex account id>|0". They are not
         // Steam IDs, so parse_steam_id() returns None for them. Match the
-        // account id from the request path against the learned local PlayerID,
-        // BITS_PLAYER_ID, and any configured spoof PlayerID directly so the
-        // custom avatar resolves for those requests too.
         let learned_account_id = normalize_player_id(&crate::proxy::get_learned_player_id().unwrap_or_default());
-        let bits_account_id = normalize_player_id(BITS_PLAYER_ID);
         let config_account_id = crate::proxy::get_spoof_config().await
             .and_then(|c| c.name_spoof)
             .and_then(|ns| ns.player_id)
@@ -2998,7 +2964,6 @@ async fn handle_broker_request(
             cand == "0"
                 || cand == "unknown"
                 || (!learned_account_id.is_empty() && cand == learned_account_id)
-                || (!bits_account_id.is_empty() && cand == bits_account_id)
                 || (!config_account_id.is_empty() && cand == config_account_id)
         };
 
@@ -3383,7 +3348,7 @@ async fn handle_broker_request(
             if let Some(ns) = &cfg.name_spoof {
                 if ns.enabled && !ns.display_name.trim().is_empty() {
                     let learned_pid = get_learned_player_id();
-                    let target_pid = learned_pid.as_deref().or(ns.player_id.as_deref()).or(Some(BITS_PLAYER_ID));
+                    let target_pid = learned_pid.as_deref().or(ns.player_id.as_deref());
 
                     let (new_body, did_patch) = patch_ws_name_fields(
                         &out_body,
@@ -4100,7 +4065,7 @@ pub async fn patch_ws_frame_binary(frame: &[u8], from_server: bool) -> (Vec<u8>,
         if ns.enabled && !ns.display_name.trim().is_empty() {
             if !is_loadout_sensitive(&svc, &current_body) {
                 let learned_pid = get_learned_player_id();
-                let target_pid = learned_pid.as_deref().or(ns.player_id.as_deref()).or(Some(BITS_PLAYER_ID));
+                let target_pid = learned_pid.as_deref().or(ns.player_id.as_deref());
 
                 let (new_body, changed) = patch_ws_name_fields(
                     &current_body,
@@ -7195,12 +7160,8 @@ fn patch_reservation_value_sync(
                             is_local = true;
                         }
 
-                        let mut is_bits = false;
                         if let Some(pid_val) = player.get("PlayerID") {
                             if let Some(s) = pid_val.as_str() {
-                                if is_bits_player_id(s) {
-                                    is_bits = true;
-                                }
                                 let norm_pid = normalize_player_id(s);
                                 if let Some(learned) = learned_pid {
                                     if norm_pid == learned {
@@ -7210,7 +7171,7 @@ fn patch_reservation_value_sync(
                             }
                         }
 
-                        if is_bits {
+                        if is_local {
                             let (title_id, title_text) = configured_title();
                             let curr_title = player.get("TitleID").and_then(|v| v.as_str()).unwrap_or_default();
                             let curr_pt = player.get("PlayerTitle").and_then(|v| v.as_str()).unwrap_or_default();
@@ -7223,9 +7184,7 @@ fn patch_reservation_value_sync(
                                     *changed = true;
                                 }
                             }
-                        }
 
-                        if is_local && !is_bits {
                             // Inject custom title and name if active spoof config defines one
                             if let Some(spoof) = crate::psynet::load_active_spoof_from_disk() {
                                 {
@@ -7347,36 +7306,23 @@ fn patch_reservation_value_sync(
                             .or_else(|| event_data.get("EpicAccountId"))
                             .and_then(|v| v.as_str())
                             .unwrap_or_default();
-                        let ev_is_bits = is_bits_player_id(ev_player_id);
+                        let ev_norm = normalize_player_id(ev_player_id);
+                        let ev_is_local = if let Some(learned) = learned_pid {
+                            ev_norm == learned
+                        } else {
+                            true
+                        };
 
-                        if ev_is_bits {
+                        if ev_is_local {
                             let (title_id, title_text) = configured_title();
-                            event_data.insert("TitleID".to_string(), serde_json::json!(title_id));
-                            event_data.insert("TitleId".to_string(), serde_json::json!(title_id));
-                            event_data.insert("PlayerTitle".to_string(), serde_json::json!(title_text));
-                            event_data.insert("Title".to_string(), serde_json::json!(title_text));
-                            *changed = true;
-                        } else if let Some(spoof) = crate::psynet::load_active_spoof_from_disk() {
-                            {
-                                let equip_id = if !spoof.equip_title_id.trim().is_empty() {
-                                    spoof.equip_title_id.trim()
-                                } else {
-                                    spoof.display_title_id.trim()
-                                };
-                                if !equip_id.is_empty() {
-                                    event_data.insert("TitleID".to_string(), serde_json::json!(equip_id));
-                                    event_data.insert("TitleId".to_string(), serde_json::json!(equip_id));
-                                    *changed = true;
-                                }
-                                let mut custom_text = spoof.custom_text.trim();
-                                if custom_text.is_empty() {
-                                    custom_text = spoof.custom_name.trim();
-                                }
-                                if !custom_text.is_empty() {
-                                    event_data.insert("PlayerTitle".to_string(), serde_json::json!(custom_text));
-                                    event_data.insert("Title".to_string(), serde_json::json!(custom_text));
-                                    *changed = true;
-                                }
+                            if !title_id.is_empty() {
+                                event_data.insert("TitleID".to_string(), serde_json::json!(title_id));
+                                event_data.insert("TitleId".to_string(), serde_json::json!(title_id));
+                                event_data.insert("PlayerTitle".to_string(), serde_json::json!(title_text));
+                                event_data.insert("Title".to_string(), serde_json::json!(title_text));
+                                *changed = true;
+                            }
+                            if let Some(spoof) = crate::psynet::load_active_spoof_from_disk() {
 
                                 // Also patch PlayerName in PlayWithLoadout event if name spoofing
                                 let spoof_name = spoof.name_spoof.as_ref()
@@ -7979,12 +7925,6 @@ pub fn patch_users_can_show_avatar_json(body: &[u8]) -> (Vec<u8>, bool) {
                 hidden.clear();
                 changed = true;
             }
-        }
-
-        let bits_norm = BITS_PLAYER_ID.to_ascii_lowercase();
-        if !allowed_ids.iter().any(|id| normalize_player_id(id) == bits_norm) {
-            allowed_ids.push(format!("Epic|{BITS_PLAYER_ID}|0"));
-            changed = true;
         }
 
         if let Some(learned) = get_learned_player_id() {
@@ -8620,6 +8560,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_patch_reservation_applies_dev_title_to_bits() {
+        let test_pid = "37674b519c3544beb544f437f539ebf2";
+        set_learned_player_id(test_pid);
         let inner = serde_json::json!({
             "ReservationID": "test-res",
             "Players": [
@@ -8691,6 +8633,8 @@ mod tests {
 
     #[test]
     fn test_patch_users_can_show_avatar() {
+        let test_pid = "37674b519c3544beb544f437f539ebf2";
+        set_learned_player_id(test_pid);
         let body = br#"{"Result":{"AllowedPlayerIDs":["Epic|someother|0"],"HiddenPlayerIDs":["Epic|37674b519c3544beb544f437f539ebf2|0"]}}"#;
         let (patched, changed) = patch_users_can_show_avatar_json(body);
         assert!(changed);
@@ -8698,12 +8642,12 @@ mod tests {
         let allowed = val["Result"]["AllowedPlayerIDs"].as_array().unwrap();
         let hidden = val["Result"]["HiddenPlayerIDs"].as_array().unwrap();
         assert!(hidden.is_empty(), "HiddenPlayerIDs must be cleared");
-        assert!(allowed.iter().any(|v| normalize_player_id(v.as_str().unwrap()) == BITS_PLAYER_ID));
+        assert!(allowed.iter().any(|v| normalize_player_id(v.as_str().unwrap()) == test_pid));
         assert!(allowed.iter().any(|v| v.as_str().unwrap().contains("someother")));
     }
 
     #[test]
-    fn test_patch_eos_accounts_json_matches_bits_id() {
+    fn test_patch_eos_accounts_json_matches_real_name() {
         let mut val = serde_json::json!([
             {
                 "accountId": "37674b519c3544beb544f437f539ebf2",
@@ -8718,7 +8662,7 @@ mod tests {
             &mut val,
             "SpoofedDev",
             None,
-            None,
+            Some("OldName"),
         );
         assert!(modified);
         assert_eq!(val[0]["displayName"], "SpoofedDev");
@@ -8745,7 +8689,7 @@ mod tests {
         assert!(drop.get("AddedTimestamp").unwrap().is_null());
         assert!(drop.get("UpdatedTimestamp").unwrap().is_null());
         assert!(drop.get("Attributes").unwrap().is_array());
-        assert!(resp.get("Drops").is_none(), "no top-level Drops field");
+        assert!(resp.get("Drops").is_some(), "top-level Drops field must be present for UnrealScript RPC");
         assert!(resp.get("ContainerDrops").is_none(), "no ContainerDrops field");
     }
 
@@ -8815,24 +8759,26 @@ mod tests {
 
         let resp_json: serde_json::Value = serde_json::from_slice(body).expect("valid json");
         assert_eq!(resp_json.get("bSuccess").and_then(|v| v.as_bool()), Some(true));
+        assert!(resp_json.get("Drops").is_some(), "top-level Drops must be present for UnrealScript RPC");
         assert!(resp_json.get("Result").and_then(|r| r.get("Drops")).is_some());
     }
 
     #[test]
     fn test_lobby_avatar_path_matches_local_pid() {
-        let path_str = "/content/images/players/avatars/large/epic%7c37674b519c3544beb544f437f539ebf2%7c0/0";
+        let test_pid = "37674b519c3544beb544f437f539ebf2";
+        let path_str = format!("/content/images/players/avatars/large/epic%7c{test_pid}%7c0/0");
         let query_str = "buildSecret=abc123";
-        let bits_account_id = super::normalize_player_id(super::BITS_PLAYER_ID);
+        let test_account_id = super::normalize_player_id(test_pid);
 
         let target_is_local_pid = path_str.split(&['/', '?', '&'][..])
             .chain(query_str.split('&').filter_map(|q| q.split_once('=').map(|(_, v)| v)))
             .any(|part| {
                 let decoded = crate::avatar::percent_decode(part);
                 let candidate = super::normalize_player_id(&decoded);
-                !candidate.is_empty() && candidate == bits_account_id
+                !candidate.is_empty() && candidate == test_account_id
             });
 
-        assert!(target_is_local_pid, "lobby path for bits player ID must match as local");
+        assert!(target_is_local_pid, "lobby path for local player ID must match as local");
     }
 }
 
