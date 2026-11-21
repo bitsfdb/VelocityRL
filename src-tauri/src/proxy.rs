@@ -2519,7 +2519,6 @@ async fn handle_broker_request(
                     })
             })
             .unwrap_or_default();
-        let _ = crate::savedata::patch_saved_ping(&ping_val);
         crate::applog::event(&format!("broker: {path_str} queried -> responding '{ping_val}'"));
         return Ok(Response::builder()
             .status(StatusCode::OK)
@@ -6141,10 +6140,6 @@ pub fn patch_products_config(body: &[u8]) -> (Vec<u8>, bool) {
         ("SaveGameManager_TA", "bDisableSaveOSS", "False"),
         ("UIConfig_TA", "bCrateRouletteEnabled", "True"),
         ("GameplaySettingsSave_TA", "bQuickDropOpening", "False"),
-        ("UISavedValues_TA", "RLIM.Drops.v1.quick", "0"),
-        ("UISavedValues_TA", "RLIM.Drops.v1.roulette", "1"),
-        ("UISavedValues_TA", "S.Drops.v1.quick", "0"),
-        ("UISavedValues_TA", "S.Drops.v1.roulette", "1"),
     ];
 
     for (cls, prop, val) in overrides {
