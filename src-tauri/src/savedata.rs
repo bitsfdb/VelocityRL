@@ -519,6 +519,9 @@ pub fn patch_saved_ping(ping: &str) -> Result<(), String> {
     if set_saved_string(&mut envelope, "R.Ping.v1", ping).is_ok() {
         changed = true;
     }
+    if set_saved_string(&mut envelope, "R.Match.v1.showOwnPing", "1").is_ok() {
+        changed = true;
+    }
     if changed {
         save_envelope_to_file(&envelope, &save_path)?;
     }
@@ -537,9 +540,11 @@ pub fn patch_saved_spoof_values(
     let mut envelope = read_envelope(&save_path)?;
     let mut changed = rename_all_saved_keys_to_rlim(&mut envelope) > 0;
 
+    let show_ping = if ping.is_empty() { "0" } else { "1" };
     for (old_key, new_key, value) in [
         ("S.Name.v1", "R.Name.v1", name),
         ("S.Ping.v1", "R.Ping.v1", ping),
+        ("S.Match.v1.showOwnPing", "R.Match.v1.showOwnPing", show_ping),
         ("S.TitleSelf.v1", "R.TitleSelf.v1", title),
         ("S.LoadoutWire.v1.0", "R.LoadoutWire.v1.0", loadout_key),
         ("S.LoadoutWire.v1.1", "R.LoadoutWire.v1.1", loadout_key),

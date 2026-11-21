@@ -2289,8 +2289,8 @@ pub async fn start_ws_broker() -> Result<u16, String> {
         BROKER_PORT.store(0, Ordering::SeqCst);
     });
 
-    // Auxiliary listeners on remaining known ports (15759, 7546, 49320, 49325)
-    let aux_ports = [15759u16, 7546u16, 49320u16, 49325u16];
+    // Auxiliary listeners on remaining known ports (15759, 17895, 7546, 49320, 49325)
+    let aux_ports = [15759u16, 17895u16, 7546u16, 49320u16, 49325u16];
     for &alt_port in &aux_ports {
         if alt_port == port {
             continue;
@@ -2356,13 +2356,17 @@ fn generate_simulated_unlock_container_payload(_body: &[u8]) -> Option<serde_jso
 
     // Register into broker memory so garage inventory & loadout immediately recognize it
     register_spawned_items(&[(dropped_pid, dropped_paint)]);
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        handle.spawn(async move {
+            let _ = inject_reward_drop(&[(dropped_pid, dropped_paint)]).await;
+        });
+    }
 
     // Pure network proxy mode: Save file on disk is not touched!
 
     // Products/UnlockContainer v2 returns {"Result":{"Drops":[Product]}}.
-    // A Product is {ProductID, InstanceID:null, Attributes:[{Key,Value}], SeriesID,
-    // AddedTimestamp:null, UpdatedTimestamp:null}. Any extra field or a
-    // non-null InstanceID makes the client reject the drop.
+    // A Product in UnlockContainer response has null InstanceID and null timestamps;
+    // the actual inventory instance is populated via the companion RewardResult frame.
     let mut attributes: Vec<serde_json::Value> = Vec::new();
     if dropped_paint > 0 {
         attributes.push(serde_json::json!({
@@ -2929,6 +2933,7 @@ async fn handle_broker_request(
 
     if path_str == "/rlim/avatar" || path_str.starts_with("/rlim/avatar?")
         || path_str.starts_with("/rlim/avatar.png")
+        || path_str.starts_with("/profile/") || path_str.starts_with("/rlim/profile/")
         || path_str == "/a.png" || path_str.starts_with("/a.png?")
         || path_str == "/s/pfp" || path_str.starts_with("/s/pfp/") || path_str.starts_with("/rlim/pfp/")
         || path_str.contains("/avatars/")
@@ -6638,7 +6643,7 @@ pub async fn inject_reward_drop(items: &[(i32, i32)]) -> Result<bool, String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
-        .as_secs();
+        .as_secs() as i64;
 
     let mut product_data = Vec::new();
     for &(pid, paint) in items {
@@ -6650,10 +6655,16 @@ pub async fn inject_reward_drop(items: &[(i32, i32)]) -> Result<bool, String> {
             "ProductID": pid,
             "InstanceID": inst_hex,
             "SeriesID": 0,
-            "AddedTimestamp": serde_json::Value::Null,
-            "UpdatedTimestamp": serde_json::Value::Null,
+            "Amount": 1,
+            "ExpirationTime": -1,
+            "IsTradable": false,
+            "TradeHold": -1,
+            "AddedTimestamp": now,
+            "UpdatedTimestamp": now,
         });
         if paint > 0 {
+            prod_obj["Paint"] = serde_json::json!(paint);
+            prod_obj["PaintID"] = serde_json::json!(paint);
             prod_obj["Attributes"] = serde_json::json!([
                 { "Key": "Painted", "Value": paint.to_string() }
             ]);

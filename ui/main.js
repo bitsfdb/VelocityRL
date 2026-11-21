@@ -1193,9 +1193,9 @@ async function loadBackups() {
 
 async function loadData() {
     const loadWatchdog = setTimeout(() => {
-        console.warn('loadData safety watchdog triggered after 4s');
+        console.warn('loadData safety watchdog triggered after 15s — releasing overlay');
         releaseAppLoading();
-    }, 4000);
+    }, 15000);
 
     try {
         updateStatus('Please Wait...', false);
@@ -9268,12 +9268,6 @@ async function startApp() {
         await startPreview();
         return;
     }
-    setTimeout(() => {
-        if (appLoading) {
-            console.warn('App loading safety watchdog triggered — releasing overlay');
-            releaseAppLoading();
-        }
-    }, 2000);
 
     document.getElementById('privacy-link')?.addEventListener('click', (e) => {
         e.preventDefault();

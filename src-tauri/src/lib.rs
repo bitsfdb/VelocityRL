@@ -2003,7 +2003,8 @@ async fn spawn_item(
     // Actively push downstream WebSocket RewardResult frame so the item pops up live in-game
     let _ = crate::proxy::inject_reward_drop(&[(wid, paint)]).await;
 
-    apply_swap(app, "0".to_string(), wanted_id, None, None, paint_id, None).await
+    applog::event(&format!("spawn_item: item {wid} (paint {paint}) registered in inventory and drop injected"));
+    Ok(format!("Item {wid} spawned into inventory"))
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
@@ -2403,11 +2404,17 @@ async fn apply_ping_spoof_upk(
 ) -> Result<(), String> {
     let min = min_ms.or(minMs).unwrap_or(16);
     let max = max_ms.or(maxMs).unwrap_or(24);
-    crate::udp_proxy::set_ping_spoof(Some(crate::psynet::PingSpoofPayload {
+    let payload = crate::psynet::PingSpoofPayload {
         enabled: true,
         min_ms: min,
         max_ms: max,
-    }));
+    };
+    crate::udp_proxy::set_ping_spoof(Some(payload.clone()));
+    let mut cfg = crate::psynet::load_active_spoof_from_disk().unwrap_or_default();
+    cfg.ping_spoof = Some(payload);
+    if let Ok(dir) = crate::psynet::find_proxy_dir() {
+        let _ = crate::psynet::write_spoof(&dir, &cfg);
+    }
     let _ = apply_saved_spoof_values();
     applog::event(&format!("ping_spoof: enabled web ping [{min}..{max}] ms"));
     Ok(())
@@ -2421,6 +2428,13 @@ async fn restore_ping_spoof_upk(app: tauri::AppHandle) -> Result<(), String> {
         min_ms: 16,
         max_ms: 24,
     }));
+    let mut cfg = crate::psynet::load_active_spoof_from_disk().unwrap_or_default();
+    if let Some(ref mut p) = cfg.ping_spoof {
+        p.enabled = false;
+    }
+    if let Ok(dir) = crate::psynet::find_proxy_dir() {
+        let _ = crate::psynet::write_spoof(&dir, &cfg);
+    }
     let _ = apply_saved_spoof_values();
     applog::event("ping_spoof: disabled web ping");
     Ok(())
@@ -4065,19 +4079,6 @@ pub fn run() {
                 dir.display()
             ));
 
-            let boot_app = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                if let Ok(config) = get_config(boot_app.clone()).await {
-                    if !config.game_dir.is_empty() {
-                        let game_path = PathBuf::from(&config.game_dir);
-                        if let Ok(cooked) = upk::swapper::resolve_cooked_dir(&game_path) {
-                            let swaps = load_swaps(&boot_app);
-                            let _ = sync_all_swaps_to_tagame(&boot_app, &cooked, &swaps).await;
-                        }
-                    }
-                }
-            });
-
             let ttl_app = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(3)).await; // brief delay after boot
@@ -4087,15 +4088,7 @@ pub fn run() {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(300)).await;
                     let _ = features::get_features(ttl_app.clone()).await;
-
                 }
-            });
-
-            std::thread::spawn(|| {
-                if let Ok(()) = ctrlc::set_handler(|| {
-                    psynet::kill_proxy_on_exit();
-                    std::process::exit(0);
-                }) {}
             });
             std::thread::spawn(|| {
                 tauri::async_runtime::spawn(async {
