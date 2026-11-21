@@ -445,8 +445,25 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
         while state_s2c.running.load(Ordering::Relaxed) {
             match us_s2c.recv_from(&mut buf).await {
                 Ok((len, from_server)) => {
-                    // Pure passthrough: forward the exact bytes, immediately.
+                    // Pure passthrough: forward the exact bytes immediately, but
+                    // still capture a decrypted view for the monitor/dump.
                     if UDP_PURE_PASSTHROUGH {
+                        let cryptos = state_s2c.active_crypto.read().await.clone();
+                        let encrypted = !cryptos.is_empty();
+                        let plaintext = if encrypted {
+                            decrypt_datagram_payload(&buf[..len], &cryptos)
+                        } else {
+                            Some(buf[..len].to_vec())
+                        };
+                        let captured = plaintext.as_deref().unwrap_or(&buf[..len]);
+                        record_udp_capture(
+                            "S2C",
+                            &format!("{from_server}"),
+                            encrypted,
+                            plaintext.is_some(),
+                            captured,
+                            &buf[..len],
+                        );
                         if let Some(client) = *state_s2c.client_endpoint.read().await {
                             let _ = cs_s2c.send_to(&buf[..len], client).await;
                         }
