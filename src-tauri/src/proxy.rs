@@ -2519,14 +2519,25 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
         }));
     }
 
-    let drop_obj = serde_json::json!({
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(1700000000);
+    let inst_hex = format!("{:08x}{:08x}0000000000000000", dropped_pid as u32, dropped_paint.max(0) as u32);
+
+    let mut drop_obj = serde_json::json!({
         "ProductID": dropped_pid,
-        "InstanceID": serde_json::Value::Null,
+        "InstanceID": inst_hex,
         "Attributes": attributes,
         "SeriesID": dropped_series_id,
-        "AddedTimestamp": serde_json::Value::Null,
-        "UpdatedTimestamp": serde_json::Value::Null,
+        "Amount": 1,
+        "AddedTimestamp": now,
+        "UpdatedTimestamp": now,
     });
+    if dropped_paint > 0 {
+        drop_obj["Paint"] = serde_json::json!(dropped_paint);
+        drop_obj["PaintID"] = serde_json::json!(dropped_paint);
+    }
 
     let resp_obj = serde_json::json!({
         "Drops": [drop_obj.clone()],
@@ -9035,10 +9046,10 @@ mod tests {
         assert_eq!(resp.get("bSuccess").and_then(|v| v.as_bool()), Some(true));
         let drop = &drops[0];
         assert!(drop.get("ProductID").unwrap().is_i64());
-        assert!(drop.get("InstanceID").unwrap().is_null(), "real drops have null InstanceID");
+        assert!(drop.get("InstanceID").unwrap().is_string(), "drops must have non-empty 32-hex InstanceID");
         assert!(drop.get("SeriesID").unwrap().is_i64());
-        assert!(drop.get("AddedTimestamp").unwrap().is_null());
-        assert!(drop.get("UpdatedTimestamp").unwrap().is_null());
+        assert!(drop.get("AddedTimestamp").unwrap().is_i64());
+        assert!(drop.get("UpdatedTimestamp").unwrap().is_i64());
         assert!(drop.get("Attributes").unwrap().is_array());
         assert!(resp.get("Drops").is_some(), "top-level Drops field must be present for UnrealScript RPC");
         assert!(resp.get("ContainerDrops").is_none(), "no ContainerDrops field");
