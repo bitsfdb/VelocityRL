@@ -3739,7 +3739,7 @@ const CREDIT_SPOOF_KEY = 'velocityrl_credit_spoof';
 const LEADERBOARD_SPOOF_KEY = 'velocityrl_leaderboard_spoof';
 const MENU_BG_SPOOF_KEY = 'velocityrl_menu_bg_spoof';
 const BOOST_METER_SPOOF_KEY = 'velocityrl_boost_meter_spoof';
-const DEFAULT_SEASON23_LOGO_URL = 'https://api.velocityrl.tech/thumbnails/rl_japan.png';
+const DEFAULT_SEASON23_LOGO_URL = 'assets/rl_japan.png';
 const DEFAULT_BLOG_MOTD = 'Use VelocityRL';
 const DEFAULT_CAMERA_LIMITS = {
     fov: { min: 60, max: 1000, interval: 1 },

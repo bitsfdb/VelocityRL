@@ -3765,7 +3765,7 @@ async fn tunnel_websocket<S1, S2>(
                 Ok(msg) => {
                     let out_msg = match msg {
                         tokio_tungstenite::tungstenite::Message::Text(t) => {
-                            let (patched_text, did_patch) = patch_ws_frame_text(&t).await;
+                            let (patched_text, did_patch) = patch_ws_frame_text(&t, false).await;
                             record_network_event(
                                 "WS_C2S",
                                 "OUTBOUND",
@@ -3778,7 +3778,7 @@ async fn tunnel_websocket<S1, S2>(
                             tokio_tungstenite::tungstenite::Message::Text(patched_text.into())
                         }
                         tokio_tungstenite::tungstenite::Message::Binary(b) => {
-                            let (patched_b, did_patch) = patch_ws_frame_binary(&b).await;
+                            let (patched_b, did_patch) = patch_ws_frame_binary(&b, false).await;
                             record_network_event(
                                 "WS_C2S",
                                 "OUTBOUND",
@@ -3809,7 +3809,7 @@ async fn tunnel_websocket<S1, S2>(
                         Ok(msg) => {
                             let out_msg = match msg {
                                 tokio_tungstenite::tungstenite::Message::Text(t) => {
-                                    let (patched_text, did_patch) = patch_ws_frame_text(&t).await;
+                                    let (patched_text, did_patch) = patch_ws_frame_text(&t, true).await;
                                     record_network_event(
                                         "WS_S2C",
                                         "INBOUND",
@@ -3822,7 +3822,7 @@ async fn tunnel_websocket<S1, S2>(
                                     tokio_tungstenite::tungstenite::Message::Text(patched_text.into())
                                 }
                                 tokio_tungstenite::tungstenite::Message::Binary(b) => {
-                                    let (patched_b, did_patch) = patch_ws_frame_binary(&b).await;
+                                    let (patched_b, did_patch) = patch_ws_frame_binary(&b, true).await;
                                     record_network_event(
                                         "WS_S2C",
                                         "INBOUND",
@@ -3861,8 +3861,8 @@ async fn tunnel_websocket<S1, S2>(
     crate::applog::event("proxy: WebSocket tunnel closed");
 }
 
-async fn patch_ws_frame_text(text: &str) -> (String, bool) {
-    let (patched_bytes, changed) = patch_ws_frame_binary(text.as_bytes()).await;
+async fn patch_ws_frame_text(text: &str, from_server: bool) -> (String, bool) {
+    let (patched_bytes, changed) = patch_ws_frame_binary(text.as_bytes(), from_server).await;
     if changed {
         if let Ok(s) = String::from_utf8(patched_bytes) {
             return (s, true);
@@ -3871,7 +3871,7 @@ async fn patch_ws_frame_text(text: &str) -> (String, bool) {
     (text.to_string(), false)
 }
 
-pub async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
+pub async fn patch_ws_frame_binary(frame: &[u8], from_server: bool) -> (Vec<u8>, bool) {
     let Some(hdr_end) = find_bytes(frame, b"\r\n\r\n") else {
         return (frame.to_vec(), false);
     };
@@ -3932,8 +3932,10 @@ pub async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         || body_lower.contains("opencontainer")
         || (body_lower.contains("instanceids") && body_lower.contains("keyinstanceids"));
 
-    if is_unlock_container {
-        crate::applog::event(&format!("proxy: WS unlock container service={svc} body={}", String::from_utf8_lossy(body_part)));
+    // Only rewrite the SERVER's response. Rewriting the client's outbound
+    // request would corrupt it (the server then rejects the transaction).
+    if is_unlock_container && from_server {
+        crate::applog::event(&format!("proxy: WS unlock container response service={svc} body={}", String::from_utf8_lossy(body_part)));
         if let Some(resp_json) = generate_simulated_unlock_container_payload(body_part) {
             let resp_bytes = serde_json::to_vec(&resp_json).unwrap_or_default();
             current_body = resp_bytes;
@@ -6640,7 +6642,7 @@ pub async fn inject_reward_drop(items: &[(i32, i32)]) -> Result<bool, String> {
         .unwrap_or_default()
         .as_secs();
 
-    let mut product_data_map = serde_json::Map::new();
+    let mut product_data = Vec::new();
     for &(pid, paint) in items {
         if pid <= 0 {
             continue;
@@ -6649,34 +6651,30 @@ pub async fn inject_reward_drop(items: &[(i32, i32)]) -> Result<bool, String> {
         let mut prod_obj = serde_json::json!({
             "ProductID": pid,
             "InstanceID": inst_hex,
-            "Amount": 1,
-            "ExpirationTime": -1,
-            "IsTradable": false,
-            "TradeHold": -1,
-            "AddedTimestamp": now,
-            "UpdatedTimestamp": now,
+            "SeriesID": 0,
+            "AddedTimestamp": serde_json::Value::Null,
+            "UpdatedTimestamp": serde_json::Value::Null,
         });
         if paint > 0 {
-            prod_obj["Paint"] = serde_json::json!(paint);
-            prod_obj["PaintID"] = serde_json::json!(paint);
             prod_obj["Attributes"] = serde_json::json!([
-                { "Key": "Painted", "Value": paint }
+                { "Key": "Painted", "Value": paint.to_string() }
             ]);
         }
-        product_data_map.insert(pid.to_string(), prod_obj);
+        product_data.push(prod_obj);
     }
 
-    if product_data_map.is_empty() {
+    if product_data.is_empty() {
         return Ok(false);
     }
 
     let body_json = serde_json::json!({
-        "ChallengeRewards": [],
-        "CurrencyDrops": [],
-        "MatchGUID": "",
-        "ProductData": product_data_map,
-        "RewardDrops": [],
-        "RocketPassInfo": {}
+        "Result": {
+            "ProductData": product_data,
+            "RewardDrops": [],
+            "CurrencyDrops": [],
+            "ChallengeRewards": [],
+            "RocketPassInfo": {}
+        }
     });
 
     let body_str = serde_json::to_string(&body_json).map_err(|e| e.to_string())?;
