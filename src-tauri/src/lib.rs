@@ -3396,6 +3396,10 @@ async fn detect_game_dir() -> Result<Vec<DetectedInstall>, String> {
 
     #[cfg(target_os = "windows")]
     {
+        use winreg::enums::*;
+        use winreg::RegKey;
+
+        // 1. Check running Rocket League process first
         if let Some((_, pid)) = crate::psynet::rocket_league_process() {
             if let Some(exe_path) = crate::winprobe::process_path(pid) {
                 if let Ok(cooked) = upk::palette::resolve_cooked_dir(&exe_path) {
@@ -3403,84 +3407,145 @@ async fn detect_game_dir() -> Result<Vec<DetectedInstall>, String> {
                 }
             }
         }
-    }
 
-    for drive in ["C", "D", "E", "F", "G", "H", "X", "Z"] {
-        let steam_cands = [
-            format!(r"{drive}:\Program Files (x86)\Steam\steamapps\common\rocketleague\TAGame\CookedPCConsole"),
-            format!(r"{drive}:\Program Files\Steam\steamapps\common\rocketleague\TAGame\CookedPCConsole"),
-            format!(r"{drive}:\SteamLibrary\steamapps\common\rocketleague\TAGame\CookedPCConsole"),
-            format!(r"{drive}:\Steam\steamapps\common\rocketleague\TAGame\CookedPCConsole"),
-            format!(r"{drive}:\Games\Steam\steamapps\common\rocketleague\TAGame\CookedPCConsole"),
-        ];
-        for path in steam_cands {
-            let p = std::path::Path::new(&path);
-            if p.join("TAGame.upk").exists() {
-                add_unique(&mut results, "Steam", path);
+        // 2. Steam Registry lookup: HKCU\Software\Valve\Steam -> SteamPath & libraryfolders.vdf
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let mut steam_dirs: Vec<PathBuf> = Vec::new();
+        if let Ok(key) = hkcu.open_subkey(r"Software\Valve\Steam") {
+            if let Ok(steam_path) = key.get_value::<String, _>("SteamPath") {
+                steam_dirs.push(PathBuf::from(steam_path));
             }
         }
-
-        let epic_cands = [
-            format!(r"{drive}:\Program Files\Epic Games\rocketleague\TAGame\CookedPCConsole"),
-            format!(r"{drive}:\Program Files (x86)\Epic Games\rocketleague\TAGame\CookedPCConsole"),
-            format!(r"{drive}:\Epic Games\rocketleague\TAGame\CookedPCConsole"),
-            format!(r"{drive}:\rocketleague\TAGame\CookedPCConsole"),
-            format!(r"{drive}:\games\rocketleague\TAGame\CookedPCConsole"),
-            format!(r"{drive}:\Games\rocketleague\TAGame\CookedPCConsole"),
-            format!(r"{drive}:\Games\Epic Games\rocketleague\TAGame\CookedPCConsole"),
-        ];
-        for path in epic_cands {
-            let p = std::path::Path::new(&path);
-            if p.join("TAGame.upk").exists() {
-                add_unique(&mut results, "Epic Games", path);
-            }
-        }
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        use winreg::enums::*;
-        use winreg::RegKey;
-
         let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-        for subkey in &[
-            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 252950",
-            r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 252950",
-        ] {
+        for subkey in &[r"SOFTWARE\Valve\Steam", r"SOFTWARE\WOW6432Node\Valve\Steam"] {
             if let Ok(key) = hklm.open_subkey(subkey) {
-                if let Ok(loc) = key.get_value::<String, _>("InstallLocation") {
-                    let p = std::path::PathBuf::from(loc).join("TAGame").join("CookedPCConsole");
-                    if p.exists() {
-                        add_unique(&mut results, "Steam", p.to_string_lossy().into_owned());
+                if let Ok(install_path) = key.get_value::<String, _>("InstallPath") {
+                    steam_dirs.push(PathBuf::from(install_path));
+                }
+            }
+        }
+
+        for steam_root in steam_dirs {
+            let mut library_paths = vec![steam_root.join("steamapps")];
+            let vdf_path = steam_root.join("steamapps").join("libraryfolders.vdf");
+            if let Ok(vdf) = std::fs::read_to_string(&vdf_path) {
+                for line in vdf.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with("\"path\"") {
+                        if let Some(p) = trimmed.split('"').nth(3) {
+                            library_paths.push(PathBuf::from(p).join("steamapps"));
+                        }
+                    }
+                }
+            }
+            for lib in library_paths {
+                for folder in &["rocketleague", "Rocket League"] {
+                    let candidate = lib.join("common").join(folder);
+                    if let Ok(cooked) = upk::palette::resolve_cooked_dir(&candidate) {
+                        add_unique(&mut results, "Steam", cooked.to_string_lossy().into_owned());
                     }
                 }
             }
         }
 
-        let manifest_dir = std::path::Path::new(r"C:\ProgramData\Epic\EpicGamesLauncher\Data\Manifests");
-        if manifest_dir.exists() {
-            if let Ok(entries) = fs::read_dir(manifest_dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.extension().and_then(|e| e.to_str()) != Some("item") { continue; }
-                    if let Ok(content) = fs::read_to_string(&path) {
-                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                            let is_rl = json.get("AppName")
-                                .and_then(|v| v.as_str())
-                                .map_or(false, |s| s.eq_ignore_ascii_case("Sugar"))
-                                || json.get("DisplayName")
-                                    .and_then(|v| v.as_str())
-                                    .map_or(false, |s| s.to_lowercase().contains("rocket league"));
-                            if is_rl {
-                                if let Some(loc) = json.get("InstallLocation").and_then(|v| v.as_str()) {
-                                    let p = std::path::PathBuf::from(loc).join("TAGame").join("CookedPCConsole");
-                                    if p.exists() {
-                                        add_unique(&mut results, "Epic Games", p.to_string_lossy().into_owned());
+        // 3. Scan Windows Uninstall Registry for Rocket League (Steam, Epic, standalone)
+        for hkey in &[HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER] {
+            let root = RegKey::predef(*hkey);
+            for uninstall_base in &[
+                r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+            ] {
+                if let Ok(key) = root.open_subkey(uninstall_base) {
+                    for subkey_name in key.enum_keys().filter_map(|k| k.ok()) {
+                        if let Ok(sub) = key.open_subkey(&subkey_name) {
+                            let display_name: String = sub.get_value("DisplayName").unwrap_or_default();
+                            let is_match = subkey_name.eq_ignore_ascii_case("Sugar")
+                                || subkey_name.eq_ignore_ascii_case("Steam App 252950")
+                                || display_name.to_lowercase().contains("rocket league");
+                            if is_match {
+                                if let Ok(loc) = sub.get_value::<String, _>("InstallLocation") {
+                                    if !loc.is_empty() {
+                                        if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&loc)) {
+                                            let label = if subkey_name.contains("252950") || loc.to_lowercase().contains("steam") {
+                                                "Steam"
+                                            } else {
+                                                "Epic Games"
+                                            };
+                                            add_unique(&mut results, label, cooked.to_string_lossy().into_owned());
+                                        }
                                     }
                                 }
                             }
                         }
                     }
+                }
+            }
+        }
+
+        // 4. Epic Games Launcher Manifests (.item files)
+        let mut manifest_dirs = vec![
+            PathBuf::from(r"C:\ProgramData\Epic\EpicGamesLauncher\Data\Manifests"),
+        ];
+        if let Ok(key) = hklm.open_subkey(r"SOFTWARE\Epic Games\EpicGamesLauncher") {
+            if let Ok(app_data) = key.get_value::<String, _>("AppDataPath") {
+                manifest_dirs.push(PathBuf::from(app_data).join("Manifests"));
+            }
+        }
+        if let Ok(key) = hklm.open_subkey(r"SOFTWARE\WOW6432Node\Epic Games\EpicGamesLauncher") {
+            if let Ok(app_data) = key.get_value::<String, _>("AppDataPath") {
+                manifest_dirs.push(PathBuf::from(app_data).join("Manifests"));
+            }
+        }
+        for manifest_dir in manifest_dirs {
+            if manifest_dir.is_dir() {
+                if let Ok(entries) = fs::read_dir(&manifest_dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.extension().and_then(|e| e.to_str()) != Some("item") { continue; }
+                        if let Ok(content) = fs::read_to_string(&path) {
+                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                                let is_rl = json.get("AppName")
+                                    .and_then(|v| v.as_str())
+                                    .map_or(false, |s| s.eq_ignore_ascii_case("Sugar"))
+                                    || json.get("DisplayName")
+                                        .and_then(|v| v.as_str())
+                                        .map_or(false, |s| s.to_lowercase().contains("rocket league"));
+                                if is_rl {
+                                    if let Some(loc) = json.get("InstallLocation").and_then(|v| v.as_str()) {
+                                        if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(loc)) {
+                                            add_unique(&mut results, "Epic Games", cooked.to_string_lossy().into_owned());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 5. Standard drive scanning fallback (checks all drive letters and folder variants)
+    for drive in ["C", "D", "E", "F", "G", "H", "I", "J", "K", "X", "Z"] {
+        for folder in &["rocketleague", "Rocket League", "RocketLeague"] {
+            let candidates = [
+                format!(r"{drive}:\Program Files\Epic Games\{folder}"),
+                format!(r"{drive}:\Program Files (x86)\Epic Games\{folder}"),
+                format!(r"{drive}:\Epic Games\{folder}"),
+                format!(r"{drive}:\{folder}"),
+                format!(r"{drive}:\Games\{folder}"),
+                format!(r"{drive}:\games\{folder}"),
+                format!(r"{drive}:\Games\Epic Games\{folder}"),
+                format!(r"{drive}:\Program Files (x86)\Steam\steamapps\common\{folder}"),
+                format!(r"{drive}:\Program Files\Steam\steamapps\common\{folder}"),
+                format!(r"{drive}:\SteamLibrary\steamapps\common\{folder}"),
+                format!(r"{drive}:\Steam\steamapps\common\{folder}"),
+                format!(r"{drive}:\Games\Steam\steamapps\common\{folder}"),
+            ];
+            for path in candidates {
+                if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&path)) {
+                    let label = if path.to_lowercase().contains("steam") { "Steam" } else { "Epic Games" };
+                    add_unique(&mut results, label, cooked.to_string_lossy().into_owned());
                 }
             }
         }
