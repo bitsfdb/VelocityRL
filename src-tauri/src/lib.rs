@@ -1627,6 +1627,13 @@ async fn ensure_game_patches(app: tauri::AppHandle) -> Result<serde_json::Value,
     let game = PathBuf::from(&config.game_dir);
     let sync_res = integrity::sync_prepatched_upks(Some(&app), &game).await?;
     let cooked = upk::palette::resolve_cooked_dir(&game).unwrap_or(game);
+    // Patch TAGame in place with our bundled bytecode records (no download/swap).
+    if let Err(e) = upk::ensure_tagame_patched(&app, &cooked).await {
+        applog::event(&format!("ensure_game_patches: TAGame patch failed: {e}"));
+    }
+    // The patch above rebuilds TAGame from the stock backup, which wipes the
+    // baked avatar texture. Re-apply it afterwards so menus show the custom PFP.
+    let _ = avatar::ensure_cached_avatar_applied(&app);
     let swaps = load_swaps(&app);
     let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
     let _ = apply_saved_spoof_values();
