@@ -6668,13 +6668,11 @@ pub async fn inject_reward_drop(items: &[(i32, i32)]) -> Result<bool, String> {
     }
 
     let body_json = serde_json::json!({
-        "Result": {
-            "ProductData": product_data,
-            "RewardDrops": [],
-            "CurrencyDrops": [],
-            "ChallengeRewards": [],
-            "RocketPassInfo": {}
-        }
+        "ProductData": product_data,
+        "RewardDrops": [],
+        "CurrencyDrops": [],
+        "ChallengeRewards": [],
+        "RocketPassInfo": {}
     });
 
     let body_str = serde_json::to_string(&body_json).map_err(|e| e.to_string())?;
