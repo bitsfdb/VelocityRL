@@ -14,7 +14,6 @@ pub use super::legacy_swapper::{
     Item, SwapOptions,
 };
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -1724,72 +1723,6 @@ pub fn tagame_has_rlim_patch(file_bytes: &[u8]) -> bool {
     false
 }
 
-/// Fetch the small bytecode patch payload described by /v2/rl/build and apply
-/// it to the live TAGame.upk in place. Returns true when a patch was applied.
-pub async fn patch_tagame_from_build(
-    app: &tauri::AppHandle,
-    tg_path: &Path,
-) -> Result<bool, String> {
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let build_url = "https://api.velocityrl.tech/v2/rl/build";
-    let build: serde_json::Value = client
-        .get(build_url)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let Some(patch) = build.get("tagame_patch") else {
-        return Err("build response has no tagame_patch".into());
-    };
-    let sha = patch.get("sha256").and_then(|v| v.as_str()).unwrap_or_default();
-    let url_path = patch.get("patch_url").and_then(|v| v.as_str()).unwrap_or_default();
-    if sha.len() != 64 || url_path.is_empty() {
-        return Err("invalid tagame_patch metadata".into());
-    }
-    let url = format!("https://api.velocityrl.tech{url_path}");
-
-    let bytes = client.get(&url).send().await.map_err(|e| e.to_string())?.bytes().await.map_err(|e| e.to_string())?;
-    let mut hasher = sha2::Sha256::new();
-    use sha2::Digest;
-    hasher.update(&bytes);
-    let got: String = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect();
-    if got != sha {
-        return Err(format!("patch sha mismatch: {got} != {sha}"));
-    }
-
-    if let Ok(live) = fs::read(tg_path) {
-        if tagame_has_rlim_patch(&live) && live.windows(22).any(|w| w == b"15759/rlim/avatar.png?") {
-            crate::applog::event(&format!(
-                "upk: TAGame already patched from /build (sha {sha})"
-            ));
-            return Ok(false);
-        }
-    }
-
-    let backup = tg_path.with_file_name(TAGAME_BACKUP_NAME);
-    if !backup.is_file() {
-        let _ = fs::copy(tg_path, &backup);
-    }
-    let applied = patch_tagame_in_place(tg_path, &backup, &bytes)?;
-    if applied == 0 {
-        return Ok(false);
-    }
-    let _ = app;
-    crate::applog::event(&format!(
-        "upk: applied {applied} TAGame patch records from /build ({} bytes, sha {sha})",
-        bytes.len()
-    ));
-    Ok(true)
-}
-
 pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
     let px_path = if cooked_dir.join("ProjectX.upk").is_file() {
         cooked_dir.join("ProjectX.upk")
@@ -2194,44 +2127,6 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
         .map_err(|e| format!("Failed to write patched ProjectX.upk: {e}"))?;
 
     crate::applog::event("projectx: PsyNet URL redirection and validation functions patched successfully (http://127.0.0.1:15759/rpc)");
-    Ok(true)
-}
-
-/// Check if TAGame.upk and ProjectX.upk are patched.
-/// Never download external 82MB binaries on startup or overwrite files automatically.
-pub async fn ensure_tagame_patched(app: &tauri::AppHandle, cooked_dir: &Path) -> Result<bool, String> {
-    let tg_path = if cooked_dir.join("TAGame.upk").is_file() {
-        cooked_dir.join("TAGame.upk")
-    } else if cooked_dir.join("TAGame/CookedPCConsole/TAGame.upk").is_file() {
-        cooked_dir.join("TAGame/CookedPCConsole/TAGame.upk")
-    } else {
-        return Ok(false);
-    };
-
-    if let Ok(cur_tg_bytes) = fs::read(&tg_path) {
-        if tagame_has_rlim_patch(&cur_tg_bytes) {
-            return Ok(true);
-        }
-    }
-
-    let mut patch_file = app.path().resource_dir().ok().map(|dir| dir.join("rl_patch.bin"));
-    if patch_file.as_ref().map_or(true, |p| !p.is_file()) {
-        patch_file = Some(PathBuf::from("resources/rl_patch.bin"));
-    }
-    let patch_file = patch_file.filter(|p| p.is_file()).ok_or("bundled bytecode patch payload not found")?;
-    let patch_bytes = fs::read(&patch_file).map_err(|e| e.to_string())?;
-
-    let backup = cooked_dir.join(TAGAME_BACKUP_NAME);
-    if !backup.is_file() {
-        let _ = fs::copy(&tg_path, &backup);
-    }
-    let applied = patch_tagame_in_place(&tg_path, &backup, &patch_bytes)?;
-    if applied == 0 {
-        return Err("no TAGame patch records could be applied".into());
-    }
-    crate::applog::event(&format!(
-        "upk: patched {applied} TAGame exports in place",
-    ));
     Ok(true)
 }
 
@@ -2933,25 +2828,4 @@ pub fn patch_tagame_in_place(path: &Path, backup: &Path, patch_bytes: &[u8]) -> 
     fs::write(&tmp, &out).map_err(|e| e.to_string())?;
     fs::rename(&tmp, path).map_err(|e| e.to_string())?;
     Ok(applied)
-}
-
-#[cfg(test)]
-mod rlim_patch_tests {
-    use super::*;
-
-    #[test]
-    fn test_patch_tagame_in_place() {
-        let stock = Path::new("/root/velrlapi/.cache/TAGame.upk.bak");
-        if !stock.is_file() {
-            return;
-        }
-        let tmp = std::env::temp_dir().join("vrl_tagame_patch_test.upk");
-        let _ = fs::copy(stock, &tmp);
-        let payload = include_bytes!("../../resources/rl_patch.bin");
-        let applied = patch_tagame_in_place(&tmp, stock, payload).expect("in-place patch must succeed");
-        assert!(applied > 0, "at least one export must be patched");
-        let bytes = fs::read(&tmp).expect("patched file must be readable");
-        assert!(tagame_has_rlim_patch(&bytes), "patched file must contain the loadout hook marker");
-        let _ = fs::remove_file(&tmp);
-    }
 }

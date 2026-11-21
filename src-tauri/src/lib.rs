@@ -1562,47 +1562,18 @@ async fn ensure_game_patches(app: tauri::AppHandle) -> Result<serde_json::Value,
     }
     let game = PathBuf::from(&config.game_dir);
     let cooked = upk::palette::resolve_cooked_dir(&game).unwrap_or_else(|_| game.clone());
-    let tagame = cooked.join("TAGame.upk");
 
-    // Preferred path: fetch the ~90 KB bytecode patch from /build, verify its
-    // hash, and patch TAGame in place. No 82 MB full-file download.
-    // ProjectX broker hooks (RPC/WS URL rewrite) are also part of "game patches".
+    // 1. Ensure ProjectX is patched in place (broker URL redirect to 127.0.0.1:15759 and URL validators)
     match upk::ensure_projectx_patched(&cooked) {
         Ok(true) => applog::event("ensure_game_patches: ProjectX patched successfully"),
         Ok(false) => applog::event("ensure_game_patches: ProjectX verified/up to date"),
         Err(e) => applog::event(&format!("ensure_game_patches: ProjectX patch error: {e}")),
     }
 
-    let mut patched_locally = false;
-    if tagame.is_file() {
-        match upk::patch_tagame_from_build(&app, &tagame).await {
-            Ok(true) => patched_locally = true,
-            Ok(false) => {
-                patched_locally = true;
-                applog::event("ensure_game_patches: TAGame already patched");
-            }
-            Err(e) => {
-                applog::event(&format!("ensure_game_patches: /build patch failed: {e}; trying bundled patch"));
-                match upk::ensure_tagame_patched(&app, &cooked).await {
-                    Ok(_) => patched_locally = true,
-                    Err(pe) => applog::event(&format!("ensure_game_patches: bundled patch failed: {pe}")),
-                }
-            }
-        }
-    }
+    // 2. Sync full clean pre-patched UPK from manifest (NO rl_patch.bin)
+    let sync_res = integrity::sync_prepatched_upks(Some(&app), &game).await?;
 
-    let sync_res = if patched_locally {
-        serde_json::json!({"status": "Success", "details": {"method": "in_place_bytecode"}})
-    } else {
-        // Fallback: verify/install the full pre-patched UPK from the manifest.
-        let res = integrity::sync_prepatched_upks(Some(&app), &game).await?;
-        if let Err(e) = upk::ensure_tagame_patched(&app, &cooked).await {
-            applog::event(&format!("ensure_game_patches: TAGame patch failed: {e}"));
-        }
-        serde_json::to_value(&res).unwrap_or_default()
-    };
-    // The patch above rebuilds TAGame from the stock backup, which wipes the
-    // baked avatar texture. Re-apply it afterwards so menus show the custom PFP.
+    // 3. Ensure custom avatar texture is applied
     let _ = avatar::ensure_cached_avatar_applied(&app);
     let swaps = load_swaps(&app);
     let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
