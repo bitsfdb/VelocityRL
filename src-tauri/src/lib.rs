@@ -3804,7 +3804,7 @@ fn dump_network_capture(app: tauri::AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn capture_bunches(app: tauri::AppHandle) -> Result<String, String> {
+fn capture_bunches(_app: tauri::AppHandle) -> Result<String, String> {
     let packets = crate::udp_proxy::get_udp_capture();
     let mut rows = Vec::new();
     for p in packets.iter().filter(|p| p.direction == "C2S") {
