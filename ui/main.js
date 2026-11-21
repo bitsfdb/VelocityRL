@@ -6802,6 +6802,8 @@ function initPingSpoofPane() {
 
 let dropsTabWired = false;
 let loadedDropsCatalog = [];
+let loadedContainerDropsMap = new Map();
+let currentModalCrateId = null;
 const selectedDropIds = new Set();
 
 async function refreshDropPresets() {
@@ -6923,6 +6925,17 @@ function initDropsTab() {
         try {
             const res = await fetch('drops.json');
             loadedDropsCatalog = await res.json();
+            try {
+                const cRes = await fetch('container_drops.json');
+                if (cRes.ok) {
+                    const cList = await cRes.json();
+                    for (const c of cList) {
+                        loadedContainerDropsMap.set(c.ProductID, c);
+                    }
+                }
+            } catch (e) {
+                console.warn('Failed to load container_drops.json locally:', e);
+            }
             renderDropsGrid();
         } catch (e) {
             console.error('Failed to load drops.json:', e);
@@ -6976,6 +6989,24 @@ function initDropsTab() {
                             <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 6px;">
                                 <span style="font-weight: 700; font-size: 15px; color: #fff; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">${escHtml(d.name)}</span>
                             </div>
+                            <div style="margin-top: 8px;">
+                                <button type="button" class="drop-view-contents-btn" data-drop-id="${d.id}" style="
+                                    background: rgba(255, 255, 255, 0.08);
+                                    border: 1px solid rgba(255, 255, 255, 0.16);
+                                    color: #cbd5e1;
+                                    font-size: 11px;
+                                    font-weight: 600;
+                                    padding: 3px 8px;
+                                    border-radius: 4px;
+                                    cursor: pointer;
+                                    display: inline-flex;
+                                    align-items: center;
+                                    gap: 5px;
+                                    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+                                ">
+                                    <span>🔍</span> Show Contents
+                                </button>
+                            </div>
                         </div>
                     </div>
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 14px; font-size: 12px; color: #999;">
@@ -6990,7 +7021,8 @@ function initDropsTab() {
         }).join('');
 
         grid.querySelectorAll('.drop-item-card').forEach(card => {
-            card.addEventListener('click', () => {
+            card.addEventListener('click', (e) => {
+                if (e.target.closest('.drop-view-contents-btn')) return;
                 const id = parseInt(card.dataset.dropId, 10);
                 if (selectedDropIds.has(id)) {
                     selectedDropIds.delete(id);
@@ -7000,7 +7032,184 @@ function initDropsTab() {
                 updateDropsUi();
             });
         });
+
+        grid.querySelectorAll('.drop-view-contents-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const id = parseInt(btn.dataset.dropId, 10);
+                openDropContentsModal(id);
+            });
+        });
     }
+
+    function openDropContentsModal(crateId) {
+        const modal = document.getElementById('drop-contents-modal');
+        if (!modal) return;
+
+        currentModalCrateId = crateId;
+        const crateItem = loadedDropsCatalog.find(d => d.id === crateId) || { id: crateId, name: `Crate #${crateId}` };
+        const containerEntry = loadedContainerDropsMap.get(crateId);
+
+        const iconEl = document.getElementById('drop-modal-icon');
+        const titleEl = document.getElementById('drop-contents-title');
+        const subEl = document.getElementById('drop-modal-subtitle');
+        const bodyEl = document.getElementById('drop-modal-body');
+        const infoEl = document.getElementById('drop-modal-info');
+
+        if (iconEl) iconEl.src = getDropThumbnail(crateItem);
+        if (titleEl) titleEl.textContent = crateItem.name || `Crate #${crateId}`;
+        const seriesText = containerEntry?.SeriesID ? `Series ID: ${containerEntry.SeriesID}` : `Product ID: ${crateId}`;
+        if (subEl) subEl.textContent = `${seriesText} • Authentic PsyNet Drop Table`;
+
+        const isTierPlaceholder = (pid) => pid >= 5364 && pid <= 5369;
+        const specificDrops = (containerEntry?.Drops || []).filter(d => !isTierPlaceholder(d.ProductID));
+
+        const qualityColors = {
+            'BlackMarket': { label: 'Black Market', bg: 'rgba(234, 179, 8, 0.15)', border: '#eab308', text: '#fde047' },
+            'Exotic': { label: 'Exotic', bg: 'rgba(234, 88, 12, 0.15)', border: '#ea580c', text: '#fb923c' },
+            'Import': { label: 'Import', bg: 'rgba(239, 68, 68, 0.15)', border: '#ef4444', text: '#fca5a5' },
+            'VeryRare': { label: 'Very Rare', bg: 'rgba(168, 85, 247, 0.15)', border: '#a855f7', text: '#d8b4fe' },
+            'Rare': { label: 'Rare', bg: 'rgba(59, 130, 246, 0.15)', border: '#3b82f6', text: '#93c5fd' },
+            'Uncommon': { label: 'Uncommon', bg: 'rgba(34, 197, 94, 0.15)', border: '#22c55e', text: '#86efac' },
+        };
+
+        if (specificDrops.length > 0) {
+            const order = ['BlackMarket', 'Exotic', 'Import', 'VeryRare', 'Rare', 'Uncommon'];
+            const groups = {};
+            for (const d of specificDrops) {
+                const q = d.Quality || 'Rare';
+                if (!groups[q]) groups[q] = [];
+                groups[q].push(d);
+            }
+
+            let html = `
+                <div style="margin-bottom: 14px; padding: 10px 14px; background: rgba(75, 153, 247, 0.1); border-left: 3px solid var(--accent, #4b99f7); border-radius: 6px; font-size: 13px; color: #cbd5e1;">
+                    This crate contains <strong>${specificDrops.length} authentic cosmetics</strong>. Opening it in-game will strictly roll from the items shown below.
+                </div>
+            `;
+
+            for (const q of order) {
+                const itemsInGroup = groups[q];
+                if (!itemsInGroup || itemsInGroup.length === 0) continue;
+                const style = qualityColors[q] || qualityColors['Rare'];
+
+                html += `
+                    <div style="margin-bottom: 16px;">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                            <span style="background: ${style.bg}; border: 1px solid ${style.border}; color: ${style.text}; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px;">${escHtml(style.label)}</span>
+                            <span style="font-size: 12px; color: #888;">${itemsInGroup.length} ${itemsInGroup.length === 1 ? 'item' : 'items'}</span>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px;">
+                `;
+
+                for (const drop of itemsInGroup) {
+                    const globalItem = allItems.find(x => x.id === drop.ProductID);
+                    const thumb = globalItem?.image_url || '';
+                    const paintableBadge = drop.Paintable ? `<span style="font-size: 10px; color: #93c5fd; background: rgba(59, 130, 246, 0.2); padding: 1px 5px; border-radius: 3px; font-weight: 600;">Paintable</span>` : '';
+
+                    html += `
+                        <div style="
+                            background: rgba(255, 255, 255, 0.03);
+                            border: 1px solid rgba(255, 255, 255, 0.08);
+                            border-radius: 8px;
+                            padding: 10px;
+                            display: flex;
+                            align-items: center;
+                            gap: 10px;
+                        ">
+                            <div style="width: 44px; height: 44px; flex-shrink: 0; background: rgba(0, 0, 0, 0.4); border-radius: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.05);">
+                                ${thumb ? `<img src="${escHtml(thumb)}" style="width: 100%; height: 100%; object-fit: contain;" onerror="this.outerHTML='<span style=\\'font-size:18px\\'>🎁</span>';">` : `<span style="font-size: 18px;">🎁</span>`}
+                            </div>
+                            <div style="flex: 1; min-width: 0;">
+                                <div style="font-size: 13px; font-weight: 600; color: #fff; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escHtml(drop.Name)}">${escHtml(drop.Name)}</div>
+                                <div style="display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 11px; color: #888;">
+                                    <span>${escHtml(drop.Slot || 'Item')}</span>
+                                    ${paintableBadge}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                html += `
+                        </div>
+                    </div>
+                `;
+            }
+
+            bodyEl.innerHTML = html;
+            if (infoEl) infoEl.textContent = `Total Items: ${specificDrops.length}`;
+        } else {
+            const minTier = crateItem.name?.toLowerCase().includes('uncommon') ? 'Uncommon' :
+                            crateItem.name?.toLowerCase().includes('very rare') ? 'Very Rare' :
+                            crateItem.name?.toLowerCase().includes('import') ? 'Import' :
+                            crateItem.name?.toLowerCase().includes('exotic') ? 'Exotic' :
+                            crateItem.name?.toLowerCase().includes('black market') ? 'Black Market' : 'Rare';
+
+            bodyEl.innerHTML = `
+                <div style="margin-bottom: 14px; padding: 12px 16px; background: rgba(168, 85, 247, 0.12); border-left: 3px solid #a855f7; border-radius: 6px; font-size: 13px; color: #e2e8f0; line-height: 1.5;">
+                    <div style="font-weight: 700; margin-bottom: 4px; color: #f1f5f9;">Global Drop Pool (Guaranteed ${minTier} or Higher)</div>
+                    This container is a reward drop that pulls from the entire non-crate cosmetic item pool. When unboxing, it guarantees at least <strong>${minTier}</strong> quality, with built-in chances to upgrade into higher rarity tiers!
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <div style="padding: 12px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                            <span style="font-weight: 600; font-size: 14px; color: #fff;">Possible Upgrade Tiers</span>
+                            <span style="font-size: 12px; color: #94a3b8;">Dynamic Tier Roll</span>
+                        </div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
+                            <span style="background: rgba(34, 197, 94, 0.18); border: 1px solid #22c55e; color: #86efac; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 4px;">UNCOMMON</span>
+                            <span style="background: rgba(59, 130, 246, 0.18); border: 1px solid #3b82f6; color: #93c5fd; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 4px;">RARE</span>
+                            <span style="background: rgba(168, 85, 247, 0.18); border: 1px solid #a855f7; color: #d8b4fe; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 4px;">VERY RARE</span>
+                            <span style="background: rgba(239, 68, 68, 0.18); border: 1px solid #ef4444; color: #fca5a5; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 4px;">IMPORT</span>
+                            <span style="background: rgba(234, 88, 12, 0.18); border: 1px solid #ea580c; color: #fb923c; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 4px;">EXOTIC</span>
+                            <span style="background: rgba(234, 179, 8, 0.18); border: 1px solid #eab308; color: #fde047; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 4px;">BLACK MARKET</span>
+                        </div>
+                        <p style="margin: 10px 0 0 0; font-size: 12px; color: #94a3b8; line-height: 1.4;">
+                            Includes beloved non-crate drops like Titanium White Octanes, Fennecs, Standards, Sparkles, Black Diecis, Cristianos, and Black Market Goal Explosions.
+                        </p>
+                    </div>
+                </div>
+            `;
+            if (infoEl) infoEl.textContent = `Guaranteed: ${minTier}+`;
+        }
+
+        modal.style.display = 'flex';
+    }
+
+    document.getElementById('drop-contents-close')?.addEventListener('click', () => {
+        const modal = document.getElementById('drop-contents-modal');
+        if (modal) modal.style.display = 'none';
+    });
+    document.getElementById('drop-modal-close-btn')?.addEventListener('click', () => {
+        const modal = document.getElementById('drop-contents-modal');
+        if (modal) modal.style.display = 'none';
+    });
+    document.getElementById('drop-contents-modal')?.addEventListener('click', (e) => {
+        if (e.target.id === 'drop-contents-modal') {
+            e.target.style.display = 'none';
+        }
+    });
+    document.getElementById('drop-modal-spawn-btn')?.addEventListener('click', async () => {
+        if (!currentModalCrateId) return;
+        const qty = parseInt(qtySelect?.value || '1', 10);
+        const modal = document.getElementById('drop-contents-modal');
+        if (modal) modal.style.display = 'none';
+        showProgress(true, 30);
+        updateStatus(`Spawning crate #${currentModalCrateId} (${qty}x)...`, false);
+        try {
+            const res = await invoke('spawn_drops', { crateIds: [currentModalCrateId], amount: qty });
+            showProgress(true, 100);
+            showToast(res, 'success');
+            updateStatus('Spawned!', false);
+        } catch (e) {
+            showToast(formatError(e), 'error');
+            updateStatus('Error', true);
+        } finally {
+            showProgress(false, 0);
+            setTimeout(() => updateStatus('bitsfdb', false), 2500);
+        }
+    });
 
     function updateDropsUi() {
         const count = selectedDropIds.size;

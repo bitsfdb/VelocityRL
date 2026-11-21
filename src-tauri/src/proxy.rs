@@ -2371,6 +2371,8 @@ pub struct ContainerDropItem {
     pub product_id: i32,
     #[serde(rename = "SeriesID")]
     pub series_id: Option<i32>,
+    #[serde(rename = "Paintable")]
+    pub paintable: Option<bool>,
 }
 
 static CONTAINER_DROPS: std::sync::LazyLock<Vec<ContainerDropEntry>> = std::sync::LazyLock::new(|| {
@@ -2410,6 +2412,152 @@ pub fn get_authoritative_container_drop_table_response_bytes() -> Vec<u8> {
         serde_json::to_vec(&resp_obj).unwrap_or_default()
     });
     CACHED_DROP_TABLE_RESP.clone()
+}
+
+fn roll_drop_tier(min_tier: &str, rng: &mut impl rand::Rng) -> &'static str {
+    let roll: u32 = rng.gen_range(0..100);
+    match min_tier {
+        "Uncommon" => {
+            // Uncommon 72%, Rare 20%, Very Rare 6%, Import 2%
+            if roll < 72 { "Uncommon" }
+            else if roll < 92 { "Rare" }
+            else if roll < 98 { "VeryRare" }
+            else { "Import" }
+        }
+        "Rare" => {
+            // Rare 68%, Very Rare 22%, Import 7%, Exotic 3%
+            if roll < 68 { "Rare" }
+            else if roll < 90 { "VeryRare" }
+            else if roll < 97 { "Import" }
+            else { "Exotic" }
+        }
+        "VeryRare" => {
+            // Very Rare 65%, Import 23%, Exotic 9%, Black Market 3%
+            if roll < 65 { "VeryRare" }
+            else if roll < 88 { "Import" }
+            else if roll < 97 { "Exotic" }
+            else { "BlackMarket" }
+        }
+        "Import" => {
+            // Import 70%, Exotic 22%, Black Market 8%
+            if roll < 70 { "Import" }
+            else if roll < 92 { "Exotic" }
+            else { "BlackMarket" }
+        }
+        "Exotic" => {
+            // Exotic 80%, Black Market 20%
+            if roll < 80 { "Exotic" }
+            else { "BlackMarket" }
+        }
+        "BlackMarket" => "BlackMarket",
+        _ => {
+            // General golden egg/gift roll: Rare 48%, Very Rare 28%, Import 16%, Exotic 6%, Black Market 2%
+            if roll < 48 { "Rare" }
+            else if roll < 76 { "VeryRare" }
+            else if roll < 92 { "Import" }
+            else if roll < 98 { "Exotic" }
+            else { "BlackMarket" }
+        }
+    }
+}
+
+fn pick_authentic_non_crate_item(tier: &str, rng: &mut impl rand::Rng) -> (i32, bool) {
+    match tier {
+        "Uncommon" => {
+            let pool: &[(i32, bool)] = &[
+                (232, true),   // Halo
+                (2064, true),  // Stegosaur
+                (390, true),   // Foam Hat
+                (1339, true),  // Pork Pie
+                (748, true),   // Unicorn
+                (363, true),   // Dieci
+                (359, true),   // Tunica
+                (383, true),   // Sunburst
+                (373, true),   // Veloce
+                (370, true),   // Neptune
+                (1, false),    // 8-Ball
+            ];
+            let idx = rng.gen_range(0..pool.len());
+            pool[idx]
+        }
+        "Rare" => {
+            let pool: &[(i32, bool)] = &[
+                (1506, true),  // Asterias
+                (810, true),   // Wildcat Ears
+                (2050, true),  // MMS Headphones
+                (493, true),   // Drink Helmet
+                (45, true),    // Ion
+                (52, true),    // Plasma
+                (1688, false), // Moon Rock
+                (2580, false), // Salty
+                (2527, false), // Nice Slice
+                (2413, false), // Beaten Egg
+            ];
+            let idx = rng.gen_range(0..pool.len());
+            pool[idx]
+        }
+        "VeryRare" => {
+            let pool: &[(i32, bool)] = &[
+                (386, true),   // Cristiano
+                (4127, false), // Anodized Pearl
+                (1452, true),  // Ink
+                (1166, true),  // Frostbite
+                (1951, true),  // Yamane
+            ];
+            let idx = rng.gen_range(0..pool.len());
+            pool[idx]
+        }
+        "Import" => {
+            let pool: &[(i32, bool)] = &[
+                (23, true),    // Octane
+                (4284, true),  // Fennec
+                (403, true),   // Dominus
+                (63, true),    // Standard
+                (62, true),    // Sparkles
+                (36, true),    // Flamethrower
+                (53, true),    // Thermal
+                (35, true),    // Datastream
+                (44, true),    // Sacred
+                (2355, true),  // Reaper
+                (22, true),    // Breakout
+                (30, true),    // Merc
+            ];
+            let idx = rng.gen_range(0..pool.len());
+            pool[idx]
+        }
+        "Exotic" => {
+            let pool: &[(i32, bool)] = &[
+                (1580, true),  // Zomba
+                (1661, true),  // Draco
+                (731, true),   // Voltaic
+                (363, true),   // Dieci
+                (359, true),   // Tunica
+                (383, true),   // Sunburst
+                (373, true),   // Veloce
+                (368, true),   // Stern
+                (381, true),   // Vortex
+                (380, true),   // Invader
+            ];
+            let idx = rng.gen_range(0..pool.len());
+            pool[idx]
+        }
+        _ => {
+            // BlackMarket
+            let pool: &[(i32, bool)] = &[
+                (2854, false), // Dissolver
+                (2044, true),  // Dueling Dragons
+                (3239, true),  // Mainframe
+                (1435, false), // Heatwave
+                (2966, false), // Fire God
+                (1684, true),  // 20XX
+                (1888, false), // Bubbly
+                (1908, true),  // Hellfire
+                (4549, true),  // Gravity Bomb
+            ];
+            let idx = rng.gen_range(0..pool.len());
+            pool[idx]
+        }
+    }
 }
 
 fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json::Value> {
@@ -2459,30 +2607,54 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
     use rand::Rng;
     let mut rng = rand::thread_rng();
 
-    let (dropped_pid, dropped_series_id) = if let Some(container) = container_entry {
-        if !container.drops.is_empty() {
-            let idx = rng.gen_range(0..container.drops.len());
-            let d = &container.drops[idx];
+    // Check if a ProductID is an internal Psyonix drop tier indicator (5364..=5369)
+    let is_tier_placeholder = |pid: i32| (5364..=5369).contains(&pid);
+
+    let (dropped_pid, dropped_series_id, can_be_painted) = if let Some(container) = container_entry {
+        // Collect authentic specific drops from this container (excluding tier indicator placeholders)
+        let specific_drops: Vec<&ContainerDropItem> = container.drops.iter()
+            .filter(|d| !is_tier_placeholder(d.product_id))
+            .collect();
+
+        if !specific_drops.is_empty() {
+            // Classic series crate: strictly draw from the authentic preview contents
+            let idx = rng.gen_range(0..specific_drops.len());
+            let d = specific_drops[idx];
             let sid = d.series_id.unwrap_or(container.series_id);
-            (d.product_id, sid)
+            let paintable = d.paintable.unwrap_or(true);
+            (d.product_id, sid, paintable)
         } else {
-            (2532, container.series_id)
+            // Tier-based drop container (Uncommon Drop, Rare Drop, Very Rare Drop, Golden Eggs/Gifts, etc.)
+            let (min_tier, container_sid) = match container.product_id {
+                5302 => ("Uncommon", 0),    // Sport Drop (Uncommon)
+                5301 => ("Rare", 0),        // Special Drop (Rare)
+                5303 => ("VeryRare", 0),    // Deluxe Drop (Very Rare)
+                5300 => ("Import", 0),      // Import Drop
+                5299 => ("Exotic", 0),      // Exotic Drop
+                5298 => ("BlackMarket", 0), // Black Market Drop
+                _ => ("Rare", container.series_id), // Golden Eggs/Gifts, Cups, etc.
+            };
+
+            let rolled_tier = roll_drop_tier(min_tier, &mut rng);
+            let (pid, paintable) = pick_authentic_non_crate_item(rolled_tier, &mut rng);
+            let sid = if container_sid > 0 { container_sid } else { lookup_series_id_for_product(pid) };
+            (pid, sid, paintable)
         }
     } else {
         // High tier fallback items pool if opened container was not matched
-        let drop_candidates: &[(i32, i32)] = &[
-            (2532, 21),  // Wonderment (Secret Santa)
-            (2854, 21),  // Dissolver
-            (1580, 2),   // Zomba (Champion 4)
-            (1661, 4),   // Draco (Nitro)
-            (4284, 0),   // Fennec
-            (23, 0),     // Octane
+        let drop_candidates: &[(i32, i32, bool)] = &[
+            (2532, 21, true),  // Wonderment (Secret Santa)
+            (2854, 21, false), // Dissolver
+            (1580, 2, true),   // Zomba (Champion 4)
+            (1661, 4, true),   // Draco (Nitro)
+            (4284, 0, true),   // Fennec
+            (23, 0, true),     // Octane
         ];
         let idx = rng.gen_range(0..drop_candidates.len());
         drop_candidates[idx]
     };
 
-    let is_painted = rng.gen_bool(0.35); // 35% chance painted
+    let is_painted = can_be_painted && rng.gen_bool(0.35); // 35% chance painted if paintable
     let dropped_paint = if is_painted {
         if rng.gen_bool(0.40) {
             12 // Titanium White
