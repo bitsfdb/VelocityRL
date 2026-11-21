@@ -3447,7 +3447,8 @@ async fn detect_game_dir() -> Result<Vec<DetectedInstall>, String> {
                     let trimmed = line.trim();
                     if trimmed.starts_with("\"path\"") {
                         if let Some(p) = trimmed.split('"').nth(3) {
-                            library_paths.push(PathBuf::from(p).join("steamapps"));
+                            let clean_p = p.replace(r"\\", r"\");
+                            library_paths.push(PathBuf::from(clean_p).join("steamapps"));
                         }
                     }
                 }
