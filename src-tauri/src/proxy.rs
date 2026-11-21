@@ -1805,6 +1805,32 @@ async fn handle_forward_intercepted_request(
     };
 
     let path_lower = path.to_ascii_lowercase();
+    if path_lower.contains("products/getcontainerdroptable") || path_lower.contains("getcontainerdroptable") {
+        let resp_bytes = get_authoritative_container_drop_table_response_bytes();
+        let psy_time = format!("{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(1755399374));
+        let sig = resign_rpc_response(&psy_time, &resp_bytes);
+        crate::applog::event("proxy: intercepted forward HTTPS Products/GetContainerDropTable -> authoritative drop table");
+        record_network_event(
+            "HTTP",
+            "INBOUND",
+            &path_lower,
+            "200 OK",
+            "GetContainerDropTable (Authoritative)",
+            &String::from_utf8_lossy(&resp_bytes),
+            true,
+        );
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json")
+            .header("PsyTime", &psy_time)
+            .header("PsySig", &sig)
+            .header("Psysignature", &sig)
+            .header("Content-Length", resp_bytes.len().to_string())
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body(resp_bytes))
+            .unwrap());
+    }
+
     if path_lower.contains("products/unlockcontainer")
         || path_lower.contains("unlockcontainer")
         || path_lower.contains("products/opencontainer")
@@ -2327,39 +2353,164 @@ pub async fn start_ws_broker() -> Result<u16, String> {
 }
 
 
-fn generate_simulated_unlock_container_payload(_body: &[u8]) -> Option<serde_json::Value> {
-    // High tier items pool for crate drops
-    let drop_candidates: &[(i32, i32)] = &[
-        (4284, 12), // Fennec (Titanium White)
-        (4284, 0),  // Fennec (Default)
-        (23, 12),   // Octane (Titanium White)
-        (1580, 12), // Zomba (Titanium White)
-        (1661, 12), // Draco (Titanium White)
-        (2854, 0),  // Dissolver (Black Market Decal)
-        (1435, 0),  // Heatwave (Black Market Decal)
-        (2044, 12), // Dueling Dragons (Titanium White)
-        (2044, 0),  // Dueling Dragons (Black Market Goal Explosion)
-        (5257, 12), // Mic Drop (Titanium White)
-        (10128, 12), // Zomba (Titanium White)
-    ];
+static CONTAINER_DROPS_JSON: &str = include_str!("../../resources/container_drops.json");
+
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
+pub struct ContainerDropEntry {
+    #[serde(rename = "ProductID")]
+    pub product_id: i32,
+    #[serde(rename = "SeriesID")]
+    pub series_id: i32,
+    #[serde(rename = "Drops")]
+    pub drops: Vec<ContainerDropItem>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
+pub struct ContainerDropItem {
+    #[serde(rename = "ProductID")]
+    pub product_id: i32,
+    #[serde(rename = "SeriesID")]
+    pub series_id: Option<i32>,
+}
+
+static CONTAINER_DROPS: std::sync::LazyLock<Vec<ContainerDropEntry>> = std::sync::LazyLock::new(|| {
+    serde_json::from_str(CONTAINER_DROPS_JSON).unwrap_or_default()
+});
+
+static PRODUCT_SERIES_MAP: std::sync::LazyLock<std::collections::HashMap<i32, i32>> = std::sync::LazyLock::new(|| {
+    let mut map = std::collections::HashMap::new();
+    for c in CONTAINER_DROPS.iter() {
+        if c.series_id > 0 {
+            map.insert(c.product_id, c.series_id);
+        }
+        for d in &c.drops {
+            let sid = d.series_id.unwrap_or(c.series_id);
+            if sid > 0 {
+                map.insert(d.product_id, sid);
+            }
+        }
+    }
+    map
+});
+
+pub fn lookup_series_id_for_product(pid: i32) -> i32 {
+    PRODUCT_SERIES_MAP.get(&pid).copied().unwrap_or(0)
+}
+
+pub fn get_authoritative_container_drop_table_response_bytes() -> Vec<u8> {
+    static CACHED_DROP_TABLE_RESP: std::sync::LazyLock<Vec<u8>> = std::sync::LazyLock::new(|| {
+        let drops_val: serde_json::Value = serde_json::from_str(CONTAINER_DROPS_JSON).unwrap_or_default();
+        let resp_obj = serde_json::json!({
+            "ContainerDrops": drops_val,
+            "Result": {
+                "ContainerDrops": drops_val
+            },
+            "bSuccess": true
+        });
+        serde_json::to_vec(&resp_obj).unwrap_or_default()
+    });
+    CACHED_DROP_TABLE_RESP.clone()
+}
+
+fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json::Value> {
+    let req_val: Option<serde_json::Value> = serde_json::from_slice(body).ok();
+    let mut consumed_instance_ids: Vec<String> = Vec::new();
+    let mut crate_pid_opt: Option<i32> = None;
+
+    if let Some(ref root) = req_val {
+        if let Some(arr) = root.get("InstanceIDs").and_then(|v| v.as_array()) {
+            for v in arr {
+                if let Some(s) = v.as_str() {
+                    consumed_instance_ids.push(s.to_string());
+                    if crate_pid_opt.is_none() && s.len() >= 8 {
+                        if let Ok(pid) = u32::from_str_radix(&s[..8], 16) {
+                            if pid > 0 {
+                                crate_pid_opt = Some(pid as i32);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(arr) = root.get("KeyInstanceIDs").and_then(|v| v.as_array()) {
+            for v in arr {
+                if let Some(s) = v.as_str() {
+                    consumed_instance_ids.push(s.to_string());
+                }
+            }
+        }
+    }
+
+    if crate_pid_opt.is_none() {
+        if let Ok(g) = DYNAMIC_SPAWNED_ITEMS.read() {
+            for &(pid, _) in g.iter() {
+                if CONTAINER_DROPS.iter().any(|c| c.product_id == pid) {
+                    crate_pid_opt = Some(pid);
+                    break;
+                }
+            }
+        }
+    }
+
+    let container_entry = crate_pid_opt.and_then(|pid| {
+        CONTAINER_DROPS.iter().find(|c| c.product_id == pid)
+    });
 
     use rand::Rng;
-    let idx = rand::thread_rng().gen_range(0..drop_candidates.len());
-    let (dropped_pid, dropped_paint) = drop_candidates[idx];
+    let mut rng = rand::thread_rng();
 
-    // Register into broker memory so garage inventory & loadout immediately recognize it
+    let (dropped_pid, dropped_series_id) = if let Some(container) = container_entry {
+        if !container.drops.is_empty() {
+            let idx = rng.gen_range(0..container.drops.len());
+            let d = &container.drops[idx];
+            let sid = d.series_id.unwrap_or(container.series_id);
+            (d.product_id, sid)
+        } else {
+            (2532, container.series_id)
+        }
+    } else {
+        // High tier fallback items pool if opened container was not matched
+        let drop_candidates: &[(i32, i32)] = &[
+            (2532, 21),  // Wonderment (Secret Santa)
+            (2854, 21),  // Dissolver
+            (1580, 2),   // Zomba (Champion 4)
+            (1661, 4),   // Draco (Nitro)
+            (4284, 0),   // Fennec
+            (23, 0),     // Octane
+        ];
+        let idx = rng.gen_range(0..drop_candidates.len());
+        drop_candidates[idx]
+    };
+
+    let is_painted = rng.gen_bool(0.35); // 35% chance painted
+    let dropped_paint = if is_painted {
+        if rng.gen_bool(0.40) {
+            12 // Titanium White
+        } else {
+            rng.gen_range(1..=14)
+        }
+    } else {
+        0
+    };
+
+    // Consume the opened crate from active spawned items and persistent storage
+    if let Some(crate_pid) = crate_pid_opt {
+        crate::applog::event(&format!("proxy: crate unboxing consuming opened crate ProductID={crate_pid}"));
+        unregister_spawned_items(&[crate_pid]);
+    }
+
+    // Register drop into broker memory & disk so garage inventory immediately recognizes it
     register_spawned_items(&[(dropped_pid, dropped_paint)]);
+    crate::applog::event(&format!(
+        "proxy: crate unboxing granted authentic drop ProductID={dropped_pid}, Paint={dropped_paint}, SeriesID={dropped_series_id}"
+    ));
+
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
         handle.spawn(async move {
-            let _ = inject_reward_drop(&[(dropped_pid, dropped_paint)]).await;
+            let _ = inject_reward_drop_with_series(&[(dropped_pid, dropped_paint, dropped_series_id)]).await;
         });
     }
 
-    // Pure network proxy mode: Save file on disk is not touched!
-
-    // Products/UnlockContainer v2 returns {"Result":{"Drops":[Product]}}.
-    // A Product in UnlockContainer response has null InstanceID and null timestamps;
-    // the actual inventory instance is populated via the companion RewardResult frame.
     let mut attributes: Vec<serde_json::Value> = Vec::new();
     if dropped_paint > 0 {
         attributes.push(serde_json::json!({
@@ -2372,15 +2523,17 @@ fn generate_simulated_unlock_container_payload(_body: &[u8]) -> Option<serde_jso
         "ProductID": dropped_pid,
         "InstanceID": serde_json::Value::Null,
         "Attributes": attributes,
-        "SeriesID": 0,
+        "SeriesID": dropped_series_id,
         "AddedTimestamp": serde_json::Value::Null,
         "UpdatedTimestamp": serde_json::Value::Null,
     });
 
     let resp_obj = serde_json::json!({
         "Drops": [drop_obj.clone()],
+        "InstanceIDs": consumed_instance_ids,
         "Result": {
             "Drops": [drop_obj],
+            "InstanceIDs": consumed_instance_ids,
             "bSkipRoulette": false
         },
         "bSuccess": true
@@ -3151,6 +3304,32 @@ async fn handle_broker_request(
         }
     };
 
+    if path_lower.contains("products/getcontainerdroptable") || path_lower.contains("getcontainerdroptable") {
+        let resp_bytes = get_authoritative_container_drop_table_response_bytes();
+        let psy_time = format!("{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(1755399374));
+        let sig = resign_rpc_response(&psy_time, &resp_bytes);
+        crate::applog::event("broker: intercepted Products/GetContainerDropTable -> authoritative drop table");
+        record_network_event(
+            "HTTP",
+            "INBOUND",
+            &path_lower,
+            "200 OK",
+            "GetContainerDropTable (Authoritative)",
+            &String::from_utf8_lossy(&resp_bytes),
+            true,
+        );
+        return Ok(Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/json")
+            .header("PsyTime", &psy_time)
+            .header("PsySig", &sig)
+            .header("Psysignature", &sig)
+            .header("Content-Length", resp_bytes.len().to_string())
+            .header("Cache-Control", "no-cache, no-store")
+            .body(full_body(resp_bytes))
+            .unwrap());
+    }
+
     if path_lower.contains("products/unlockcontainer")
         || path_lower.contains("unlockcontainer")
         || path_lower.contains("products/opencontainer")
@@ -3893,8 +4072,8 @@ async fn patch_ws_frame_text(text: &str, from_server: bool) -> (String, bool) {
     (text.to_string(), false)
 }
 
-static PENDING_UNLOCK_REQUESTS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
-    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
+static PENDING_UNLOCK_REQUESTS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, Vec<u8>>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
 
 pub async fn patch_ws_frame_binary(frame: &[u8], from_server: bool) -> (Vec<u8>, bool) {
     let Some(hdr_end) = find_bytes(frame, b"\r\n\r\n") else {
@@ -3959,39 +4138,50 @@ pub async fn patch_ws_frame_binary(frame: &[u8], from_server: bool) -> (Vec<u8>,
     if !from_server && is_unlock_container_req && !req_id.is_empty() {
         crate::applog::event(&format!("proxy: tracked outbound UnlockContainer request ID '{req_id}' service='{svc}'"));
         if let Ok(mut pending) = PENDING_UNLOCK_REQUESTS.lock() {
-            pending.insert(req_id.clone());
+            pending.insert(req_id.clone(), body_part.to_vec());
         }
     }
 
-    let is_pending_unlock = if from_server && !resp_id.is_empty() {
+    let pending_req_body = if from_server && !resp_id.is_empty() {
         if let Ok(mut pending) = PENDING_UNLOCK_REQUESTS.lock() {
             pending.remove(&resp_id)
         } else {
-            false
+            None
         }
     } else {
-        false
+        None
     };
 
-    let is_unlock_container_resp = is_pending_unlock
+    let is_unlock_container_resp = pending_req_body.is_some()
         || (from_server && (svc_lower.contains("unlockcontainer")
             || svc_lower.contains("opencontainer")
             || body_lower.contains("unlockcontainer")
             || body_lower.contains("opencontainer")));
 
     if is_unlock_container_resp {
+        let unlock_input_body = pending_req_body.as_deref().unwrap_or(body_part);
         crate::applog::event(&format!(
-            "proxy: WS unlock container response intercepted (resp_id='{resp_id}', pending={is_pending_unlock}) -> rewriting to 200 OK with simulated drop"
+            "proxy: WS unlock container response intercepted (resp_id='{resp_id}') -> rewriting to 200 OK with authentic drop"
         ));
-        if let Some(resp_json) = generate_simulated_unlock_container_payload(body_part) {
+        if let Some(resp_json) = generate_simulated_unlock_container_payload(unlock_input_body) {
             let resp_bytes = serde_json::to_vec(&resp_json).unwrap_or_default();
             current_body = resp_bytes;
             current_headers = replace_ws_header_value(&current_headers, "PsyStatus", "200");
             let now_str = format!("{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(1755399374));
             current_headers = replace_ws_header_value(&current_headers, "PsyTime", &now_str);
             any_changed = true;
-            crate::applog::event("proxy: WS simulated Products/UnlockContainer -> drop granted & registered to inventory (PsyStatus 200)");
+            crate::applog::event("proxy: WS authentic Products/UnlockContainer -> drop granted & registered to inventory (PsyStatus 200)");
         }
+    }
+
+    if from_server && (svc_lower.contains("getcontainerdroptable") || body_lower.contains("getcontainerdroptable")) {
+        let resp_bytes = get_authoritative_container_drop_table_response_bytes();
+        current_body = resp_bytes;
+        current_headers = replace_ws_header_value(&current_headers, "PsyStatus", "200");
+        let now_str = format!("{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(1755399374));
+        current_headers = replace_ws_header_value(&current_headers, "PsyTime", &now_str);
+        any_changed = true;
+        crate::applog::event("proxy: WS intercepted Products/GetContainerDropTable -> served authoritative table (PsyStatus 200)");
     }
 
     let (new_body_sync, did_patch_sync) = neutralize_inventory_out_of_sync_json(&current_body);
@@ -6606,6 +6796,7 @@ pub fn load_active_swap_rules(cfg: Option<&crate::psynet::SpoofPayload>) -> Vec<
         }
     }
 
+    ensure_spawned_items_loaded();
     if let Ok(dyn_items) = DYNAMIC_SPAWNED_ITEMS.read() {
         for &(wid, pid) in dyn_items.iter() {
             if wid > 0 && seen.insert((0, wid, 0)) {
@@ -6625,6 +6816,66 @@ pub fn load_active_swap_rules(cfg: Option<&crate::psynet::SpoofPayload>) -> Vec<
 }
 
 static DYNAMIC_SPAWNED_ITEMS: std::sync::RwLock<Vec<(i32, i32)>> = std::sync::RwLock::new(Vec::new());
+static SPAWNED_ITEMS_INITIALIZED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn get_spawned_items_file_path() -> std::path::PathBuf {
+    crate::psynet::config_dir().join("spawned_items.json")
+}
+
+fn load_persisted_spawned_items() -> Vec<(i32, i32)> {
+    let path = get_spawned_items_file_path();
+    if let Ok(content) = std::fs::read_to_string(&path) {
+        if let Ok(items) = serde_json::from_str::<Vec<(i32, i32)>>(&content) {
+            return items;
+        }
+    }
+    Vec::new()
+}
+
+fn save_persisted_spawned_items(items: &[(i32, i32)]) {
+    let path = get_spawned_items_file_path();
+    if let Ok(data) = serde_json::to_string_pretty(items) {
+        let _ = std::fs::write(&path, data);
+    }
+    // Synchronize into cfg.inventory_spoof in psynet_config.json so the UI and game config stay in lockstep
+    if let Ok(dir) = crate::psynet::find_proxy_dir() {
+        if let Some(mut cfg) = crate::psynet::load_active_spoof_from_disk() {
+            let mut inv = cfg.inventory_spoof.unwrap_or_default();
+            inv.enabled = !items.is_empty();
+            inv.items.retain(|it| items.iter().any(|&(pid, paint)| pid == it.product_id && paint == it.paint_id));
+            for &(pid, paint) in items {
+                if !inv.items.iter().any(|it| it.product_id == pid && it.paint_id == paint) {
+                    let sid = lookup_series_id_for_product(pid);
+                    inv.items.push(crate::psynet::InventorySpoofItemPayload {
+                        product_id: pid,
+                        paint_id: paint,
+                        series_id: sid,
+                        slot: String::new(),
+                        dlc: false,
+                    });
+                }
+            }
+            cfg.inventory_spoof = Some(inv);
+            let _ = crate::psynet::write_spoof(&dir, &cfg);
+        }
+    }
+}
+
+fn ensure_spawned_items_loaded() {
+    if !SPAWNED_ITEMS_INITIALIZED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        let persisted = load_persisted_spawned_items();
+        if !persisted.is_empty() {
+            if let Ok(mut g) = DYNAMIC_SPAWNED_ITEMS.write() {
+                for item in persisted {
+                    if !g.contains(&item) {
+                        g.push(item);
+                    }
+                }
+            }
+        }
+    }
+}
+
 static CLIENT_WS_SENDER: std::sync::RwLock<Option<tokio::sync::mpsc::UnboundedSender<tokio_tungstenite::tungstenite::Message>>> = std::sync::RwLock::new(None);
 
 pub fn register_client_ws_sender(sender: tokio::sync::mpsc::UnboundedSender<tokio_tungstenite::tungstenite::Message>) {
@@ -6648,8 +6899,8 @@ pub fn has_active_client_ws() -> bool {
 }
 
 /// Construct and send downstream `PsyService: Reward/RewardResult` frame
-/// to make items pop up and drop into player inventory live in-game without restarting.
-pub async fn inject_reward_drop(items: &[(i32, i32)]) -> Result<bool, String> {
+/// with authentic series IDs to make items pop up and drop into player inventory live in-game.
+pub async fn inject_reward_drop_with_series(items: &[(i32, i32, i32)]) -> Result<bool, String> {
     if items.is_empty() {
         return Ok(false);
     }
@@ -6671,15 +6922,16 @@ pub async fn inject_reward_drop(items: &[(i32, i32)]) -> Result<bool, String> {
         .as_secs() as i64;
 
     let mut product_data = Vec::new();
-    for &(pid, paint) in items {
+    for &(pid, paint, sid) in items {
         if pid <= 0 {
             continue;
         }
         let inst_hex = format!("{:08x}{:08x}0000000000000000", pid as u32, paint.max(0) as u32);
+        let series_id = if sid > 0 { sid } else { lookup_series_id_for_product(pid) };
         let mut prod_obj = serde_json::json!({
             "ProductID": pid,
             "InstanceID": inst_hex,
-            "SeriesID": 0,
+            "SeriesID": series_id,
             "Amount": 1,
             "ExpirationTime": -1,
             "IsTradable": false,
@@ -6733,29 +6985,51 @@ pub async fn inject_reward_drop(items: &[(i32, i32)]) -> Result<bool, String> {
     Ok(true)
 }
 
+pub async fn inject_reward_drop(items: &[(i32, i32)]) -> Result<bool, String> {
+    let items_with_series: Vec<(i32, i32, i32)> = items
+        .iter()
+        .map(|&(pid, paint)| (pid, paint, lookup_series_id_for_product(pid)))
+        .collect();
+    inject_reward_drop_with_series(&items_with_series).await
+}
+
 pub fn register_spawned_items(items: &[(i32, i32)]) {
+    ensure_spawned_items_loaded();
+    let mut updated = false;
+    let mut current_items = Vec::new();
     if let Ok(mut g) = DYNAMIC_SPAWNED_ITEMS.write() {
         for &(id, paint) in items {
-            if !g.contains(&(id, paint)) {
+            if id > 0 && !g.contains(&(id, paint)) {
                 g.push((id, paint));
+                updated = true;
             }
         }
+        current_items = g.clone();
+    }
+    if updated {
+        save_persisted_spawned_items(&current_items);
     }
 }
 
 pub fn unregister_spawned_items(product_ids: &[i32]) {
+    ensure_spawned_items_loaded();
+    let mut current_items = Vec::new();
     if let Ok(mut items) = DYNAMIC_SPAWNED_ITEMS.write() {
         items.retain(|(id, _)| !product_ids.contains(id));
+        current_items = items.clone();
     }
+    save_persisted_spawned_items(&current_items);
 }
 
 pub fn clear_dynamic_spawned_items() {
     if let Ok(mut g) = DYNAMIC_SPAWNED_ITEMS.write() {
         g.clear();
     }
+    save_persisted_spawned_items(&[]);
 }
 
 pub fn load_active_spawned_items(cfg: Option<&crate::psynet::SpoofPayload>) -> Vec<(i32, i32)> {
+    ensure_spawned_items_loaded();
     let mut items = Vec::new();
     let mut seen = std::collections::HashSet::new();
     if let Ok(g) = DYNAMIC_SPAWNED_ITEMS.read() {
@@ -7687,10 +7961,12 @@ pub fn patch_player_products_json(
             // hex-decodes it into FQWord (UpperBits, LowerBits) without parse error.
             let inst_hex = format!("{:08x}{:08x}0000000000000000", wanted_id as u32, paint_id as u32);
             let static_ts: i64 = 1700000000;
+            let series_id = lookup_series_id_for_product(wanted_id);
 
             let mut prod_obj = serde_json::json!({
                 "ProductID": wanted_id,
                 "InstanceID": inst_hex,
+                "SeriesID": series_id,
                 "Amount": 1,
                 "ExpirationTime": -1,
                 "IsTradable": false,
@@ -7716,6 +7992,22 @@ pub fn patch_player_products_json(
 
             arr.push(prod_obj);
             changed = true;
+        }
+    }
+
+    for item in arr.iter_mut() {
+        if let Some(obj) = item.as_object_mut() {
+            let has_valid_series = obj.get("SeriesID").map(|v| v.is_i64()).unwrap_or(false);
+            if !has_valid_series {
+                let pid = obj.get("ProductID")
+                    .or_else(|| obj.get("ProductId"))
+                    .or_else(|| obj.get("id"))
+                    .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+                    .unwrap_or(0) as i32;
+                let sid = lookup_series_id_for_product(pid);
+                obj.insert("SeriesID".to_string(), serde_json::json!(sid));
+                changed = true;
+            }
         }
     }
 
@@ -8858,6 +9150,49 @@ mod tests {
         }
         // A route with an explicit player id query param is NOT a purely local route
         assert!(!super::is_local_avatar_route("/rlim/avatar", Some("player_id=123")));
+    }
+
+    #[test]
+    fn test_container_drop_table_authoritative_lookup() {
+        assert_eq!(super::lookup_series_id_for_product(2522), 21, "Secret Santa Crate SeriesID");
+        assert_eq!(super::lookup_series_id_for_product(2532), 21, "Wonderment SeriesID");
+        assert_eq!(super::lookup_series_id_for_product(1009), 2, "Champion 1 Crate SeriesID");
+        assert_eq!(super::lookup_series_id_for_product(1102), 2, "Dominus: Arcana SeriesID");
+    }
+
+    #[test]
+    fn test_unlock_container_with_secret_santa_crate() {
+        // Crate ProductID 2522 is 0x000009da in hex
+        let inst_id = "000009da000000000000000000000000";
+        let req_body = serde_json::json!({
+            "PlayerID": "Epic|test|0",
+            "InstanceIDs": [inst_id],
+            "KeyInstanceIDs": []
+        });
+        let req_bytes = serde_json::to_vec(&req_body).unwrap();
+        let resp = super::generate_simulated_unlock_container_payload(&req_bytes)
+            .expect("must produce unlock response");
+
+        assert_eq!(resp["bSuccess"], true);
+        assert_eq!(resp["InstanceIDs"][0], inst_id);
+        assert_eq!(resp["Result"]["InstanceIDs"][0], inst_id);
+
+        let drop = &resp["Result"]["Drops"][0];
+        let drop_pid = drop["ProductID"].as_i64().unwrap() as i32;
+        let drop_sid = drop["SeriesID"].as_i64().unwrap() as i32;
+
+        assert_eq!(drop_sid, 21, "Secret Santa drop must have SeriesID 21");
+        let secret_santa_pool = [2489, 2495, 2496, 2500, 2579, 2478, 2442, 2481, 2482, 2532, 2854, 2966, 3239, 3453];
+        assert!(secret_santa_pool.contains(&drop_pid), "Dropped item {drop_pid} must be in Secret Santa pool");
+    }
+
+    #[test]
+    fn test_get_container_drop_table_response_structure() {
+        let resp_bytes = super::get_authoritative_container_drop_table_response_bytes();
+        let val: serde_json::Value = serde_json::from_slice(&resp_bytes).expect("valid json");
+        assert_eq!(val["bSuccess"], true);
+        let list = val["Result"]["ContainerDrops"].as_array().expect("array of container drops");
+        assert_eq!(list.len(), 120, "authoritative drop table has 120 containers");
     }
 }
 
