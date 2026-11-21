@@ -19,7 +19,11 @@ tools/nametag_probe/*.dll
 tools/nametag_probe/*.obj
 tools/nametag_probe/*.exp
 tools/nametag_probe/*.lib
-*.py[cod]
+*.py
+!scripts/*.py
+!prepatched_incoming/README.md
+prepatched_incoming/*.upk
+prepatched_incoming/*.exe[cod]
 *$py.class
 *.so
 .Python
@@ -75,6 +79,10 @@ inspect_upk.py
 body_paint_modifier.py
 psynet_paint_injector.py
 *.py
+!scripts/*.py
+!prepatched_incoming/README.md
+prepatched_incoming/*.upk
+prepatched_incoming/*.exe
 
 # PsyNet MITM — captures, labs, research docs (keep locally; don't commit)
 tools/psynet_proxy/go_mitm/captures/
