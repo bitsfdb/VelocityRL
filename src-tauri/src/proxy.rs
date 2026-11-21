@@ -2982,19 +2982,32 @@ async fn handle_broker_request(
 
         // Epic PlayerIDs look like "Epic|<32-hex account id>|0". They are not
         // Steam IDs, so parse_steam_id() returns None for them. Match the
-        // account id from the request path against the learned local PlayerID
-        // directly so the custom avatar resolves for those requests too.
-        let learned_player_id = crate::proxy::get_learned_player_id().unwrap_or_default();
-        let mut learned_account_id = normalize_player_id(&learned_player_id);
-        if learned_account_id.is_empty() {
-            // Same local identity used by name spoofing.
-            learned_account_id = normalize_player_id(BITS_PLAYER_ID);
-        }
-        let target_is_local_pid = !learned_account_id.is_empty()
-            && path_str.split(&['/', '?', '&'][..]).any(|part| {
+        // account id from the request path against the learned local PlayerID,
+        // BITS_PLAYER_ID, and any configured spoof PlayerID directly so the
+        // custom avatar resolves for those requests too.
+        let learned_account_id = normalize_player_id(&crate::proxy::get_learned_player_id().unwrap_or_default());
+        let bits_account_id = normalize_player_id(BITS_PLAYER_ID);
+        let config_account_id = crate::proxy::get_spoof_config().await
+            .and_then(|c| c.name_spoof)
+            .and_then(|ns| ns.player_id)
+            .map(|id| normalize_player_id(&id))
+            .unwrap_or_default();
+
+        let is_local_id = |cand: &str| -> bool {
+            if cand.is_empty() { return false; }
+            cand == "0"
+                || cand == "unknown"
+                || (!learned_account_id.is_empty() && cand == learned_account_id)
+                || (!bits_account_id.is_empty() && cand == bits_account_id)
+                || (!config_account_id.is_empty() && cand == config_account_id)
+        };
+
+        let target_is_local_pid = path_str.split(&['/', '?', '&'][..])
+            .chain(query_str.split('&').filter_map(|q| q.split_once('=').map(|(_, v)| v)))
+            .any(|part| {
                 let decoded = crate::avatar::percent_decode(part);
                 let candidate = normalize_player_id(&decoded);
-                !candidate.is_empty() && candidate == learned_account_id
+                is_local_id(&candidate)
             });
         let is_tab_one = query_str.split('&').any(|p| p.eq_ignore_ascii_case("tab=1"));
         if target_is_local_pid || is_tab_one {
@@ -3874,6 +3887,9 @@ async fn patch_ws_frame_text(text: &str, from_server: bool) -> (String, bool) {
     (text.to_string(), false)
 }
 
+static PENDING_UNLOCK_REQUESTS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashSet::new()));
+
 pub async fn patch_ws_frame_binary(frame: &[u8], from_server: bool) -> (Vec<u8>, bool) {
     let Some(hdr_end) = find_bytes(frame, b"\r\n\r\n") else {
         return (frame.to_vec(), false);
@@ -3882,10 +3898,12 @@ pub async fn patch_ws_frame_binary(frame: &[u8], from_server: bool) -> (Vec<u8>,
     let headers_part = &frame[..hdr_end];
     let body_part = &frame[hdr_end + 4..];
 
-    let conn_id = get_ws_header_value(headers_part, "PsyConnectionID");
-    if !conn_id.is_empty() {
-        set_learned_player_id(&conn_id);
-    }
+    let mut current_headers = headers_part.to_vec();
+    let mut current_body = body_part.to_vec();
+    let mut any_changed = false;
+
+    let req_id = get_ws_header_value(headers_part, "PsyRequestID");
+    let resp_id = get_ws_header_value(headers_part, "PsyResponseID");
 
     let svc = get_ws_header_value(headers_part, "PsyService");
     let svc_lower = svc.to_ascii_lowercase();
@@ -3904,9 +3922,6 @@ pub async fn patch_ws_frame_binary(frame: &[u8], from_server: bool) -> (Vec<u8>,
         Some(c) => Some(c),
         None => get_spoof_config().await,
     };
-
-    let mut current_body = body_part.to_vec();
-    let mut any_changed = false;
 
     let is_reservation = find_bytes(body_part, b"ServerAddress").is_some()
         || find_bytes(body_part, b"GameURL").is_some()
@@ -3929,21 +3944,47 @@ pub async fn patch_ws_frame_binary(frame: &[u8], from_server: bool) -> (Vec<u8>,
     }
 
     let body_lower = String::from_utf8_lossy(body_part).to_ascii_lowercase();
-    let is_unlock_container = svc_lower.contains("unlockcontainer")
+    let is_unlock_container_req = svc_lower.contains("unlockcontainer")
         || svc_lower.contains("opencontainer")
         || body_lower.contains("unlockcontainer")
         || body_lower.contains("opencontainer")
         || (body_lower.contains("instanceids") && body_lower.contains("keyinstanceids"));
 
-    // Only rewrite the SERVER's response. Rewriting the client's outbound
-    // request would corrupt it (the server then rejects the transaction).
-    if is_unlock_container && from_server {
-        crate::applog::event(&format!("proxy: WS unlock container response service={svc} body={}", String::from_utf8_lossy(body_part)));
+    if !from_server && is_unlock_container_req && !req_id.is_empty() {
+        crate::applog::event(&format!("proxy: tracked outbound UnlockContainer request ID '{req_id}' service='{svc}'"));
+        if let Ok(mut pending) = PENDING_UNLOCK_REQUESTS.lock() {
+            pending.insert(req_id.clone());
+        }
+    }
+
+    let is_pending_unlock = if from_server && !resp_id.is_empty() {
+        if let Ok(mut pending) = PENDING_UNLOCK_REQUESTS.lock() {
+            pending.remove(&resp_id)
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
+    let is_unlock_container_resp = is_pending_unlock
+        || (from_server && (svc_lower.contains("unlockcontainer")
+            || svc_lower.contains("opencontainer")
+            || body_lower.contains("unlockcontainer")
+            || body_lower.contains("opencontainer")));
+
+    if is_unlock_container_resp {
+        crate::applog::event(&format!(
+            "proxy: WS unlock container response intercepted (resp_id='{resp_id}', pending={is_pending_unlock}) -> rewriting to 200 OK with simulated drop"
+        ));
         if let Some(resp_json) = generate_simulated_unlock_container_payload(body_part) {
             let resp_bytes = serde_json::to_vec(&resp_json).unwrap_or_default();
             current_body = resp_bytes;
+            current_headers = replace_ws_header_value(&current_headers, "PsyStatus", "200");
+            let now_str = format!("{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(1755399374));
+            current_headers = replace_ws_header_value(&current_headers, "PsyTime", &now_str);
             any_changed = true;
-            crate::applog::event("proxy: WS simulated Products/UnlockContainer -> drop granted & registered to inventory");
+            crate::applog::event("proxy: WS simulated Products/UnlockContainer -> drop granted & registered to inventory (PsyStatus 200)");
         }
     }
 
@@ -3971,25 +4012,6 @@ pub async fn patch_ws_frame_binary(frame: &[u8], from_server: bool) -> (Vec<u8>,
     if is_products {
         let spawned_items = load_active_spawned_items(cfg_opt.as_ref());
         if !spawned_items.is_empty() {
-            // Instead of silently syncing missing items into the inventory
-            // response, push a Reward/RewardResult frame so they appear live.
-            let body_text = String::from_utf8_lossy(&current_body);
-            let missing: Vec<(i32, i32)> = spawned_items
-                .iter()
-                .copied()
-                .filter(|(pid, _)| !body_text.contains(&format!("\"ProductID\":{pid}")) &&
-                                    !body_text.contains(&format!("\"ProductID\": {pid}")))
-                .collect();
-            if !missing.is_empty() {
-                crate::applog::event(&format!(
-                    "proxy: {} spawned item(s) missing from inventory response -> pushing RewardResult",
-                    missing.len()
-                ));
-                let pushed = missing.clone();
-                tokio::spawn(async move {
-                    let _ = inject_reward_drop(&pushed).await;
-                });
-            }
             let (new_body, changed) = patch_player_products_json(&current_body, &spawned_items);
             if changed {
                 current_body = new_body;
@@ -4108,7 +4130,7 @@ pub async fn patch_ws_frame_binary(frame: &[u8], from_server: bool) -> (Vec<u8>,
         return (frame.to_vec(), false);
     }
 
-    let new_headers = resign_ws_headers(headers_part, &current_body);
+    let new_headers = resign_ws_headers(&current_headers, &current_body);
     let mut out = Vec::with_capacity(new_headers.len() + 4 + current_body.len());
     out.extend_from_slice(&new_headers);
     out.extend_from_slice(b"\r\n\r\n");
@@ -8763,6 +8785,54 @@ mod tests {
             super::avatar_player_id_from_path(path),
             Some(76561198000000000)
         );
+    }
+
+    #[tokio::test]
+    async fn test_ws_unlock_container_request_tracking_and_interception() {
+        let req_id = "test-unlock-req-999";
+        let outbound = format!(
+            "PsyService: MicroTransactions/UnlockContainer\r\nPsyRequestID: {req_id}\r\nPsyTime: 1700000000\r\n\r\n{{\"InstanceIDs\":[\"123\"]}}"
+        );
+
+        let (_, out_patched) = super::patch_ws_frame_binary(outbound.as_bytes(), false).await;
+        assert!(!out_patched, "client request body must not be modified");
+
+        let inbound_err = format!(
+            "PsyResponseID: {req_id}\r\nPsyStatus: 400\r\nPsyTime: 1700000001\r\n\r\n{{\"Error\":\"TransactionFailed\"}}"
+        );
+
+        let (resp_bytes, in_patched) = super::patch_ws_frame_binary(inbound_err.as_bytes(), true).await;
+        assert!(in_patched, "server error response must be intercepted and patched");
+
+        let Some(hdr_end) = super::find_bytes(&resp_bytes, b"\r\n\r\n") else {
+            panic!("missing header boundary");
+        };
+        let hdrs = &resp_bytes[..hdr_end];
+        let body = &resp_bytes[hdr_end + 4..];
+
+        assert_eq!(super::get_ws_header_value(hdrs, "PsyStatus"), "200");
+        assert_eq!(super::get_ws_header_value(hdrs, "PsyResponseID"), req_id);
+
+        let resp_json: serde_json::Value = serde_json::from_slice(body).expect("valid json");
+        assert_eq!(resp_json.get("bSuccess").and_then(|v| v.as_bool()), Some(true));
+        assert!(resp_json.get("Result").and_then(|r| r.get("Drops")).is_some());
+    }
+
+    #[test]
+    fn test_lobby_avatar_path_matches_local_pid() {
+        let path_str = "/content/images/players/avatars/large/epic%7c37674b519c3544beb544f437f539ebf2%7c0/0";
+        let query_str = "buildSecret=abc123";
+        let bits_account_id = super::normalize_player_id(super::BITS_PLAYER_ID);
+
+        let target_is_local_pid = path_str.split(&['/', '?', '&'][..])
+            .chain(query_str.split('&').filter_map(|q| q.split_once('=').map(|(_, v)| v)))
+            .any(|part| {
+                let decoded = crate::avatar::percent_decode(part);
+                let candidate = super::normalize_player_id(&decoded);
+                !candidate.is_empty() && candidate == bits_account_id
+            });
+
+        assert!(target_is_local_pid, "lobby path for bits player ID must match as local");
     }
 }
 
