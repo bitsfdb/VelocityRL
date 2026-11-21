@@ -481,7 +481,6 @@
 
                 <div id="custom-names-pane" class="subtab-pane active">
                     <h2 class="section-title" data-i18n="custom.names_title">Names</h2>
-                    <p class="section-desc" data-i18n="custom.names_desc">Changes your display name.</p>
 
                     <div id="name-spoof-steam-banner" class="info-notice-banner" style="display:none;">
                         <svg width="18" height="18" viewBox="0 -0.5 21 21" fill="currentColor"><path fill-rule="evenodd" d="M2.1,18 L18.9,18 L18.9,2 L2.1,2 L2.1,18 Z M0,20 L21,20 L21,0 L0,0 L0,20 Z M9.45,7 L11.55,7 L11.55,5 L9.45,5 L9.45,7 Z M9.45,15 L11.55,15 L11.55,9 L9.45,9 L9.45,15 Z"/></svg>
@@ -504,7 +503,6 @@
                                 </span>
                                 <span class="switch-copy">
                                     <span class="switch-title" data-i18n="custom.name_spoof_title">Name spoofing</span>
-                                    <span class="switch-hint" data-i18n="custom.name_spoof_desc">Changes your display name.</span>
                                 </span>
                             </label>
                         </div>
@@ -525,7 +523,9 @@
 
                 <div id="custom-avatar-pane" class="subtab-pane">
                     <h2 class="section-title" data-i18n="custom.avatar_title">Custom Avatar</h2>
-                    <p class="section-desc" data-i18n="custom.avatar_desc">Inject a custom profile picture directly into Rocket League in-game scoreboards, menus, and match HUD.</p>
+                    <span class="rl-info" title="Rocket League gets your profile picture from a PlayStation, Xbox or Steam account. VelocityRL runs a tiny local relay on your own PC and hands the game your chosen picture instead. We never touch your account, password, or Epic Games login — nothing is stored online and nothing is sent to us. It only changes what your own game shows on your screen.">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                    </span>
 
                     <div class="card spoof-card avatar-clean-card">
                         <div class="avatar-upload-dropzone" id="avatar-dropzone" title="Click to browse image">
@@ -557,7 +557,6 @@
                                 </span>
                                 <span class="switch-copy">
                                     <span class="switch-title">Load other pfps?</span>
-                                    <span class="switch-hint">Loads profile pictures of other players in your match. Requires Steam login.</span>
                                 </span>
                             </label>
 
