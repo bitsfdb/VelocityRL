@@ -2446,7 +2446,21 @@ async fn update_name_txt(app: tauri::AppHandle, name: String) -> Result<(), Stri
     if config.game_dir.is_empty() {
         return Ok(());
     }
-    let tagame = Path::new(&config.game_dir).join("TAGame");
+    let game_path = PathBuf::from(&config.game_dir);
+    // Resolve the actual TAGame folder whether config.game_dir is CookedPCConsole, TAGame, or the game root
+    let tagame = if game_path.ends_with("CookedPCConsole") {
+        game_path.parent().map(|p| p.to_path_buf()).unwrap_or(game_path)
+    } else if game_path.ends_with("TAGame") {
+        game_path
+    } else if game_path.join("TAGame").is_dir() {
+        game_path.join("TAGame")
+    } else {
+        upk::palette::resolve_cooked_dir(&game_path)
+            .ok()
+            .and_then(|c| c.parent().map(|p| p.to_path_buf()))
+            .unwrap_or_else(|| game_path.join("TAGame"))
+    };
+
     let txt_path = tagame.join("name.txt");
     if name.trim().is_empty() {
         if txt_path.is_file() {
@@ -3483,15 +3497,22 @@ async fn detect_game_dir() -> Result<Vec<DetectedInstall>, String> {
         }
 
         // 4. Epic Games Launcher Manifests (.item files)
-        let mut manifest_dirs = vec![
-            PathBuf::from(r"C:\ProgramData\Epic\EpicGamesLauncher\Data\Manifests"),
-        ];
+        let mut manifest_dirs: Vec<PathBuf> = Vec::new();
+        if let Ok(pd) = std::env::var("ProgramData") {
+            manifest_dirs.push(PathBuf::from(pd).join("Epic").join("EpicGamesLauncher").join("Data").join("Manifests"));
+        }
+        manifest_dirs.push(PathBuf::from(r"C:\ProgramData\Epic\EpicGamesLauncher\Data\Manifests"));
         if let Ok(key) = hklm.open_subkey(r"SOFTWARE\Epic Games\EpicGamesLauncher") {
             if let Ok(app_data) = key.get_value::<String, _>("AppDataPath") {
                 manifest_dirs.push(PathBuf::from(app_data).join("Manifests"));
             }
         }
         if let Ok(key) = hklm.open_subkey(r"SOFTWARE\WOW6432Node\Epic Games\EpicGamesLauncher") {
+            if let Ok(app_data) = key.get_value::<String, _>("AppDataPath") {
+                manifest_dirs.push(PathBuf::from(app_data).join("Manifests"));
+            }
+        }
+        if let Ok(key) = hkcu.open_subkey(r"Software\Epic Games\EpicGamesLauncher") {
             if let Ok(app_data) = key.get_value::<String, _>("AppDataPath") {
                 manifest_dirs.push(PathBuf::from(app_data).join("Manifests"));
             }
