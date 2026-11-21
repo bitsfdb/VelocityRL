@@ -15,6 +15,15 @@ fn main() {
     return;
   }
 
+  if args.iter().any(|a| a == "--kill" || a == "-k" || a == "--exit" || a == "--quit") {
+    #[cfg(windows)]
+    {
+      app_lib::psynet::kill_proxy_on_exit();
+      let _ = std::process::Command::new("taskkill").args(["/F", "/IM", "velocity-rl.exe"]).status();
+      return;
+    }
+  }
+
   if let Some(idx) = args.iter().position(|a| a == "--watchdog") {
     if let Some(pid_str) = args.get(idx + 1) {
       if let Ok(pid) = pid_str.parse::<u32>() {

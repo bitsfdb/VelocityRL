@@ -3711,12 +3711,30 @@ fn app_window_toggle_maximize(app: tauri::AppHandle) -> Result<bool, String> {
     }
 }
 
+#[cfg(windows)]
+fn force_win32_window_focus(win: &tauri::WebviewWindow) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        BringWindowToTop, SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOW,
+    };
+    if let Ok(hwnd) = win.hwnd() {
+        let raw_hwnd = hwnd.0 as windows_sys::Win32::Foundation::HWND;
+        unsafe {
+            ShowWindow(raw_hwnd, SW_RESTORE);
+            ShowWindow(raw_hwnd, SW_SHOW);
+            BringWindowToTop(raw_hwnd);
+            SetForegroundWindow(raw_hwnd);
+        }
+    }
+}
+
 #[tauri::command]
 fn app_window_focus(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.unminimize();
         let _ = win.show();
         let _ = win.set_focus();
+        #[cfg(windows)]
+        force_win32_window_focus(&win);
     }
     Ok(())
 }
@@ -3750,6 +3768,8 @@ fn create_main_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
                 let _ = win.show();
                 let _ = win.unminimize();
                 let _ = win.set_focus();
+                #[cfg(windows)]
+                force_win32_window_focus(&win);
                 if attempt > 1 {
                     applog::event(&format!("webview created on attempt {attempt}"));
                 }
@@ -3816,10 +3836,18 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             applog::event(&format!("single-instance: argv={:?}", argv));
 
+            if argv.iter().any(|a| a == "--kill" || a == "-k" || a == "--exit" || a == "--quit") {
+                applog::event("single-instance: terminate request received — exiting");
+                psynet::kill_proxy_on_exit();
+                std::process::exit(0);
+            }
+
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.unminimize();
                 let _ = win.show();
                 let _ = win.set_focus();
+                #[cfg(windows)]
+                force_win32_window_focus(&win);
 
                 use tauri::Emitter;
                 for arg in &argv {

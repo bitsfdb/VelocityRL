@@ -193,19 +193,17 @@ function isAppLoading() {
     if (!boot || boot.classList.contains('is-leaving')) {
         return false;
     }
-    return appLoading || performance.now() < swallowUiUntil;
+    return appLoading;
 }
 
-function setShellInert(on) {
-    const boot = document.getElementById('velocity-boot');
-    const actuallyInert = on && boot && !boot.classList.contains('is-leaving');
-    document.querySelector('.sidebar')?.toggleAttribute('inert', actuallyInert);
-    document.querySelector('main')?.toggleAttribute('inert', actuallyInert);
+function setShellInert(_on) {
+    document.querySelector('.sidebar')?.removeAttribute('inert');
+    document.querySelector('main')?.removeAttribute('inert');
 }
 
 function releaseAppLoading() {
     appLoading = false;
-    swallowUiUntil = performance.now() + 100;
+    swallowUiUntil = 0;
     document.body.classList.remove('is-loading');
     setShellInert(false);
     const overlay = document.getElementById('app-loading-overlay');
@@ -224,24 +222,7 @@ function releaseAppLoading() {
 window.releaseAppLoading = releaseAppLoading;
 
 function wireLoadingGate() {
-    const preventEventBubbling = (e) => {
-        if (e.shiftKey) return;
-        if (
-            e.target.closest?.('.window-controls') ||
-            e.target.closest?.('.win-btn') ||
-            e.target.closest?.('[data-tauri-drag-region]') ||
-            e.target.closest?.('.studio-topbar') ||
-            e.target.closest?.('#version-btn') ||
-            e.target.closest?.('#dev-modal') ||
-            e.target.closest?.('#changelog-modal') ||
-            e.target.closest?.('#settings-modal')
-        ) return;
-        if (!isAppLoading()) return;
-        e.preventDefault();
-        e.stopImmediatePropagation();
-    };
-    document.addEventListener('pointerdown', preventEventBubbling, true);
-    document.addEventListener('click', preventEventBubbling, true);
+    // Intentionally no capturing interception so clicks, focus, and drags are never blocked
 }
 
 async function fetchItemsFromAPI() {
@@ -1212,9 +1193,9 @@ async function loadBackups() {
 
 async function loadData() {
     const loadWatchdog = setTimeout(() => {
-        console.warn('loadData safety watchdog triggered after 8s');
+        console.warn('loadData safety watchdog triggered after 4s');
         releaseAppLoading();
-    }, 8000);
+    }, 4000);
 
     try {
         updateStatus('Please Wait...', false);
@@ -9296,7 +9277,7 @@ async function startApp() {
             console.warn('App loading safety watchdog triggered — releasing overlay');
             releaseAppLoading();
         }
-    }, 3500);
+    }, 2000);
 
     document.getElementById('privacy-link')?.addEventListener('click', (e) => {
         e.preventDefault();

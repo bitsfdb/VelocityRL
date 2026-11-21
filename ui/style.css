@@ -105,10 +105,7 @@ body {
     opacity: 0.6;
 }
 
-body.is-loading .sidebar,
-body.is-loading main {
-    pointer-events: none;
-}
+/* Sidebar and main remain interactable */
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
