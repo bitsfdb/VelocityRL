@@ -189,18 +189,23 @@ let appLoading = true;
 let swallowUiUntil = 0;
 
 function isAppLoading() {
+    const boot = document.getElementById('velocity-boot');
+    if (!boot || boot.classList.contains('is-leaving')) {
+        return false;
+    }
     return appLoading || performance.now() < swallowUiUntil;
 }
 
 function setShellInert(on) {
-    document.querySelector('.sidebar')?.toggleAttribute('inert', on);
-    document.querySelector('main')?.toggleAttribute('inert', on);
+    const boot = document.getElementById('velocity-boot');
+    const actuallyInert = on && boot && !boot.classList.contains('is-leaving');
+    document.querySelector('.sidebar')?.toggleAttribute('inert', actuallyInert);
+    document.querySelector('main')?.toggleAttribute('inert', actuallyInert);
 }
 
 function releaseAppLoading() {
-    if (!appLoading) return;
     appLoading = false;
-    swallowUiUntil = performance.now() + 400;
+    swallowUiUntil = performance.now() + 100;
     document.body.classList.remove('is-loading');
     setShellInert(false);
     const overlay = document.getElementById('app-loading-overlay');
@@ -221,7 +226,16 @@ window.releaseAppLoading = releaseAppLoading;
 function wireLoadingGate() {
     const preventEventBubbling = (e) => {
         if (e.shiftKey) return;
-        if (e.target.closest?.('#version-btn') || e.target.closest?.('#dev-modal') || e.target.closest?.('#changelog-modal') || e.target.closest?.('#settings-modal')) return;
+        if (
+            e.target.closest?.('.window-controls') ||
+            e.target.closest?.('.win-btn') ||
+            e.target.closest?.('[data-tauri-drag-region]') ||
+            e.target.closest?.('.studio-topbar') ||
+            e.target.closest?.('#version-btn') ||
+            e.target.closest?.('#dev-modal') ||
+            e.target.closest?.('#changelog-modal') ||
+            e.target.closest?.('#settings-modal')
+        ) return;
         if (!isAppLoading()) return;
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -1198,9 +1212,9 @@ async function loadBackups() {
 
 async function loadData() {
     const loadWatchdog = setTimeout(() => {
-        console.warn('loadData safety watchdog triggered after 12s');
+        console.warn('loadData safety watchdog triggered after 8s');
         releaseAppLoading();
-    }, 12000);
+    }, 8000);
 
     try {
         updateStatus('Please Wait...', false);

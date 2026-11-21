@@ -498,23 +498,7 @@ pub fn detect_local_game_version(game_dir: &Path) -> Option<String> {
 
     let data = std::fs::read(&exe).ok()?;
 
-    // 1. Scan for ++Prime+Update... ASCII
-    const PRIME_PREFIX: &[u8] = b"++Prime+Update";
-    if let Some(pos) = data.windows(PRIME_PREFIX.len()).position(|w| w == PRIME_PREFIX) {
-        let mut end = pos + PRIME_PREFIX.len();
-        while end < data.len() && (data[end].is_ascii_alphanumeric() || data[end] == b'+' || data[end] == b'.' || data[end] == b'-') {
-            end += 1;
-        }
-        if let Ok(s) = std::str::from_utf8(&data[pos..end]) {
-            let ver = s.to_string();
-            if let Ok(mut guard) = VERSION_CACHE.lock() {
-                *guard = Some((exe.clone(), len, mtime, ver.clone()));
-            }
-            return Some(ver);
-        }
-    }
-
-    // 2. Fallback: scan for UTF-16LE version pattern \d{6}\.\d{5}\.\d{6} (38 bytes)
+    // 1. Scan for UTF-16LE version pattern \d{6}\.\d{5}\.\d{6} (38 bytes)
     for window in data.windows(38) {
         let is_digit = |idx: usize| window[idx * 2] >= b'0' && window[idx * 2] <= b'9' && window[idx * 2 + 1] == 0;
         let is_dot = |idx: usize| window[idx * 2] == b'.' && window[idx * 2 + 1] == 0;
@@ -534,6 +518,22 @@ pub fn detect_local_game_version(game_dir: &Path) -> Option<String> {
                 *guard = Some((exe.clone(), len, mtime, s.clone()));
             }
             return Some(s);
+        }
+    }
+
+    // 2. Fallback: Scan for ++Prime+Update... ASCII
+    const PRIME_PREFIX: &[u8] = b"++Prime+Update";
+    if let Some(pos) = data.windows(PRIME_PREFIX.len()).position(|w| w == PRIME_PREFIX) {
+        let mut end = pos + PRIME_PREFIX.len();
+        while end < data.len() && (data[end].is_ascii_alphanumeric() || data[end] == b'+' || data[end] == b'.' || data[end] == b'-') {
+            end += 1;
+        }
+        if let Ok(s) = std::str::from_utf8(&data[pos..end]) {
+            let ver = s.to_string();
+            if let Ok(mut guard) = VERSION_CACHE.lock() {
+                *guard = Some((exe.clone(), len, mtime, ver.clone()));
+            }
+            return Some(ver);
         }
     }
 
