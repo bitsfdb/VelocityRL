@@ -1552,70 +1552,6 @@ async fn get_game_patch_status(app: tauri::AppHandle) -> Result<GamePatchStatus,
 }
 
 #[tauri::command]
-fn apply_saved_spoof_values() -> Result<String, String> {
-    let cfg = crate::psynet::load_active_spoof_from_disk();
-    let name = cfg
-        .as_ref()
-        .and_then(|c| c.name_spoof.as_ref())
-        .filter(|n| n.enabled && !n.display_name.trim().is_empty())
-        .map(|n| n.display_name.trim().to_string())
-        .or_else(|| {
-            cfg.as_ref()
-                .filter(|c| !c.custom_name.trim().is_empty())
-                .map(|c| c.custom_name.trim().to_string())
-        })
-        .unwrap_or_default();
-    let title = cfg
-        .as_ref()
-        .map(|c| {
-            if !c.equip_title_id.trim().is_empty() {
-                c.equip_title_id.trim().to_string()
-            } else {
-                c.display_title_id.trim().to_string()
-            }
-        })
-        .unwrap_or_default();
-    let ping = crate::udp_proxy::sample_spoofed_ping_ms()
-        .map(|v| v.to_string())
-        .or_else(|| {
-            cfg.as_ref()
-                .and_then(|c| c.ping_spoof.clone())
-                .filter(|p| p.enabled)
-                .map(|p| p.min_ms.to_string())
-        })
-        .unwrap_or_default();
-
-    let mut slots: Vec<(u32, Vec<(String, String)>)> =
-        vec![(0, Vec::new()); crate::presets::COSMETIC_SLOTS_COUNT + 7];
-    for rule in crate::proxy::load_active_swap_rules(None) {
-        let idx = crate::presets::upk_slot_index_from_str(&rule.slot) as usize;
-        if idx < slots.len() && rule.wanted_id > 0 {
-            let mut attrs = Vec::new();
-            if rule.paint_id > 0 {
-                attrs.push(("Painted".to_string(), rule.paint_id.to_string()));
-            }
-            slots[idx] = (rule.wanted_id as u32, attrs);
-        }
-    }
-    for (pid, paint) in crate::proxy::load_active_spawned_items(None) {
-        if pid <= 0 || slots.iter().any(|(p, _)| *p == pid as u32) {
-            continue;
-        }
-        if let Some(slot) = slots.iter_mut().find(|(p, _)| *p == 0) {
-            let mut attrs = Vec::new();
-            if paint > 0 {
-                attrs.push(("Painted".to_string(), paint.to_string()));
-            }
-            *slot = (pid as u32, attrs);
-        }
-    }
-    let key = crate::loadout_wire::encode_loadout(&slots, 1);
-    crate::savedata::patch_saved_spoof_values(&name, &ping, &title, &key)?;
-    crate::applog::event(&format!("startup: loadout wire synced to save ({key})"));
-    Ok(key)
-}
-
-#[tauri::command]
 async fn ensure_game_patches(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     let config = get_config(app.clone()).await?;
     if config.game_dir.is_empty() {
@@ -1657,7 +1593,6 @@ async fn ensure_game_patches(app: tauri::AppHandle) -> Result<serde_json::Value,
     let _ = avatar::ensure_cached_avatar_applied(&app);
     let swaps = load_swaps(&app);
     let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
-    let _ = apply_saved_spoof_values();
     Ok(serde_json::to_value(&sync_res).unwrap_or_default())
 }
 
@@ -2415,7 +2350,6 @@ async fn apply_ping_spoof_upk(
     if let Ok(dir) = crate::psynet::find_proxy_dir() {
         let _ = crate::psynet::write_spoof(&dir, &cfg);
     }
-    let _ = apply_saved_spoof_values();
     applog::event(&format!("ping_spoof: enabled web ping [{min}..{max}] ms"));
     Ok(())
 }
@@ -2435,7 +2369,6 @@ async fn restore_ping_spoof_upk(app: tauri::AppHandle) -> Result<(), String> {
     if let Ok(dir) = crate::psynet::find_proxy_dir() {
         let _ = crate::psynet::write_spoof(&dir, &cfg);
     }
-    let _ = apply_saved_spoof_values();
     applog::event("ping_spoof: disabled web ping");
     Ok(())
 }
@@ -4027,10 +3960,6 @@ pub fn run() {
             // Sometimes the config/avatar cache is not readable in the first
             // few milliseconds of setup. Retry once shortly after startup.
             let _ = avatar::load_authenticated_steam_user_from_disk();
-            match apply_saved_spoof_values() {
-                Ok(_) => applog::event("startup: saved spoof values and loadout wire synced"),
-                Err(e) => applog::event(&format!("startup: loadout sync skipped: {e}")),
-            }
             let retry_handle = app.handle().clone();
             if !avatar::ensure_cached_avatar_applied(app.handle()) {
                 std::thread::spawn(move || {
@@ -4360,7 +4289,6 @@ pub fn run() {
             restore_single_backup,
             check_integrity,
             ensure_game_patches,
-            apply_saved_spoof_values,
             load_locale,
             revert_game_patches,
             get_game_patch_status,

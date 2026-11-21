@@ -1104,7 +1104,7 @@ mod tests {
     fn test_encrypt_datagram_payload_roundtrip() {
         let crypto = crypto_with(0x31, 0x17);
 
-        let raw_payload = b"\x01\x00\x00\x00\x08\x00\x00\x00R.Name.v1\x00";
+        let raw_payload = b"\x01\x00\x00\x00\x08\x00\x00\x00TestName\x00";
         let (ciphertext, ok) = encrypt_datagram_payload(raw_payload, &crypto);
         assert!(ok, "encryption must succeed");
         assert_eq!(ciphertext.len() % 16, 0, "ciphertext must be a whole number of AES blocks");
