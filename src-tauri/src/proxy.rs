@@ -3925,10 +3925,12 @@ pub async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
         }
     }
 
-    let is_unlock_container = svc_lower.contains("products/unlockcontainer")
-        || svc_lower.contains("unlockcontainer")
-        || svc_lower.contains("products/opencontainer")
-        || svc_lower.contains("opencontainer");
+    let body_lower = String::from_utf8_lossy(body_part).to_ascii_lowercase();
+    let is_unlock_container = svc_lower.contains("unlockcontainer")
+        || svc_lower.contains("opencontainer")
+        || body_lower.contains("unlockcontainer")
+        || body_lower.contains("opencontainer")
+        || (body_lower.contains("instanceids") && body_lower.contains("keyinstanceids"));
 
     if is_unlock_container {
         crate::applog::event(&format!("proxy: WS unlock container service={svc} body={}", String::from_utf8_lossy(body_part)));
@@ -3964,6 +3966,25 @@ pub async fn patch_ws_frame_binary(frame: &[u8]) -> (Vec<u8>, bool) {
     if is_products {
         let spawned_items = load_active_spawned_items(cfg_opt.as_ref());
         if !spawned_items.is_empty() {
+            // Instead of silently syncing missing items into the inventory
+            // response, push a Reward/RewardResult frame so they appear live.
+            let body_text = String::from_utf8_lossy(&current_body);
+            let missing: Vec<(i32, i32)> = spawned_items
+                .iter()
+                .copied()
+                .filter(|(pid, _)| !body_text.contains(&format!("\"ProductID\":{pid}")) &&
+                                    !body_text.contains(&format!("\"ProductID\": {pid}")))
+                .collect();
+            if !missing.is_empty() {
+                crate::applog::event(&format!(
+                    "proxy: {} spawned item(s) missing from inventory response -> pushing RewardResult",
+                    missing.len()
+                ));
+                let pushed = missing.clone();
+                tokio::spawn(async move {
+                    let _ = inject_reward_drop(&pushed).await;
+                });
+            }
             let (new_body, changed) = patch_player_products_json(&current_body, &spawned_items);
             if changed {
                 current_body = new_body;
