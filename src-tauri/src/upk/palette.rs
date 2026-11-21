@@ -738,7 +738,7 @@ fn atomic_write(path: &Path, data: &[u8]) -> Result<(), PaletteError> {
 }
 
 fn refuse_if_game_running(_action: &str) -> Result<(), PaletteError> {
-    Ok(())
+    crate::game_file_access::ensure_idle().map_err(PaletteError::Msg)
 }
 
 fn hex_head(data: &[u8], n: usize) -> String {
@@ -2568,6 +2568,7 @@ pub fn restore(game_dir: &Path) -> Result<PaletteStatus, PaletteError> {
 }
 
 pub fn repair_wiped_palette(game_dir: &Path, expected_patched_fp: Option<&str>) -> bool {
+    if crate::game_file_access::ensure_idle().is_err() { return false; }
     let Some(exp) = expected_patched_fp.filter(|s| !s.is_empty()) else {
         return false;
     };

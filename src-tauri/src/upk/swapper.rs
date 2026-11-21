@@ -1802,6 +1802,7 @@ pub fn rewrite_tagame_keys_to_rlim(path: &Path) -> Result<usize, String> {
 }
 
 pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
+    crate::game_file_access::ensure_idle()?;
     let px_path = if cooked_dir.join("ProjectX.upk").is_file() {
         cooked_dir.join("ProjectX.upk")
     } else if cooked_dir.join("TAGame/CookedPCConsole/ProjectX.upk").is_file() {

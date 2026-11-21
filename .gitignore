@@ -63,6 +63,7 @@ MANIFEST
 .freebuff/
 
 # Local App Data
+/recordings/
 config.json
 *.bak
 AssetSwapper_Decrypted/

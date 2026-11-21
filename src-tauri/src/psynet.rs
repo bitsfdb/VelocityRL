@@ -1569,46 +1569,20 @@ fn bundled_ca_thumbprint() -> String {
 #[cfg(windows)]
 #[allow(dead_code)]
 pub fn is_user_ca_installed() -> bool {
-    use std::os::windows::process::CommandExt;
+    use winreg::{enums::HKEY_CURRENT_USER, RegKey};
     let thumb = bundled_ca_thumbprint();
-    if thumb.is_empty() {
-        return false;
-    }
-    let thumb_lower = thumb.to_ascii_lowercase();
-    Command::new("certutil")
-        .args(["-user", "-store", "Root", &thumb])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()
-        .map(|o| {
-            if !o.status.success() {
-                return false;
-            }
-            let text = String::from_utf8_lossy(&o.stdout).to_ascii_lowercase();
-            text.contains(&thumb_lower) || text.contains(&thumb)
-        })
-        .unwrap_or(false)
+    !thumb.is_empty() && RegKey::predef(HKEY_CURRENT_USER).open_subkey(format!(
+        r"SOFTWARE\Microsoft\SystemCertificates\ROOT\Certificates\{}", thumb
+    )).is_ok()
 }
 
 #[cfg(windows)]
 pub fn is_system_ca_installed() -> bool {
-    use std::os::windows::process::CommandExt;
+    use winreg::{enums::HKEY_LOCAL_MACHINE, RegKey};
     let thumb = bundled_ca_thumbprint();
-    if thumb.is_empty() {
-        return false;
-    }
-    let thumb_lower = thumb.to_ascii_lowercase();
-    Command::new("certutil")
-        .args(["-store", "Root", &thumb])
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()
-        .map(|o| {
-            if !o.status.success() {
-                return false;
-            }
-            let text = String::from_utf8_lossy(&o.stdout).to_ascii_lowercase();
-            text.contains(&thumb_lower) || text.contains(&thumb)
-        })
-        .unwrap_or(false)
+    !thumb.is_empty() && RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey(format!(
+        r"SOFTWARE\Microsoft\SystemCertificates\ROOT\Certificates\{}", thumb
+    )).is_ok()
 }
 
 #[cfg(windows)]
@@ -2123,6 +2097,7 @@ fn direct_elevated_hosts_and_ca_setup(
 #[cfg(windows)]
 pub fn install_user_ca_direct() {
     use std::os::windows::process::CommandExt;
+    if is_ca_installed() { return; }
 
     ensure_wininet_revocation_disabled();
     ensure_hklm_revocation_disabled();
@@ -2747,11 +2722,32 @@ pub async fn get_psynet_status(state: State<'_, PsyNetState>) -> Result<PsyNetSt
     Ok(status)
 }
 
+pub async fn prepare_startup_environment() {
+    static READY: tokio::sync::OnceCell<()> = tokio::sync::OnceCell::const_new();
+    READY.get_or_init(|| async {
+        let result = tauri::async_runtime::spawn_blocking(|| {
+            ensure_wininet_revocation_disabled();
+            #[cfg(windows)]
+            let _ = revert_config_hosts();
+            set_system_proxy_enabled(false);
+            install_user_ca_direct();
+            let ca_ok = is_ca_installed();
+            crate::applog::event(&format!("startup: environment ready; system CA installed={ca_ok}"));
+            #[cfg(windows)]
+            if !ca_ok { install_ca_and_crl_elevated(); }
+        }).await;
+        if let Err(error) = result {
+            crate::applog::event(&format!("startup: environment preparation failed: {error}"));
+        }
+    }).await;
+}
+
 #[tauri::command]
 pub async fn start_psynet_proxy(
     state: State<'_, PsyNetState>,
     payload: Option<SpoofPayload>,
 ) -> Result<PsyNetStatus, String> {
+    prepare_startup_environment().await;
     if !crate::features::is_build_supported() {
         return Err("VelocityRL build is outdated. Please update to the latest version.".into());
     }
@@ -2994,6 +2990,7 @@ pub async fn stop_psynet_proxy(
 pub async fn restart_psynet_proxy(
     state: State<'_, PsyNetState>,
 ) -> Result<PsyNetStatus, String> {
+    prepare_startup_environment().await;
     crate::applog::event("psynet: restart requested (native Rust proxy)");
     let _guard = PROXY_LIFECYCLE.lock().await;
 

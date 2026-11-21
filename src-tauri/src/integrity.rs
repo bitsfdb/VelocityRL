@@ -35,6 +35,7 @@ pub struct UpkHashesAudit {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "status", content = "details")]
 pub enum PrepatchedSyncStatus {
+    Deferred { message: String },
     Success {
         version: String,
         tagame_updated: bool,
@@ -421,6 +422,12 @@ pub fn compute_file_sha256(path: &Path) -> Option<String> {
 
 static HASH_CACHE: std::sync::Mutex<Option<HashMap<PathBuf, (u64, u64, String)>>> = std::sync::Mutex::new(None);
 
+pub(crate) fn invalidate_file_hash(path: &Path) {
+    if let Ok(mut cache) = HASH_CACHE.lock() {
+        if let Some(entries) = cache.as_mut() { entries.remove(path); }
+    }
+}
+
 pub fn compute_file_sha256_cached(path: &Path) -> Option<String> {
     if !path.is_file() {
         return None;
@@ -600,8 +607,14 @@ pub async fn sync_prepatched_upks(
     app: Option<&tauri::AppHandle>,
     game_dir: &Path,
 ) -> Result<PrepatchedSyncStatus, String> {
+    if let Err(message) = crate::game_file_access::ensure_idle() {
+        return Ok(PrepatchedSyncStatus::Deferred { message });
+    }
     let _guard = SYNC_MUTEX.lock().await;
 
+    if let Err(message) = crate::game_file_access::ensure_idle() {
+        return Ok(PrepatchedSyncStatus::Deferred { message });
+    }
     let cooked = match palette::resolve_cooked_dir(game_dir) {
         Ok(p) => p,
         Err(e) => {
@@ -673,7 +686,6 @@ pub async fn sync_prepatched_upks(
         "prepatched: game version verified ({local_version}). Checking UPK integrity..."
     ));
 
-    let is_game_running = crate::winprobe::find_process_any(&["rocketleague.exe", "rocketleague"]).is_some();
     let mut tagame_updated = false;
     let mut projectx_updated = false;
 
@@ -693,6 +705,9 @@ pub async fn sync_prepatched_upks(
             }
         }
 
+        if !matches_target && filename == "TAGame.upk" {
+            matches_target = crate::avatar::matches_lobby_override(app, &target_path, &target_sha256);
+        }
         if matches_target {
             crate::applog::event(&format!(
                 "prepatched: {filename} already matches target prepatched hash ({target_sha256})"
@@ -700,7 +715,7 @@ pub async fn sync_prepatched_upks(
             continue;
         }
 
-        if is_game_running {
+        if crate::game_file_access::ensure_idle().is_err() {
             crate::applog::event(&format!(
                 "prepatched: {filename} differs from prepatched target, but Rocket League is running. File update deferred."
             ));
@@ -825,6 +840,11 @@ pub async fn sync_prepatched_upks(
             }));
         }
 
+        // The game may have started during the download. Check again before committing.
+        if let Err(message) = crate::game_file_access::ensure_idle() {
+            let _ = std::fs::remove_file(&temp_download_path);
+            return Ok(PrepatchedSyncStatus::Deferred { message });
+        }
         // Replace destination atomically (handling file locks gracefully)
         if let Err(e) = std::fs::rename(&temp_download_path, &target_path) {
             if let Err(e2) = std::fs::copy(&temp_download_path, &target_path) {

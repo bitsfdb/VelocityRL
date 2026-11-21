@@ -83,6 +83,30 @@ pub fn get_network_events() -> Vec<NetworkEventEntry> {
     Vec::new()
 }
 
+// Keep summary creation separate so payload size is bounded before IPC serialization.
+fn network_event_summary(event: &NetworkEventEntry) -> NetworkEventEntry {
+    NetworkEventEntry {
+        id: event.id, timestamp: event.timestamp.clone(), protocol: event.protocol.clone(),
+        direction: event.direction.clone(), service_or_url: event.service_or_url.clone(),
+        status_or_type: event.status_or_type.clone(), summary: event.summary.clone(),
+        payload_len: event.payload_len, intercepted: event.intercepted,
+        payload_snippet: event.payload_snippet.chars().take(512).collect(),
+    }
+}
+
+pub fn get_network_event_summaries() -> Vec<NetworkEventEntry> {
+    if let Ok(lock) = NETWORK_EVENT_RING.lock() {
+        if let Some(events) = lock.as_ref() {
+            return events.iter().map(network_event_summary).collect();
+        }
+    }
+    Vec::new()
+}
+
+pub fn get_network_event(id: u64) -> Option<NetworkEventEntry> {
+    NETWORK_EVENT_RING.lock().ok()?.as_ref()?.iter().find(|event| event.id == id).cloned()
+}
+
 pub fn clear_network_events() {
     if let Ok(mut lock) = NETWORK_EVENT_RING.lock() {
         if let Some(deque) = lock.as_mut() {
@@ -2408,6 +2432,35 @@ pub fn avatar_player_id_from_path(path: &str) -> Option<u64> {
     None
 }
 
+/// Match only an identified local player, including encoded lobby URLs and image suffixes.
+fn avatar_path_matches_player(path: &str, player_id: &str) -> bool {
+    let account = normalize_player_id(player_id);
+    if account.is_empty() {
+        return false;
+    }
+    path.split(&['/', '?', '&'][..]).any(|part| {
+        let decoded = crate::avatar::percent_decode(part);
+        let value = decoded.split_once('=').map(|(_, value)| value).unwrap_or(&decoded);
+        let value = value.strip_suffix(".png")
+            .or_else(|| value.strip_suffix(".jpg"))
+            .unwrap_or(value);
+        normalize_player_id(value) == account
+    })
+}
+
+fn avatar_query_has_player(query: Option<&str>) -> bool {
+    query.map(|query| query.split('&').any(|part| {
+        let key = crate::avatar::percent_decode(part.split('=').next().unwrap_or_default())
+            .to_ascii_lowercase().replace('_', "");
+        matches!(key.as_str(), "id" | "steamid" | "playerid" | "accountid")
+    })).unwrap_or(false)
+}
+
+fn is_local_avatar_route(path: &str, query: Option<&str>) -> bool {
+    matches!(path, "/rlim/pfp" | "/rlim/avatar" | "/rlim/avatar.png" | "/a.png")
+        && !avatar_query_has_player(query)
+}
+
 /// Handle incoming requests on the plain-HTTP broker (ephemeral local port).
 /// Upgrades WebSocket connections to the game server, and proxies HTTP RPC/Services calls to api.rlpp.psynet.gg.
 async fn handle_broker_request(
@@ -2929,10 +2982,10 @@ async fn handle_broker_request(
         }
     }
 
-    if path_str == "/rlim/avatar" || path_str.starts_with("/rlim/avatar?")
+    if path_str == "/rlim/avatar" || path_str.starts_with("/rlim/avatar/") || path_str.starts_with("/rlim/avatar?")
         || path_str.starts_with("/rlim/avatar.png")
         || path_str == "/a.png" || path_str.starts_with("/a.png?")
-        || path_str == "/s/pfp" || path_str.starts_with("/s/pfp/") || path_str.starts_with("/rlim/pfp/")
+        || path_str == "/rlim/pfp" || path_str == "/s/pfp" || path_str.starts_with("/s/pfp/") || path_str.starts_with("/rlim/pfp/")
         || path_str.contains("/avatars/")
         || path_str.contains("/content/images/players/avatars/") {
         crate::applog::event(&format!("broker: avatar request {path_str}"));
@@ -2963,11 +3016,7 @@ async fn handle_broker_request(
         // Explicit paths used for the local player's own avatar. Other avatar
         // routes are treated as per-player requests and must never fall back to
         // the local image, otherwise every player shows the same picture.
-        let is_local_route = path_str == "/rlim/avatar"
-            || path_str.starts_with("/rlim/avatar?")
-            || path_str.starts_with("/rlim/avatar.png")
-            || path_str == "/a.png"
-            || path_str.starts_with("/a.png?");
+        let is_local_route = is_local_avatar_route(&path_str, req.uri().query());
 
         let authenticated_steam_id = crate::avatar::get_authenticated_steam_user_internal()
             .and_then(|user| crate::avatar::parse_steam_id(&user.steam_id));
@@ -2983,17 +3032,8 @@ async fn handle_broker_request(
         // account id from the request path against the learned local PlayerID
         // directly so the custom avatar resolves for those requests too.
         let learned_player_id = crate::proxy::get_learned_player_id().unwrap_or_default();
-        let mut learned_account_id = normalize_player_id(&learned_player_id);
-        if learned_account_id.is_empty() {
-            // Same local identity used by name spoofing.
-            learned_account_id = normalize_player_id(BITS_PLAYER_ID);
-        }
-        let target_is_local_pid = !learned_account_id.is_empty()
-            && path_str.split(&['/', '?', '&'][..]).any(|part| {
-                let decoded = crate::avatar::percent_decode(part);
-                let candidate = normalize_player_id(&decoded);
-                !candidate.is_empty() && candidate == learned_account_id
-            });
+        let target_is_local_pid = avatar_path_matches_player(
+            &req.uri().to_string(), &learned_player_id);
         if target_is_local_pid {
             if let Some(png_bytes) = crate::avatar::get_active_avatar_png() {
                 crate::applog::event(&format!(
@@ -3809,6 +3849,10 @@ async fn tunnel_websocket<S1, S2>(
                         Ok(msg) => {
                             let out_msg = match msg {
                                 tokio_tungstenite::tungstenite::Message::Text(t) => {
+                                    if t.contains("ReservationsReadyMessage") || t.contains("ClientReservationMessage") {
+                                        record_network_event("WS_S2C", "INBOUND", "ws.rlpp.psynet.gg",
+                                            "ORIGINAL_FRAME_TEXT", "Original server reservation before local changes", &t, false);
+                                    }
                                     let (patched_text, did_patch) = patch_ws_frame_text(&t).await;
                                     record_network_event(
                                         "WS_S2C",
@@ -6476,6 +6520,15 @@ pub fn is_known_body_id(id: i32) -> bool {
     )
 }
 
+fn load_swap_entries_from_paths(paths: &[std::path::PathBuf]) -> Vec<serde_json::Value> {
+    // A present, valid empty inventory is authoritative. Old files are only
+    // fallback migration sources, otherwise restoring everything resurrects them.
+    paths.iter().find_map(|path| {
+        let raw = std::fs::read_to_string(path).ok()?;
+        serde_json::from_str::<Vec<serde_json::Value>>(&raw).ok()
+    }).unwrap_or_default()
+}
+
 pub fn load_active_swap_rules(cfg: Option<&crate::psynet::SpoofPayload>) -> Vec<ActiveSwapRule> {
     let mut rules = Vec::new();
     let mut seen = std::collections::HashSet::new();
@@ -6508,31 +6561,23 @@ pub fn load_active_swap_rules(cfg: Option<&crate::psynet::SpoofPayload>) -> Vec<
         }
     }
 
-    for path in candidate_paths {
-        if path.is_file() {
-            if let Ok(raw) = std::fs::read_to_string(&path) {
-                if let Ok(list) = serde_json::from_str::<Vec<serde_json::Value>>(&raw) {
-                    for entry in list {
-                        let wid = entry.get("wanted_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-                        let oid = entry.get("owned_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-                        let pid = entry.get("paint_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-                        let slot = entry.get("slot").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let slot_idx = entry.get("slot_index")
-                            .and_then(|v| v.as_i64())
-                            .map(|n| n as u8)
-                            .unwrap_or_else(|| crate::presets::upk_slot_index_from_str(&slot));
-                        if wid > 0 && seen.insert((oid, wid, slot_idx)) {
-                            rules.push(ActiveSwapRule {
-                                owned_id: oid,
-                                wanted_id: wid,
-                                paint_id: pid,
-                                slot,
-                                slot_idx,
-                            });
-                        }
-                    }
-                }
-            }
+    for entry in load_swap_entries_from_paths(&candidate_paths) {
+        let wid = entry.get("wanted_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+        let oid = entry.get("owned_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+        let pid = entry.get("paint_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+        let slot = entry.get("slot").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let slot_idx = entry.get("slot_index")
+            .and_then(|v| v.as_i64())
+            .map(|n| n as u8)
+            .unwrap_or_else(|| crate::presets::upk_slot_index_from_str(&slot));
+        if wid > 0 && seen.insert((oid, wid, slot_idx)) {
+            rules.push(ActiveSwapRule {
+                owned_id: oid,
+                wanted_id: wid,
+                paint_id: pid,
+                slot,
+                slot_idx,
+            });
         }
     }
 
@@ -6689,6 +6734,12 @@ pub fn register_spawned_items(items: &[(i32, i32)]) {
                 g.push((id, paint));
             }
         }
+    }
+}
+
+pub fn unregister_spawned_items(product_ids: &[i32]) {
+    if let Ok(mut items) = DYNAMIC_SPAWNED_ITEMS.write() {
+        items.retain(|(id, _)| !product_ids.contains(id));
     }
 }
 
@@ -8055,6 +8106,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn local_avatar_matches_lobby_urls() {
+        let player = "Epic|37674b519c3544beb544f437f539ebf2|0";
+        assert!(super::avatar_path_matches_player(
+            "/content/images/players/avatars/large/37674b519c3544beb544f437f539ebf2.png", player));
+        assert!(super::avatar_path_matches_player(
+            "/rlim/avatar?player_id=Epic%7C37674b519c3544beb544f437f539ebf2%7C0", player));
+        assert!(!super::avatar_path_matches_player("/avatars/someone-else.png", player));
+        assert!(!super::avatar_path_matches_player("/avatars/local.png", ""));
+    }
+
+    #[test]
     fn test_access_denied_response_is_neutralized() {
         let body = br#"{"Result":"AccessDenied","bSuccess":false,"Message":"AccessDenied"}"#;
         assert!(response_denies_access(body));
@@ -8744,3 +8806,7 @@ mod tests {
     }
 }
 
+
+#[cfg(test)]
+#[path = "runtime_regression_tests.rs"]
+mod runtime_regression_tests;

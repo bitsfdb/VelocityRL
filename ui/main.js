@@ -1201,8 +1201,8 @@ async function loadData() {
         updateStatus('Please Wait...', false);
         updateLoadingText('Loading config...');
 
-        const [repair, config, itemsResult] = await Promise.all([
-            invoke('check_integrity').catch(e => { console.warn('Repair check failed:', e); return null; }),
+        const repairTask = invoke('check_integrity').catch(e => { console.warn('Repair check failed:', e); return null; });
+        const [config, itemsResult] = await Promise.all([
             invoke('get_config').catch(e => { console.warn('Config load failed:', e); return { game_dir: '', language: 'en' }; }),
             invoke('get_items').catch(() => null),
         ]);
@@ -1211,34 +1211,6 @@ async function loadData() {
             await setAppLanguage(config.language);
         } else {
             await setAppLanguage('en');
-        }
-
-        if (repair && repair.repaired) {
-            sessionStorage.setItem('velocityrl_repair_report', JSON.stringify(repair));
-        }
-
-        if (config && config.game_dir) {
-            updateLoadingText('Checking pre-patched game files...');
-            try {
-                const res = await invoke('ensure_game_patches');
-                if (res) {
-                    if (res.status === 'VersionMismatch') {
-                        const localV = res.details?.local_version || 'Unknown';
-                        const serverV = res.details?.server_version || 'Unknown';
-                        showToast(`RL Version Mismatch: Game ${localV} vs API ${serverV}. Auto-patching paused to prevent game instability.`, 'warning', 9000);
-                    } else if (res.status === 'Success') {
-                        showToast('Pre-patched game files verified & updated.', 'success');
-                        refreshPaletteStatus();
-                    } else if (res.status === 'UpToDate') {
-                        refreshPaletteStatus();
-                    } else if (res.status === 'Failed') {
-                        console.warn('Pre-patched sync:', res.details?.error);
-                    }
-                }
-                await updateGamePatchStatusUI();
-            } catch (err) {
-                console.warn('Game patch check failed:', err);
-            }
         }
 
         if (itemsResult) {
@@ -1298,8 +1270,42 @@ async function loadData() {
         renderCatalogGridPage();
         updateCatalogSelectionUi();
 
+        // Network downloads and title prewarming must not hold up the usable UI.
+        (async () => {
+            const repair = await repairTask;
+            if (repair?.repaired) {
+                sessionStorage.setItem('velocityrl_repair_report', JSON.stringify(repair));
+            }
+            if (config && config.game_dir) {
+
+                try {
+                    const res = await invoke('ensure_game_patches');
+                    if (res) {
+                        if (res.status === 'Deferred') {
+                            showToast('Game-file checks will run after Rocket League closes.', 'info', 6000);
+                            return;
+                        } else if (res.status === 'VersionMismatch') {
+                            const localV = res.details?.local_version || 'Unknown';
+                            const serverV = res.details?.server_version || 'Unknown';
+                            showToast(`RL Version Mismatch: Game ${localV} vs API ${serverV}. Auto-patching paused to prevent game instability.`, 'warning', 9000);
+                        } else if (res.status === 'Success') {
+                            showToast('Pre-patched game files verified & updated.', 'success');
+                            refreshPaletteStatus();
+                        } else if (res.status === 'UpToDate') {
+                            refreshPaletteStatus();
+                        } else if (res.status === 'Failed') {
+                            console.warn('Pre-patched sync:', res.details?.error);
+                        }
+                    }
+                    await updateGamePatchStatusUI();
+                } catch (err) {
+                    console.warn('Game patch check failed:', err);
+                }
+            }
+
+        })().catch(err => console.warn('Background game patch check failed:', err));
         updateLoadingText('Pre-warming titles & tools...');
-        await initTitlesTab().catch(e => console.warn('Pre-warming titles failed:', e));
+        initTitlesTab().catch(e => console.warn('Pre-warming titles failed:', e));
         refreshSwapRlHint(true).catch(() => {});
         startRlRunningPoll();
 
@@ -2923,8 +2929,9 @@ async function restoreSingle(path) {
     if (isAppLoading()) return;
     try {
         updateStatus('Restoring...', false);
-        await invoke('restore_single_backup', { path });
-        updateStatus('Restored', false);
+        const result = await invoke('restore_single_backup', { path });
+        updateStatus('Removed; game restart required', false);
+        showToast(result, 'success', 9000);
         refreshBackups();
         setTimeout(() => updateStatus('bitsfdb', false), 2000);
     } catch (err) {
@@ -3350,6 +3357,7 @@ async function handleRestore() {
         updateStatus('Running Restoration...', false);
         const result = await invoke('restore_backups');
         updateStatus(result, false);
+        showToast(result, 'success', 9000);
         refreshBackups();
         setTimeout(() => updateStatus('bitsfdb', false), 3000);
     } catch (err) {
@@ -5619,8 +5627,6 @@ function initLeaderboardTab() {
         }
     };
 }
-
-
 
 const COMMUNITY_ALPHACONSOLE_DECALS = [
     {
@@ -9265,6 +9271,18 @@ async function saveTrackerSession(session) {
 }
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 
+function installUiDiagnostics() {
+    let lastTick = performance.now();
+    const log = message => invoke('append_launch_log', { message }).catch(() => {});
+    setInterval(() => {
+        const elapsed = Math.round(performance.now() - lastTick);
+        lastTick = performance.now();
+        log(`ui heartbeat: elapsed=${elapsed}ms hidden=${document.hidden}`);
+    }, 5000);
+    window.addEventListener('error', event => log(`ui error: ${event.message} at ${event.filename}:${event.lineno}`));
+    window.addEventListener('unhandledrejection', event => log(`ui rejection: ${String(event.reason?.stack || event.reason).slice(0, 2000)}`));
+}
+
 async function startApp() {
     // Explicit, read-only browser preview; never intercept a native Tauri session.
     if (!window.__TAURI__ && new URLSearchParams(location.search).has('preview')) {
@@ -9272,6 +9290,7 @@ async function startApp() {
         await startPreview();
         return;
     }
+    installUiDiagnostics();
     setTimeout(() => {
         if (appLoading) {
             console.warn('App loading safety watchdog triggered — releasing overlay');
@@ -9475,6 +9494,8 @@ let netCurrentFilter = 'all';
 let netSelectedEventId = null;
 let netPollInterval = null;
 let netInspectorInitialized = false;
+let netPollBusy = false;
+let netLastSnapshot = null;
 
 function initNetworkTab() {
     if (!netInspectorInitialized) {
@@ -9634,25 +9655,25 @@ async function updateGamePatchStatusUI() {
 }
 
 async function pollNetworkEvents() {
-    // Only poll if network tab is currently visible
     const tab = document.getElementById('network-tab');
-    if (!tab || !tab.classList.contains('active')) return;
-
+    if (netPollBusy || document.hidden || !tab?.classList.contains('active')) return;
+    netPollBusy = true;
     try {
-        let events = null;
-        try {
-            events = await invoke('get_network_events');
-        } catch (e) {
-            const resp = await fetch('http://127.0.0.1:15759/network/events');
-            events = await resp.json();
-        }
-        if (Array.isArray(events)) {
-            netEvents = events;
-            const countEl = document.getElementById('net-stat-count');
-            if (countEl) countEl.textContent = events.length;
-            renderNetworkEventsTable();
-        }
-    } catch (_) {}
+        const events = await invoke('get_network_events');
+        if (!Array.isArray(events)) return;
+        const last = events.at(-1);
+        const snapshot = `${events.length}:${last?.id}:${last?.timestamp}`;
+        if (snapshot === netLastSnapshot) return;
+        netLastSnapshot = snapshot;
+        netEvents = events;
+        const countEl = document.getElementById('net-stat-count');
+        if (countEl) countEl.textContent = events.length;
+        renderNetworkEventsTable();
+    } catch (error) {
+        console.warn('Network monitor refresh failed:', error);
+    } finally {
+        netPollBusy = false;
+    }
 }
 
 function renderNetworkEventsTable() {
@@ -9702,10 +9723,13 @@ function renderNetworkEventsTable() {
     }).join('');
 }
 
-window.selectNetworkEvent = function(id) {
+window.selectNetworkEvent = async function(id) {
     netSelectedEventId = id;
     renderNetworkEventsTable();
-    const ev = netEvents.find(e => e.id === id);
+    let ev;
+    try { ev = await invoke('get_network_event', { id }); } catch (_) {}
+    if (netSelectedEventId !== id) return;
+    ev ||= netEvents.find(e => e.id === id);
     if (!ev) return;
 
     const titleEl = document.getElementById('net-detail-title');
@@ -9715,14 +9739,18 @@ window.selectNetworkEvent = function(id) {
     if (titleEl) titleEl.textContent = ev.service_or_url || `Entry ${ev.id}`;
     if (protoEl) protoEl.textContent = `${ev.protocol}  |  ${ev.direction}  |  ${ev.status_or_type}`;
 
-    let formatted = ev.payload_snippet || '';
-    if (formatted.trim().startsWith('{') || formatted.trim().startsWith('[')) {
+    const fullPayload = ev.payload_snippet || '';
+    // Very large captures stay on disk; rendering megabytes in a <pre> blocks WebView input.
+    let formatted = fullPayload.slice(0, 128 * 1024);
+    const payloadTruncated = formatted.length < fullPayload.length;
+    if (!payloadTruncated && (formatted.trim().startsWith('{') || formatted.trim().startsWith('['))) {
         try {
             const parsed = JSON.parse(formatted);
             formatted = JSON.stringify(parsed, null, 2);
         } catch (_) {}
     }
 
+    if (payloadTruncated) formatted += '\n\n[Display limited to 128 KiB. Export the capture for the complete payload.]';
     if (bodyEl) {
         bodyEl.innerHTML = `
             <div class="net-field-grid">

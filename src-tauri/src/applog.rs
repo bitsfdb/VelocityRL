@@ -360,9 +360,10 @@ pub fn log_i18n(key: &str, default_fmt: &str, vars: &[(&str, &str)]) {
 }
 
 #[tauri::command]
-pub fn append_launch_log(message: String) -> Result<(), String> {
-    event(&message);
-    Ok(())
+pub async fn append_launch_log(message: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || event(&message))
+        .await
+        .map_err(|e| format!("Log writer failed: {e}"))
 }
 
 #[tauri::command]

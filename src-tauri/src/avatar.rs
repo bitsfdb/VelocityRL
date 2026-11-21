@@ -830,23 +830,36 @@ pub async fn apply_custom_avatar_upk(app: tauri::AppHandle, avatar_source: Strin
     // Write the image into TAGame.upk and point only GFxData_LocalPlayer_TA at
     // it. GFxData_Persona_TA is deliberately left alone: patching it made every
     // player in the lobby show the local avatar.
-    apply_avatar_to_game(&app, &raw_bgra);
-
-    crate::applog::event("avatar: custom avatar loaded into memory broker (prepatched hooks active)");
-    Ok("Custom avatar active for the local player".into())
+    let avatar_app = app.clone();
+    let applied = tauri::async_runtime::spawn_blocking(move || apply_avatar_to_game(&avatar_app, &raw_bgra))
+        .await.map_err(|e| format!("Avatar task failed: {e}"))?;
+    crate::applog::event("avatar: custom avatar loaded into memory broker");
+    if applied {
+        Ok("Custom avatar applied for the local player. Launch Rocket League to load the lobby texture.".into())
+    } else if crate::game_file_access::ensure_idle().is_err() {
+        Ok("Avatar saved. Lobby texture will apply after Rocket League closes; then relaunch the game.".into())
+    } else {
+        Err("Avatar saved for match display, but the lobby patch failed. Check the avatar lobby entry in the app log.".into())
+    }
 }
 
-/// Write the avatar texture/bytecode patch into the installed TAGame.upk.
-/// With the pre-patched UPK architecture, TAGame.upk already contains all avatar hooks.
-/// The active avatar is served in memory by the local proxy broker via set_active_avatar_png.
-/// We intentionally avoid dynamic bytecode patching to preserve UPK integrity and avoid file locks.
-fn apply_avatar_to_game(_app: &tauri::AppHandle, _raw_bgra: &[u8]) -> bool {
-    true
+/// Apply the verified local-player callback/texture patch only while the game is closed.
+/// Match-time per-player avatar URLs and shared persona callbacks remain unchanged.
+fn apply_avatar_to_game(app: &tauri::AppHandle, _raw_bgra: &[u8]) -> bool {
+    if crate::game_file_access::ensure_idle().is_err() {
+        crate::queue_game_file_maintenance(app.clone());
+        return false;
+    }
+    match ensure_lobby_avatar_applied(app) {
+        Ok(_) => true,
+        Err(error) => {
+            crate::applog::event(&format!("avatar lobby: {error}"));
+            false
+        }
+    }
 }
 
-/// Re-apply the cached custom avatar on startup. The in-memory avatar and the
-/// TAGame.upk bytecode patch do not survive an app restart on their own, which
-/// is why the picture used to appear only after pressing Apply again.
+/// Hydrate the broker image on startup. Package writes belong to idle maintenance.
 pub fn ensure_cached_avatar_applied(app: &tauri::AppHandle) -> bool {
     let mut cached: Option<Vec<u8>> = None;
     let mut source = String::from("<none>");
@@ -882,7 +895,8 @@ pub fn ensure_cached_avatar_applied(app: &tauri::AppHandle) -> bool {
     crate::applog::event(&format!(
         "avatar startup: restoring cached avatar from {source}"
     ));
-    apply_avatar_to_game(app, &raw_bgra)
+    let _ = raw_bgra;
+    true
 }
 
 #[tauri::command]
@@ -893,12 +907,95 @@ pub fn restore_custom_avatar_upk(app: tauri::AppHandle) -> Result<String, String
         let _ = fs::remove_file(dir.join("custom_avatars").join("active_avatar.png"));
     }
 
-    crate::applog::event("avatar: custom avatar cleared from broker pipeline (game patches untouched)");
-    Ok("Vanilla avatar restored".into())
+    crate::queue_game_file_maintenance(app.clone());
+    crate::applog::event("avatar: custom avatar cleared; lobby texture restore queued");
+    Ok("Vanilla avatar restore queued. Close Rocket League before relaunching it.".into())
 }
 
 
+#[derive(Serialize, Deserialize)]
+struct LobbyAvatarReceipt {
+    tagame_path: String,
+    source_hash: String,
+    patched_hash: String,
+    image_hash: String,
+}
+
+fn lobby_receipt_path(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path().app_config_dir().ok().map(|dir| dir.join("custom_avatars/lobby_patch.json"))
+}
+
+pub fn matches_lobby_override(app: Option<&tauri::AppHandle>, path: &Path, expected_hash: &str) -> bool {
+    let Some(receipt_path) = app.and_then(lobby_receipt_path) else { return false; };
+    let Some(receipt) = fs::read(&receipt_path).ok()
+        .and_then(|data| serde_json::from_slice::<LobbyAvatarReceipt>(&data).ok()) else { return false; };
+    receipt.tagame_path == path.to_string_lossy()
+        && receipt.source_hash.eq_ignore_ascii_case(expected_hash)
+        && crate::integrity::compute_file_sha256_cached(path).as_deref() == Some(receipt.patched_hash.as_str())
+}
+
+pub fn ensure_lobby_avatar_applied(app: &tauri::AppHandle) -> Result<bool, String> {
+    use sha2::{Digest, Sha256};
+    crate::game_file_access::ensure_idle()?;
+    static PATCH_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _lock = PATCH_LOCK.lock().map_err(|e| e.to_string())?;
+    crate::game_file_access::ensure_idle()?;
+    let receipt_path = lobby_receipt_path(app).ok_or("Avatar cache directory unavailable")?;
+    let dir = receipt_path.parent().ok_or("Avatar cache parent unavailable")?;
+    fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let backup = dir.join("lobby_original.upk");
+    let previous = fs::read(&receipt_path).ok()
+        .and_then(|data| serde_json::from_slice::<LobbyAvatarReceipt>(&data).ok());
+    let Some(png) = get_active_avatar_png() else {
+        if let Some(receipt) = previous {
+            let path = PathBuf::from(&receipt.tagame_path);
+            let current = crate::integrity::compute_file_sha256_cached(&path);
+            if current.as_deref() == Some(receipt.patched_hash.as_str()) {
+                if crate::integrity::compute_file_sha256_cached(&backup).as_deref() != Some(receipt.source_hash.as_str()) {
+                    return Err("Original lobby package backup does not match; nothing restored".into());
+                }
+                crate::game_file_access::ensure_idle()?;
+                let temp = path.with_extension("vrl_avatar_restore.tmp");
+                fs::copy(&backup, &temp).map_err(|e| e.to_string())?;
+                fs::rename(&temp, &path).map_err(|e| e.to_string())?;
+                crate::integrity::invalidate_file_hash(&path);
+            }
+            let _ = fs::remove_file(&receipt_path);
+        }
+        return Ok(false);
+    };
+    let game_dir = get_game_dir(app).ok_or("Rocket League directory not configured")?;
+    let cooked = crate::upk::swapper::resolve_cooked_dir(&game_dir).map_err(|e| e.to_string())?;
+    let path = cooked.join("TAGame.upk");
+    let current = crate::integrity::compute_file_sha256_cached(&path).ok_or("Cannot read lobby package")?;
+    let image_hash = format!("{:x}", Sha256::digest(&png));
+    if previous.as_ref().map(|r| r.tagame_path == path.to_string_lossy()
+        && r.patched_hash == current && r.image_hash == image_hash).unwrap_or(false) {
+        return Ok(false);
+    }
+    let source_hash = if let Some(receipt) = previous.as_ref().filter(|r| r.tagame_path == path.to_string_lossy() && r.patched_hash == current) {
+        receipt.source_hash.clone()
+    } else {
+        fs::copy(&path, &backup).map_err(|e| format!("Backup lobby package: {e}"))?;
+        current
+    };
+    let (bgra, _) = process_avatar_image(&png)?;
+    patch_avatar_package(&path, &bgra, true)?;
+    let patched_hash = crate::integrity::compute_file_sha256_cached(&path).ok_or("Cannot verify patched lobby package")?;
+    let receipt = LobbyAvatarReceipt { tagame_path: path.to_string_lossy().into_owned(), source_hash, patched_hash, image_hash };
+    let receipt_temp = receipt_path.with_extension("json.tmp");
+    fs::write(&receipt_temp, serde_json::to_vec_pretty(&receipt).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    fs::rename(&receipt_temp, &receipt_path).map_err(|e| e.to_string())?;
+    crate::applog::event("avatar lobby: local-player callback and texture applied; persona callbacks unchanged");
+    Ok(true)
+}
+
 pub fn apply_custom_avatar_to_tagame(tagame_path: &Path, raw_bgra: &[u8]) -> Result<(), String> {
+    patch_avatar_package(tagame_path, raw_bgra, false)
+}
+
+fn patch_avatar_package(tagame_path: &Path, raw_bgra: &[u8], lobby_only: bool) -> Result<(), String> {
+    crate::game_file_access::ensure_idle()?;
     if raw_bgra.len() != 262_144 {
         return Err("Raw BGRA buffer must be exactly 262,144 bytes".into());
     }
@@ -906,18 +1003,14 @@ pub fn apply_custom_avatar_to_tagame(tagame_path: &Path, raw_bgra: &[u8]) -> Res
         return Err(format!("TAGame.upk not found at {}", tagame_path.display()));
     }
 
-    let backup_path = tagame_path.with_file_name(TAGAME_BACKUP_NAME);
-    if !backup_path.is_file() {
-        fs::copy(tagame_path, &backup_path)
-            .map_err(|e| format!("Failed to create backup: {e}"))?;
+    if !lobby_only {
+        let backup_path = tagame_path.with_file_name(TAGAME_BACKUP_NAME);
+        if !backup_path.is_file() {
+            fs::copy(tagame_path, &backup_path).map_err(|e| format!("Create avatar backup: {e}"))?;
+        }
     }
-
-    // Read pristine file contents (from backup if available, else from tagame_path)
-    let mut file_bytes = if backup_path.is_file() {
-        fs::read(&backup_path).map_err(|e| format!("Failed to read backup: {e}"))?
-    } else {
-        fs::read(tagame_path).map_err(|e| format!("Failed to read TAGame.upk: {e}"))?
-    };
+    // Work from the live prepatched package, never from an older vanilla backup.
+    let mut file_bytes = fs::read(tagame_path).map_err(|e| format!("Read TAGame.upk: {e}"))?;
 
     if file_bytes.len() < 32 {
         return Err("TAGame.upk too small".into());
@@ -1068,6 +1161,15 @@ pub fn apply_custom_avatar_to_tagame(tagame_path: &Path, raw_bgra: &[u8]) -> Res
     }
     let script_disk_sz =
         u32::from_le_bytes(decomp_av[fn_rel_off + 44..fn_rel_off + 48].try_into().unwrap()) as usize;
+    if script_disk_sz != 14 {
+        return Err("Unsupported local avatar callback layout; package left unchanged".into());
+    }
+    let original_callback = [0x0f, 0x01, 0xd1, 0x85, 0, 0, 0x2b, 0x32, 0x86, 0, 0, 0x04, 0x0b, 0x4c];
+    let custom_callback = [0x0f, 0x01, 0xd1, 0x85, 0, 0, 0x20, 0x3a, 0x6b, 0x01, 0, 0x04, 0x0b, 0x4c];
+    let current_callback = &decomp_av[fn_rel_off + 48..fn_rel_off + 62];
+    if current_callback != original_callback && current_callback != custom_callback {
+        return Err("Unsupported local avatar callback bytecode; package left unchanged".into());
+    }
     if script_disk_sz == 14 {
         let patched_bc = [
             0x0f, 0x01, 0xd1, 0x85, 0x00, 0x00, // EX_LET PlayerAvatarTexture
@@ -1077,6 +1179,7 @@ pub fn apply_custom_avatar_to_tagame(tagame_path: &Path, raw_bgra: &[u8]) -> Res
         decomp_av[fn_rel_off + 48..fn_rel_off + 48 + 14].copy_from_slice(&patched_bc);
     }
 
+    if !lobby_only {
     // Older builds also patched GFxData_Persona_TA::HandleGetAvatar, which made
     // every player in the lobby display the local avatar. Undo that here even
     // when the source TAGame.upk (or its .bak) still carries the old patch.
@@ -1104,6 +1207,8 @@ pub fn apply_custom_avatar_to_tagame(tagame_path: &Path, raw_bgra: &[u8]) -> Res
         }
     }
 
+    }
+
     let recomp_av = crate::upk::compression::compress_chunk(&decomp_av)
         .map_err(|e| format!("Recompress avatar function chunk failed: {e}"))?;
     let orig_av_sz = ac.comp_size as usize;
@@ -1112,7 +1217,16 @@ pub fn apply_custom_avatar_to_tagame(tagame_path: &Path, raw_bgra: &[u8]) -> Res
         padded.resize(orig_av_sz, 0);
         file_bytes[ac_start..ac_start + orig_av_sz].copy_from_slice(&padded);
     } else {
-        return Err("Recompressed avatar function chunk exceeds allocation".into());
+        let delta = recomp_av.len() as i64 - orig_av_sz as i64;
+        let tail = file_bytes[ac_start + orig_av_sz..].to_vec();
+        file_bytes.truncate(ac_start);
+        file_bytes.extend_from_slice(&recomp_av);
+        file_bytes.extend_from_slice(&tail);
+        plain_header[ac.pos + 20..ac.pos + 24].copy_from_slice(&(recomp_av.len() as i32).to_le_bytes());
+        for ch in &chunks[avatar_chunk_idx + 1..] {
+            let offset = i64::from_le_bytes(plain_header[ch.pos + 12..ch.pos + 20].try_into().unwrap());
+            plain_header[ch.pos + 12..ch.pos + 20].copy_from_slice(&(offset + delta).to_le_bytes());
+        }
     }
 
     // 2. Patch Chunk 6: album_anthem_placeholderanthem.PlaceholderAnthem bulk data
@@ -1128,6 +1242,11 @@ pub fn apply_custom_avatar_to_tagame(tagame_path: &Path, raw_bgra: &[u8]) -> Res
     let tex_exp = exports.iter().find(|e| e.name == "PlaceholderAnthem")
         .ok_or_else(|| "PlaceholderAnthem not found".to_string())?;
 
+    if tex_exp.idx != 92986 || tex_exp.serial_size != 262564
+        || tex_exp.serial_offset < chunks[6].uncomp_offset
+        || tex_exp.serial_offset + tex_exp.serial_size as i64 > chunks[6].uncomp_offset + chunks[6].uncomp_size as i64 {
+        return Err("Unsupported avatar texture layout; package left unchanged".into());
+    }
     let tex_rel_off = (tex_exp.serial_offset - chunks[6].uncomp_offset) as usize;
     let pixel_start = tex_rel_off + 360;
     if pixel_start + 262_144 <= decomp6.len() {
@@ -1161,7 +1280,8 @@ pub fn apply_custom_avatar_to_tagame(tagame_path: &Path, raw_bgra: &[u8]) -> Res
 
         // RL subsequent chunks comp_offset
         for ch in &chunks[7..] {
-            let new_co = ch.comp_offset + delta;
+            let current = i64::from_le_bytes(plain_header[ch.pos + 12..ch.pos + 20].try_into().unwrap());
+            let new_co = current + delta;
             plain_header[ch.pos + 12..ch.pos + 20]
                 .copy_from_slice(&new_co.to_le_bytes());
         }
@@ -1183,7 +1303,7 @@ pub fn apply_custom_avatar_to_tagame(tagame_path: &Path, raw_bgra: &[u8]) -> Res
     //    it can be pasted verbatim. A fresh export serial block is appended to
     //    the end of the owning chunk and the export's serial_offset is repointed
     //    there, which avoids touching the other exports in that chunk.
-    {
+    if !lobby_only {
         const SIDECAR_UPDATE_PRI_DATA: &[u8] = include_bytes!("avatar/sidecar_update_pri_data.bin");
         const SIDECAR_MEM_SIZE: u32 = 28_742;
         const SIDECAR_SCRIPT_SIZE: u32 = 19_434;
@@ -1301,12 +1421,14 @@ pub fn apply_custom_avatar_to_tagame(tagame_path: &Path, raw_bgra: &[u8]) -> Res
     let re_enc = crypto::encrypt_ecb(&TAGAME_KEY, &plain_header);
     file_bytes[name_offset..enc_end].copy_from_slice(&re_enc);
 
+    crate::game_file_access::ensure_idle()?;
     // Atomic write to TAGame.upk
     let tmp_path = tagame_path.with_extension("tmp_avatar");
     fs::write(&tmp_path, &file_bytes)
         .map_err(|e| format!("Failed to write patched UPK: {e}"))?;
     fs::rename(&tmp_path, tagame_path)
         .map_err(|e| format!("Failed to atomically replace TAGame.upk: {e}"))?;
+    crate::integrity::invalidate_file_hash(tagame_path);
 
     Ok(())
 }

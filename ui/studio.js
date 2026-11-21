@@ -317,7 +317,7 @@
                 wrap.classList.add('is-open');
                 trigger.setAttribute('aria-expanded', 'true');
                 const sel = menu.querySelector('.custom-select-option.is-selected');
-                if (sel) sel.scrollIntoView({ block: 'nearest' });
+                if (sel) menu.scrollTop = Math.max(0, sel.offsetTop - (menu.clientHeight - sel.offsetHeight) / 2);
             }
 
             trigger.addEventListener('click', (e) => {
@@ -360,7 +360,10 @@
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') closeAllCustomSelects();
     });
-    document.addEventListener('scroll', closeAllCustomSelects, true);
+    document.addEventListener('scroll', (event) => {
+        if (event.target instanceof Element && event.target.closest('.custom-select-menu')) return;
+        closeAllCustomSelects();
+    }, true);
     window.addEventListener('resize', closeAllCustomSelects, { passive: true });
 
     // Pointer-linked depth is local to the hovered card, with a soft return to rest.
@@ -379,22 +382,22 @@
 
     // Opaque startup lockup: chevrons assemble, accelerate, then the shell unfolds.
     const boot = document.getElementById('velocity-boot');
-    const bootStart = performance.now();
     let bootFinished = false;
     function finishBoot() {
         if (bootFinished) return;
         bootFinished = true;
-        const delay = Math.max(0, 1350 - (performance.now() - bootStart));
+        const delay = 0;
         setTimeout(() => {
             boot.classList.add('is-leaving');
+            boot.style.animationDuration = '160ms';
             animate(document.querySelector('.sidebar'), [
                 { transform: 'translateX(-42px)' }, { transform: 'translateX(2px)', offset: .75 }, { transform: 'translateX(0)' }
-            ], { duration: 700 });
+            ], { duration: 160 });
             animate(document.querySelector('.main-wrap'), [
                 { transform: 'perspective(1400px) rotateY(-3deg) translateX(50px)', transformOrigin: 'left center' },
                 { transform: 'perspective(1400px) rotateY(0deg) translateX(0)', transformOrigin: 'left center' }
-            ], { duration: 850 });
-            setTimeout(() => boot.remove(), 850);
+            ], { duration: 160 });
+            setTimeout(() => boot.remove(), 180);
         }, delay);
     }
     const bootObserver = new MutationObserver(() => {

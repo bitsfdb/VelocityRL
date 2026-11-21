@@ -18,33 +18,29 @@ pub async fn run_stats_api_loop(app: AppHandle, tracker: Arc<Mutex<SessionTracke
     let mut last_connected = false;
     let mut last_fix_attempt: Option<std::time::Instant> = None;
     loop {
-        let ws_url = {
+        // Config probing and repairs may involve slow disk/antivirus access.
+        // Never hold the tracker mutex while doing I/O or dispatching UI events.
+        let game_dir = crate::tracker::commands::stats_api_game_dir(&app);
+        let binding = crate::tracker::commands::check_stats_api_binding(&game_dir);
+        let (ws_url, status_update) = {
             let mut t = tracker.lock().unwrap();
-            let game_dir = crate::tracker::commands::stats_api_game_dir(&app);
-            let binding =
-                crate::tracker::commands::check_stats_api_binding(&game_dir);
-            if t.status_detail != binding.detail {
+            let update = if t.status_detail != binding.detail {
                 t.status_detail = binding.detail.clone();
-                let _ = app.emit("overlay-state", t.to_overlay_payload());
-            }
-
-            let is_overlay_enabled = crate::tracker::commands::tracker_load_session(app.clone())
-                .map(|s| s.master_enabled)
-                .unwrap_or(false);
-
-            let fix_due = last_fix_attempt
-                .map(|t| t.elapsed() >= std::time::Duration::from_secs(60))
-                .unwrap_or(true);
-            if is_overlay_enabled && binding.needs_fix && fix_due {
-                last_fix_attempt = Some(std::time::Instant::now());
-                crate::applog::event(&format!(
-                    "tracker: Stats API binding broken, rewriting configs ({})",
-                    binding.detail
-                ));
-                let _ = crate::tracker::commands::ensure_stats_api_files(&game_dir);
-            }
-            t.config.ws_url.clone()
+                Some(t.to_overlay_payload())
+            } else { None };
+            (t.config.ws_url.clone(), update)
         };
+        if let Some(payload) = status_update {
+            let _ = app.emit("overlay-state", payload);
+        }
+        let is_overlay_enabled = crate::tracker::commands::tracker_load_session(app.clone())
+            .map(|s| s.master_enabled).unwrap_or(false);
+        let fix_due = last_fix_attempt.map(|t| t.elapsed() >= Duration::from_secs(60)).unwrap_or(true);
+        if is_overlay_enabled && binding.needs_fix && fix_due {
+            last_fix_attempt = Some(std::time::Instant::now());
+            crate::applog::event(&format!("tracker: repairing Stats API binding ({})", binding.detail));
+            let _ = crate::tracker::commands::ensure_stats_api_files(&game_dir);
+        }
 
         match connect_async(&ws_url).await {
             Ok((ws_stream, _)) => {
@@ -54,7 +50,9 @@ pub async fn run_stats_api_loop(app: AppHandle, tracker: Arc<Mutex<SessionTracke
                     let mut t = tracker.lock().unwrap();
                     t.connection_status = "connected".into();
                     t.status_detail = "Stats API connected".into();
-                    let _ = app.emit("overlay-state", t.to_overlay_payload());
+                    let payload = t.to_overlay_payload();
+                    drop(t);
+                    let _ = app.emit("overlay-state", payload);
                 }
 
                 let (_, mut read) = ws_stream.split();
@@ -87,7 +85,9 @@ pub async fn run_stats_api_loop(app: AppHandle, tracker: Arc<Mutex<SessionTracke
                 let mut t = tracker.lock().unwrap();
                 if t.status_detail != detail {
                     t.status_detail = detail.clone();
-                    let _ = app.emit("overlay-state", t.to_overlay_payload());
+                    let payload = t.to_overlay_payload();
+                    drop(t);
+                    let _ = app.emit("overlay-state", payload);
                 }
             }
         }
@@ -97,7 +97,9 @@ pub async fn run_stats_api_loop(app: AppHandle, tracker: Arc<Mutex<SessionTracke
             let mut t = tracker.lock().unwrap();
             t.connection_status = "disconnected".into();
             t.is_match_active = false;
-            let _ = app.emit("overlay-state", t.to_overlay_payload());
+            let payload = t.to_overlay_payload();
+            drop(t);
+            let _ = app.emit("overlay-state", payload);
         }
 
         sleep(Duration::from_secs(3)).await;
@@ -168,6 +170,7 @@ fn process_event(app: &AppHandle, tracker: &Arc<Mutex<SessionTracker>>, raw: &st
     }
 
     let payload = t.to_overlay_payload();
+    drop(t);
     let _ = app.emit("overlay-state", payload);
 }
 
@@ -196,5 +199,6 @@ pub fn simulate_fake_match(app: &AppHandle, tracker: &Arc<Mutex<SessionTracker>>
     t.handle_match_ended(Some(mock_ended));
 
     let payload = t.to_overlay_payload();
+    drop(t);
     let _ = app.emit("overlay-state", payload);
 }

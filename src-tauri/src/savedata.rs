@@ -533,6 +533,11 @@ pub fn patch_saved_spoof_values(
     title: &str,
     loadout_key: &str,
 ) -> Result<(), String> {
+    crate::game_file_access::ensure_idle()?;
+    // Serialize callers so their temp save files cannot overwrite each other.
+    static WRITE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = WRITE_LOCK.lock().map_err(|e| format!("Save update lock: {e}"))?;
+    crate::game_file_access::ensure_idle()?;
     let save_path = locate_latest_save()?;
     let mut envelope = read_envelope(&save_path)?;
     let mut changed = rename_all_saved_keys_to_rlim(&mut envelope) > 0;

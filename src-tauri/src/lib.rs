@@ -13,6 +13,7 @@ use tauri::Manager;
 
 mod applog;
 mod integrity;
+mod game_file_access;
 mod jobobject;
 mod network_dump;
 mod presets;
@@ -1461,20 +1462,25 @@ fn save_integrity(app: &tauri::AppHandle, state: &integrity::IntegrityState) -> 
 #[tauri::command]
 async fn check_integrity(app: tauri::AppHandle) -> Result<integrity::RepairReport, String> {
     let config = get_config(app.clone()).await?;
-    let mut state = load_integrity(&app);
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Err(message) = game_file_access::ensure_idle() {
+            return integrity::RepairReport { repaired: false, palette_wiped: false, swaps_wiped: 0, message };
+        }
+        let mut state = load_integrity(&app);
 
-    for s in load_swaps(&app) {
-        if !s.asset_package.is_empty() {
-            integrity::mark_swap_package(&mut state, &s.asset_package, None);
+        for s in load_swaps(&app) {
+            if !s.asset_package.is_empty() {
+                integrity::mark_swap_package(&mut state, &s.asset_package, None);
+            }
         }
-    }
-    let game = PathBuf::from(&config.game_dir);
-    if game.is_dir() {
-        if let Ok(cooked) = upk::palette::resolve_cooked_dir(&game) {
-            let _ = upk::ensure_projectx_patched(&cooked);
+        let game = PathBuf::from(&config.game_dir);
+        if game.is_dir() {
+            if let Ok(cooked) = upk::palette::resolve_cooked_dir(&game) {
+                let _ = upk::ensure_projectx_patched(&cooked);
+            }
         }
-    }
-    Ok(integrity::check_repair(&game, &state))
+        integrity::check_repair(&game, &state)
+    }).await.map_err(|e| format!("Integrity check failed: {e}"))
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -1493,6 +1499,7 @@ pub struct GamePatchStatus {
 
 #[tauri::command]
 async fn get_game_patch_status(app: tauri::AppHandle) -> Result<GamePatchStatus, String> {
+    game_file_access::ensure_idle()?;
     let config = get_config(app.clone()).await?;
     if config.game_dir.is_empty() {
         return Ok(GamePatchStatus {
@@ -1508,6 +1515,7 @@ async fn get_game_patch_status(app: tauri::AppHandle) -> Result<GamePatchStatus,
             mismatch_warning: None,
         });
     }
+    tauri::async_runtime::spawn_blocking(move || {
     let game = PathBuf::from(&config.game_dir);
     let cooked = upk::palette::resolve_cooked_dir(&game).unwrap_or(game);
     let px_path = if cooked.join("ProjectX.upk").is_file() {
@@ -1549,10 +1557,12 @@ async fn get_game_patch_status(app: tauri::AppHandle) -> Result<GamePatchStatus,
         version_mismatch: false,
         mismatch_warning: None,
     })
+    }).await.map_err(|e| format!("Patch status check failed: {e}"))?
 }
 
 #[tauri::command]
 fn apply_saved_spoof_values() -> Result<String, String> {
+    game_file_access::ensure_idle()?;
     let cfg = crate::psynet::load_active_spoof_from_disk();
     let name = cfg
         .as_ref()
@@ -1626,10 +1636,17 @@ async fn ensure_game_patches(app: tauri::AppHandle) -> Result<serde_json::Value,
     }
     let game = PathBuf::from(&config.game_dir);
     let sync_res = integrity::sync_prepatched_upks(Some(&app), &game).await?;
+    if matches!(&sync_res, integrity::PrepatchedSyncStatus::Deferred { .. }) {
+        queue_game_file_maintenance(app);
+        return Ok(serde_json::to_value(&sync_res).unwrap_or_default());
+    }
     let cooked = upk::palette::resolve_cooked_dir(&game).unwrap_or(game);
     let swaps = load_swaps(&app);
     let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
     let _ = apply_saved_spoof_values();
+    let avatar_app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || avatar::ensure_lobby_avatar_applied(&avatar_app))
+        .await.map_err(|e| format!("Lobby avatar task failed: {e}"))??;
     Ok(serde_json::to_value(&sync_res).unwrap_or_default())
 }
 
@@ -1784,17 +1801,22 @@ fn load_swaps(app: &tauri::AppHandle) -> Vec<SwapEntry> {
     deduped
 }
 
-fn save_swaps(app: &tauri::AppHandle, swaps: &[SwapEntry]) {
-    if let Some(path) = swaps_path(app) {
-        if let Ok(json) = serde_json::to_string_pretty(swaps) {
-            let _ = fs::create_dir_all(path.parent().unwrap_or(&path));
-            let _ = fs::write(&path, &json);
-            let proxy_swaps = crate::psynet::config_dir().join("swaps.json");
-            if let Some(p) = proxy_swaps.parent() {
-                let _ = fs::create_dir_all(p);
-            }
-            let _ = fs::write(proxy_swaps, &json);
+fn save_swaps_checked(app: &tauri::AppHandle, swaps: &[SwapEntry]) -> Result<(), String> {
+    let path = swaps_path(app).ok_or("Could not resolve the active inventory config directory")?;
+    let json = serde_json::to_vec_pretty(swaps).map_err(|e| e.to_string())?;
+    let proxy_path = crate::psynet::config_dir().join("swaps.json");
+    for target in [&proxy_path, &path] {
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("Create {}: {e}", parent.display()))?;
         }
+        fs::write(target, &json).map_err(|e| format!("Save inventory {}: {e}", target.display()))?;
+    }
+    Ok(())
+}
+
+fn save_swaps(app: &tauri::AppHandle, swaps: &[SwapEntry]) {
+    if let Err(e) = save_swaps_checked(app, swaps) {
+        applog::event(&format!("inventory persistence failed: {e}"));
     }
 }
 
@@ -1813,6 +1835,10 @@ pub(crate) async fn sync_all_swaps_to_tagame(
     cooked: &Path,
     _swaps: &[SwapEntry],
 ) -> Result<(), String> {
+    if game_file_access::ensure_idle().is_err() {
+        applog::event("game files: package synchronization deferred while Rocket League is running");
+        return Ok(());
+    }
     // Restore any other UPKs from backups to keep game packages clean and stock (never overwrite ProjectX.upk or active prepatched TAGame)
     if let Ok(entries) = std::fs::read_dir(cooked) {
         for entry in entries.flatten() {
@@ -1836,29 +1862,7 @@ pub(crate) async fn sync_all_swaps_to_tagame(
 
 #[tauri::command]
 async fn delete_swap(app: tauri::AppHandle, owned_id: i32) -> Result<(), String> {
-    let mut swaps = load_swaps(&app);
-    let target = swaps.iter().find(|s| s.owned_id == owned_id || s.wanted_id == owned_id).cloned();
-    swaps.retain(|s| s.owned_id != owned_id && s.wanted_id != owned_id);
-    save_swaps(&app, &swaps);
-
-    if let Some(s) = target {
-        if let Ok(save_path) = savedata::locate_latest_save() {
-            let _ = savedata::remove_spawn_native(&save_path, s.wanted_id);
-        }
-    }
-
-    if let Ok(config) = get_config(app.clone()).await {
-        if !config.game_dir.is_empty() {
-            if let Ok(cooked) = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                if swaps.is_empty() {
-                    let _ = upk::swapper::restore_tagame_upk(&cooked);
-                } else {
-                    let _ = sync_all_swaps_to_tagame(&app, &cooked, &swaps).await;
-                }
-            }
-        }
-    }
-    Ok(())
+    restore_single_backup(app, format!("item_{owned_id}")).await.map(|_| ())
 }
 
 #[tauri::command]
@@ -2140,63 +2144,65 @@ async fn spawn_drops(
     Ok(format!("Successfully spawned {crate_count} Drop(s) / Crate(s) + {crate_count} Key(s)! ({spawned} items total)"))
 }
 
-#[tauri::command]
-async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<(), String> {
-    let mut swaps = load_swaps(&app);
-    let target_id = path
-        .strip_prefix("item_")
-        .and_then(|s| s.parse::<i32>().ok());
-
-    if let Some(id) = target_id {
-        if let Ok(save_path) = savedata::locate_latest_save() {
-            let _ = savedata::remove_spawn_native(&save_path, id);
+// Remove every source used by the proxy, otherwise the next inventory response
+// re-injects an item that the user has just restored.
+fn remove_proxy_inventory_items(ids: Option<&[i32]>) -> Result<(), String> {
+    if let Some(mut cfg) = crate::psynet::load_active_spoof_from_disk() {
+        if let Some(inv) = cfg.inventory_spoof.as_mut() {
+            inv.items.retain(|item| ids.map(|ids| !ids.contains(&item.product_id)).unwrap_or(false));
+            inv.enabled = !inv.items.is_empty();
+            let dir = crate::psynet::find_proxy_dir()?;
+            crate::psynet::write_spoof(&dir, &cfg)?;
+            tauri::async_runtime::block_on(crate::proxy::set_spoof_config(cfg));
         }
-        swaps.retain(|s| s.owned_id != id && s.wanted_id != id);
-        save_swaps(&app, &swaps);
-        record_swap_history(&app, "restore", &[], &format!("restored item #{id}"));
     }
-
-    let config = get_config(app.clone()).await?;
-    if config.game_dir.trim().is_empty() {
-        return Err("Rocket League directory not found. Please verify your game path in Settings.".into());
-    }
-    let cooked = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir))
-        .map_err(|e| format!("Rocket League directory not found: {e}"))?;
-    if swaps.is_empty() {
-        upk::swapper::restore_tagame_upk(&cooked)
-            .map_err(|e| format!("Failed to restore TAGame.upk: {e}"))?;
+    if let Some(ids) = ids {
+        crate::proxy::unregister_spawned_items(ids);
     } else {
-        sync_all_swaps_to_tagame(&app, &cooked, &swaps).await?;
+        crate::proxy::clear_dynamic_spawned_items();
     }
-
-    applog::event(&format!("restore_single_backup: restored {path}"));
     Ok(())
 }
 
 #[tauri::command]
-async fn restore_backups(app: tauri::AppHandle) -> Result<String, String> {
-    let config = get_config(app.clone()).await?;
-    if config.game_dir.trim().is_empty() {
-        return Err("Rocket League directory not found. Please verify your game path in Settings.".into());
-    }
-    let cooked = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir))
-        .map_err(|e| format!("Rocket League directory not found: {e}"))?;
-
-    let swaps = load_swaps(&app);
-    let count = swaps.len();
-    if let Ok(save_path) = savedata::locate_latest_save() {
-        for s in &swaps {
-            let _ = savedata::remove_spawn_native(&save_path, s.wanted_id);
+async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<String, String> {
+    let id = path.strip_prefix("item_").and_then(|s| s.parse::<i32>().ok())
+        .filter(|id| *id > 0).ok_or("Invalid inventory entry; refresh the list and try again")?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut swaps = load_swaps(&app);
+        let ids: Vec<i32> = swaps.iter().filter(|s| s.owned_id == id || s.wanted_id == id)
+            .map(|s| s.wanted_id).chain(std::iter::once(id)).collect();
+        swaps.retain(|s| s.owned_id != id && s.wanted_id != id);
+        save_swaps_checked(&app, &swaps)?;
+        remove_proxy_inventory_items(Some(&ids))?;
+        // The menu hook also reads a persisted loadout key. Leaving this key
+        // unchanged makes a deleted item return when the garage reloads.
+        if game_file_access::ensure_idle().is_ok() {
+            apply_saved_spoof_values()?;
+        } else {
+            queue_game_file_maintenance(app.clone());
         }
-    }
+        record_swap_history(&app, "restore", &[], &format!("restored item #{id}"));
+        applog::event(&format!("restore_single_backup: removed product {id} from inventory and loadout wire"));
+        Ok("Item removed. Restart Rocket League to clear its current inventory cache.".to_string())
+    }).await.map_err(|e| format!("Restore task failed: {e}"))?
+}
 
-    save_swaps(&app, &[]);
-    upk::swapper::restore_tagame_upk(&cooked)
-        .map_err(|e| format!("Failed to restore TAGame.upk: {e}"))?;
-
-    record_swap_history(&app, "restore_all", &[], "restored all active items");
-    applog::event(&format!("restore_backups: restored {count} items"));
-    Ok(format!("Restored {} item(s) from inventory", count))
+#[tauri::command]
+async fn restore_backups(app: tauri::AppHandle) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let count = load_swaps(&app).len();
+        save_swaps_checked(&app, &[])?;
+        remove_proxy_inventory_items(None)?;
+        if game_file_access::ensure_idle().is_ok() {
+            apply_saved_spoof_values()?;
+        } else {
+            queue_game_file_maintenance(app.clone());
+        }
+        record_swap_history(&app, "restore_all", &[], "restored all active items");
+        applog::event(&format!("restore_backups: removed {count} entries and cleared loadout wire"));
+        Ok(format!("Removed {count} item(s). Restart Rocket League to clear its current inventory cache."))
+    }).await.map_err(|e| format!("Restore task failed: {e}"))?
 }
 
 #[tauri::command]
@@ -3788,8 +3794,13 @@ fn create_main_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[tauri::command]
-fn get_network_events() -> Vec<proxy::NetworkEventEntry> {
-    proxy::get_network_events()
+async fn get_network_events() -> Vec<proxy::NetworkEventEntry> {
+    proxy::get_network_event_summaries()
+}
+
+#[tauri::command]
+async fn get_network_event(id: u64) -> Option<proxy::NetworkEventEntry> {
+    proxy::get_network_event(id)
 }
 
 #[tauri::command]
@@ -3799,8 +3810,9 @@ fn clear_network_events() {
 }
 
 #[tauri::command]
-fn dump_network_capture(app: tauri::AppHandle) -> Result<String, String> {
-    network_dump::dump_network_capture(&app)
+async fn dump_network_capture(app: tauri::AppHandle) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || network_dump::dump_network_capture(&app))
+        .await.map_err(|e| format!("Capture export failed: {e}"))?
 }
 
 #[tauri::command]
@@ -3821,7 +3833,99 @@ async fn get_network_status() -> Result<serde_json::Value, String> {
     }))
 }
 
+
+static GAME_MAINTENANCE_QUEUED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn queue_game_file_maintenance(app_handle: tauri::AppHandle) {
+    use std::sync::atomic::Ordering;
+    if GAME_MAINTENANCE_QUEUED.swap(true, Ordering::SeqCst) { return; }
+    std::thread::spawn(move || {
+        let mut deferred = false;
+        loop {
+            if game_file_access::ensure_idle().is_err() {
+                if !deferred { applog::event(game_file_access::DEFERRED_MESSAGE); }
+                deferred = true;
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                continue;
+            }
+            let result = game_file_access::run_if_idle(|| {
+                maintain_idle_game_files(app_handle.clone());
+                let saved_values = apply_saved_spoof_values();
+                let lobby_avatar = avatar::ensure_lobby_avatar_applied(&app_handle);
+                saved_values?;
+                lobby_avatar.map(|_| ())
+            });
+            if result.is_err() && game_file_access::ensure_idle().is_err() { continue; }
+            if let Err(e) = result { applog::event(&format!("game files: maintenance skipped: {e}")); }
+            if deferred {
+                tauri::async_runtime::block_on(async {
+                    let _ = check_integrity(app_handle.clone()).await;
+                    let _ = ensure_game_patches(app_handle.clone()).await;
+                });
+            }
+            if game_file_access::ensure_idle().is_err() { deferred = true; continue; }
+            GAME_MAINTENANCE_QUEUED.store(false, Ordering::SeqCst);
+            break;
+        }
+    });
+}
+
+fn maintain_idle_game_files(app_handle: tauri::AppHandle) {
+    if game_file_access::ensure_idle().is_err() { return; }
+    let mut integrity = load_integrity(&app_handle);
+    let applied = if let Ok(config) = tauri::async_runtime::block_on(get_config(app_handle.clone())) {
+        if !config.game_dir.is_empty() {
+            let _ = tracker::commands::ensure_stats_api_files(&config.game_dir);
+            if integrity.palette_active && !integrity.rl_update_fingerprint.is_empty() {
+                if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                    let current_rl_fp = integrity::rl_update_fingerprint_for(&cooked);
+                    if !current_rl_fp.is_empty() && current_rl_fp != integrity.rl_update_fingerprint {
+                        applog::event(&format!(
+                            "startup: RL update detected (fingerprint changed {} -> {}), syncing palette",
+                            integrity.rl_update_fingerprint, current_rl_fp
+                        ));
+                        match upk::palette::restore_palette_backup(Path::new(&config.game_dir)) {
+                            Ok(_) => {
+                                integrity::mark_palette_off(&mut integrity);
+                                let _ = save_integrity(&app_handle, &integrity);
+                                applog::event("startup: palette synced after RL update");
+                            }
+                            Err(e) => {
+                                applog::event(&format!("startup: palette sync failed: {e}"));
+                            }
+                        }
+                    }
+                }
+            }
+
+            let st = upk::palette::read_palette_status(Path::new(&config.game_dir), None);
+            if integrity.palette_active != st.applied {
+                integrity.palette_active = st.applied;
+                if st.applied {
+                    integrity.palette_fingerprint = st.fingerprint;
+                } else {
+                    integrity.palette_fingerprint.clear();
+                    integrity.rl_update_fingerprint.clear();
+                }
+                let _ = save_integrity(&app_handle, &integrity);
+            }
+            st.applied
+        } else {
+            false
+        }
+    } else {
+        integrity.palette_active
+    };
+    let _ = psynet::merge_palette_spoof(applied);
+
+}
+
 pub fn run() {
+    #[cfg(windows)]
+    if std::env::args().any(|arg| arg == "--software-rendering") {
+        let current = std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS").unwrap_or_default();
+        std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", format!("{current} --disable-gpu"));
+    }
     #[cfg(target_os = "linux")]
     {
         if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
@@ -3888,10 +3992,6 @@ pub fn run() {
             // Sometimes the config/avatar cache is not readable in the first
             // few milliseconds of setup. Retry once shortly after startup.
             let _ = avatar::load_authenticated_steam_user_from_disk();
-            match apply_saved_spoof_values() {
-                Ok(_) => applog::event("startup: saved spoof values and loadout wire synced"),
-                Err(e) => applog::event(&format!("startup: loadout sync skipped: {e}")),
-            }
             let retry_handle = app.handle().clone();
             if !avatar::ensure_cached_avatar_applied(app.handle()) {
                 std::thread::spawn(move || {
@@ -3900,10 +4000,7 @@ pub fn run() {
                 });
             }
             let (_data_dir, _) = get_catalog_dirs(app.handle());
-            psynet::ensure_wininet_revocation_disabled();
-            #[cfg(windows)]
-            let _ = psynet::revert_config_hosts();
-            psynet::set_system_proxy_enabled(false);
+            tauri::async_runtime::spawn(psynet::prepare_startup_environment());
 
             if let Ok(exe) = std::env::current_exe() {
                 let pid = std::process::id();
@@ -3939,19 +4036,6 @@ pub fn run() {
                 orig_panic_hook(info);
             }));
 
-            psynet::install_user_ca_direct();
-            let ca_ok_at_startup = psynet::is_ca_installed();
-            applog::event(&format!(
-                "startup: system CA installed={ca_ok_at_startup} hosts={}",
-                psynet::config_hosts_complete_pub()
-            ));
-            #[cfg(windows)]
-            if !ca_ok_at_startup {
-                applog::event("startup: system CA missing — triggering background install");
-                std::thread::spawn(|| {
-                    psynet::install_ca_and_crl_elevated();
-                });
-            }
             create_main_window(app)?;
             let tracker_state = tracker::init(app.handle());
             app.manage(tracker_state);
@@ -3959,52 +4043,10 @@ pub fn run() {
             let _ = tracker::create_overlay_window(app);
 
             psynet::load_proxy_dir_override(app.handle());
-
-            let mut integrity = load_integrity(app.handle());
             let app_handle = app.handle().clone();
-            let applied = if let Ok(config) = tauri::async_runtime::block_on(get_config(app_handle.clone())) {
-                if !config.game_dir.is_empty() {
-                    if integrity.palette_active && !integrity.rl_update_fingerprint.is_empty() {
-                        if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                            let current_rl_fp = integrity::rl_update_fingerprint_for(&cooked);
-                            if !current_rl_fp.is_empty() && current_rl_fp != integrity.rl_update_fingerprint {
-                                applog::event(&format!(
-                                    "startup: RL update detected (fingerprint changed {} -> {}), syncing palette",
-                                    integrity.rl_update_fingerprint, current_rl_fp
-                                ));
-                                match upk::palette::restore_palette_backup(Path::new(&config.game_dir)) {
-                                    Ok(_) => {
-                                        integrity::mark_palette_off(&mut integrity);
-                                        let _ = save_integrity(&app_handle, &integrity);
-                                        applog::event("startup: palette synced after RL update");
-                                    }
-                                    Err(e) => {
-                                        applog::event(&format!("startup: palette sync failed: {e}"));
-                                    }
-                                }
-                            }
-                        }
-                    }
 
-                    let st = upk::palette::read_palette_status(Path::new(&config.game_dir), None);
-                    if integrity.palette_active != st.applied {
-                        integrity.palette_active = st.applied;
-                        if st.applied {
-                            integrity.palette_fingerprint = st.fingerprint;
-                        } else {
-                            integrity.palette_fingerprint.clear();
-                            integrity.rl_update_fingerprint.clear();
-                        }
-                        let _ = save_integrity(&app_handle, &integrity);
-                    }
-                    st.applied
-                } else {
-                    false
-                }
-            } else {
-                integrity.palette_active
-            };
-            let _ = psynet::merge_palette_spoof(applied);
+            let _ = psynet::merge_palette_spoof(load_integrity(app.handle()).palette_active);
+            queue_game_file_maintenance(app.handle().clone());
 
             applog::event(&format!(
                 "app setup complete; build {} (v{}, hash {}) logs at {}",
@@ -4013,19 +4055,6 @@ pub fn run() {
                 env!("VRL_BUILD_HASH"),
                 dir.display()
             ));
-
-            let boot_app = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                if let Ok(config) = get_config(boot_app.clone()).await {
-                    if !config.game_dir.is_empty() {
-                        let game_path = PathBuf::from(&config.game_dir);
-                        if let Ok(cooked) = upk::swapper::resolve_cooked_dir(&game_path) {
-                            let swaps = load_swaps(&boot_app);
-                            let _ = sync_all_swaps_to_tagame(&boot_app, &cooked, &swaps).await;
-                        }
-                    }
-                }
-            });
 
             let ttl_app = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -4048,6 +4077,7 @@ pub fn run() {
             });
             std::thread::spawn(|| {
                 tauri::async_runtime::spawn(async {
+                    psynet::prepare_startup_environment().await;
                     let _ = psynet::clear_rocket_league_cache();
                     if crate::proxy::is_proxy_running() {
                         applog::event("psynet: proxy already running at boot");
@@ -4373,6 +4403,7 @@ pub fn run() {
             get_rlim_config,
             save_rlim_config,
             get_network_events,
+            get_network_event,
             clear_network_events,
             dump_network_capture,
             get_network_status,

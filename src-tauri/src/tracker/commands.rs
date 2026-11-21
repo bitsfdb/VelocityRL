@@ -11,29 +11,30 @@ use crate::tracker::models::*;
 use crate::tracker::session_tracker::SessionTracker;
 
 #[tauri::command]
-pub fn get_overlay_state(tracker: State<'_, Arc<Mutex<SessionTracker>>>) -> Result<OverlayStatePayload, String> {
+pub async fn get_overlay_state(tracker: State<'_, Arc<Mutex<SessionTracker>>>) -> Result<OverlayStatePayload, String> {
     let t = tracker.lock().map_err(|e| e.to_string())?;
     Ok(t.to_overlay_payload())
 }
 
 #[tauri::command]
-pub fn get_connection_status(tracker: State<'_, Arc<Mutex<SessionTracker>>>) -> Result<String, String> {
+pub async fn get_connection_status(tracker: State<'_, Arc<Mutex<SessionTracker>>>) -> Result<String, String> {
     let t = tracker.lock().map_err(|e| e.to_string())?;
     Ok(t.connection_status.clone())
 }
 
 #[tauri::command]
-pub fn reset_session(tracker: State<'_, Arc<Mutex<SessionTracker>>>, app: AppHandle) -> Result<OverlayStatePayload, String> {
+pub async fn reset_session(tracker: State<'_, Arc<Mutex<SessionTracker>>>, app: AppHandle) -> Result<OverlayStatePayload, String> {
     use tauri::Emitter;
     let mut t = tracker.lock().map_err(|e| e.to_string())?;
     t.reset_session();
     let payload = t.to_overlay_payload();
+    drop(t);
     let _ = app.emit("overlay-state", &payload);
     Ok(payload)
 }
 
 #[tauri::command]
-pub fn set_player_identity(
+pub async fn set_player_identity(
     primary_id: String,
     name_fallback: String,
     tracker: State<'_, Arc<Mutex<SessionTracker>>>,
@@ -45,7 +46,7 @@ pub fn set_player_identity(
 }
 
 #[tauri::command]
-pub fn set_overlay_config(
+pub async fn set_overlay_config(
     config: OverlayConfig,
     tracker: State<'_, Arc<Mutex<SessionTracker>>>,
     app: AppHandle,
@@ -54,12 +55,13 @@ pub fn set_overlay_config(
     let mut t = tracker.lock().map_err(|e| e.to_string())?;
     t.config = config;
     let payload = t.to_overlay_payload();
+    drop(t);
     let _ = app.emit("overlay-state", &payload);
     Ok(())
 }
 
 #[tauri::command]
-pub fn update_player_skill(
+pub async fn update_player_skill(
     rating: i32,
     tracker: State<'_, Arc<Mutex<SessionTracker>>>,
     app: AppHandle,
@@ -70,12 +72,13 @@ pub fn update_player_skill(
         t.current_mmr = rating;
     }
     let payload = t.to_overlay_payload();
+    drop(t);
     let _ = app.emit("overlay-state", &payload);
     Ok(())
 }
 
 #[tauri::command]
-pub fn tracker_set_playlist(
+pub async fn tracker_set_playlist(
     playlist: i32,
     tracker: State<'_, Arc<Mutex<SessionTracker>>>,
     app: AppHandle,
@@ -84,6 +87,7 @@ pub fn tracker_set_playlist(
     let mut t = tracker.lock().map_err(|e| e.to_string())?;
     t.config.playlist = playlist;
     let payload = t.to_overlay_payload();
+    drop(t);
     let _ = app.emit("overlay-state", &payload);
     Ok(payload)
 }
@@ -97,7 +101,7 @@ pub fn set_click_through(app: AppHandle, enable: bool) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn test_simulate_match(
+pub async fn test_simulate_match(
     win: bool,
     app: AppHandle,
     tracker: State<'_, Arc<Mutex<SessionTracker>>>,
@@ -322,8 +326,9 @@ pub fn tracker_save_session(
 }
 
 #[tauri::command]
-pub fn tracker_ensure_stats_api(game_dir: String) -> Result<bool, String> {
-    Ok(ensure_stats_api_files(&game_dir))
+pub async fn tracker_ensure_stats_api(game_dir: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || ensure_stats_api_files(&game_dir))
+        .await.map_err(|e| format!("Stats API setup failed: {e}"))
 }
 
 pub fn stats_api_game_dir(app: &AppHandle) -> String {
@@ -515,6 +520,7 @@ pub fn check_stats_api_binding(_game_dir: &str) -> StatsApiBinding {
 }
 
 pub fn ensure_stats_api_files(game_dir: &str) -> bool {
+    if crate::game_file_access::ensure_idle().is_err() { return false; }
     crate::applog::event(&format!("tracker: checking Stats API configs (game_dir: {})", game_dir));
 
     let content = "[TAGame.MatchStatsExporter_TA]\nPacketSendRate=30\nPort=49123\nWebPort=49124\n";
