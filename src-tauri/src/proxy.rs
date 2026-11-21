@@ -2818,15 +2818,13 @@ async fn handle_broker_request(
                 if let Ok(img_resp) = client.get(&avatar_url).send().await {
                     if let Ok(bytes) = img_resp.bytes().await {
                         if let Ok((_bgra, png_bytes)) = crate::avatar::process_avatar_image(&bytes) {
-                            let keep_custom = crate::avatar::get_active_avatar_png().is_some();
+                            // Steam login only caches the linked account's PFP
+                            // for the profile card. It must never become the
+                            // active in-game avatar -- only the user's chosen
+                            // avatar is allowed there.
                             let cache_dir = std::path::PathBuf::from("/root/.config/com.velocityrl.app/custom_avatars");
                             let _ = std::fs::create_dir_all(&cache_dir);
                             let _ = std::fs::write(cache_dir.join(format!("steam_{steam_id}.png")), &png_bytes);
-                            if !keep_custom {
-                                crate::avatar::set_active_avatar_png(png_bytes.clone());
-                                let _ = std::fs::write("/root/avatar.png", &png_bytes);
-                                let _ = std::fs::write(cache_dir.join("active_avatar.png"), &png_bytes);
-                            }
 
                             let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &png_bytes);
                             avatar_b64 = format!("data:image/png;base64,{b64}");
