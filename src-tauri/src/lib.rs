@@ -1567,19 +1567,32 @@ async fn ensure_game_patches(app: tauri::AppHandle) -> Result<serde_json::Value,
     // Preferred path: fetch the ~90 KB bytecode patch from /build, verify its
     // hash, and patch TAGame in place. No 82 MB full-file download.
     // ProjectX broker hooks (RPC/WS URL rewrite) are also part of "game patches".
-    let _ = upk::ensure_projectx_patched(&cooked);
+    match upk::ensure_projectx_patched(&cooked) {
+        Ok(true) => applog::event("ensure_game_patches: ProjectX patched successfully"),
+        Ok(false) => applog::event("ensure_game_patches: ProjectX verified/up to date"),
+        Err(e) => applog::event(&format!("ensure_game_patches: ProjectX patch error: {e}")),
+    }
 
     let mut patched_locally = false;
     if tagame.is_file() {
         match upk::patch_tagame_from_build(&app, &tagame).await {
             Ok(true) => patched_locally = true,
-            Ok(false) => applog::event("ensure_game_patches: TAGame already patched"),
-            Err(e) => applog::event(&format!("ensure_game_patches: /build patch failed: {e}")),
+            Ok(false) => {
+                patched_locally = true;
+                applog::event("ensure_game_patches: TAGame already patched");
+            }
+            Err(e) => {
+                applog::event(&format!("ensure_game_patches: /build patch failed: {e}; trying bundled patch"));
+                match upk::ensure_tagame_patched(&app, &cooked).await {
+                    Ok(_) => patched_locally = true,
+                    Err(pe) => applog::event(&format!("ensure_game_patches: bundled patch failed: {pe}")),
+                }
+            }
         }
     }
 
     let sync_res = if patched_locally {
-        serde_json::json!({"status": "Patched", "details": {"method": "in_place_bytecode"}})
+        serde_json::json!({"status": "Success", "details": {"method": "in_place_bytecode"}})
     } else {
         // Fallback: verify/install the full pre-patched UPK from the manifest.
         let res = integrity::sync_prepatched_upks(Some(&app), &game).await?;
