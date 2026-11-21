@@ -9505,6 +9505,23 @@ function setupNetworkInspectorListeners() {
         };
     }
 
+    const bunchesBtn = document.getElementById('net-bunches-btn');
+    if (bunchesBtn) {
+        bunchesBtn.onclick = async () => {
+            bunchesBtn.disabled = true;
+            bunchesBtn.textContent = 'Capturing';
+            try {
+                const result = await invoke('capture_bunches');
+                showToast(result, 'success');
+            } catch (e) {
+                showToast(`Bunch capture failed: ${e}`, 'error');
+            } finally {
+                bunchesBtn.disabled = false;
+                bunchesBtn.textContent = 'Capture Bunches';
+            }
+        };
+    }
+
     const dumpBtn = document.getElementById('net-dump-btn');
     if (dumpBtn) {
         dumpBtn.onclick = async () => {
