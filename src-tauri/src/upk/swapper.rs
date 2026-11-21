@@ -1801,6 +1801,74 @@ pub fn rewrite_tagame_keys_to_rlim(path: &Path) -> Result<usize, String> {
     Ok(total)
 }
 
+/// Fetch the small bytecode patch payload described by /v2/rl/build and apply
+/// it to the live TAGame.upk in place. Returns true when a patch was applied.
+pub async fn patch_tagame_from_build(
+    app: &tauri::AppHandle,
+    tg_path: &Path,
+) -> Result<bool, String> {
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let build_url = "https://api.velocityrl.tech/v2/rl/build";
+    let build: serde_json::Value = client
+        .get(build_url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let Some(patch) = build.get("tagame_patch") else {
+        return Err("build response has no tagame_patch".into());
+    };
+    let sha = patch.get("sha256").and_then(|v| v.as_str()).unwrap_or_default();
+    let url_path = patch.get("patch_url").and_then(|v| v.as_str()).unwrap_or_default();
+    if sha.len() != 64 || url_path.is_empty() {
+        return Err("invalid tagame_patch metadata".into());
+    }
+    let url = format!("https://api.velocityrl.tech{url_path}");
+
+    let bytes = client.get(&url).send().await.map_err(|e| e.to_string())?.bytes().await.map_err(|e| e.to_string())?;
+    let mut hasher = sha2::Sha256::new();
+    use sha2::Digest;
+    hasher.update(&bytes);
+    let got: String = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect();
+    if got != sha {
+        return Err(format!("patch sha mismatch: {got} != {sha}"));
+    }
+
+    if let Ok(live) = fs::read(tg_path) {
+        if tagame_has_rlim_patch(&live) && live.windows(22).any(|w| w == b"15759/rlim/avatar.png?") {
+            let rewritten = rewrite_tagame_keys_to_rlim(tg_path).unwrap_or(0);
+            crate::applog::event(&format!(
+                "upk: TAGame already patched from /build (sha {sha}); rewrote {rewritten} keys"
+            ));
+            return Ok(false);
+        }
+    }
+
+    let backup = tg_path.with_file_name(TAGAME_BACKUP_NAME);
+    if !backup.is_file() {
+        let _ = fs::copy(tg_path, &backup);
+    }
+    let applied = patch_tagame_in_place(tg_path, &backup, &bytes)?;
+    if applied == 0 {
+        return Ok(false);
+    }
+    let rewritten = rewrite_tagame_keys_to_rlim(tg_path).unwrap_or(0);
+    let _ = app;
+    crate::applog::event(&format!(
+        "upk: applied {applied} TAGame patch records from /build ({} bytes, sha {sha}); rewrote {rewritten} keys",
+        bytes.len()
+    ));
+    Ok(true)
+}
+
 pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
     let px_path = if cooked_dir.join("ProjectX.upk").is_file() {
         cooked_dir.join("ProjectX.upk")
