@@ -3804,6 +3804,29 @@ fn dump_network_capture(app: tauri::AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn capture_bunches(app: tauri::AppHandle) -> Result<String, String> {
+    let packets = crate::udp_proxy::get_udp_capture();
+    let mut rows = Vec::new();
+    for p in packets.iter().filter(|p| p.direction == "C2S") {
+        rows.push(serde_json::json!({
+            "timestamp": p.timestamp,
+            "endpoint": p.endpoint,
+            "decrypted": p.decrypted,
+            "len": p.payload.len(),
+            "hex": p.payload.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+        }));
+    }
+    let dir = crate::psynet::config_dir().join("bunch_captures");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+    let path = dir.join(format!("bunches-{stamp}.json"));
+    fs::write(&path, serde_json::to_vec_pretty(&rows).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    applog::event(&format!("capture: wrote {} C2S bunches to {}", rows.len(), path.display()));
+    Ok(format!("{} C2S bunches -> {}", rows.len(), path.display()))
+}
+
+#[tauri::command]
 async fn get_network_status() -> Result<serde_json::Value, String> {
     let cfg = psynet::load_active_spoof_from_disk().unwrap_or_default();
     let udp_port = udp_proxy::get_local_port().unwrap_or(0);
@@ -4375,6 +4398,7 @@ pub fn run() {
             get_network_events,
             clear_network_events,
             dump_network_capture,
+            capture_bunches,
             get_network_status,
         ])
         .build(tauri::generate_context!())
