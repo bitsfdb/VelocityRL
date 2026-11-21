@@ -5482,11 +5482,9 @@ function initNamesTab() {
         try {
             localStorage.setItem(NAME_SPOOF_KEY, JSON.stringify({ name_spoof }));
             await runToolSave(saveBtn, 'name', { name_spoof }, { enabled: name_spoof.enabled });
-            const targetName = name_spoof.enabled ? name_spoof.display_name : '';
-            await invoke('update_name_txt', { name: targetName }).catch(() => {});
             flashButtonLabel(saveBtn, name_spoof.enabled ? 'Saved' : 'Saved (off)');
             if (name_spoof.enabled) {
-                showToast(`Name spoof active: ${name_spoof.display_name}. Live bridge updated in TAGame/name.txt`, 'success');
+                showToast(`Name spoof active: ${name_spoof.display_name}.`, 'success');
             } else {
                 showToast('Name spoof disabled.', 'success');
             }
