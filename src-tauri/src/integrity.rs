@@ -419,6 +419,41 @@ pub fn compute_file_sha256(path: &Path) -> Option<String> {
     Some(format!("{:x}", hasher.finalize()))
 }
 
+static HASH_CACHE: std::sync::Mutex<Option<HashMap<PathBuf, (u64, u64, String)>>> = std::sync::Mutex::new(None);
+
+pub fn compute_file_sha256_cached(path: &Path) -> Option<String> {
+    if !path.is_file() {
+        return None;
+    }
+    let meta = std::fs::metadata(path).ok()?;
+    let len = meta.len();
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    if let Ok(guard) = HASH_CACHE.lock() {
+        if let Some(ref map) = *guard {
+            if let Some((cached_len, cached_mtime, ref hash)) = map.get(path) {
+                if *cached_len == len && *cached_mtime == mtime {
+                    return Some(hash.clone());
+                }
+            }
+        }
+    }
+
+    let hash = compute_file_sha256(path)?;
+
+    if let Ok(mut guard) = HASH_CACHE.lock() {
+        let map = guard.get_or_insert_with(HashMap::new);
+        map.insert(path.to_path_buf(), (len, mtime, hash.clone()));
+    }
+
+    Some(hash)
+}
+
 pub fn resolve_rl_exe(game_dir: &Path) -> Option<PathBuf> {
     if let Ok(cooked) = palette::resolve_cooked_dir(game_dir) {
         if let Some(parent2) = cooked.parent().and_then(|p| p.parent()) {
@@ -440,11 +475,46 @@ pub fn resolve_rl_exe(game_dir: &Path) -> Option<PathBuf> {
     None
 }
 
+static VERSION_CACHE: std::sync::Mutex<Option<(PathBuf, u64, u64, String)>> = std::sync::Mutex::new(None);
+
 pub fn detect_local_game_version(game_dir: &Path) -> Option<String> {
     let exe = resolve_rl_exe(game_dir)?;
+    let meta = std::fs::metadata(&exe).ok()?;
+    let len = meta.len();
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    if let Ok(guard) = VERSION_CACHE.lock() {
+        if let Some((ref cached_path, cached_len, cached_mtime, ref ver)) = *guard {
+            if cached_path == &exe && cached_len == len && cached_mtime == mtime {
+                return Some(ver.clone());
+            }
+        }
+    }
+
     let data = std::fs::read(&exe).ok()?;
 
-    // 1. Scan for UTF-16LE version pattern \d{6}\.\d{5}\.\d{6} (38 bytes)
+    // 1. Scan for ++Prime+Update... ASCII
+    const PRIME_PREFIX: &[u8] = b"++Prime+Update";
+    if let Some(pos) = data.windows(PRIME_PREFIX.len()).position(|w| w == PRIME_PREFIX) {
+        let mut end = pos + PRIME_PREFIX.len();
+        while end < data.len() && (data[end].is_ascii_alphanumeric() || data[end] == b'+' || data[end] == b'.' || data[end] == b'-') {
+            end += 1;
+        }
+        if let Ok(s) = std::str::from_utf8(&data[pos..end]) {
+            let ver = s.to_string();
+            if let Ok(mut guard) = VERSION_CACHE.lock() {
+                *guard = Some((exe.clone(), len, mtime, ver.clone()));
+            }
+            return Some(ver);
+        }
+    }
+
+    // 2. Fallback: scan for UTF-16LE version pattern \d{6}\.\d{5}\.\d{6} (38 bytes)
     for window in data.windows(38) {
         let is_digit = |idx: usize| window[idx * 2] >= b'0' && window[idx * 2] <= b'9' && window[idx * 2 + 1] == 0;
         let is_dot = |idx: usize| window[idx * 2] == b'.' && window[idx * 2 + 1] == 0;
@@ -460,19 +530,10 @@ pub fn detect_local_game_version(game_dir: &Path) -> Option<String> {
             for i in 0..19 {
                 s.push(window[i * 2] as char);
             }
+            if let Ok(mut guard) = VERSION_CACHE.lock() {
+                *guard = Some((exe.clone(), len, mtime, s.clone()));
+            }
             return Some(s);
-        }
-    }
-
-    // 2. Scan for ++Prime+Update... ASCII
-    const PRIME_PREFIX: &[u8] = b"++Prime+Update";
-    if let Some(pos) = data.windows(PRIME_PREFIX.len()).position(|w| w == PRIME_PREFIX) {
-        let mut end = pos + PRIME_PREFIX.len();
-        while end < data.len() && (data[end].is_ascii_alphanumeric() || data[end] == b'+' || data[end] == b'.' || data[end] == b'-') {
-            end += 1;
-        }
-        if let Ok(s) = std::str::from_utf8(&data[pos..end]) {
-            return Some(s.to_string());
         }
     }
 
@@ -486,17 +547,17 @@ pub fn audit_and_log_hashes(game_dir: &Path) -> UpkHashesAudit {
     let cooked = palette::resolve_cooked_dir(game_dir).ok();
     let rl_exe = resolve_rl_exe(game_dir);
 
-    let rl_exe_sha256 = rl_exe.as_deref().and_then(compute_file_sha256);
+    let rl_exe_sha256 = rl_exe.as_deref().and_then(compute_file_sha256_cached);
     let tagame_path = cooked.as_ref().map(|c| c.join("TAGame.upk"));
-    let tagame_sha256 = tagame_path.as_deref().and_then(compute_file_sha256);
+    let tagame_sha256 = tagame_path.as_deref().and_then(compute_file_sha256_cached);
     let tagame_size = tagame_path.as_deref().and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len());
 
     let projectx_path = cooked.as_ref().map(|c| c.join("ProjectX.upk"));
-    let projectx_sha256 = projectx_path.as_deref().and_then(compute_file_sha256);
+    let projectx_sha256 = projectx_path.as_deref().and_then(compute_file_sha256_cached);
     let projectx_size = projectx_path.as_deref().and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len());
 
     let engine_path = cooked.as_ref().map(|c| c.join("Engine.upk"));
-    let engine_sha256 = engine_path.as_deref().and_then(compute_file_sha256);
+    let engine_sha256 = engine_path.as_deref().and_then(compute_file_sha256_cached);
 
     let audit = UpkHashesAudit {
         timestamp: now,
@@ -565,7 +626,8 @@ pub async fn sync_prepatched_upks(
 
     // 3. Query server manifest
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
 
@@ -623,7 +685,7 @@ pub async fn sync_prepatched_upks(
         let mut matches_target = false;
         if let Ok(meta) = std::fs::metadata(&target_path) {
             if meta.len() == target_info.size {
-                if let Some(cur) = compute_file_sha256(&target_path) {
+                if let Some(cur) = compute_file_sha256_cached(&target_path) {
                     if cur.eq_ignore_ascii_case(&target_sha256) {
                         matches_target = true;
                     }
@@ -671,7 +733,12 @@ pub async fn sync_prepatched_upks(
             std::process::id(),
             chrono::Utc::now().timestamp_millis()
         ));
-        let dl_resp = match client.get(&download_url).send().await {
+        let dl_client = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(std::time::Duration::from_secs(300))
+            .build()
+            .unwrap_or_else(|_| client.clone());
+        let dl_resp = match dl_client.get(&download_url).send().await {
             Ok(r) => r,
             Err(e) => {
                 return Err(format!("Failed to download prepatched {filename}: {e}"));
@@ -771,6 +838,21 @@ pub async fn sync_prepatched_upks(
                 return Err(format!("Failed to replace {filename}: {e2} (rename err: {e})"));
             }
             let _ = std::fs::remove_file(&temp_download_path);
+        }
+
+        // Cache the newly written file hash immediately
+        if let Ok(meta) = std::fs::metadata(&target_path) {
+            let len = meta.len();
+            let mtime = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            if let Ok(mut guard) = HASH_CACHE.lock() {
+                let map = guard.get_or_insert_with(HashMap::new);
+                map.insert(target_path.clone(), (len, mtime, target_sha256.clone()));
+            }
         }
 
         crate::applog::event(&format!(

@@ -216,6 +216,7 @@ function releaseAppLoading() {
     invoke('app_window_focus').catch(() => {});
     try { window.focus(); } catch (_) {}
 }
+window.releaseAppLoading = releaseAppLoading;
 
 function wireLoadingGate() {
     const preventEventBubbling = (e) => {
@@ -1156,10 +1157,13 @@ const loadingSteps = {
     'Checking for repairs...': 5,
     'Loading item database...': 15,
     'Downloading item database (fallback)...': 20,
-    'Loading config...': 35,
-    'Loading customizations...': 50,
+    'Loading config...': 30,
+    'Checking pre-patched game files...': 45,
+    'Loading customizations...': 55,
     'Ensuring PsyNet hosts...': 65,
-    'Starting proxy server...': 80,
+    'Starting proxy server...': 75,
+    'Caching item catalog...': 85,
+    'Pre-warming titles & tools...': 90,
     'Starting up...': 95,
 };
 
@@ -1173,6 +1177,19 @@ function updateLoadingText(text) {
     }
     if (fill) fill.style.width = loadingPercent + '%';
     if (pct) pct.textContent = loadingPercent + '%';
+
+    const bootInfo = document.getElementById('boot-progress-info');
+    if (bootInfo) bootInfo.style.display = 'flex';
+    const bootText = document.getElementById('boot-progress-text');
+    if (bootText) bootText.textContent = text;
+    const bootNum = document.getElementById('boot-progress-num');
+    if (bootNum) bootNum.textContent = loadingPercent + '%';
+    const bootTrack = document.querySelector('.boot-track');
+    if (bootTrack) bootTrack.style.width = '200px';
+    const bootFill = document.getElementById('boot-track-fill') || document.querySelector('.boot-track i');
+    if (bootFill) {
+        bootFill.style.width = loadingPercent + '%';
+    }
 }
 
 async function loadBackups() {
@@ -1180,6 +1197,11 @@ async function loadBackups() {
 }
 
 async function loadData() {
+    const loadWatchdog = setTimeout(() => {
+        console.warn('loadData safety watchdog triggered after 12s');
+        releaseAppLoading();
+    }, 12000);
+
     try {
         updateStatus('Please Wait...', false);
         updateLoadingText('Loading config...');
@@ -1276,7 +1298,7 @@ async function loadData() {
         wirePresetsUI();
         initCatalogGrid();
         if (items && items.length) {
-            await preloadCatalogImages(items, 120);
+            preloadCatalogImages(items, 60).catch(() => {});
         }
         renderCatalogGridPage();
         updateCatalogSelectionUi();
@@ -1292,9 +1314,11 @@ async function loadData() {
         const pct = document.getElementById('app-loading-percent');
         if (fill) fill.style.width = '100%';
         if (pct) pct.textContent = '100%';
+        clearTimeout(loadWatchdog);
         await new Promise(r => setTimeout(r, 150));
         releaseAppLoading();
     } catch (err) {
+        clearTimeout(loadWatchdog);
         releaseAppLoading();
         updateStatus('Init Failure', true);
         appDialog({ title: 'Initialization Failed', message: `VelocityRL failed to start:\n${err.message || err}` }).catch(() => {});

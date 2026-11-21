@@ -435,8 +435,17 @@
         });
     }
 
-    // Decorative intro never becomes a new application loading gate.
-    setTimeout(finishBoot, 4500);
+    // Safety fallback: if anything stalls for 20s, forcibly release loading so the UI is interactive
+    setTimeout(() => {
+        if (!bootFinished) {
+            console.warn('Boot safety watchdog triggered');
+            if (typeof window.releaseAppLoading === 'function') {
+                window.releaseAppLoading();
+            }
+            finishBoot();
+            bootObserver.disconnect();
+        }
+    }, 20000);
 
     // Moving contour field. One bounded canvas, no per-frame DOM updates.
     const canvas = document.getElementById('velocity-field');

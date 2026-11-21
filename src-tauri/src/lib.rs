@@ -1521,19 +1521,18 @@ async fn get_game_patch_status(app: tauri::AppHandle) -> Result<GamePatchStatus,
         cooked.join("TAGame/CookedPCConsole/TAGame.upk")
     };
 
-    let px_bytes = std::fs::read(&px_path).ok();
-    let px_exists = px_bytes.is_some();
-    let px_hash = integrity::compute_file_sha256(&px_path);
-    let px_patched = px_bytes.as_ref().map(|b| upk::is_projectx_file_patched(b)).unwrap_or(false)
-        || px_hash.as_deref() == Some("4c7f6a3f62072acd1205541f5d9292a2efd3058c2f88906bb8f12bb210abec74");
+    let px_hash = integrity::compute_file_sha256_cached(&px_path);
+    let px_exists = px_hash.is_some() || px_path.is_file();
+    let px_patched = px_hash.as_deref() == Some("4c7f6a3f62072acd1205541f5d9292a2efd3058c2f88906bb8f12bb210abec74")
+        || std::fs::read(&px_path).map(|b| upk::is_projectx_file_patched(&b)).unwrap_or(false);
 
-    let tg_bytes = std::fs::read(&tg_path).ok();
-    let tg_exists = tg_bytes.is_some();
-    let tg_size = tg_bytes.as_ref().map(|b| b.len() as u64).unwrap_or(0);
-    let tg_hash = integrity::compute_file_sha256(&tg_path);
-    let tg_crash_fixed = tg_bytes.as_ref().map(|b| upk::is_tagame_file_crash_patched(b)).unwrap_or(false)
-        || tg_hash.as_deref() == Some("51fe6cf112480f2c7c3c5cf3fe02b24d7ba1a14800bbe4281814c7566aedd2d1")
-        || tg_hash.as_deref() == Some("2daa86b97fb7543ac0045867f350c5c3caab19681ee1590e51a6851d93dd36a9");
+    let tg_meta = std::fs::metadata(&tg_path).ok();
+    let tg_exists = tg_meta.is_some();
+    let tg_size = tg_meta.as_ref().map(|m| m.len()).unwrap_or(0);
+    let tg_hash = integrity::compute_file_sha256_cached(&tg_path);
+    let tg_crash_fixed = tg_hash.as_deref() == Some("51fe6cf112480f2c7c3c5cf3fe02b24d7ba1a14800bbe4281814c7566aedd2d1")
+        || tg_hash.as_deref() == Some("2daa86b97fb7543ac0045867f350c5c3caab19681ee1590e51a6851d93dd36a9")
+        || (tg_size > 1_000_000 && std::fs::read(&tg_path).map(|b| upk::is_tagame_file_crash_patched(&b)).unwrap_or(false));
 
     let tg_valid = tg_exists && tg_size > 1_000_000;
     let game_version = integrity::detect_local_game_version(Path::new(&config.game_dir)).unwrap_or_default();
@@ -3992,7 +3991,6 @@ pub fn run() {
                 if let Ok(config) = get_config(boot_app.clone()).await {
                     if !config.game_dir.is_empty() {
                         let game_path = PathBuf::from(&config.game_dir);
-                        let _ = integrity::sync_prepatched_upks(Some(&boot_app), &game_path).await;
                         if let Ok(cooked) = upk::swapper::resolve_cooked_dir(&game_path) {
                             let swaps = load_swaps(&boot_app);
                             let _ = sync_all_swaps_to_tagame(&boot_app, &cooked, &swaps).await;

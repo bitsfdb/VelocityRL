@@ -228,8 +228,9 @@ input[type=text], input[type=number], select, textarea { border-radius: 10px; }
 .boot-word { font-size: 29px; letter-spacing: -1.2px; overflow: hidden; }
 .boot-word span, .boot-word b { display: inline-block; animation: boot-letter .7s var(--studio-ease) .25s both; }
 .boot-word b { font-weight: 550; color: #a6b0c3; animation-delay: .36s; }
-.boot-track { width: 130px; height: 2px; background: #2b2e34; overflow: hidden; transition: width .3s ease; }
-.boot-track i { display: block; height: 100%; background: #d9e1f1; transform-origin: left; animation: boot-charge 1.3s cubic-bezier(.5,0,.2,1) both; transition: width .1s ease; }
+.boot-track { width: 130px; height: 2px; background: #2b2e34; overflow: hidden; transition: width .3s ease; position: relative; }
+.boot-track i { display: block; height: 100%; background: linear-gradient(90deg, #9ca9c0 0%, #ffffff 50%, #9ca9c0 100%); background-size: 200% 100%; transform-origin: left; animation: boot-charge 1.3s cubic-bezier(.5,0,.2,1) both, boot-pulse 2s infinite ease-in-out; transition: width .1s ease; }
+@keyframes boot-pulse { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
 .boot-caption { font-size: 9px; letter-spacing: 3px; color: #a1a7b3; animation: boot-letter .65s var(--studio-ease) .5s both; }
 .boot-progress-info { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-top: -6px; }
 .boot-progress-text { font-size: 11px; color: #c9ccd5; font-weight: 500; letter-spacing: 0.3px; }
