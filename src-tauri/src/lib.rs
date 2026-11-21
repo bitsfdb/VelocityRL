@@ -1630,6 +1630,9 @@ async fn ensure_game_patches(app: tauri::AppHandle) -> Result<serde_json::Value,
 
     // Preferred path: fetch the ~90 KB bytecode patch from /build, verify its
     // hash, and patch TAGame in place. No 82 MB full-file download.
+    // ProjectX broker hooks (RPC/WS URL rewrite) are also part of "game patches".
+    let _ = upk::ensure_projectx_patched(&cooked);
+
     let mut patched_locally = false;
     if tagame.is_file() {
         match upk::patch_tagame_from_build(&app, &tagame).await {
