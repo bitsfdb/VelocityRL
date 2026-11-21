@@ -1927,17 +1927,6 @@ pub fn ensure_projectx_patched(cooked_dir: &Path) -> Result<bool, String> {
     let mut decomp1 = crate::upk::compression::decompress_chunk(&file_bytes[ch1_start..ch1_end])
         .map_err(|e| format!("decompress ProjectX Chunk 1: {e}"))?;
 
-    // Check if current px_path is already patched with the local RPC URL
-    if let Ok(cur_px_bytes) = fs::read(&px_path) {
-        if cur_px_bytes.len() >= ch1_end {
-            if let Ok(cur_decomp1) = crate::upk::compression::decompress_chunk(&cur_px_bytes[ch1_start..ch1_end]) {
-                if cur_decomp1.windows(15).any(|w| w == b"127.0.0.1:15759") {
-                    return Ok(false);
-                }
-            }
-        }
-    }
-
     // 0. Patch PsyNetConnection_X::GetPsyNetURL -> return "http://127.0.0.1:15759/rpc";
     if let Some(rpc_exp) = raw_exports.iter().find(|e| {
         e.name == "GetPsyNetURL" && e.outer_idx > 0 && raw_exports.get(e.outer_idx as usize - 1).map(|o| o.name == "PsyNetConnection_X").unwrap_or(false)

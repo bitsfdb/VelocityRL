@@ -1133,6 +1133,24 @@ async function init() {
             showToast('Export failed: ' + e, 'error');
         }
     };
+    document.getElementById('settings-patch-btn')?.addEventListener('click', async () => {
+        const btnText = document.getElementById('settings-patch-btn-text');
+        if (btnText) btnText.textContent = 'Patching...';
+        try {
+            const res = await invoke('ensure_game_patches');
+            if (res && res.status === 'Success') {
+                showToast('Game files (TAGame & ProjectX) patched successfully!', 'success');
+            } else if (res && res.status === 'VersionMismatch') {
+                showToast('Rocket League version mismatch. Auto-patching paused.', 'warning');
+            } else {
+                showToast('Game files checked and up to date.', 'info');
+            }
+        } catch (e) {
+            showToast('Patch failed: ' + e, 'error');
+        } finally {
+            await updateGamePatchStatusUI();
+        }
+    });
     document.getElementById('settings-dev-panel-btn')?.addEventListener('click', async () => {
         document.getElementById('dev-modal')?.classList.add('active');
         await refreshDevPanel();
