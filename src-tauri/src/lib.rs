@@ -2440,40 +2440,6 @@ async fn restore_ping_spoof_upk(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-async fn update_name_txt(app: tauri::AppHandle, name: String) -> Result<(), String> {
-    let config = get_config(app).await.map_err(|e| e.to_string())?;
-    if config.game_dir.is_empty() {
-        return Ok(());
-    }
-    let game_path = PathBuf::from(&config.game_dir);
-    // Resolve the actual TAGame folder whether config.game_dir is CookedPCConsole, TAGame, or the game root
-    let tagame = if game_path.ends_with("CookedPCConsole") {
-        game_path.parent().map(|p| p.to_path_buf()).unwrap_or(game_path)
-    } else if game_path.ends_with("TAGame") {
-        game_path
-    } else if game_path.join("TAGame").is_dir() {
-        game_path.join("TAGame")
-    } else {
-        upk::palette::resolve_cooked_dir(&game_path)
-            .ok()
-            .and_then(|c| c.parent().map(|p| p.to_path_buf()))
-            .unwrap_or_else(|| game_path.join("TAGame"))
-    };
-
-    let txt_path = tagame.join("name.txt");
-    if name.trim().is_empty() {
-        if txt_path.is_file() {
-            let _ = std::fs::remove_file(&txt_path);
-            crate::applog::event(&format!("name_txt: removed {}", txt_path.display()));
-        }
-    } else {
-        let _ = std::fs::create_dir_all(&tagame);
-        std::fs::write(&txt_path, name.trim()).map_err(|e| e.to_string())?;
-        crate::applog::event(&format!("name_txt: wrote '{}' to {}", name.trim(), txt_path.display()));
-    }
-    Ok(())
-}
 
 #[tauri::command]
 async fn get_swapper_status(app: tauri::AppHandle) -> Result<upk::TagameSwapperStatus, String> {
@@ -4395,7 +4361,6 @@ pub fn run() {
             check_integrity,
             ensure_game_patches,
             apply_saved_spoof_values,
-            update_name_txt,
             load_locale,
             revert_game_patches,
             get_game_patch_status,
