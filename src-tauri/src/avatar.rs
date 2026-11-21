@@ -573,6 +573,10 @@ pub fn parse_steam_id(raw: &str) -> Option<u64> {
             break;
         }
     }
+    // RL appends "|0" to Steam/Epic IDs (platform|account|suffix).
+    if let Some(idx) = s.find('|') {
+        s = &s[..idx];
+    }
     if s.is_empty() {
         return None;
     }
@@ -1373,6 +1377,10 @@ mod tests {
         // 32-bit Account ID out of range (> u32::MAX but < base)
         assert_eq!(parse_steam_id("4294967296"), None);
         assert_eq!(parse_steam_id("12345678901"), None);
+
+        // RL platform-prefixed IDs with trailing |0
+        assert_eq!(parse_steam_id("steam|76561198183943334|0"), Some(76561198183943334));
+        assert_eq!(parse_steam_id("Steam|76561198183943334|0"), Some(76561198183943334));
 
         // Steam3 format
         assert_eq!(parse_steam_id("[U:1:39734272]"), Some(76561198000000000));
