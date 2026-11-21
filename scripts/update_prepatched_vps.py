@@ -43,7 +43,7 @@ except ImportError:
     print("[ERROR] 'paramiko' is required. Install it via: pip install paramiko")
     sys.exit(1)
 
-# Default VPS credentials
+# Deployment settings come from the environment; never commit credentials.
 DEFAULT_HOST = os.getenv("VRL_VPS_HOST", "")
 DEFAULT_PORT = int(os.getenv("VRL_VPS_PORT", "22"))
 DEFAULT_USER = os.getenv("VRL_VPS_USER", "")
@@ -156,7 +156,8 @@ def parse_args():
     parser.add_argument("--host", default=DEFAULT_HOST, help="VPS IP/host")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="VPS SSH port")
     parser.add_argument("--user", default=DEFAULT_USER, help="VPS SSH user")
-    parser.add_argument("--password", default=DEFAULT_PASS, help="VPS SSH password")
+    parser.add_argument("--password", default=DEFAULT_PASS, help="SSH password (prefer VRL_VPS_PASS or SSH agent/key authentication)")
+    parser.add_argument("--identity", default=os.getenv("VRL_VPS_IDENTITY"), help="Optional SSH private-key file")
     parser.add_argument("--dry-run", action="store_true",
                         help="Compute hashes and preview manifest without uploading")
     return parser.parse_args()
@@ -252,12 +253,16 @@ def main():
         print("\n[DRY RUN] Skipping deployment to VPS.")
         return
 
+    if not args.host or not args.user:
+        print("[ERROR] Set VRL_VPS_HOST and VRL_VPS_USER, or pass --host and --user.")
+        sys.exit(1)
+
     # 4. Connect to VPS
     print(f"\n[*] Connecting to VPS {args.host}:{args.port} as {args.user}...")
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     try:
-        ssh.connect(args.host, port=args.port, username=args.user, password=args.password, timeout=15)
+        ssh.connect(args.host, port=args.port, username=args.user, password=args.password or None, key_filename=args.identity, allow_agent=True, look_for_keys=True, timeout=15)
     except Exception as e:
         print(f"[ERROR] Failed to connect to VPS: {e}")
         sys.exit(1)
