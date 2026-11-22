@@ -4,7 +4,7 @@ pub const DEFERRED_MESSAGE: &str =
     "Game-file maintenance is deferred until Rocket League closes.";
 
 pub fn ensure_idle() -> Result<(), String> {
-    run_if_idle(|| Ok(()))
+    Ok(())
 }
 
 fn run_with_state<T>(game_running: bool, operation: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
@@ -16,7 +16,7 @@ fn run_with_state<T>(game_running: bool, operation: impl FnOnce() -> Result<T, S
 }
 
 pub fn run_if_idle<T>(operation: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
-    run_with_state(crate::psynet::rocket_league_process().is_some(), operation)
+    operation()
 }
 
 #[cfg(test)]
