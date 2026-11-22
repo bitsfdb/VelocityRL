@@ -7328,26 +7328,19 @@ function setPaletteUnavailable() {
     block?.classList.add('is-disabled');
     block?.setAttribute('aria-disabled', 'true');
     const toggle = document.getElementById('rich-palette-enabled');
-    const applyBtn = document.getElementById('palette-apply-btn');
-    const restoreBtn = document.getElementById('palette-restore-btn');
     if (toggle) {
         toggle.disabled = true;
         toggle.checked = false;
         syncNameSpoofSwitchAria(toggle);
     }
-    if (applyBtn) applyBtn.disabled = true;
-    if (restoreBtn) restoreBtn.disabled = true;
     document.getElementById('palette-switch-row')?.classList.remove('is-applied');
     invoke('sync_palette_psynet_config', { forceEnabled: false }).catch(() => {});
 }
 
 function setPaletteBusy(busy) {
     paletteBusy = !!busy;
-    if (!paletteBusy) return;
-    const applyBtn = document.getElementById('palette-apply-btn');
-    const restoreBtn = document.getElementById('palette-restore-btn');
-    if (applyBtn) applyBtn.disabled = true;
-    if (restoreBtn) restoreBtn.disabled = true;
+    const toggle = document.getElementById('rich-palette-enabled');
+    if (toggle) toggle.disabled = paletteBusy;
 }
 
 function syncPaletteUi(applied, status) {
@@ -7361,18 +7354,15 @@ function syncPaletteUi(applied, status) {
     block?.removeAttribute('aria-disabled');
     const toggle = document.getElementById('rich-palette-enabled');
     const row = document.getElementById('palette-switch-row');
-    const applyBtn = document.getElementById('palette-apply-btn');
-    const restoreBtn = document.getElementById('palette-restore-btn');
     const on = !!applied;
-    const hasBackup = !!status?.backup_present;
     if (toggle) {
         toggle.checked = on;
-        toggle.disabled = false;
+        toggle.disabled = paletteBusy;
         syncNameSpoofSwitchAria(toggle);
     }
-    const canRestore = (on || status?.message?.toLowerCase().includes('restore') || status?.message?.toLowerCase().includes('remap')) && hasBackup && !paletteBusy;
-    if (applyBtn) applyBtn.disabled = on || paletteBusy;
-    if (restoreBtn) restoreBtn.disabled = !canRestore;
+    if (row) {
+        row.classList.toggle('is-applied', on);
+    }
 }
 
 async function refreshPaletteStatus() {
@@ -7403,9 +7393,8 @@ async function runPaletteAction(btn, command, doneLabel, fallbackMsg) {
         setPaletteBusy(false);
         if (result) {
             syncPaletteUi(!!result.applied, result);
-            flashButtonLabel(btn, doneLabel);
+            if (btn) flashButtonLabel(btn, doneLabel);
         } else {
-
             await refreshPaletteStatus();
         }
     }
@@ -7540,8 +7529,6 @@ function renderReplayVaultError(msg) {
 function initMiscTab() {
     refreshPaletteStatus();
 
-    const paletteApply = document.getElementById('palette-apply-btn');
-    const paletteRestore = document.getElementById('palette-restore-btn');
     const paletteToggle = document.getElementById('rich-palette-enabled');
 
     if (initMiscTab._wired) return;
@@ -7549,35 +7536,9 @@ function initMiscTab() {
 
     paletteToggle?.addEventListener('change', () => {
         if (paletteToggle.checked) {
-            runPaletteAction(paletteApply, 'apply_rich_palette', 'Applied', 'Color palette on. Restart Rocket League.');
+            runPaletteAction(null, 'apply_rich_palette', 'Applied', 'Color palette enabled.');
         } else {
-            runPaletteAction(paletteRestore, 'restore_rich_palette', 'Restored', 'Color palette off.');
-        }
-    });
-
-    paletteApply?.addEventListener('click', () => runPaletteAction(
-        paletteApply, 'apply_rich_palette', 'Applied', 'Color palette on. Restart Rocket League.',
-    ));
-    paletteRestore?.addEventListener('click', () => runPaletteAction(
-        paletteRestore, 'restore_rich_palette', 'Restored', 'Color palette off.',
-    ));
-    const paletteReset = document.getElementById('palette-reset-btn');
-    paletteReset?.addEventListener('click', async () => {
-        if (paletteBusy) return;
-        paletteBusy = true;
-        paletteReset.disabled = true;
-        const origText = paletteReset.textContent;
-        paletteReset.textContent = 'Resetting...';
-        try {
-            const res = await invoke('reset_tagame_for_verify');
-            showToast('success', res || 'TAGame.upk restored from backup.');
-            await updatePaletteUi();
-        } catch (err) {
-            showToast('error', String(err));
-        } finally {
-            paletteBusy = false;
-            paletteReset.disabled = false;
-            paletteReset.textContent = origText;
+            runPaletteAction(null, 'restore_rich_palette', 'Restored', 'Color palette disabled.');
         }
     });
 

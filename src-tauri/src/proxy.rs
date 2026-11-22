@@ -2609,6 +2609,8 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
 
     // Check if a ProductID is an internal Psyonix drop tier indicator (5364..=5369)
     let is_tier_placeholder = |pid: i32| (5364..=5369).contains(&pid);
+    let owned_spawned = load_active_spawned_items(None);
+    let is_owned = |pid: i32, paint: i32| owned_spawned.iter().any(|&(opid, opaint)| opid == pid && (paint == 0 || opaint == paint));
 
     let (dropped_pid, dropped_series_id, can_be_painted) = if let Some(container) = container_entry {
         // Collect authentic specific drops from this container (excluding tier indicator placeholders)
@@ -2617,9 +2619,15 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
             .collect();
 
         if !specific_drops.is_empty() {
-            // Classic series crate: strictly draw from the authentic preview contents
-            let idx = rng.gen_range(0..specific_drops.len());
-            let d = specific_drops[idx];
+            // Classic series crate: strictly draw from the authentic preview contents,
+            // prioritizing items not already owned.
+            let unowned_drops: Vec<&ContainerDropItem> = specific_drops.iter()
+                .filter(|d| !is_owned(d.product_id, 0))
+                .copied()
+                .collect();
+            let target_pool = if !unowned_drops.is_empty() { &unowned_drops } else { &specific_drops };
+            let idx = rng.gen_range(0..target_pool.len());
+            let d = target_pool[idx];
             let sid = d.series_id.unwrap_or(container.series_id);
             let paintable = d.paintable.unwrap_or(true);
             (d.product_id, sid, paintable)
@@ -2656,8 +2664,15 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
 
     let is_painted = can_be_painted && rng.gen_bool(0.35); // 35% chance painted if paintable
     let dropped_paint = if is_painted {
-        if rng.gen_bool(0.40) {
-            12 // Titanium White
+        let unowned_paints: Vec<i32> = (1..=14).filter(|&p| !is_owned(dropped_pid, p)).collect();
+        if !unowned_paints.is_empty() {
+            if unowned_paints.contains(&12) && rng.gen_bool(0.40) {
+                12 // Titanium White prioritized if unowned
+            } else {
+                unowned_paints[rng.gen_range(0..unowned_paints.len())]
+            }
+        } else if rng.gen_bool(0.40) {
+            12
         } else {
             rng.gen_range(1..=14)
         }
@@ -2676,12 +2691,6 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
     crate::applog::event(&format!(
         "proxy: crate unboxing granted authentic drop ProductID={dropped_pid}, Paint={dropped_paint}, SeriesID={dropped_series_id}"
     ));
-
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        handle.spawn(async move {
-            let _ = inject_reward_drop_with_series(&[(dropped_pid, dropped_paint, dropped_series_id)]).await;
-        });
-    }
 
     let mut attributes: Vec<serde_json::Value> = Vec::new();
     if dropped_paint > 0 {
@@ -3296,7 +3305,7 @@ async fn handle_broker_request(
         || path_str == "/rlim/pfp" || path_str == "/s/pfp" || path_str.starts_with("/s/pfp/") || path_str.starts_with("/rlim/pfp/")
         || path_str.contains("/avatars/")
         || path_str.contains("/content/images/players/avatars/") {
-        crate::applog::event(&format!("broker: avatar request {path_str}"));
+        crate::applog::event(&format!("Rlim AvatarRequest: {path_str}"));
         // 1. Check if a specific Steam ID is requested in path or query.
         //    Sidecar avatar URLs look like
         //    /Content/Images/Players/Avatars/Large/<id>/0?buildSecret=..&tab=1
@@ -7060,10 +7069,21 @@ fn ensure_spawned_items_loaded() {
 }
 
 static CLIENT_WS_SENDER: std::sync::RwLock<Option<tokio::sync::mpsc::UnboundedSender<tokio_tungstenite::tungstenite::Message>>> = std::sync::RwLock::new(None);
+static NOTIFIED_SPAWNED_ITEMS: std::sync::LazyLock<std::sync::RwLock<std::collections::HashSet<(i32, i32)>>> =
+    std::sync::LazyLock::new(|| std::sync::RwLock::new(std::collections::HashSet::new()));
 
 pub fn register_client_ws_sender(sender: tokio::sync::mpsc::UnboundedSender<tokio_tungstenite::tungstenite::Message>) {
     if let Ok(mut g) = CLIENT_WS_SENDER.write() {
         *g = Some(sender);
+    }
+    if let Ok(mut notified) = NOTIFIED_SPAWNED_ITEMS.write() {
+        notified.clear();
+    }
+    ensure_inventory_reconciliation_worker_started();
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        handle.spawn(async {
+            reconcile_spawned_inventory().await;
+        });
     }
 }
 
@@ -7078,6 +7098,47 @@ pub fn has_active_client_ws() -> bool {
         g.is_some()
     } else {
         false
+    }
+}
+
+pub async fn reconcile_spawned_inventory() {
+    if !has_active_client_ws() {
+        return;
+    }
+    let all_spawned = load_active_spawned_items(None);
+    if all_spawned.is_empty() {
+        return;
+    }
+
+    let missing: Vec<(i32, i32)> = {
+        let notified = NOTIFIED_SPAWNED_ITEMS.read().unwrap_or_else(|e| e.into_inner());
+        all_spawned.into_iter().filter(|item| !notified.contains(item)).collect()
+    };
+
+    if !missing.is_empty() {
+        crate::applog::event(&format!("proxy: inventory reconciler pushing {} missing spawned items live", missing.len()));
+        if let Ok(true) = inject_reward_drop(&missing).await {
+            if let Ok(mut notified) = NOTIFIED_SPAWNED_ITEMS.write() {
+                for item in missing {
+                    notified.insert(item);
+                }
+            }
+        }
+    }
+}
+
+pub fn ensure_inventory_reconciliation_worker_started() {
+    static STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if !STARTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async {
+                let mut interval = tokio::time::interval(std::time::Duration::from_millis(2500));
+                loop {
+                    interval.tick().await;
+                    reconcile_spawned_inventory().await;
+                }
+            });
+        }
     }
 }
 
@@ -7138,10 +7199,11 @@ pub async fn inject_reward_drop_with_series(items: &[(i32, i32, i32)]) -> Result
 
     let body_json = serde_json::json!({
         "ProductData": product_data,
-        "RewardDrops": [],
+        "RewardDrops": product_data.clone(),
         "CurrencyDrops": [],
         "ChallengeRewards": [],
-        "RocketPassInfo": {}
+        "RocketPassInfo": {},
+        "bSuccess": true
     });
 
     let body_str = serde_json::to_string(&body_json).map_err(|e| e.to_string())?;
@@ -7173,7 +7235,15 @@ pub async fn inject_reward_drop(items: &[(i32, i32)]) -> Result<bool, String> {
         .iter()
         .map(|&(pid, paint)| (pid, paint, lookup_series_id_for_product(pid)))
         .collect();
-    inject_reward_drop_with_series(&items_with_series).await
+    let res = inject_reward_drop_with_series(&items_with_series).await?;
+    if res {
+        if let Ok(mut notified) = NOTIFIED_SPAWNED_ITEMS.write() {
+            for &item in items {
+                notified.insert(item);
+            }
+        }
+    }
+    Ok(res)
 }
 
 pub fn register_spawned_items(items: &[(i32, i32)]) {
@@ -7191,6 +7261,12 @@ pub fn register_spawned_items(items: &[(i32, i32)]) {
     }
     if updated {
         save_persisted_spawned_items(&current_items);
+        ensure_inventory_reconciliation_worker_started();
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async {
+                reconcile_spawned_inventory().await;
+            });
+        }
     }
 }
 
@@ -7202,6 +7278,9 @@ pub fn unregister_spawned_items(product_ids: &[i32]) {
         current_items = items.clone();
     }
     save_persisted_spawned_items(&current_items);
+    if let Ok(mut notified) = NOTIFIED_SPAWNED_ITEMS.write() {
+        notified.retain(|(id, _)| !product_ids.contains(id));
+    }
 }
 
 pub fn clear_dynamic_spawned_items() {
@@ -7209,6 +7288,9 @@ pub fn clear_dynamic_spawned_items() {
         g.clear();
     }
     save_persisted_spawned_items(&[]);
+    if let Ok(mut notified) = NOTIFIED_SPAWNED_ITEMS.write() {
+        notified.clear();
+    }
 }
 
 pub fn load_active_spawned_items(cfg: Option<&crate::psynet::SpoofPayload>) -> Vec<(i32, i32)> {
@@ -8117,23 +8199,6 @@ pub fn patch_player_products_json(
                 if item_paint == paint_id {
                     matched = true;
                     break;
-                } else if paint_id > 0 && item_paint == 0 {
-                    // Item exists unpainted; upgrade it in-place to requested paint
-                    item["Paint"] = serde_json::json!(paint_id);
-                    item["PaintID"] = serde_json::json!(paint_id);
-                    item["Attributes"] = serde_json::json!([
-                        {
-                            "Key": "Painted",
-                            "Value": paint_id
-                        },
-                        {
-                            "Key": "Paint",
-                            "Value": paint_id
-                        }
-                    ]);
-                    changed = true;
-                    matched = true;
-                    break;
                 }
             }
         }
@@ -8164,11 +8229,11 @@ pub fn patch_player_products_json(
                 prod_obj["Attributes"] = serde_json::json!([
                     {
                         "Key": "Painted",
-                        "Value": paint_id
+                        "Value": paint_id.to_string()
                     },
                     {
                         "Key": "Paint",
-                        "Value": paint_id
+                        "Value": paint_id.to_string()
                     }
                 ]);
             }
@@ -8915,7 +8980,7 @@ mod tests {
         assert_eq!(arr.len(), 2);
         let injected = arr.iter().find(|i| i["ProductID"] == 4284).unwrap();
         assert_eq!(injected["Attributes"][0]["Key"], "Painted");
-        assert_eq!(injected["Attributes"][0]["Value"], 12);
+        assert_eq!(injected["Attributes"][0]["Value"], "12");
     }
 
     #[test]
@@ -9158,9 +9223,9 @@ mod tests {
         assert_eq!(injected["PaintID"], 12);
         assert_eq!(injected["Paint"], 12);
         assert_eq!(injected["Attributes"][0]["Key"], "Painted");
-        assert_eq!(injected["Attributes"][0]["Value"], 12);
+        assert_eq!(injected["Attributes"][0]["Value"], "12");
         assert_eq!(injected["Attributes"][1]["Key"], "Paint");
-        assert_eq!(injected["Attributes"][1]["Value"], 12);
+        assert_eq!(injected["Attributes"][1]["Value"], "12");
         assert!(injected.get("AddedTimestamp").is_some());
         assert!(injected.get("UpdatedTimestamp").is_some());
     }
