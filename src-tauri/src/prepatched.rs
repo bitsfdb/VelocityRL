@@ -175,9 +175,21 @@ async fn sync_inner(app: Option<&tauri::AppHandle>, game: &Path, force: bool) ->
         if received != info.size || !format!("{:x}", hash.finalize()).eq_ignore_ascii_case(&info.sha256) {
             return Err(format!("Downloaded {name} failed size/SHA-256 verification. Installed files unchanged."));
         }
+        if let Some(app) = app {
+            let _ = app.emit("prepatched-progress", serde_json::json!({
+                "file": name, "downloaded": received, "total": info.size,
+                "percent": 100, "stage": "verifying"
+            }));
+        }
         changed.push(name.to_string());
     }
     if changed.is_empty() {
+        if let Some(app) = app {
+            let _ = app.emit("prepatched-progress", serde_json::json!({
+                "file": "game files", "downloaded": 0, "total": 0,
+                "percent": 100, "stage": "completed"
+            }));
+        }
         return Ok(PrepatchedSyncStatus::UpToDate { version, message: "Both API files match the installed build and SHA-256.".into() });
     }
     if let Err(message) = crate::game_file_access::ensure_idle() { return Ok(PrepatchedSyncStatus::Deferred { message }); }
@@ -196,6 +208,12 @@ async fn sync_inner(app: Option<&tauri::AppHandle>, game: &Path, force: bool) ->
         if old.exists() { fs::remove_file(old).map_err(|e| e.to_string())?; }
     }
     save_journal(&stage, &journal)?;
+    if let Some(app) = app {
+        let _ = app.emit("prepatched-progress", serde_json::json!({
+            "file": "game files", "downloaded": 0, "total": 0,
+            "percent": 100, "stage": "installing"
+        }));
+    }
     let result = (|| -> Result<(), String> {
         for name in &changed {
             crate::game_file_access::ensure_idle()?;
@@ -213,6 +231,12 @@ async fn sync_inner(app: Option<&tauri::AppHandle>, game: &Path, force: bool) ->
         return Err(format!("{error}. Installation rolled back."));
     }
     recover(&cooked, &stage, &version)?;
+    if let Some(app) = app {
+        let _ = app.emit("prepatched-progress", serde_json::json!({
+            "file": "game files", "downloaded": 0, "total": 0,
+            "percent": 100, "stage": "completed"
+        }));
+    }
     Ok(PrepatchedSyncStatus::Success {
         version, tagame_updated: changed.iter().any(|n| n == "TAGame.upk"),
         projectx_updated: changed.iter().any(|n| n == "ProjectX.upk"),

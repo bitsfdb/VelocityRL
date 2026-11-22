@@ -808,6 +808,11 @@ async function init() {
                 bootTrackFill.style.width = `${percent}%`;
                 bootTrackFill.style.transform = 'none';
             }
+            if (stage === 'completed') {
+                setTimeout(() => {
+                    if (bootInfo) bootInfo.style.display = 'none';
+                }, 800);
+            }
         });
 
         let inventoryUpdateDebounceTimer = null;
@@ -951,12 +956,24 @@ async function init() {
         showToast('Redownloading prepatched UPK packages...', 'info');
         try {
             const res = await invoke('force_redownload_prepatched_upks');
-            showToast('Prepatched UPK packages successfully reinstalled!', 'success');
+            if (res && res.status === 'Success') {
+                showToast('Prepatched UPK packages successfully reinstalled!', 'success');
+            } else if (res && res.status === 'UpToDate') {
+                showToast('Prepatched UPKs are already up to date.', 'success');
+            } else if (res && res.status === 'Deferred') {
+                showToast('Rocket League is running. Close the game and retry.', 'warning');
+            } else if (res && res.status === 'VersionMismatch') {
+                showToast('Game version mismatch. API installation blocked.', 'warning');
+            } else {
+                showToast(res?.details?.error || res?.details?.message || 'Prepatched download completed.', 'info');
+            }
             await refreshDevPanel();
         } catch (err) {
             showToast(`Failed to redownload prepatched UPKs: ${err}`, 'error');
         } finally {
             showProgress(false);
+            const bootInfo = document.getElementById('boot-progress-info');
+            if (bootInfo) bootInfo.style.display = 'none';
             redownloadPrepatchedBtn.disabled = false;
         }
     };
@@ -1163,26 +1180,6 @@ async function init() {
             showToast('Export failed: ' + e, 'error');
         }
     };
-    document.getElementById('settings-patch-btn')?.addEventListener('click', async () => {
-        const btnText = document.getElementById('settings-patch-btn-text');
-        if (btnText) btnText.textContent = 'Verifying API files...';
-        try {
-            const res = await invoke('ensure_game_patches');
-            if (res && res.status === 'Success') {
-                showToast('Game files (TAGame & ProjectX) patched successfully!', 'success');
-            } else if (res && res.status === 'VersionMismatch') {
-                showToast('Rocket League version mismatch. API installation blocked.', 'warning');
-            } else {
-                if (res?.status === 'UpToDate') showToast('API files verified and up to date.', 'success');
-                else if (res?.status === 'Deferred') showToast('Close Rocket League, then retry API file installation.', 'warning');
-                else showToast(res?.details?.error || 'API verification failed. Retry before launching the game.', 'error', 9000);
-            }
-        } catch (e) {
-            showToast('Patch failed: ' + e, 'error');
-        } finally {
-            await updateGamePatchStatusUI();
-        }
-    });
     document.getElementById('settings-dev-panel-btn')?.addEventListener('click', async () => {
         document.getElementById('dev-modal')?.classList.add('active');
         await refreshDevPanel();
