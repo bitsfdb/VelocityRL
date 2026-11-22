@@ -2399,6 +2399,14 @@ pub fn lookup_series_id_for_product(pid: i32) -> i32 {
     PRODUCT_SERIES_MAP.get(&pid).copied().unwrap_or(0)
 }
 
+pub fn is_container_or_drop(product_id: i32) -> bool {
+    CONTAINER_DROPS.iter().any(|c| c.product_id == product_id)
+        || product_id == 1353
+        || (5298..=5303).contains(&product_id)
+        || (8413..=8421).contains(&product_id)
+        || (10666..=10673).contains(&product_id)
+}
+
 pub fn get_authoritative_container_drop_table_response_bytes() -> Vec<u8> {
     static CACHED_DROP_TABLE_RESP: std::sync::LazyLock<Vec<u8>> = std::sync::LazyLock::new(|| {
         let mut drops_val: serde_json::Value = serde_json::from_str(CONTAINER_DROPS_JSON).unwrap_or_default();
@@ -2703,6 +2711,9 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
         set.insert((dropped_pid, dropped_paint));
     }
     register_spawned_items(&[(dropped_pid, dropped_paint)]);
+    if let Some(crate_pid) = crate_pid_opt {
+        decrement_container_quantity(crate_pid);
+    }
     crate::applog::event(&format!(
         "proxy: crate unboxing granted authentic drop ProductID={dropped_pid}, Paint={dropped_paint}, SeriesID={dropped_series_id}"
     ));
@@ -7048,9 +7059,86 @@ pub fn load_active_swap_rules(cfg: Option<&crate::psynet::SpoofPayload>) -> Vec<
 
 static DYNAMIC_SPAWNED_ITEMS: std::sync::RwLock<Vec<(i32, i32)>> = std::sync::RwLock::new(Vec::new());
 static SPAWNED_ITEMS_INITIALIZED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static CONTAINER_COUNTS: std::sync::LazyLock<std::sync::RwLock<std::collections::HashMap<i32, u32>>> =
+    std::sync::LazyLock::new(|| std::sync::RwLock::new(std::collections::HashMap::new()));
 
 fn get_spawned_items_file_path() -> std::path::PathBuf {
     crate::psynet::config_dir().join("spawned_items.json")
+}
+
+fn get_container_counts_file_path() -> std::path::PathBuf {
+    crate::psynet::config_dir().join("container_counts.json")
+}
+
+fn load_persisted_container_counts() -> std::collections::HashMap<i32, u32> {
+    let path = get_container_counts_file_path();
+    if let Ok(content) = std::fs::read_to_string(&path) {
+        if let Ok(counts) = serde_json::from_str::<std::collections::HashMap<i32, u32>>(&content) {
+            return counts;
+        }
+    }
+    std::collections::HashMap::new()
+}
+
+fn save_persisted_container_counts(counts: &std::collections::HashMap<i32, u32>) {
+    let path = get_container_counts_file_path();
+    if let Ok(data) = serde_json::to_string_pretty(counts) {
+        let _ = std::fs::write(&path, data);
+    }
+}
+
+pub fn get_container_quantity(product_id: i32) -> u32 {
+    ensure_spawned_items_loaded();
+    if let Ok(map) = CONTAINER_COUNTS.read() {
+        if let Some(&qty) = map.get(&product_id) {
+            if qty > 0 {
+                return qty;
+            }
+        }
+    }
+    1
+}
+
+pub fn set_container_quantities(items: &[(i32, u32)]) {
+    ensure_spawned_items_loaded();
+    let mut updated = false;
+    let mut current_map = std::collections::HashMap::new();
+    if let Ok(mut map) = CONTAINER_COUNTS.write() {
+        for &(id, qty) in items {
+            if id > 0 {
+                map.insert(id, qty);
+                updated = true;
+            }
+        }
+        current_map = map.clone();
+    }
+    if updated {
+        save_persisted_container_counts(&current_map);
+    }
+}
+
+pub fn decrement_container_quantity(product_id: i32) -> u32 {
+    ensure_spawned_items_loaded();
+    let mut remaining = 0;
+    let mut remove = false;
+    let mut current_map = std::collections::HashMap::new();
+    if let Ok(mut map) = CONTAINER_COUNTS.write() {
+        if let Some(entry) = map.get_mut(&product_id) {
+            if *entry > 1 {
+                *entry -= 1;
+                remaining = *entry;
+            } else {
+                map.remove(&product_id);
+                remove = true;
+            }
+        }
+        current_map = map.clone();
+    }
+    save_persisted_container_counts(&current_map);
+    if remove {
+        unregister_spawned_items(&[product_id]);
+    }
+    remaining
 }
 
 fn load_persisted_spawned_items() -> Vec<(i32, i32)> {
@@ -7241,6 +7329,14 @@ fn ensure_spawned_items_loaded() {
                     if !g.contains(&item) {
                         g.push(item);
                     }
+                }
+            }
+        }
+        let persisted_counts = load_persisted_container_counts();
+        if !persisted_counts.is_empty() {
+            if let Ok(mut map) = CONTAINER_COUNTS.write() {
+                for (id, qty) in persisted_counts {
+                    map.insert(id, qty);
                 }
             }
         }
@@ -7466,6 +7562,14 @@ pub fn unregister_spawned_items(product_ids: &[i32]) {
         current_items = items.clone();
     }
     save_persisted_spawned_items(&current_items);
+    let mut current_counts = std::collections::HashMap::new();
+    if let Ok(mut map) = CONTAINER_COUNTS.write() {
+        for id in product_ids {
+            map.remove(id);
+        }
+        current_counts = map.clone();
+    }
+    save_persisted_container_counts(&current_counts);
     if let Ok(mut notified) = NOTIFIED_SPAWNED_ITEMS.write() {
         notified.retain(|(id, _)| !product_ids.contains(id));
     }
@@ -7497,6 +7601,10 @@ pub fn clear_dynamic_spawned_items() {
         g.clear();
     }
     save_persisted_spawned_items(&[]);
+    if let Ok(mut map) = CONTAINER_COUNTS.write() {
+        map.clear();
+    }
+    save_persisted_container_counts(&std::collections::HashMap::new());
     if let Ok(mut notified) = NOTIFIED_SPAWNED_ITEMS.write() {
         notified.clear();
     }
@@ -8402,6 +8510,13 @@ pub fn patch_player_products_json(
             continue;
         }
 
+        let is_crate = is_container_or_drop(wanted_id);
+        let amount = if is_crate {
+            get_container_quantity(wanted_id).max(1)
+        } else {
+            1
+        };
+
         let mut matched = false;
         for item in arr.iter_mut() {
             let pid = item.get("ProductID")
@@ -8430,6 +8545,10 @@ pub fn patch_player_products_json(
                         .and_then(|v| v.as_i64().map(|n| n as i32).or_else(|| v.as_str().and_then(|s| s.parse().ok())))
                 }).unwrap_or(0);
                 if item_paint == paint_id {
+                    if is_crate {
+                        item["Amount"] = serde_json::json!(amount);
+                        changed = true;
+                    }
                     matched = true;
                     break;
                 }
@@ -8443,13 +8562,12 @@ pub fn patch_player_products_json(
             let inst_hex = format!("{:08x}{:08x}0000000000000000", wanted_id as u32, paint_id as u32);
             let static_ts: i64 = 1700000000;
             let series_id = lookup_series_id_for_product(wanted_id);
-            let is_crate = CONTAINER_DROPS.iter().any(|c| c.product_id == wanted_id);
 
             let mut prod_obj = serde_json::json!({
                 "ProductID": wanted_id,
                 "InstanceID": inst_hex,
                 "SeriesID": series_id,
-                "Amount": 1,
+                "Amount": amount,
                 "ExpirationTime": -1,
                 "IsTradable": false,
                 "TradeHold": -1,
@@ -8507,7 +8625,7 @@ pub fn patch_player_products_json(
                 changed = true;
             }
 
-            if CONTAINER_DROPS.iter().any(|c| c.product_id == pid) {
+            if is_container_or_drop(pid) {
                 if obj.get("bSkipRoulette").and_then(|v| v.as_bool()) != Some(true) {
                     obj.insert("bSkipRoulette".to_string(), serde_json::json!(true));
                     changed = true;
@@ -8554,7 +8672,7 @@ pub fn patch_player_products_json(
             .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
             .unwrap_or(0) as i32;
 
-        let is_crate = CONTAINER_DROPS.iter().any(|c| c.product_id == pid);
+        let is_crate = is_container_or_drop(pid);
         if is_crate {
             // Container/crate instances can have multiples
             deduped_arr.push(item);
@@ -9943,6 +10061,27 @@ mod tests {
         assert_eq!(val["bSuccess"], true);
         let list = val["Result"]["ContainerDrops"].as_array().expect("array of container drops");
         assert_eq!(list.len(), 120, "authoritative drop table has 120 containers");
+    }
+
+    #[test]
+    fn test_container_quantity_stacking_and_decrement() {
+        super::set_container_quantities(&[(5301, 5), (1353, 10)]);
+        assert_eq!(super::get_container_quantity(5301), 5);
+        assert_eq!(super::get_container_quantity(1353), 10);
+
+        let body = br#"{"ProductData":[]}"#;
+        let (patched, changed) = super::patch_player_products_json(body, &[(5301, 0), (1353, 0)]);
+        assert!(changed);
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        let arr = val["ProductData"].as_array().unwrap();
+        let c5301 = arr.iter().find(|i| i["ProductID"] == 5301).unwrap();
+        let c1353 = arr.iter().find(|i| i["ProductID"] == 1353).unwrap();
+        assert_eq!(c5301["Amount"], 5);
+        assert_eq!(c1353["Amount"], 10);
+
+        let rem = super::decrement_container_quantity(5301);
+        assert_eq!(rem, 4);
+        assert_eq!(super::get_container_quantity(5301), 4);
     }
 }
 

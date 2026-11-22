@@ -523,9 +523,6 @@
 
                 <div id="custom-avatar-pane" class="subtab-pane">
                     <h2 class="section-title" data-i18n="custom.avatar_title">Custom Avatar</h2>
-                    <span class="rl-info" title="Rocket League gets your profile picture from a PlayStation, Xbox or Steam account. VelocityRL runs a tiny local relay on your own PC and hands the game your chosen picture instead. We never touch your account, password, or Epic Games login — nothing is stored online and nothing is sent to us. It only changes what your own game shows on your screen.">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-                    </span>
 
                     <div class="card spoof-card avatar-clean-card">
                         <div class="avatar-upload-dropzone" id="avatar-dropzone" title="Click to browse image">
@@ -567,6 +564,9 @@
                                 </button>
                                 <button type="button" id="steam-unlink-btn" class="action-btn action-btn-secondary" style="display: none; padding: 6px 12px;">
                                     Unlink Steam
+                                </button>
+                                <button type="button" id="steam-info-modal-btn" class="action-btn action-btn-secondary" style="padding: 6px 10px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; cursor: pointer; color: var(--muted, #a1a1aa);" aria-label="Steam & Avatar Information">
+                                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
                                 </button>
                                 <span id="steam-auth-status" style="font-size: 12px; color: var(--muted);">Not linked</span>
                             </div>
@@ -1415,6 +1415,28 @@
             <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:14px; padding-top:10px; border-top:1px solid var(--border);">
                 <button id="preset-preview-cancel" class="action-btn action-btn-secondary" type="button" data-i18n="preset_modal.cancel">Cancel</button>
                 <button id="preset-preview-action" class="action-btn" type="button" style="background:var(--accent-blue); color:#fff;" data-i18n="preset_modal.apply">Apply Preset</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="steam-info-modal" class="modal-overlay" role="dialog" aria-modal="true" style="display:none;">
+        <div class="modal" style="max-width: 480px;">
+            <div class="modal-header">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent, #4b99f7)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                    <h2 style="font-size: 17px; font-weight: 700; color: #fff; margin: 0;">Avatar & Steam Information</h2>
+                </div>
+                <div id="steam-info-close" class="close-modal-btn">×</div>
+            </div>
+            <div class="modal-body" style="padding: 14px 0; color: #cbd5e1; font-size: 13px; line-height: 1.6;">
+                <p style="margin-bottom: 12px;">Rocket League retrieves your profile picture from a linked PlayStation, Xbox, or Steam account.</p>
+                <p style="margin-bottom: 12px;">VelocityRL runs a tiny local relay on your own PC and hands the game your chosen picture instead. We never touch your account, password, or Epic Games login — nothing is stored online and nothing is sent to us.</p>
+                <div style="padding: 10px 12px; background: rgba(75, 153, 247, 0.1); border-left: 3px solid var(--accent, #4b99f7); border-radius: 6px; font-size: 12px; color: #93c5fd; margin-bottom: 12px;">
+                    <strong>100% Local & Safe:</strong> Nothing is stored online and nothing is sent to external servers. It only changes what your own game shows on your screen.
+                </div>
+            </div>
+            <div class="modal-actions" style="margin-top: 14px; display: flex; justify-content: flex-end;">
+                <button type="button" id="steam-info-got-it-btn" class="action-btn" style="padding: 8px 18px;">Got It</button>
             </div>
         </div>
     </div>

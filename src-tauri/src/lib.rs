@@ -2023,27 +2023,28 @@ async fn spawn_drops(
     if !features::is_build_supported() {
         return Err("VelocityRL build is outdated. Please update to the latest version.".into());
     }
-    let qty = amount.unwrap_or(1).clamp(1, 1000);
+    let qty = amount.unwrap_or(1).clamp(1, 1000) as u32;
     let mut batch_items = Vec::new();
+    let mut count_pairs = Vec::new();
 
     for &cid in &crate_ids {
         if cid <= 0 {
             continue;
         }
-        for _ in 0..qty {
-            batch_items.push(SpawnBatchItem {
-                wanted_id: cid.to_string(),
-                paint_id: None,
-            });
-        }
+        count_pairs.push((cid, qty));
+        batch_items.push(SpawnBatchItem {
+            wanted_id: cid.to_string(),
+            paint_id: None,
+        });
     }
 
     if batch_items.is_empty() {
         return Err("No valid crates selected to spawn.".into());
     }
 
+    crate::proxy::set_container_quantities(&count_pairs);
     let spawned = spawn_items_batch(app, batch_items).await?;
-    Ok(format!("Successfully spawned {spawned} item(s)!"))
+    Ok(format!("Successfully spawned {spawned} drop type(s) ({qty}x each)!"))
 }
 
 // Remove every source used by the proxy, otherwise the next inventory response

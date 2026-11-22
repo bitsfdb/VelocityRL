@@ -6563,6 +6563,24 @@ function initAvatarTab() {
         }
     });
 
+    const steamInfoBtn = document.getElementById('steam-info-modal-btn');
+    const steamInfoModal = document.getElementById('steam-info-modal');
+    const steamInfoClose = document.getElementById('steam-info-close');
+    const steamInfoGotIt = document.getElementById('steam-info-got-it-btn');
+
+    steamInfoBtn?.addEventListener('click', () => {
+        if (steamInfoModal) steamInfoModal.style.display = 'flex';
+    });
+    steamInfoClose?.addEventListener('click', () => {
+        if (steamInfoModal) steamInfoModal.style.display = 'none';
+    });
+    steamInfoGotIt?.addEventListener('click', () => {
+        if (steamInfoModal) steamInfoModal.style.display = 'none';
+    });
+    steamInfoModal?.addEventListener('click', (e) => {
+        if (e.target === steamInfoModal) steamInfoModal.style.display = 'none';
+    });
+
     // Dropzone click -> file input
     dropzone?.addEventListener('click', (e) => {
         if (e.target !== browseBtn && e.target !== urlInput) {
