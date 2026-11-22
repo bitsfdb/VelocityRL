@@ -907,7 +907,6 @@ async function init() {
             if (paneId === 'custom-boost-pane') initBoostMeterTab();
             if (paneId === 'custom-balls-pane') initBallsTab();
             if (paneId === 'custom-titlescreen-pane') initTitleScreenPane();
-            if (paneId === 'custom-ping-pane') initPingSpoofPane();
             if (paneId === 'restore-pane') refreshBackups();
             if (paneId === 'presets-pane') refreshPresets();
             if (paneId === 'maplib-pane') refreshWorkshopLibrary();
@@ -6426,7 +6425,6 @@ function initCustomizationTab() {
     initDecalsTab();
     initBoostMeterTab();
     initTitleScreenPane();
-    initPingSpoofPane();
     initLeaderboardTab();
     initDropsTab();
 }
@@ -6784,81 +6782,6 @@ function initTitleScreenPane() {
                 showToast(enabled ? 'Custom title screen saved! Restart Rocket League to view.' : 'Custom title screen disabled.', 'success');
             } catch (e) {
                 showToast(String(e), 'error');
-            }
-        });
-    }
-}
-
-const PING_SPOOF_KEY = 'velocityrl_ping_spoof';
-let pingSpoofPaneWired = false;
-function initPingSpoofPane() {
-    const enabledEl = document.getElementById('ping-spoof-enabled');
-    const minEl = document.getElementById('ping-spoof-min');
-    const maxEl = document.getElementById('ping-spoof-max');
-    const saveBtn = document.getElementById('ping-spoof-save-btn');
-    const restoreBtn = document.getElementById('ping-spoof-restore-btn');
-
-    if (!enabledEl || !saveBtn) return;
-
-    if (!pingSpoofPaneWired) {
-        pingSpoofPaneWired = true;
-
-        let saved = {};
-        try { saved = JSON.parse(localStorage.getItem(PING_SPOOF_KEY) || '{}'); } catch { }
-        const ps = saved.ping_spoof || {};
-        enabledEl.checked = !!ps.enabled;
-        syncNameSpoofSwitchAria(enabledEl);
-        if (minEl && ps.min_ms) minEl.value = ps.min_ms;
-        if (maxEl && ps.max_ms) maxEl.value = ps.max_ms;
-
-        enabledEl.addEventListener('change', () => syncNameSpoofSwitchAria(enabledEl));
-
-        saveBtn.addEventListener('click', async () => {
-            if (isAppLoading()) return;
-            const enabled = !!enabledEl.checked;
-            const min_ms = parseInt(minEl?.value || '12', 10);
-            const max_ms = parseInt(maxEl?.value || '24', 10);
-
-            if (min_ms > max_ms) {
-                showToast('Min ping cannot be greater than Max ping.', 'error');
-                return;
-            }
-
-            saveBtn.disabled = true;
-            try {
-                if (enabled) {
-                    await invoke('apply_ping_spoof_upk', { minMs: min_ms, maxMs: max_ms });
-                } else {
-                    await invoke('restore_ping_spoof_upk');
-                }
-                const ping_spoof = { enabled, min_ms, max_ms };
-                localStorage.setItem(PING_SPOOF_KEY, JSON.stringify({ ping_spoof }));
-                await runToolSave(saveBtn, 'ping spoof', { ping_spoof }, { enabled });
-                flashButtonLabel(saveBtn, enabled ? 'Applied!' : 'Saved (off)');
-                showToast(enabled ? `Ping spoof applied: ${min_ms}–${max_ms} ms!` : 'Ping spoof disabled.', 'success');
-            } catch (err) {
-                showToast(formatError(err), 'error');
-            } finally {
-                saveBtn.disabled = false;
-            }
-        });
-
-        restoreBtn?.addEventListener('click', async () => {
-            if (isAppLoading()) return;
-            restoreBtn.disabled = true;
-            try {
-                await invoke('restore_ping_spoof_upk');
-                enabledEl.checked = false;
-                syncNameSpoofSwitchAria(enabledEl);
-                const ping_spoof = { enabled: false, min_ms: 12, max_ms: 24 };
-                localStorage.setItem(PING_SPOOF_KEY, JSON.stringify({ ping_spoof }));
-                await runToolSave(restoreBtn, 'ping spoof', { ping_spoof }, { enabled: false });
-                flashButtonLabel(restoreBtn, 'Restored');
-                showToast('Vanilla ping behavior restored.', 'success');
-            } catch (err) {
-                showToast(formatError(err), 'error');
-            } finally {
-                restoreBtn.disabled = false;
             }
         });
     }

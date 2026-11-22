@@ -474,7 +474,6 @@
                     <button type="button" class="subtab-btn" data-subtab="custom-avatar-pane" data-i18n="custom.subtab_avatar">Avatar</button>
                     <button type="button" class="subtab-btn" data-subtab="custom-palette-pane">Palette</button>
                     <button type="button" class="subtab-btn" data-subtab="custom-titlescreen-pane">Title Screen</button>
-                    <button type="button" class="subtab-btn" data-subtab="custom-ping-pane">Ping Spoof</button>
                     <button type="button" class="subtab-btn" data-subtab="custom-credits-pane" data-i18n="custom.subtab_credits">Credits</button>
                     <button type="button" class="subtab-btn" data-subtab="custom-drops-pane">Drops & Crates</button>
                 </div>
@@ -664,44 +663,6 @@
                         </div>
                         <div class="swapper-controls">
                             <button id="blog-spoof-save-btn" class="action-btn" type="button" data-i18n="misc.save_text">Save Menu Text</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="custom-ping-pane" class="subtab-pane">
-                    <h2 class="section-title">Ping Spoofing</h2>
-                    <p class="section-desc">Spoof your in-game scoreboard latency and PsyNet network metrics dynamically.</p>
-
-                    <div class="card spoof-card" style="max-width: 580px;">
-                        <div class="settings-group">
-                            <label class="switch-row" for="ping-spoof-enabled">
-                                <input type="checkbox" id="ping-spoof-enabled" class="switch-input" role="switch">
-                                <span class="switch-ui" aria-hidden="true">
-                                    <span class="switch-track"><span class="switch-thumb"></span></span>
-                                    <span class="switch-state">
-                                        <span class="switch-state-on">On</span>
-                                        <span class="switch-state-off">Off</span>
-                                    </span>
-                                </span>
-                                <span class="switch-copy">
-                                    <span class="switch-title">Ping Spoof</span>
-                                    <span class="switch-hint">Overrides GetPing in TAGame.upk and PsyNet latency metrics</span>
-                                </span>
-                            </label>
-                        </div>
-                        <div class="settings-row" style="display: flex; gap: 14px;">
-                            <div class="settings-group" style="flex: 1;">
-                                <label for="ping-spoof-min">Min Ping (ms)</label>
-                                <input type="number" id="ping-spoof-min" min="4" max="250" value="12">
-                            </div>
-                            <div class="settings-group" style="flex: 1;">
-                                <label for="ping-spoof-max">Max Ping (ms)</label>
-                                <input type="number" id="ping-spoof-max" min="8" max="300" value="24">
-                            </div>
-                        </div>
-                        <div class="swapper-controls" style="display: flex; gap: 10px; margin-top: 14px;">
-                            <button id="ping-spoof-save-btn" class="action-btn" type="button">Apply Ping Spoof</button>
-                            <button id="ping-spoof-restore-btn" class="action-btn action-btn-secondary" type="button">Restore Default Ping</button>
                         </div>
                     </div>
                 </div>

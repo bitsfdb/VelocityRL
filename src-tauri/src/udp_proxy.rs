@@ -77,29 +77,6 @@ struct ProxyState {
 }
 
 static PROXY_STATE: once_cell_or_lazy::LazyState = once_cell_or_lazy::LazyState::new();
-static PING_SPOOF: std::sync::RwLock<Option<crate::psynet::PingSpoofPayload>> =
-    std::sync::RwLock::new(None);
-
-pub fn set_ping_spoof(cfg: Option<crate::psynet::PingSpoofPayload>) {
-    if let Ok(mut lock) = PING_SPOOF.write() {
-        *lock = cfg;
-    }
-}
-
-pub fn get_ping_spoof() -> Option<crate::psynet::PingSpoofPayload> {
-    if let Ok(lock) = PING_SPOOF.read() {
-        if lock.is_some() {
-            return lock.clone();
-        }
-    }
-    if let Some(disk) = crate::psynet::load_active_spoof_from_disk() {
-        if let Some(ps) = disk.ping_spoof {
-            set_ping_spoof(Some(ps.clone()));
-            return Some(ps);
-        }
-    }
-    None
-}
 
 /// One captured match datagram. `payload` is decrypted plaintext when
 /// `decrypted` is true, otherwise the raw bytes that crossed the wire.
@@ -175,22 +152,6 @@ pub fn clear_udp_capture() {
         }
     }
     UDP_CAPTURE_BYTES.store(0, Ordering::Relaxed);
-}
-
-/// Sample a random simulated ping in milliseconds from the configured interval [min_ms..=max_ms]
-pub fn sample_spoofed_ping_ms() -> Option<u32> {
-    let cfg = get_ping_spoof()?;
-    if !cfg.enabled {
-        return None;
-    }
-    let min = cfg.min_ms.min(cfg.max_ms);
-    let max = cfg.min_ms.max(cfg.max_ms);
-    if min == max {
-        Some(min)
-    } else {
-        use rand::Rng;
-        Some(rand::thread_rng().gen_range(min..=max))
-    }
 }
 
 mod once_cell_or_lazy {

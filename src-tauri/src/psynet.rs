@@ -91,34 +91,6 @@ pub struct PaletteSpoofPayload {
     pub enabled: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub struct PingSpoofPayload {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default = "default_ping_min")]
-    pub min_ms: u32,
-    #[serde(default = "default_ping_max")]
-    pub max_ms: u32,
-}
-
-impl Default for PingSpoofPayload {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            min_ms: default_ping_min(),
-            max_ms: default_ping_max(),
-        }
-    }
-}
-
-pub fn default_ping_min() -> u32 {
-    16
-}
-
-pub fn default_ping_max() -> u32 {
-    24
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct FakeRankOverridePayload {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -354,9 +326,6 @@ pub struct SpoofPayload {
     pub camera_spoof: Option<CameraSpoofPayload>,
 
     #[serde(default)]
-    pub ping_spoof: Option<PingSpoofPayload>,
-
-    #[serde(default)]
     pub fake_ranks: Option<FakeRanksPayload>,
 
     #[serde(default)]
@@ -476,7 +445,6 @@ pub fn default_spoof_payload() -> SpoofPayload {
         logo_spoof: None,
         blog_spoof: None,
         camera_spoof: None,
-        ping_spoof: None,
         fake_ranks: None,
         palette_spoof: None,
         inventory_spoof: None,
@@ -761,20 +729,7 @@ pub(crate) fn write_spoof(dir: &Path, payload: &SpoofPayload) -> Result<PathBuf,
 
         obj.remove("observe_only");
         obj.remove("inventory_spoof");
-        if let Some(ps) = &payload.ping_spoof {
-            obj.insert(
-                "ping_spoof".into(),
-                serde_json::json!({
-                    "enabled": ps.enabled,
-                    "min_ms": ps.min_ms,
-                    "max_ms": ps.max_ms,
-                }),
-            );
-            crate::udp_proxy::set_ping_spoof(Some(ps.clone()));
-        } else {
-            obj.remove("ping_spoof");
-            crate::udp_proxy::set_ping_spoof(None);
-        }
+        obj.remove("ping_spoof");
         if !payload.custom_name.is_empty() {
             obj.insert("custom_name".into(), serde_json::json!(payload.custom_name));
         }

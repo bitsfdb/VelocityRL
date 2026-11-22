@@ -2240,70 +2240,6 @@ async fn restore_tagame_swaps(app: tauri::AppHandle) -> Result<upk::TagameSwappe
 }
 
 #[tauri::command]
-async fn apply_ping_spoof_upk(
-    app: tauri::AppHandle,
-    min_ms: Option<u32>,
-    max_ms: Option<u32>,
-    #[allow(non_snake_case)]
-    minMs: Option<u32>,
-    #[allow(non_snake_case)]
-    maxMs: Option<u32>,
-) -> Result<(), String> {
-    let min = min_ms.or(minMs).unwrap_or(16);
-    let max = max_ms.or(maxMs).unwrap_or(24);
-    let payload = crate::psynet::PingSpoofPayload {
-        enabled: true,
-        min_ms: min,
-        max_ms: max,
-    };
-    crate::udp_proxy::set_ping_spoof(Some(payload.clone()));
-    let mut cfg = crate::psynet::load_active_spoof_from_disk().unwrap_or_default();
-    cfg.ping_spoof = Some(payload);
-    if let Ok(dir) = crate::psynet::find_proxy_dir() {
-        let _ = crate::psynet::write_spoof(&dir, &cfg);
-    }
-    if let Ok(config) = get_config(app).await {
-        if !config.game_dir.is_empty() {
-            if let Ok(cooked) = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                let keys_txt = include_str!("../resources/keys.txt");
-                let keys_map_json = include_str!("../resources/keys_map.json");
-                let _ = upk::swapper::apply_tagame_ping_spoof(&cooked, min, max, keys_txt, keys_map_json);
-            }
-        }
-    }
-    applog::event(&format!("ping_spoof: enabled ping [{min}..{max}] ms"));
-    Ok(())
-}
-
-#[tauri::command]
-async fn restore_ping_spoof_upk(app: tauri::AppHandle) -> Result<(), String> {
-    crate::udp_proxy::set_ping_spoof(Some(crate::psynet::PingSpoofPayload {
-        enabled: false,
-        min_ms: 16,
-        max_ms: 24,
-    }));
-    let mut cfg = crate::psynet::load_active_spoof_from_disk().unwrap_or_default();
-    if let Some(ref mut p) = cfg.ping_spoof {
-        p.enabled = false;
-    }
-    if let Ok(dir) = crate::psynet::find_proxy_dir() {
-        let _ = crate::psynet::write_spoof(&dir, &cfg);
-    }
-    if let Ok(config) = get_config(app).await {
-        if !config.game_dir.is_empty() {
-            if let Ok(cooked) = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
-                let keys_txt = include_str!("../resources/keys.txt");
-                let keys_map_json = include_str!("../resources/keys_map.json");
-                let _ = upk::swapper::restore_tagame_ping_spoof(&cooked, keys_txt, keys_map_json);
-            }
-        }
-    }
-    applog::event("ping_spoof: disabled ping");
-    Ok(())
-}
-
-
-#[tauri::command]
 async fn get_swapper_status(app: tauri::AppHandle) -> Result<upk::TagameSwapperStatus, String> {
     let config = get_config(app.clone()).await?;
     let tagame_path = if !config.game_dir.is_empty() {
@@ -3803,7 +3739,6 @@ async fn get_network_status() -> Result<serde_json::Value, String> {
         "spoof_active": cfg.enabled,
         "name_spoof": cfg.name_spoof.as_ref().map(|n| n.display_name.clone()).unwrap_or_default(),
         "fake_rank_enabled": cfg.fake_ranks.as_ref().map(|s| s.enabled).unwrap_or(false),
-        "ping_spoof": cfg.ping_spoof,
         "title_id": cfg.equip_title_id,
         "credits": cfg.credit_spoof,
     }))
@@ -4218,8 +4153,6 @@ pub fn run() {
             sync_palette_psynet_config,
             apply_tagame_swaps,
             restore_tagame_swaps,
-            apply_ping_spoof_upk,
-            restore_ping_spoof_upk,
             get_swapper_status,
             get_tagame_swapper_status,
             get_detected_car_body,

@@ -188,7 +188,6 @@ pub struct RlimMasterConfig {
     pub instant: RlimInstantConfig,
     pub wire: RlimWireConfig,
     pub privacy: RlimPrivacyConfig,
-    pub ping_spoof: Option<(u32, u32)>,
     #[serde(default)]
     pub bridge_timer: RlimBridgeTimerConfig,
 }

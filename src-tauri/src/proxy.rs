@@ -2921,22 +2921,7 @@ async fn handle_broker_request(
     if path_str == "/rlim/ping" || path_str.starts_with("/rlim/ping?")
         || path_str == "/rlim/pingspoof" || path_str.starts_with("/rlim/pingspoof?")
         || path_str == "/s/ping" || path_str.starts_with("/s/ping?") {
-        let ping_val = crate::udp_proxy::sample_spoofed_ping_ms()
-            .map(|val| val.to_string())
-            .or_else(|| {
-                crate::psynet::load_active_spoof_from_disk()
-                    .and_then(|c| c.ping_spoof)
-                    .and_then(|ps| if ps.enabled {
-                        use rand::Rng;
-                        let min = ps.min_ms.min(ps.max_ms);
-                        let max = ps.min_ms.max(ps.max_ms);
-                        let s = if min == max { min } else { rand::thread_rng().gen_range(min..=max) };
-                        Some(s.to_string())
-                    } else {
-                        None
-                    })
-            })
-            .unwrap_or_default();
+        let ping_val = "0".to_string();
         crate::applog::event(&format!("broker: {path_str} queried -> responding '{ping_val}'"));
         return Ok(Response::builder()
             .status(StatusCode::OK)
@@ -2984,7 +2969,6 @@ async fn handle_broker_request(
             "spoof_active": cfg.enabled,
             "name_spoof": cfg.name_spoof.as_ref().map(|n| n.display_name.clone()).unwrap_or_default(),
             "fake_rank_enabled": cfg.fake_ranks.as_ref().map(|s| s.enabled).unwrap_or(false),
-            "ping_spoof": cfg.ping_spoof,
             "title_id": cfg.equip_title_id,
             "credits": cfg.credit_spoof,
         });
@@ -3504,7 +3488,6 @@ async fn handle_broker_request(
             "active": true,
             "port": BROKER_PORT.load(Ordering::Relaxed),
             "name": cfg.name_spoof.as_ref().map(|n| n.display_name.clone()).unwrap_or_default(),
-            "ping": cfg.ping_spoof.as_ref().map(|p| (p.min_ms + p.max_ms) / 2).unwrap_or(0),
             "has_avatar": has_avatar,
         }).to_string();
         crate::applog::event(&format!("broker: /rlim/status queried"));
@@ -3821,31 +3804,6 @@ async fn handle_broker_request(
             }
 
 
-            if let Some(ps) = cfg.ping_spoof.as_ref() {
-                if ps.enabled {
-                    let is_ping_related = path_lower.contains("ping")
-                        || path_lower.contains("gameserver")
-                        || path_lower.contains("metrics")
-                        || path_lower.contains("telemetry")
-                        || find_bytes(&out_body, b"\"Ping\"").is_some()
-                        || find_bytes(&out_body, b"\"PingInMs\"").is_some()
-                        || find_bytes(&out_body, b"\"AveragePing\"").is_some()
-                        || find_bytes(&out_body, b"\"AvgPing\"").is_some()
-                        || find_bytes(&out_body, b"\"Latency\"").is_some()
-                        || find_bytes(&out_body, b"\"PingResult\"").is_some()
-                        || find_bytes(&out_body, b"\"LastPing\"").is_some()
-                        || find_bytes(&out_body, b"\"MinPing\"").is_some()
-                        || find_bytes(&out_body, b"\"MaxPing\"").is_some()
-                        || find_bytes(&out_body, b"\"Pings\"").is_some();
-                    if is_ping_related {
-                        let (new_body, did_patch) = patch_ping_metrics_json(&out_body, ps.min_ms, ps.max_ms);
-                        if did_patch {
-                            out_body = new_body;
-                            patched = true;
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -4549,16 +4507,6 @@ pub async fn patch_ws_frame_binary(frame: &[u8], from_server: bool) -> (Vec<u8>,
                     current_body = new_body;
                     any_changed = true;
                 }
-            }
-        }
-    }
-
-    if let Some(ps) = &cfg.ping_spoof {
-        if ps.enabled {
-            let (new_body, changed) = patch_ping_metrics_json(&current_body, ps.min_ms, ps.max_ms);
-            if changed {
-                current_body = new_body;
-                any_changed = true;
             }
         }
     }
@@ -8098,20 +8046,6 @@ fn patch_reservation_value_sync(
                 }
             }
 
-            let broker_port = BROKER_PORT.load(Ordering::Relaxed);
-            let ping_cfg = crate::udp_proxy::get_ping_spoof();
-            if broker_port > 0 && ping_cfg.as_ref().map_or(false, |p| p.enabled) {
-                let ping_target = format!("http://127.0.0.1:{broker_port}/s/ping");
-                for key in &["PingURL", "PingUrl", "LatencyUrl"] {
-                    if let Some(s) = map.get(*key).and_then(|v| v.as_str()) {
-                        if !s.starts_with("http://127.0.0.1:") {
-                            map.insert((*key).to_string(), serde_json::json!(ping_target));
-                            *changed = true;
-                        }
-                    }
-                }
-            }
-
             if let Some(players_val) = map.get_mut("Players") {
                 if let Some(players_arr) = players_val.as_array_mut() {
                     let total_players = players_arr.len();
@@ -8399,105 +8333,6 @@ pub async fn patch_reservation_json_with_rules(
         }
     }
     (body.to_vec(), false)
-}
-
-pub fn patch_ping_metrics_json(
-    body: &[u8],
-    min_ms: u32,
-    max_ms: u32,
-) -> (Vec<u8>, bool) {
-    let Ok(mut root) = serde_json::from_slice::<serde_json::Value>(body) else {
-        return (body.to_vec(), false);
-    };
-
-    let mut changed = false;
-    patch_ping_metrics_value(&mut root, min_ms, max_ms, &mut changed);
-
-    if changed {
-        if let Ok(out) = serde_json::to_vec(&root) {
-            return (out, true);
-        }
-    }
-    (body.to_vec(), false)
-}
-
-fn patch_ping_metrics_value(
-    val: &mut serde_json::Value,
-    min_ms: u32,
-    max_ms: u32,
-    changed: &mut bool,
-) {
-    match val {
-        serde_json::Value::Object(map) => {
-            const PING_KEYS: &[&str] = &[
-                "Ping",
-                "PingInMs",
-                "AveragePing",
-                "AvgPing",
-                "PingAvg",
-                "Latency",
-                "PingResult",
-                "LastPing",
-                "MinPing",
-                "MaxPing",
-                "Pings",
-                "ServerPing",
-                "ClientPing",
-                "RoundTripTime",
-                "RTT",
-            ];
-            for (k, v) in map.iter_mut() {
-                let is_ping_key = PING_KEYS.iter().any(|pk| pk.eq_ignore_ascii_case(k));
-                if is_ping_key {
-                    if v.is_number() {
-                        use rand::Rng;
-                        let min = min_ms.min(max_ms);
-                        let max = min_ms.max(max_ms);
-                        let sample = if min == max { min } else { rand::thread_rng().gen_range(min..=max) };
-                        *v = serde_json::json!(sample);
-                        *changed = true;
-                    } else if let Some(arr) = v.as_array_mut() {
-                        use rand::Rng;
-                        let min = min_ms.min(max_ms);
-                        let max = min_ms.max(max_ms);
-                        for elem in arr.iter_mut() {
-                            if elem.is_number() {
-                                let sample = if min == max { min } else { rand::thread_rng().gen_range(min..=max) };
-                                *elem = serde_json::json!(sample);
-                                *changed = true;
-                            } else {
-                                patch_ping_metrics_value(elem, min_ms, max_ms, changed);
-                            }
-                        }
-                    }
-                } else if let Some(s) = v.as_str() {
-                    let trimmed = s.trim();
-                    if (trimmed.starts_with('{') && trimmed.ends_with('}'))
-                        || (trimmed.starts_with('[') && trimmed.ends_with(']'))
-                    {
-                        if let Ok(mut inner) = serde_json::from_str::<serde_json::Value>(trimmed) {
-                            let mut inner_changed = false;
-                            patch_ping_metrics_value(&mut inner, min_ms, max_ms, &mut inner_changed);
-                            if inner_changed {
-                                if let Ok(s_out) = serde_json::to_string(&inner) {
-                                    *v = serde_json::json!(s_out);
-                                    *changed = true;
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    patch_ping_metrics_value(v, min_ms, max_ms, changed);
-                }
-            }
-        }
-        serde_json::Value::Array(arr) => {
-            for v in arr.iter_mut() {
-                patch_ping_metrics_value(v, min_ms, max_ms, changed);
-            }
-        }
-        _ => {}
-    }
 }
 
 pub fn patch_player_products_json(
@@ -9581,23 +9416,6 @@ mod tests {
         assert_eq!(prods.len(), 1);
         let injected = prods.iter().find(|p| p["ProductID"] == 803).unwrap();
         assert_eq!(injected["PaintID"], 1);
-    }
-
-    #[test]
-    fn test_patch_ping_metrics_json_random_interval() {
-        let body = br#"{"Players":[{"PlayerID":"Epic|123|0","Ping":120,"Metrics":{"AveragePing":95.5}}],"Pings":[85,90,110]}"#;
-        let (patched, changed) = patch_ping_metrics_json(body, 16, 24);
-        assert!(changed);
-        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
-        let ping = val["Players"][0]["Ping"].as_u64().unwrap();
-        assert!((16..=24).contains(&ping), "Ping should be within interval: {ping}");
-        let avg_ping = val["Players"][0]["Metrics"]["AveragePing"].as_u64().unwrap();
-        assert!((16..=24).contains(&avg_ping), "AveragePing should be within interval: {avg_ping}");
-        let pings = val["Pings"].as_array().unwrap();
-        for p in pings {
-            let p_val = p.as_u64().unwrap();
-            assert!((16..=24).contains(&p_val), "Array ping should be within interval: {p_val}");
-        }
     }
 
     #[tokio::test]
