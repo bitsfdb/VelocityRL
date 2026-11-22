@@ -2686,7 +2686,14 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
         unregister_spawned_items(&[crate_pid]);
     }
 
-    // Register drop into broker memory & disk so garage inventory immediately recognizes it
+    // Register drop into broker memory & disk so garage inventory immediately recognizes it.
+    // Pre-insert into NOTIFIED_SPAWNED_ITEMS so the background inventory reconciler doesn't
+    // blast a duplicate concurrent WebSocket Reward/RewardResult frame at the exact moment
+    // the game client is receiving this HandleUnlockContainerResponse (which would freeze
+    // the unboxing reveal sequence).
+    if let Ok(mut set) = NOTIFIED_SPAWNED_ITEMS.write() {
+        set.insert((dropped_pid, dropped_paint));
+    }
     register_spawned_items(&[(dropped_pid, dropped_paint)]);
     crate::applog::event(&format!(
         "proxy: crate unboxing granted authentic drop ProductID={dropped_pid}, Paint={dropped_paint}, SeriesID={dropped_series_id}"
@@ -2714,6 +2721,7 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
         "Amount": 1,
         "AddedTimestamp": now,
         "UpdatedTimestamp": now,
+        "TradeHold": -1,
     });
     if dropped_paint > 0 {
         drop_obj["Paint"] = serde_json::json!(dropped_paint);
@@ -2726,7 +2734,7 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
         "Result": {
             "Drops": [drop_obj],
             "InstanceIDs": consumed_instance_ids,
-            "bSkipRoulette": false
+            "bSkipRoulette": true
         },
         "bSuccess": true
     });

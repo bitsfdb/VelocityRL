@@ -2007,25 +2007,16 @@ async fn spawn_drops(
     if !features::is_build_supported() {
         return Err("VelocityRL build is outdated. Please update to the latest version.".into());
     }
-    let qty = amount.unwrap_or(1).clamp(1, 50);
+    let qty = amount.unwrap_or(1).clamp(1, 1000);
     let mut batch_items = Vec::new();
-
-    // 1353 is the official Key product ID in Rocket League
-    const KEY_PRODUCT_ID: i32 = 1353;
 
     for &cid in &crate_ids {
         if cid <= 0 {
             continue;
         }
         for _ in 0..qty {
-            // Add the Crate / Drop
             batch_items.push(SpawnBatchItem {
                 wanted_id: cid.to_string(),
-                paint_id: None,
-            });
-            // Crates always come with a key!
-            batch_items.push(SpawnBatchItem {
-                wanted_id: KEY_PRODUCT_ID.to_string(),
                 paint_id: None,
             });
         }
@@ -2035,10 +2026,8 @@ async fn spawn_drops(
         return Err("No valid crates selected to spawn.".into());
     }
 
-    let total = batch_items.len();
     let spawned = spawn_items_batch(app, batch_items).await?;
-    let crate_count = total / 2;
-    Ok(format!("Successfully spawned {crate_count} Drop(s) / Crate(s) + {crate_count} Key(s)! ({spawned} items total)"))
+    Ok(format!("Successfully spawned {spawned} item(s)!"))
 }
 
 // Remove every source used by the proxy, otherwise the next inventory response

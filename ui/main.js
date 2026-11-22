@@ -6894,7 +6894,7 @@ function initDropsTab() {
 
     const grid = document.getElementById('drops-grid-container');
     const searchInput = document.getElementById('drop-search-input');
-    const qtySelect = document.getElementById('drop-quantity-select');
+    const qtyInput = document.getElementById('drop-quantity-input');
     const spawnBtn = document.getElementById('spawn-selected-drops-btn');
     const selectAllBtn = document.getElementById('select-all-drops-btn');
     const deselectAllBtn = document.getElementById('deselect-all-drops-btn');
@@ -6956,7 +6956,7 @@ function initDropsTab() {
             return;
         }
 
-        const qty = parseInt(qtySelect?.value || '1', 10);
+        const qty = parseInt(qtyInput?.value || '1', 10);
         grid.innerHTML = filtered.map(d => {
             const isSel = selectedDropIds.has(d.id);
             const thumbUrl = getDropThumbnail(d);
@@ -7013,7 +7013,6 @@ function initDropsTab() {
                         <span>ID: ${d.id}</span>
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <span class="drop-qty-badge" style="background: rgba(75, 153, 247, 0.22); color: #93c5fd; padding: 2px 8px; border-radius: 5px; font-weight: 600; font-size: 11px;">Qty: ${qty}x</span>
-                            <span style="color: #4b99f7; font-weight: 600;">+ ${qty} ${qty === 1 ? 'Key' : 'Keys'}</span>
                         </div>
                     </div>
                 </div>
@@ -7192,7 +7191,7 @@ function initDropsTab() {
     });
     document.getElementById('drop-modal-spawn-btn')?.addEventListener('click', async () => {
         if (!currentModalCrateId) return;
-        const qty = parseInt(qtySelect?.value || '1', 10);
+        const qty = parseInt(qtyInput?.value || '1', 10);
         const modal = document.getElementById('drop-contents-modal');
         if (modal) modal.style.display = 'none';
         showProgress(true, 30);
@@ -7228,7 +7227,11 @@ function initDropsTab() {
         renderDropsGrid();
     });
 
-    qtySelect?.addEventListener('change', () => {
+    qtyInput?.addEventListener('input', () => {
+        renderDropsGrid();
+    });
+
+    qtyInput?.addEventListener('change', () => {
         renderDropsGrid();
     });
 
@@ -7253,12 +7256,12 @@ function initDropsTab() {
             return;
         }
 
-        const qty = parseInt(qtySelect?.value || '1', 10);
+        const qty = parseInt(qtyInput?.value || '1', 10);
         const ids = Array.from(selectedDropIds);
 
         spawnBtn.disabled = true;
         showProgress(true, 30);
-        updateStatus(`Spawning ${ids.length} drop type(s) (${qty}x each with keys)...`, false);
+        updateStatus(`Spawning ${ids.length} drop type(s) (${qty}x each)...`, false);
 
         try {
             const res = await invoke('spawn_drops', { crateIds: ids, amount: qty });

@@ -1,5 +1,10 @@
 [
   {
+    "id": 1353,
+    "name": "Key",
+    "icon": "assets/drops/key_magic.png"
+  },
+  {
     "id": 2445,
     "name": "Crate - Haunted Hallows (Unlocked)",
     "icon": "assets/drops/crateunlocked_halloween17.png"
