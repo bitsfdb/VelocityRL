@@ -2401,7 +2401,15 @@ pub fn lookup_series_id_for_product(pid: i32) -> i32 {
 
 pub fn get_authoritative_container_drop_table_response_bytes() -> Vec<u8> {
     static CACHED_DROP_TABLE_RESP: std::sync::LazyLock<Vec<u8>> = std::sync::LazyLock::new(|| {
-        let drops_val: serde_json::Value = serde_json::from_str(CONTAINER_DROPS_JSON).unwrap_or_default();
+        let mut drops_val: serde_json::Value = serde_json::from_str(CONTAINER_DROPS_JSON).unwrap_or_default();
+        if let Some(arr) = drops_val.as_array_mut() {
+            for entry in arr {
+                if let Some(obj) = entry.as_object_mut() {
+                    obj.insert("bSkipRoulette".to_string(), serde_json::json!(true));
+                    obj.insert("bUnlocked".to_string(), serde_json::json!(true));
+                }
+            }
+        }
         let resp_obj = serde_json::json!({
             "ContainerDrops": drops_val,
             "Result": {
@@ -2710,6 +2718,14 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
             "Value": dropped_paint.to_string()
         }));
     }
+    attributes.push(serde_json::json!({
+        "Key": "bSkipRoulette",
+        "Value": "true"
+    }));
+    attributes.push(serde_json::json!({
+        "Key": "bUnlocked",
+        "Value": "true"
+    }));
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -2728,6 +2744,8 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
         "TradeHold": -1,
         "AddedTimestamp": now,
         "UpdatedTimestamp": now,
+        "bSkipRoulette": true,
+        "bUnlocked": true,
     });
     if dropped_paint > 0 {
         drop_obj["Paint"] = serde_json::json!(dropped_paint);
@@ -2739,12 +2757,15 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
         "ProductData": [drop_obj.clone()],
         "RewardDrops": [drop_obj.clone()],
         "InstanceIDs": consumed_instance_ids,
+        "bSkipRoulette": true,
+        "bUnlocked": true,
         "Result": {
             "Drops": [drop_obj.clone()],
             "ProductData": [drop_obj.clone()],
             "RewardDrops": [drop_obj],
             "InstanceIDs": consumed_instance_ids,
-            "bSkipRoulette": true
+            "bSkipRoulette": true,
+            "bUnlocked": true
         },
         "bSuccess": true
     });
@@ -7234,9 +7255,8 @@ pub fn register_client_ws_sender(sender: tokio::sync::mpsc::UnboundedSender<toki
     if let Ok(mut g) = CLIENT_WS_SENDER.write() {
         *g = Some(sender);
     }
-    if let Ok(mut notified) = NOTIFIED_SPAWNED_ITEMS.write() {
-        notified.clear();
-    }
+    // Do NOT clear NOTIFIED_SPAWNED_ITEMS on reconnect: WebSocket reconnects during gameplay
+    // must not re-dispatch duplicate RewardResult frames for items the game already possesses.
     ensure_inventory_reconciliation_worker_started();
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
         handle.spawn(async {
@@ -7263,14 +7283,22 @@ pub async fn reconcile_spawned_inventory() {
     if !has_active_client_ws() {
         return;
     }
-    let all_spawned = load_active_spawned_items(None);
+    // Only reconcile items from DYNAMIC_SPAWNED_ITEMS (items spawned or unboxed in current/persisted profile).
+    // Swapped donor items (where owned_id != wanted_id) must NEVER be pushed as standalone reward drops!
+    let all_spawned: Vec<(i32, i32)> = {
+        if let Ok(g) = DYNAMIC_SPAWNED_ITEMS.read() {
+            g.clone()
+        } else {
+            Vec::new()
+        }
+    };
     if all_spawned.is_empty() {
         return;
     }
 
     let missing: Vec<(i32, i32)> = {
         let notified = NOTIFIED_SPAWNED_ITEMS.read().unwrap_or_else(|e| e.into_inner());
-        all_spawned.into_iter().filter(|item| !notified.contains(item)).collect()
+        all_spawned.into_iter().filter(|item| item.0 > 0 && !notified.contains(item)).collect()
     };
 
     if !missing.is_empty() {
@@ -8383,7 +8411,9 @@ pub fn patch_player_products_json(
             if pid == Some(wanted_id as i64) {
                 let item_paint = item.get("Attributes").and_then(|v| v.as_array()).and_then(|attrs| {
                     attrs.iter().find(|a| {
-                        a.get("Key").and_then(|k| k.as_str()).map(|k| k.eq_ignore_ascii_case("Painted")).unwrap_or(false)
+                        a.get("Key").and_then(|k| k.as_str()).map(|k| {
+                            k.eq_ignore_ascii_case("Painted") || k.eq_ignore_ascii_case("Paint")
+                        }).unwrap_or(false)
                     }).and_then(|a| {
                         a.get("Value").and_then(|v| {
                             v.as_str().and_then(|s| s.parse::<i32>().ok())
@@ -8391,7 +8421,9 @@ pub fn patch_player_products_json(
                         })
                     })
                 }).or_else(|| {
-                    item.get("PaintID")
+                    item.get("Paint")
+                        .or_else(|| item.get("paint"))
+                        .or_else(|| item.get("PaintID"))
                         .or_else(|| item.get("paint_id"))
                         .or_else(|| item.get("PaintId"))
                         .or_else(|| item.get("paintId"))
@@ -8411,6 +8443,7 @@ pub fn patch_player_products_json(
             let inst_hex = format!("{:08x}{:08x}0000000000000000", wanted_id as u32, paint_id as u32);
             let static_ts: i64 = 1700000000;
             let series_id = lookup_series_id_for_product(wanted_id);
+            let is_crate = CONTAINER_DROPS.iter().any(|c| c.product_id == wanted_id);
 
             let mut prod_obj = serde_json::json!({
                 "ProductID": wanted_id,
@@ -8424,19 +8457,33 @@ pub fn patch_player_products_json(
                 "UpdatedTimestamp": static_ts,
             });
 
+            let mut attrs = Vec::new();
             if paint_id > 0 {
                 prod_obj["Paint"] = serde_json::json!(paint_id);
                 prod_obj["PaintID"] = serde_json::json!(paint_id);
-                prod_obj["Attributes"] = serde_json::json!([
-                    {
-                        "Key": "Painted",
-                        "Value": paint_id.to_string()
-                    },
-                    {
-                        "Key": "Paint",
-                        "Value": paint_id.to_string()
-                    }
-                ]);
+                attrs.push(serde_json::json!({
+                    "Key": "Painted",
+                    "Value": paint_id.to_string()
+                }));
+                attrs.push(serde_json::json!({
+                    "Key": "Paint",
+                    "Value": paint_id.to_string()
+                }));
+            }
+            if is_crate {
+                prod_obj["bSkipRoulette"] = serde_json::json!(true);
+                prod_obj["bUnlocked"] = serde_json::json!(true);
+                attrs.push(serde_json::json!({
+                    "Key": "bSkipRoulette",
+                    "Value": "true"
+                }));
+                attrs.push(serde_json::json!({
+                    "Key": "bUnlocked",
+                    "Value": "true"
+                }));
+            }
+            if !attrs.is_empty() {
+                prod_obj["Attributes"] = serde_json::json!(attrs);
             }
 
             arr.push(prod_obj);
@@ -8444,18 +8491,110 @@ pub fn patch_player_products_json(
         }
     }
 
+    // Pass 1: Ensure series ID and crate skip-roulette attributes on every item in array
     for item in arr.iter_mut() {
         if let Some(obj) = item.as_object_mut() {
+            let pid = obj.get("ProductID")
+                .or_else(|| obj.get("ProductId"))
+                .or_else(|| obj.get("id"))
+                .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+                .unwrap_or(0) as i32;
+
             let has_valid_series = obj.get("SeriesID").map(|v| v.is_i64()).unwrap_or(false);
             if !has_valid_series {
-                let pid = obj.get("ProductID")
-                    .or_else(|| obj.get("ProductId"))
-                    .or_else(|| obj.get("id"))
-                    .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
-                    .unwrap_or(0) as i32;
                 let sid = lookup_series_id_for_product(pid);
                 obj.insert("SeriesID".to_string(), serde_json::json!(sid));
                 changed = true;
+            }
+
+            if CONTAINER_DROPS.iter().any(|c| c.product_id == pid) {
+                if obj.get("bSkipRoulette").and_then(|v| v.as_bool()) != Some(true) {
+                    obj.insert("bSkipRoulette".to_string(), serde_json::json!(true));
+                    changed = true;
+                }
+                if obj.get("bUnlocked").and_then(|v| v.as_bool()) != Some(true) {
+                    obj.insert("bUnlocked".to_string(), serde_json::json!(true));
+                    changed = true;
+                }
+                let mut attrs = obj.get("Attributes").and_then(|v| v.as_array().cloned()).unwrap_or_default();
+                let mut attr_changed = false;
+                if let Some(skip_attr) = attrs.iter_mut().find(|a| a.get("Key").and_then(|k| k.as_str()).map(|k| k.eq_ignore_ascii_case("bSkipRoulette")).unwrap_or(false)) {
+                    if skip_attr.get("Value").and_then(|v| v.as_str()) != Some("true") {
+                        skip_attr["Value"] = serde_json::json!("true");
+                        attr_changed = true;
+                    }
+                } else {
+                    attrs.push(serde_json::json!({ "Key": "bSkipRoulette", "Value": "true" }));
+                    attr_changed = true;
+                }
+                if let Some(unlock_attr) = attrs.iter_mut().find(|a| a.get("Key").and_then(|k| k.as_str()).map(|k| k.eq_ignore_ascii_case("bUnlocked")).unwrap_or(false)) {
+                    if unlock_attr.get("Value").and_then(|v| v.as_str()) != Some("true") {
+                        unlock_attr["Value"] = serde_json::json!("true");
+                        attr_changed = true;
+                    }
+                } else {
+                    attrs.push(serde_json::json!({ "Key": "bUnlocked", "Value": "true" }));
+                    attr_changed = true;
+                }
+                if attr_changed {
+                    obj.insert("Attributes".to_string(), serde_json::json!(attrs));
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    // Pass 2: Deduplicate non-stackable items to eliminate duplicate instances with identical ProductID and PaintID
+    let mut seen_items = std::collections::HashSet::new();
+    let mut deduped_arr = Vec::with_capacity(arr.len());
+    for item in arr.drain(..) {
+        let pid = item.get("ProductID")
+            .or_else(|| item.get("ProductId"))
+            .or_else(|| item.get("id"))
+            .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+            .unwrap_or(0) as i32;
+
+        let is_crate = CONTAINER_DROPS.iter().any(|c| c.product_id == pid);
+        if is_crate {
+            // Container/crate instances can have multiples
+            deduped_arr.push(item);
+        } else {
+            let paint = item.get("Attributes").and_then(|v| v.as_array()).and_then(|attrs| {
+                attrs.iter().find(|a| {
+                    a.get("Key").and_then(|k| k.as_str()).map(|k| {
+                        k.eq_ignore_ascii_case("Painted") || k.eq_ignore_ascii_case("Paint")
+                    }).unwrap_or(false)
+                }).and_then(|a| {
+                    a.get("Value").and_then(|v| {
+                        v.as_str().and_then(|s| s.parse::<i32>().ok())
+                            .or_else(|| v.as_i64().map(|n| n as i32))
+                    })
+                })
+            }).or_else(|| {
+                item.get("Paint")
+                    .or_else(|| item.get("paint"))
+                    .or_else(|| item.get("PaintID"))
+                    .or_else(|| item.get("paint_id"))
+                    .or_else(|| item.get("PaintId"))
+                    .or_else(|| item.get("paintId"))
+                    .and_then(|v| v.as_i64().map(|n| n as i32).or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+            }).unwrap_or(0);
+
+            if seen_items.insert((pid, paint)) {
+                deduped_arr.push(item);
+            } else {
+                changed = true;
+            }
+        }
+    }
+    *arr = deduped_arr;
+
+    // Record all requested and possessed items in NOTIFIED_SPAWNED_ITEMS so the
+    // background reconciler knows client already has them in inventory.
+    if let Ok(mut notified) = NOTIFIED_SPAWNED_ITEMS.write() {
+        for &(wid, paint) in items {
+            if wid > 0 {
+                notified.insert((wid, paint));
             }
         }
     }
@@ -9657,8 +9796,12 @@ mod tests {
 
         // 3. Strict schema validation of unbox response
         assert_eq!(resp["bSuccess"], true);
+        assert_eq!(resp["bSkipRoulette"], true);
+        assert_eq!(resp["bUnlocked"], true);
         assert_eq!(resp["InstanceIDs"][0], inst_id);
         assert_eq!(resp["Result"]["InstanceIDs"][0], inst_id);
+        assert_eq!(resp["Result"]["bSkipRoulette"], true);
+        assert_eq!(resp["Result"]["bUnlocked"], true);
 
         let drop = &resp["Result"]["Drops"][0];
         let drop_pid = drop["ProductID"].as_i64().expect("ProductID must be integer") as i32;
@@ -9691,6 +9834,7 @@ mod tests {
 
         // 4b. Verify dropped item is synchronized to swaps.json for VelocityRL UI display
         {
+            super::sync_spawned_items_to_swaps(&[(drop_pid, 0)]);
             let mut found_in_swaps = false;
             for p in &super::candidate_swaps_paths() {
                 if let Ok(content) = std::fs::read_to_string(p) {

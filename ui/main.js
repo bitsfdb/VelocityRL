@@ -810,13 +810,17 @@ async function init() {
             }
         });
 
-        window.__TAURI__?.event?.listen('inventory-updated', async () => {
-            try {
-                await refreshBackups();
-                if (typeof refreshDropPresets === 'function') refreshDropPresets();
-            } catch (e) {
-                console.error('Failed to auto-refresh inventory on update:', e);
-            }
+        let inventoryUpdateDebounceTimer = null;
+        window.__TAURI__?.event?.listen('inventory-updated', () => {
+            if (inventoryUpdateDebounceTimer) clearTimeout(inventoryUpdateDebounceTimer);
+            inventoryUpdateDebounceTimer = setTimeout(async () => {
+                try {
+                    await refreshBackups();
+                    if (typeof refreshDropPresets === 'function') refreshDropPresets();
+                } catch (e) {
+                    console.error('Failed to auto-refresh inventory on update:', e);
+                }
+            }, 250);
         });
     } catch (_) {}
     initVersionBadge();
@@ -2832,8 +2836,10 @@ function wirePresetsUI() {
     });
 }
 
+let refreshBackupsInFlight = false;
 async function refreshBackups() {
-    if (!backupContainer) return;
+    if (!backupContainer || refreshBackupsInFlight) return;
+    refreshBackupsInFlight = true;
     wireReswapButton();
     const countLabel = document.getElementById('restore-count-label');
     const restoreAllBtn = document.getElementById('restore-btn');
@@ -2951,6 +2957,8 @@ async function refreshBackups() {
         console.error(err);
         backupContainer.innerHTML = '<div class="backup-empty backup-empty-error">Failed to retrieve backup list.</div>';
         try { await invoke('append_launch_log', { message: `ui: get_backups failed: ${String(err)}` }); } catch {}
+    } finally {
+        refreshBackupsInFlight = false;
     }
 }
 
@@ -2987,37 +2995,41 @@ function showProgress(show, percent = 0) {
 
 function setupSearch(input, resultsDiv, selectionHandler) {
     if (!input || !resultsDiv) return;
+    let searchDebounceTimer = null;
     input.addEventListener('input', (e) => {
-        const term = e.target.value.toLowerCase();
+        if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = setTimeout(() => {
+            const term = e.target.value.toLowerCase();
 
-        let lockCategory = currentCategory;
-        if (input.id === 'wanted-search' && ownedItem) {
-            lockCategory = (ownedItem.Slot || ownedItem.slot || 'All');
-        }
+            let lockCategory = currentCategory;
+            if (input.id === 'wanted-search' && ownedItem) {
+                lockCategory = (ownedItem.Slot || ownedItem.slot || 'All');
+            }
 
-        if (term.length < 2 && lockCategory === 'All') {
-            resultsDiv.style.display = 'none';
-            return;
-        }
+            if (term.length < 2 && lockCategory === 'All') {
+                resultsDiv.style.display = 'none';
+                return;
+            }
 
-        const matches = items.filter(item => {
-            if (!item) return false;
-            const pName = (item.Product || item.product || '').toLowerCase();
-            const pAsset = (item.AssetPackage || item.asset_package || '').toLowerCase();
-            const pSlot = item.Slot || item.slot || '';
+            const matches = items.filter(item => {
+                if (!item) return false;
+                const pName = (item.Product || item.product || '').toLowerCase();
+                const pAsset = (item.AssetPackage || item.asset_package || '').toLowerCase();
+                const pSlot = item.Slot || item.slot || '';
 
-            const invalidTypes = ['series', 'crate', 'currency', 'premium', 'unknown'];
-            if (invalidTypes.includes(normSlot(pSlot))) return false;
+                const invalidTypes = ['series', 'crate', 'currency', 'premium', 'unknown'];
+                if (invalidTypes.includes(normSlot(pSlot))) return false;
 
-            const pLong = (item.LongLabel || item.long_label || '').toLowerCase();
-            const idStr = String(item.id !== undefined ? item.id : (item.ID !== undefined ? item.ID : ''));
-            const isFDev = (idStr === '12968' || pAsset === 'boost_alphadevreward');
-            const matchesFDev = isFDev && (term.includes('fdev') || 'fdev'.includes(term) || term.includes('dev boost') || term.includes('alpha dev') || term.includes('the boost'));
-            const matchesTerm = term.length < 2 || matchesFDev || pName.includes(term) || pAsset.includes(term) || pLong.includes(term) || (term.trim() === 'ai' && (pName.includes('bot') || pAsset.includes('bot')));
-            const matchesCat = lockCategory === 'All' || normSlot(pSlot) === normSlot(lockCategory);
-            return matchesTerm && matchesCat;
-        }).slice(0, 50);
-        renderResults(matches, resultsDiv, selectionHandler);
+                const pLong = (item.LongLabel || item.long_label || '').toLowerCase();
+                const idStr = String(item.id !== undefined ? item.id : (item.ID !== undefined ? item.ID : ''));
+                const isFDev = (idStr === '12968' || pAsset === 'boost_alphadevreward');
+                const matchesFDev = isFDev && (term.includes('fdev') || 'fdev'.includes(term) || term.includes('dev boost') || term.includes('alpha dev') || term.includes('the boost'));
+                const matchesTerm = term.length < 2 || matchesFDev || pName.includes(term) || pAsset.includes(term) || pLong.includes(term) || (term.trim() === 'ai' && (pName.includes('bot') || pAsset.includes('bot')));
+                const matchesCat = lockCategory === 'All' || normSlot(pSlot) === normSlot(lockCategory);
+                return matchesTerm && matchesCat;
+            }).slice(0, 50);
+            renderResults(matches, resultsDiv, selectionHandler);
+        }, 120);
     });
     input.addEventListener('focus', () => {
         let lockCategory = currentCategory;
