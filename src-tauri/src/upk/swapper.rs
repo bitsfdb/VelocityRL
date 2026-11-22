@@ -1465,7 +1465,55 @@ pub fn apply_tagame_modifications(
             }
         }
 
-        let upk_modified = false;
+        let mut upk_modified = false;
+
+        // Patch Chunk 2: PRI_TA::GetPing when ping spoof is active
+        if ping_active && chunks.len() > 2 {
+            let c2_uncomp_offset = chunks[2].uncomp_offset;
+            let c2_comp_offset = chunks[2].comp_offset;
+            let c2_comp_size = chunks[2].comp_size;
+            let c2_start = c2_comp_offset as usize;
+            let c2_end = c2_start + c2_comp_size as usize;
+            if c2_end <= file_bytes.len() {
+                if let Ok(mut decomp2) = crate::upk::compression::decompress_chunk(&file_bytes[c2_start..c2_end]) {
+                    let mut c2_modified = false;
+                    if let Some(ps) = &ping_cfg {
+                        if let Some(exp_ping) = exports.iter().find(|e| e.name == "GetPing" && e.outer_name == "PRI_TA") {
+                            if exp_ping.serial_offset >= c2_uncomp_offset && exp_ping.serial_offset < (c2_uncomp_offset + chunks[2].uncomp_size as i64) {
+                                let func_off = (exp_ping.serial_offset - c2_uncomp_offset) as usize;
+                                if func_off + 48 <= decomp2.len() {
+                                    let orig_disk_sz = u32::from_le_bytes(decomp2[func_off + 44..func_off + 48].try_into().unwrap()) as usize;
+                                    if orig_disk_sz >= 22 && func_off + 48 + orig_disk_sz <= decomp2.len() {
+                                        let payload = emit_pri_get_ping_bytecode(ps.min_ms, ps.max_ms, orig_disk_sz);
+                                        if &decomp2[func_off + 48..func_off + 48 + orig_disk_sz] != payload.as_slice() {
+                                            decomp2[func_off + 48..func_off + 48 + orig_disk_sz].copy_from_slice(&payload);
+                                            c2_modified = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if c2_modified {
+                        if let Ok(mut recomp2) = crate::upk::compression::compress_chunk(&decomp2) {
+                            let orig_c2_sz = c2_comp_size as usize;
+                            if recomp2.len() <= orig_c2_sz {
+                                recomp2.resize(orig_c2_sz, 0);
+                                file_bytes[c2_start..c2_start + orig_c2_sz].copy_from_slice(&recomp2);
+                                upk_modified = true;
+                            } else {
+                                crate::applog::event(&format!(
+                                    "tagame_swapper: Recompressed Chunk 2 ({} bytes) exceeds allocation ({} bytes)",
+                                    recomp2.len(),
+                                    orig_c2_sz
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         if upk_modified {
             fs::write(&tagame_path, &file_bytes)?;

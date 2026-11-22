@@ -1580,6 +1580,20 @@ async fn ensure_game_patches(app: tauri::AppHandle) -> Result<serde_json::Value,
 }
 
 #[tauri::command]
+async fn force_redownload_prepatched_upks(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let config = get_config(app.clone()).await?;
+    if config.game_dir.is_empty() {
+        return Ok(serde_json::json!({
+            "status": "Failed",
+            "details": { "error": "Game directory not configured" }
+        }));
+    }
+    let game = PathBuf::from(&config.game_dir);
+    let sync_res = integrity::force_sync_prepatched_upks(Some(&app), &game).await?;
+    Ok(serde_json::to_value(&sync_res).unwrap_or_default())
+}
+
+#[tauri::command]
 async fn acknowledge_repair(app: tauri::AppHandle) -> Result<(), String> {
     let config = get_config(app.clone()).await?;
     let mut state = load_integrity(&app);
@@ -2227,7 +2241,7 @@ async fn restore_tagame_swaps(app: tauri::AppHandle) -> Result<upk::TagameSwappe
 
 #[tauri::command]
 async fn apply_ping_spoof_upk(
-    _app: tauri::AppHandle,
+    app: tauri::AppHandle,
     min_ms: Option<u32>,
     max_ms: Option<u32>,
     #[allow(non_snake_case)]
@@ -2248,13 +2262,21 @@ async fn apply_ping_spoof_upk(
     if let Ok(dir) = crate::psynet::find_proxy_dir() {
         let _ = crate::psynet::write_spoof(&dir, &cfg);
     }
-    applog::event(&format!("ping_spoof: enabled web ping [{min}..{max}] ms"));
+    if let Ok(config) = get_config(app).await {
+        if !config.game_dir.is_empty() {
+            if let Ok(cooked) = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                let keys_txt = include_str!("../resources/keys.txt");
+                let keys_map_json = include_str!("../resources/keys_map.json");
+                let _ = upk::swapper::apply_tagame_ping_spoof(&cooked, min, max, keys_txt, keys_map_json);
+            }
+        }
+    }
+    applog::event(&format!("ping_spoof: enabled ping [{min}..{max}] ms"));
     Ok(())
 }
 
 #[tauri::command]
 async fn restore_ping_spoof_upk(app: tauri::AppHandle) -> Result<(), String> {
-    let _ = app;
     crate::udp_proxy::set_ping_spoof(Some(crate::psynet::PingSpoofPayload {
         enabled: false,
         min_ms: 16,
@@ -2267,7 +2289,16 @@ async fn restore_ping_spoof_upk(app: tauri::AppHandle) -> Result<(), String> {
     if let Ok(dir) = crate::psynet::find_proxy_dir() {
         let _ = crate::psynet::write_spoof(&dir, &cfg);
     }
-    applog::event("ping_spoof: disabled web ping");
+    if let Ok(config) = get_config(app).await {
+        if !config.game_dir.is_empty() {
+            if let Ok(cooked) = upk::swapper::resolve_cooked_dir(Path::new(&config.game_dir)) {
+                let keys_txt = include_str!("../resources/keys.txt");
+                let keys_map_json = include_str!("../resources/keys_map.json");
+                let _ = upk::swapper::restore_tagame_ping_spoof(&cooked, keys_txt, keys_map_json);
+            }
+        }
+    }
+    applog::event("ping_spoof: disabled ping");
     Ok(())
 }
 
@@ -4125,6 +4156,7 @@ pub fn run() {
             restore_single_backup,
             check_integrity,
             ensure_game_patches,
+            force_redownload_prepatched_upks,
             load_locale,
             revert_game_patches,
             get_game_patch_status,

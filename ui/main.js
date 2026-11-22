@@ -944,6 +944,24 @@ async function init() {
         }
     };
 
+    const redownloadPrepatchedBtn = document.getElementById('dev-redownload-prepatched-btn');
+    if (redownloadPrepatchedBtn) redownloadPrepatchedBtn.onclick = async () => {
+        if (isAppLoading()) return;
+        redownloadPrepatchedBtn.disabled = true;
+        showProgress(true, 0);
+        showToast('Redownloading prepatched UPK packages...', 'info');
+        try {
+            const res = await invoke('force_redownload_prepatched_upks');
+            showToast('Prepatched UPK packages successfully reinstalled!', 'success');
+            await refreshDevPanel();
+        } catch (err) {
+            showToast(`Failed to redownload prepatched UPKs: ${err}`, 'error');
+        } finally {
+            showProgress(false);
+            redownloadPrepatchedBtn.disabled = false;
+        }
+    };
+
     document.getElementById('website-btn').onclick = () => {
         if (isAppLoading()) return;
         window.__TAURI__.core.invoke('plugin:shell|open', { path: 'https://velocityrl.tech' });
@@ -2191,7 +2209,7 @@ function getFilteredCatalogItems() {
                     return cat.includes(catalogTitleCategory.toLowerCase());
                 });
             }
-            list = [...list.filter(i => (i?.slot || i?.Slot) === 'Player Title' && !i?.isTitle), ...mappedTitles];
+            list = mappedTitles;
         } else {
             list = list.filter(i => {
                 const s = (i?.slot || i?.Slot || '');
@@ -2622,7 +2640,7 @@ function initCatalogGrid() {
             const pageItems = filtered.slice(startIdx, endIdx);
             pageItems.forEach(item => {
                 if (!item) return;
-                const id = Number(item.id !== undefined ? item.id : item.ID);
+                const id = item.titleId ? `title_${item.titleId}` : (item.id !== undefined ? item.id : item.ID);
                 selectedCatalogItems.set(id, {
                     id,
                     product: item.product || item.Product || 'Item',
@@ -2689,22 +2707,27 @@ function initCatalogGrid() {
                     ensureTitleSwapsLoaded();
                     for (const tEntry of titleItemsToSpawn) {
                         const tItem = tEntry.item;
-                        const tId = tItem.titleId || tItem.id || tItem.name;
+                        const tId = tItem.titleId || (tItem.id && String(tItem.id).startsWith('title_') ? String(tItem.id).slice(6) : tItem.id) || tItem.product || 'CustomTitle';
+                        const text = tItem.titleText || tItem.product || tItem.Product || tItem.name || 'Custom Title';
+                        const cat = tItem.titleCategory || tItem.category || tItem.group || 'Special Titles';
+                        const textColor = (typeof tItem.titleColor === 'string' && tItem.titleColor) ? tItem.titleColor : (tItem.color?.text_color || '');
+                        const glowColor = (typeof tItem.titleGlow === 'string' && tItem.titleGlow) ? tItem.titleGlow : (tItem.color?.glow_color || '');
                         const swapObj = {
-                            equip_title_id: tId,
-                            display_title_id: tId,
-                            custom_text: tItem.name || '',
-                            category: tItem.group || 'Special Titles',
-                            title_color: tItem.color ? {
-                                text_color: tItem.color.text_color || '',
-                                glow_color: tItem.color.glow_color || '',
+                            equip_title_id: String(tId),
+                            display_title_id: String(tId),
+                            custom_text: text,
+                            category: cat,
+                            title_color: (textColor || glowColor) ? {
+                                text_color: textColor,
+                                glow_color: glowColor,
                             } : undefined,
                         };
-                        titleSwaps = titleSwaps.filter((s) => s.equip_title_id !== tId);
+                        titleSwaps = titleSwaps.filter((s) => s.equip_title_id !== String(tId));
                         titleSwaps.unshift(swapObj);
                     }
                     persistTitleSpoofLocal();
-                    await invoke('save_psynet_spoof', { payload: titleSpoofPayload() });
+                    await runToolSave(null, 'titles', titleSpoofPayload(), { enabled: true });
+                    renderTitleSwapList();
                     spawnedCount += titleItemsToSpawn.length;
                 }
 
@@ -3756,9 +3779,11 @@ function formatChangelogNotes(raw) {
 
 function getTitleAsItem(t) {
     const text = t.text || t.Text || t.id || 'Title';
+    const tId = t.id || t.Id || '';
     return {
         ID: 3036,
-        id: 3036,
+        id: tId ? `title_${tId}` : 3036,
+        numericId: 3036,
         Product: text,
         product: text,
         Slot: 'Player Title',
@@ -3768,7 +3793,7 @@ function getTitleAsItem(t) {
         AssetPackage: 'title_generic',
         asset_package: 'title_generic',
         isTitle: true,
-        titleId: t.id || t.Id || '',
+        titleId: tId,
         titleText: text,
         titleCategory: t.category || t.Category || '',
         titleColor: t.color || t.Color || '',

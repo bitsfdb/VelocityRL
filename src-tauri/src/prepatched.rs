@@ -83,14 +83,22 @@ fn recover(cooked: &Path, stage: &Path, version: &str) -> Result<(), String> {
 
 // All disk I/O and hashing run on a blocking worker, never on the webview thread.
 pub async fn sync(app: Option<&tauri::AppHandle>, game: &Path) -> Result<PrepatchedSyncStatus, String> {
+    sync_with_force(app, game, false).await
+}
+
+pub async fn sync_forced(app: Option<&tauri::AppHandle>, game: &Path) -> Result<PrepatchedSyncStatus, String> {
+    sync_with_force(app, game, true).await
+}
+
+async fn sync_with_force(app: Option<&tauri::AppHandle>, game: &Path, force: bool) -> Result<PrepatchedSyncStatus, String> {
     let _guard = INSTALL.lock().await;
     let app = app.cloned();
     let game = game.to_owned();
-    tauri::async_runtime::spawn_blocking(move || tauri::async_runtime::block_on(sync_inner(app.as_ref(), &game)))
+    tauri::async_runtime::spawn_blocking(move || tauri::async_runtime::block_on(sync_inner(app.as_ref(), &game, force)))
         .await.map_err(|e| format!("Prepatched worker failed: {e}"))?
 }
 
-async fn sync_inner(app: Option<&tauri::AppHandle>, game: &Path) -> Result<PrepatchedSyncStatus, String> {
+async fn sync_inner(app: Option<&tauri::AppHandle>, game: &Path, force: bool) -> Result<PrepatchedSyncStatus, String> {
     use futures_util::StreamExt;
     use tauri::Emitter;
     if let Err(message) = crate::game_file_access::ensure_idle() {
@@ -139,7 +147,7 @@ async fn sync_inner(app: Option<&tauri::AppHandle>, game: &Path) -> Result<Prepa
         // Never create a missing installation or follow package symlinks.
         let meta = fs::symlink_metadata(&target).map_err(|e| format!("{name} missing or inaccessible: {e}. Verify game files in the launcher."))?;
         if !meta.is_file() || meta.file_type().is_symlink() { return Err(format!("{name} must be a regular installed game file")); }
-        if meta.len() == info.size && integrity::compute_file_sha256_cached(&target)
+        if !force && meta.len() == info.size && integrity::compute_file_sha256_cached(&target)
             .is_some_and(|hash| hash.eq_ignore_ascii_case(&info.sha256)) { continue; }
         let staged = stage.join(format!("{name}.download"));
         let mut response = client.get(artifact_url(&info.url)?).send().await

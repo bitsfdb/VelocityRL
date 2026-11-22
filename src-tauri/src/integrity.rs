@@ -605,6 +605,10 @@ pub async fn sync_prepatched_upks(app: Option<&tauri::AppHandle>, game_dir: &Pat
     crate::prepatched::sync(app, game_dir).await
 }
 
+pub async fn force_sync_prepatched_upks(app: Option<&tauri::AppHandle>, game_dir: &Path) -> Result<PrepatchedSyncStatus, String> {
+    crate::prepatched::sync_forced(app, game_dir).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

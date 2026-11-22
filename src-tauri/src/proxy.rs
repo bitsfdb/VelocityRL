@@ -6079,6 +6079,13 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
                 if let Some(next) = replace_equip_text(&out, equip_id, custom_text) {
                     out = next;
                     any_change = true;
+                } else {
+                    let cat_to_use = if !clean_cat.is_empty() { &clean_cat } else { "Special Titles" };
+                    let (next, did) = upsert_title_entry(&out, equip_id, custom_text, cat_to_use);
+                    if did {
+                        out = next;
+                        any_change = true;
+                    }
                 }
             }
 
@@ -6142,10 +6149,17 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
                 }
 
                 let sw_text = sw.custom_text.trim();
+                let effective_cat = if !sw.category.trim().is_empty() { sw.category.trim() } else { "Special Titles" };
                 if !sw_text.is_empty() {
                     if let Some(next) = replace_equip_text(&out, target_id, sw_text) {
                         out = next;
                         any_change = true;
+                    } else {
+                        let (next, did) = upsert_title_entry(&out, target_id, sw_text, effective_cat);
+                        if did {
+                            out = next;
+                            any_change = true;
+                        }
                     }
                 } else if !sw.display_title_id.trim().is_empty()
                     && sw.display_title_id.trim() != target_id
@@ -6153,6 +6167,7 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
                 {
                     let disp = sw.display_title_id.trim();
                     let src_pat = format!("\"ID\":\"{disp}\"");
+                    let mut resolved_text = String::new();
                     if let Some(src_at) = find_bytes(&out, src_pat.as_bytes()) {
                         let mut start = src_at;
                         while start > 0 && out[start] != b'{' {
@@ -6164,16 +6179,27 @@ pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>,
                             if let Some(k) = find_bytes(src_obj, tkey) {
                                 let val_start = start + k + tkey.len();
                                 if let Some(j) = json_string_end(&out, val_start) {
-                                    let text_val = String::from_utf8_lossy(&out[val_start..j]).to_string();
-                                    if !text_val.is_empty() {
-                                        if let Some(next) = replace_equip_text(&out, target_id, &text_val) {
-                                            out = next;
-                                            any_change = true;
-                                        }
-                                    }
+                                    resolved_text = String::from_utf8_lossy(&out[val_start..j]).to_string();
                                 }
                             }
                         }
+                    }
+                    let t_to_use = if !resolved_text.is_empty() { &resolved_text } else { target_id };
+                    if let Some(next) = replace_equip_text(&out, target_id, t_to_use) {
+                        out = next;
+                        any_change = true;
+                    } else {
+                        let (next, did) = upsert_title_entry(&out, target_id, t_to_use, effective_cat);
+                        if did {
+                            out = next;
+                            any_change = true;
+                        }
+                    }
+                } else {
+                    let (next, did) = upsert_title_entry(&out, target_id, target_id, effective_cat);
+                    if did {
+                        out = next;
+                        any_change = true;
                     }
                 }
 
@@ -8066,6 +8092,20 @@ fn patch_reservation_value_sync(
                     if let Some(s) = map.get(*key).and_then(|v| v.as_str()) {
                         if !s.starts_with("127.0.0.1:") {
                             map.insert((*key).to_string(), serde_json::json!(target_loopback));
+                            *changed = true;
+                        }
+                    }
+                }
+            }
+
+            let broker_port = BROKER_PORT.load(Ordering::Relaxed);
+            let ping_cfg = crate::udp_proxy::get_ping_spoof();
+            if broker_port > 0 && ping_cfg.as_ref().map_or(false, |p| p.enabled) {
+                let ping_target = format!("http://127.0.0.1:{broker_port}/s/ping");
+                for key in &["PingURL", "PingUrl", "LatencyUrl"] {
+                    if let Some(s) = map.get(*key).and_then(|v| v.as_str()) {
+                        if !s.starts_with("http://127.0.0.1:") {
+                            map.insert((*key).to_string(), serde_json::json!(ping_target));
                             *changed = true;
                         }
                     }
