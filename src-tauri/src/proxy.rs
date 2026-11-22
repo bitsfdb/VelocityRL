@@ -9370,6 +9370,143 @@ mod tests {
     }
 
     #[test]
+    fn test_emulate_unboxing_pipeline_and_garage_series_filter_safety() {
+        // 1. Emulate spawning a Secret Santa Crate (2522) into active inventory
+        super::register_spawned_items(&[(2522, 0)]);
+        {
+            let spawned = super::load_active_spawned_items(None);
+            assert!(spawned.iter().any(|&(id, _)| id == 2522), "Crate 2522 must be in spawned items");
+        }
+
+        // 2. Emulate client sending UnlockContainer RPC request
+        let inst_id = "000009da000000000000000000000000"; // 2522 in hex
+        let req_body = serde_json::json!({
+            "PlayerID": "Epic|37674b519c3544beb544f437f539ebf2|0",
+            "InstanceIDs": [inst_id],
+            "KeyInstanceIDs": []
+        });
+        let req_bytes = serde_json::to_vec(&req_body).unwrap();
+        let resp = super::generate_simulated_unlock_container_payload(&req_bytes)
+            .expect("must produce unlock response");
+
+        // 3. Strict schema validation of unbox response
+        assert_eq!(resp["bSuccess"], true);
+        assert_eq!(resp["InstanceIDs"][0], inst_id);
+        assert_eq!(resp["Result"]["InstanceIDs"][0], inst_id);
+
+        let drop = &resp["Result"]["Drops"][0];
+        let drop_pid = drop["ProductID"].as_i64().expect("ProductID must be integer") as i32;
+        let drop_sid = drop["SeriesID"].as_i64().expect("SeriesID must be integer") as i32;
+
+        // SeriesID must be valid and match Secret Santa (21)
+        assert_eq!(drop_sid, 21, "Secret Santa drop SeriesID must be 21");
+        let secret_santa_pool = [2489, 2495, 2496, 2500, 2579, 2478, 2442, 2481, 2482, 2532, 2854, 2966, 3239, 3453];
+        assert!(secret_santa_pool.contains(&drop_pid), "Dropped item {drop_pid} must be in Secret Santa pool");
+
+        // InstanceID must be exactly 32-hex characters and non-null (satisfies native C++ FQWord read at [rax + 0x68])
+        let drop_inst = drop["InstanceID"].as_str().expect("InstanceID must be non-null string");
+        assert_eq!(drop_inst.len(), 32, "InstanceID must be 32 characters hex");
+        assert!(drop_inst.chars().all(|c| c.is_ascii_hexdigit()), "InstanceID must be valid hex");
+        u128::from_str_radix(drop_inst, 16).expect("InstanceID must parse as 128-bit hex for Unreal FQWord");
+
+        // AddedTimestamp and UpdatedTimestamp must be positive integers
+        let added_ts = drop["AddedTimestamp"].as_i64().expect("AddedTimestamp must be integer");
+        let updated_ts = drop["UpdatedTimestamp"].as_i64().expect("UpdatedTimestamp must be integer");
+        assert!(added_ts > 1700000000);
+        assert!(updated_ts > 1700000000);
+        assert_eq!(drop["Amount"].as_i64(), Some(1));
+
+        // 4. Verify opened crate is consumed and dropped item is registered in active items
+        {
+            let spawned = super::load_active_spawned_items(None);
+            assert!(!spawned.iter().any(|&(id, _)| id == 2522), "Opened crate 2522 must be consumed and removed");
+            assert!(spawned.iter().any(|&(id, _)| id == drop_pid), "Dropped item must be registered in active items");
+        }
+
+        // 5. Emulate PsyNet inventory sync via patch_player_products_json
+        let base_inventory = serde_json::json!({
+            "Result": {
+                "ProductData": [
+                    {
+                        "ProductID": 23,
+                        "InstanceID": "00000017000000000000000000000000",
+                        "SeriesID": 0,
+                        "Amount": 1
+                    }
+                ]
+            }
+        });
+        let base_bytes = serde_json::to_vec(&base_inventory).unwrap();
+        let spawned = super::load_active_spawned_items(None);
+        let (patched_bytes, changed) = super::patch_player_products_json(&base_bytes, &spawned);
+        assert!(changed, "Inventory must be patched with dropped product");
+
+        let patched_val: serde_json::Value = serde_json::from_slice(&patched_bytes).unwrap();
+        let prods = patched_val["Result"]["ProductData"].as_array().expect("ProductData array");
+
+        // 6. Emulate UnrealScript SaveData_TA:GetUniqueSeriesIDs & C++ [rax + 0x68] read
+        let mut unique_series = std::collections::HashSet::new();
+        for p in prods {
+            // Emulate pointer check (must not be null / None)
+            assert!(!p.is_null(), "Product entry P must not be null");
+            let pid = p["ProductID"].as_i64().expect("ProductID must be integer");
+            assert!(pid > 0, "ProductID must be positive");
+
+            // Emulate C++ native read of [rax + 0x68] (InstanceID)
+            let inst = p["InstanceID"].as_str().expect("InstanceID must be string");
+            assert_eq!(inst.len(), 32, "InstanceID must be 32-hex");
+            u128::from_str_radix(inst, 16).expect("InstanceID must parse as 128-bit hex");
+
+            // Emulate UnrealScript: if (P.SeriesID > 0) SeriesIDs.AddItem(P.SeriesID)
+            let sid = p["SeriesID"].as_i64().expect("SeriesID must be integer");
+            assert!(sid >= 0, "SeriesID must be non-negative");
+            if sid > 0 {
+                unique_series.insert(sid);
+            }
+        }
+
+        assert!(unique_series.contains(&21), "UniqueSeriesIDs must contain Secret Santa series 21");
+    }
+
+    #[test]
+    fn test_emulate_tier_drop_unboxing_produces_real_items() {
+        // Test unboxing all tier drops: Sport (5302), Special (5301), Deluxe (5303), Import (5300), Exotic (5299), Golden Egg (3049)
+        let tier_containers = [5302, 5301, 5303, 5300, 5299, 3049];
+        let placeholder_pids = [5364, 5365, 5366, 5367, 5368, 5369];
+
+        for &cid in &tier_containers {
+            let inst_id = format!("{:08x}000000000000000000000000", cid as u32);
+            let req_body = serde_json::json!({
+                "PlayerID": "Epic|test_user|0",
+                "InstanceIDs": [inst_id],
+                "KeyInstanceIDs": []
+            });
+            let req_bytes = serde_json::to_vec(&req_body).unwrap();
+            let resp = super::generate_simulated_unlock_container_payload(&req_bytes)
+                .unwrap_or_else(|| panic!("Container {cid} must produce unlock response"));
+
+            assert_eq!(resp["bSuccess"], true);
+            let drop = &resp["Result"]["Drops"][0];
+            let drop_pid = drop["ProductID"].as_i64().expect("ProductID must be integer") as i32;
+
+            // Must NEVER be an internal placeholder token (5364..=5369)
+            assert!(
+                !placeholder_pids.contains(&drop_pid),
+                "Container {cid} must drop a real cosmetic item, not placeholder {drop_pid}"
+            );
+
+            // Must have valid 32-hex InstanceID
+            let inst = drop["InstanceID"].as_str().expect("InstanceID must be string");
+            assert_eq!(inst.len(), 32);
+            u128::from_str_radix(inst, 16).expect("InstanceID must parse as 128-bit hex");
+
+            // Timestamps must be valid
+            assert!(drop["AddedTimestamp"].as_i64().unwrap() > 1700000000);
+            assert!(drop["UpdatedTimestamp"].as_i64().unwrap() > 1700000000);
+        }
+    }
+
+    #[test]
     fn test_get_container_drop_table_response_structure() {
         let resp_bytes = super::get_authoritative_container_drop_table_response_bytes();
         let val: serde_json::Value = serde_json::from_slice(&resp_bytes).expect("valid json");
