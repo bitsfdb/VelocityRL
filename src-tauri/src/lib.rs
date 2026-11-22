@@ -1590,26 +1590,78 @@ async fn acknowledge_repair(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn get_palette_status(app: tauri::AppHandle) -> Result<upk::PaletteStatus, String> {
     let config = get_config(app.clone()).await?;
-    if config.game_dir.is_empty() {
-        return Err("Game directory not set".into());
-    }
     let state = load_integrity(&app);
     let fp = if state.palette_active {
         Some(state.palette_fingerprint.as_str())
     } else {
         None
     };
-    Ok(upk::palette::read_palette_status(Path::new(&config.game_dir), fp))
+    let mut st = if !config.game_dir.is_empty() {
+        upk::palette::read_palette_status(Path::new(&config.game_dir), fp)
+    } else {
+        upk::PaletteStatus {
+            applied: state.palette_active,
+            backup_present: false,
+            tagame_path: String::new(),
+            backup_path: String::new(),
+            fingerprint: state.palette_fingerprint.clone(),
+            message: String::new(),
+        }
+    };
+    st.applied = state.palette_active;
+    Ok(st)
 }
 
 #[tauri::command]
-async fn apply_rich_palette(_app: tauri::AppHandle) -> Result<upk::PaletteStatus, String> {
-    Err("Local package modification is disabled. Palette support must be included in the matching API release.".into())
+async fn apply_rich_palette(app: tauri::AppHandle) -> Result<upk::PaletteStatus, String> {
+    let config = get_config(app.clone()).await?;
+    let mut state = load_integrity(&app);
+    integrity::mark_palette_on(&mut state, "class_override");
+    save_integrity(&app, &state)?;
+    psynet::merge_palette_spoof(true)?;
+    crate::applog::event("palette: activated Team_Soccar_TA.CarColorSet -> OrangeTeamV2 via PsyNet ClassPropertyConfig");
+
+    let mut st = if !config.game_dir.is_empty() {
+        upk::palette::read_palette_status(Path::new(&config.game_dir), Some("class_override"))
+    } else {
+        upk::PaletteStatus {
+            applied: true,
+            backup_present: false,
+            tagame_path: String::new(),
+            backup_path: String::new(),
+            fingerprint: "class_override".into(),
+            message: "Color palette activated via PsyNet class override.".into(),
+        }
+    };
+    st.applied = true;
+    st.message = "Color palette on. Restart Rocket League.".into();
+    Ok(st)
 }
 
 #[tauri::command]
-async fn restore_rich_palette(_app: tauri::AppHandle) -> Result<upk::PaletteStatus, String> {
-    Err("Local package modification is disabled. Palette support must be included in the matching API release.".into())
+async fn restore_rich_palette(app: tauri::AppHandle) -> Result<upk::PaletteStatus, String> {
+    let config = get_config(app.clone()).await?;
+    let mut state = load_integrity(&app);
+    integrity::mark_palette_off(&mut state);
+    save_integrity(&app, &state)?;
+    psynet::merge_palette_spoof(false)?;
+    crate::applog::event("palette: deactivated Team_Soccar_TA.CarColorSet via PsyNet ClassPropertyConfig");
+
+    let mut st = if !config.game_dir.is_empty() {
+        upk::palette::read_palette_status(Path::new(&config.game_dir), None)
+    } else {
+        upk::PaletteStatus {
+            applied: false,
+            backup_present: false,
+            tagame_path: String::new(),
+            backup_path: String::new(),
+            fingerprint: String::new(),
+            message: "Color palette deactivated.".into(),
+        }
+    };
+    st.applied = false;
+    st.message = "Color palette off.".into();
+    Ok(st)
 }
 
 #[tauri::command]
@@ -2114,26 +2166,9 @@ async fn reset_tagame_for_verify(_app: tauri::AppHandle) -> Result<String, Strin
 
 #[tauri::command]
 async fn sync_palette_psynet_config(app: tauri::AppHandle) -> Result<(), String> {
-    let config = get_config(app.clone()).await?;
-    if config.game_dir.is_empty() {
-        return Ok(());
-    }
-    let actual_st = upk::palette::read_palette_status(Path::new(&config.game_dir), None);
-    let applied = actual_st.applied;
-    let mut state = load_integrity(&app);
-    if state.palette_active != applied {
-        state.palette_active = applied;
-        if applied {
-            state.palette_fingerprint = actual_st.fingerprint;
-        } else {
-            state.palette_fingerprint.clear();
-        }
-        let _ = save_integrity(&app, &state);
-    }
-    let enabled = psynet::merge_palette_spoof(applied).is_ok();
-    if enabled {
-        applog::event(&format!("psynet: palette_spoof synced -> {applied}"));
-    }
+    let state = load_integrity(&app);
+    let _ = psynet::merge_palette_spoof(state.palette_active);
+    applog::event(&format!("psynet: palette_spoof synced -> {}", state.palette_active));
     Ok(())
 }
 
