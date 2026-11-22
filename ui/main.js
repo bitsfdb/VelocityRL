@@ -809,6 +809,15 @@ async function init() {
                 bootTrackFill.style.transform = 'none';
             }
         });
+
+        window.__TAURI__?.event?.listen('inventory-updated', async () => {
+            try {
+                await refreshBackups();
+                if (typeof refreshDropPresets === 'function') refreshDropPresets();
+            } catch (e) {
+                console.error('Failed to auto-refresh inventory on update:', e);
+            }
+        });
     } catch (_) {}
     initVersionBadge();
     ownedSearch = document.getElementById('owned-search');

@@ -2705,6 +2705,10 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
             "Key": "Painted",
             "Value": dropped_paint.to_string()
         }));
+        attributes.push(serde_json::json!({
+            "Key": "Paint",
+            "Value": dropped_paint.to_string()
+        }));
     }
 
     let now = std::time::SystemTime::now()
@@ -2719,9 +2723,11 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
         "Attributes": attributes,
         "SeriesID": dropped_series_id,
         "Amount": 1,
+        "ExpirationTime": -1,
+        "IsTradable": false,
+        "TradeHold": -1,
         "AddedTimestamp": now,
         "UpdatedTimestamp": now,
-        "TradeHold": -1,
     });
     if dropped_paint > 0 {
         drop_obj["Paint"] = serde_json::json!(dropped_paint);
@@ -2730,9 +2736,13 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
 
     let resp_obj = serde_json::json!({
         "Drops": [drop_obj.clone()],
+        "ProductData": [drop_obj.clone()],
+        "RewardDrops": [drop_obj.clone()],
         "InstanceIDs": consumed_instance_ids,
         "Result": {
-            "Drops": [drop_obj],
+            "Drops": [drop_obj.clone()],
+            "ProductData": [drop_obj.clone()],
+            "RewardDrops": [drop_obj],
             "InstanceIDs": consumed_instance_ids,
             "bSkipRoulette": true
         },
@@ -7061,6 +7071,146 @@ fn save_persisted_spawned_items(items: &[(i32, i32)]) {
     }
 }
 
+static ITEMS_LOOKUP_MAP: std::sync::LazyLock<std::collections::HashMap<i32, (String, String, String)>> = std::sync::LazyLock::new(|| {
+    let mut map = std::collections::HashMap::new();
+    const BUNDLED: &str = include_str!("../../resources/items.json");
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(BUNDLED) {
+        let items_arr = v.get("items").or_else(|| v.get("Items")).and_then(|a| a.as_array());
+        if let Some(arr) = items_arr {
+            for it in arr {
+                let id = it.get("ID").or_else(|| it.get("id")).and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                if id > 0 {
+                    let name = it.get("Product").or_else(|| it.get("product")).or_else(|| it.get("name")).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let slot = it.get("Slot").or_else(|| it.get("slot")).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let pkg = it.get("AssetPackage").or_else(|| it.get("asset_package")).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    map.insert(id, (name, slot, pkg));
+                }
+            }
+        }
+    }
+    map
+});
+
+pub fn lookup_product_details(pid: i32) -> (String, String, String) {
+    if let Some(entry) = ITEMS_LOOKUP_MAP.get(&pid) {
+        entry.clone()
+    } else {
+        (format!("Item #{pid}"), "Cosmetic".to_string(), String::new())
+    }
+}
+
+pub fn candidate_swaps_paths() -> Vec<std::path::PathBuf> {
+    let mut candidate_paths = vec![
+        crate::psynet::config_dir().join("swaps.json"),
+    ];
+    if let Some(parent) = crate::psynet::config_dir().parent() {
+        candidate_paths.push(parent.join("swaps.json"));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            candidate_paths.push(std::path::PathBuf::from(&appdata).join("com.velocityrl.app").join("swaps.json"));
+            candidate_paths.push(std::path::PathBuf::from(&appdata).join("VelocityRL").join("swaps.json"));
+        }
+        if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
+            candidate_paths.push(std::path::PathBuf::from(&localappdata).join("com.velocityrl.app").join("swaps.json"));
+            candidate_paths.push(std::path::PathBuf::from(&localappdata).join("VelocityRL").join("swaps.json"));
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Ok(home) = std::env::var("HOME") {
+            candidate_paths.push(std::path::PathBuf::from(&home).join(".config").join("com.velocityrl.app").join("swaps.json"));
+            candidate_paths.push(std::path::PathBuf::from(&home).join(".config").join("VelocityRL").join("swaps.json"));
+        }
+    }
+    candidate_paths
+}
+
+pub fn sync_spawned_items_to_swaps(items: &[(i32, i32)]) {
+    if items.is_empty() {
+        return;
+    }
+    let candidate_paths = candidate_swaps_paths();
+    let mut existing_swaps: Vec<serde_json::Value> = Vec::new();
+    for p in &candidate_paths {
+        if p.exists() {
+            if let Ok(content) = std::fs::read_to_string(p) {
+                if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
+                    if !arr.is_empty() {
+                        existing_swaps = arr;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    let mut changed = false;
+    let now_ts = chrono::Utc::now().to_rfc3339();
+
+    for &(pid, paint) in items {
+        if pid <= 0 {
+            continue;
+        }
+        let already_present = existing_swaps.iter().any(|s| {
+            let wid = s.get("wanted_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            let oid = s.get("owned_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            let p = s.get("paint_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            wid == pid && oid == pid && p == paint
+        });
+
+        if !already_present {
+            let (name, slot, asset_pkg) = lookup_product_details(pid);
+            let entry = serde_json::json!({
+                "owned_id": pid,
+                "wanted_id": pid,
+                "owned_name": name,
+                "wanted_name": name,
+                "owned_paint_id": null,
+                "owned_custom_hex": null,
+                "paint_id": paint,
+                "custom_paint_hex": null,
+                "asset_package": asset_pkg,
+                "slot": slot,
+                "timestamp": now_ts
+            });
+            existing_swaps.push(entry);
+            changed = true;
+        }
+    }
+
+    if changed {
+        if let Ok(json_data) = serde_json::to_vec_pretty(&existing_swaps) {
+            for target in &candidate_paths {
+                if let Some(parent) = target.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let _ = std::fs::write(target, &json_data);
+            }
+        }
+    }
+}
+
+static GLOBAL_APP_HANDLE: std::sync::RwLock<Option<tauri::AppHandle>> = std::sync::RwLock::new(None);
+
+pub fn set_app_handle(handle: tauri::AppHandle) {
+    if let Ok(mut g) = GLOBAL_APP_HANDLE.write() {
+        *g = Some(handle);
+    }
+}
+
+pub fn get_app_handle() -> Option<tauri::AppHandle> {
+    GLOBAL_APP_HANDLE.read().ok().and_then(|g| g.clone())
+}
+
+pub fn notify_inventory_updated() {
+    use tauri::Emitter;
+    if let Some(app) = get_app_handle() {
+        let _ = app.emit("inventory-updated", ());
+    }
+}
+
 fn ensure_spawned_items_loaded() {
     if !SPAWNED_ITEMS_INITIALIZED.swap(true, std::sync::atomic::Ordering::SeqCst) {
         let persisted = load_persisted_spawned_items();
@@ -7269,6 +7419,8 @@ pub fn register_spawned_items(items: &[(i32, i32)]) {
     }
     if updated {
         save_persisted_spawned_items(&current_items);
+        sync_spawned_items_to_swaps(items);
+        notify_inventory_updated();
         ensure_inventory_reconciliation_worker_started();
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             handle.spawn(async {
@@ -7289,6 +7441,27 @@ pub fn unregister_spawned_items(product_ids: &[i32]) {
     if let Ok(mut notified) = NOTIFIED_SPAWNED_ITEMS.write() {
         notified.retain(|(id, _)| !product_ids.contains(id));
     }
+    // Also remove from swaps.json so active swap rules don't resurrect the unregistered item
+    for p in &candidate_swaps_paths() {
+        if p.exists() {
+            if let Ok(content) = std::fs::read_to_string(p) {
+                if let Ok(mut arr) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
+                    let prev_len = arr.len();
+                    arr.retain(|s| {
+                        let wid = s.get("wanted_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                        let oid = s.get("owned_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                        !(product_ids.contains(&wid) && wid == oid)
+                    });
+                    if arr.len() != prev_len {
+                        if let Ok(data) = serde_json::to_vec_pretty(&arr) {
+                            let _ = std::fs::write(p, data);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    notify_inventory_updated();
 }
 
 pub fn clear_dynamic_spawned_items() {
@@ -7299,6 +7472,26 @@ pub fn clear_dynamic_spawned_items() {
     if let Ok(mut notified) = NOTIFIED_SPAWNED_ITEMS.write() {
         notified.clear();
     }
+    for p in &candidate_swaps_paths() {
+        if p.exists() {
+            if let Ok(content) = std::fs::read_to_string(p) {
+                if let Ok(mut arr) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
+                    let prev_len = arr.len();
+                    arr.retain(|s| {
+                        let wid = s.get("wanted_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                        let oid = s.get("owned_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                        wid != oid
+                    });
+                    if arr.len() != prev_len {
+                        if let Ok(data) = serde_json::to_vec_pretty(&arr) {
+                            let _ = std::fs::write(p, data);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    notify_inventory_updated();
 }
 
 pub fn load_active_spawned_items(cfg: Option<&crate::psynet::SpoofPayload>) -> Vec<(i32, i32)> {
@@ -9494,6 +9687,26 @@ mod tests {
             let spawned = super::load_active_spawned_items(None);
             assert!(!spawned.iter().any(|&(id, _)| id == 2522), "Opened crate 2522 must be consumed and removed");
             assert!(spawned.iter().any(|&(id, _)| id == drop_pid), "Dropped item must be registered in active items");
+        }
+
+        // 4b. Verify dropped item is synchronized to swaps.json for VelocityRL UI display
+        {
+            let mut found_in_swaps = false;
+            for p in &super::candidate_swaps_paths() {
+                if let Ok(content) = std::fs::read_to_string(p) {
+                    if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
+                        if arr.iter().any(|s| {
+                            let wid = s.get("wanted_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                            let oid = s.get("owned_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                            wid == drop_pid && oid == drop_pid
+                        }) {
+                            found_in_swaps = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            assert!(found_in_swaps, "Dropped item must be synchronized into swaps.json for VelocityRL UI");
         }
 
         // 5. Emulate PsyNet inventory sync via patch_player_products_json

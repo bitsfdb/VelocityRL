@@ -1696,10 +1696,26 @@ fn swaps_path(app: &tauri::AppHandle) -> Option<PathBuf> {
 }
 
 fn load_swaps(app: &tauri::AppHandle) -> Vec<SwapEntry> {
-    let list: Vec<SwapEntry> = swaps_path(app)
+    let mut list: Vec<SwapEntry> = swaps_path(app)
         .and_then(|p| fs::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
+
+    let proxy_path = crate::psynet::config_dir().join("swaps.json");
+    if let Ok(content) = fs::read_to_string(&proxy_path) {
+        if let Ok(proxy_list) = serde_json::from_str::<Vec<SwapEntry>>(&content) {
+            for entry in proxy_list {
+                if !list.iter().any(|existing| {
+                    existing.owned_id == entry.owned_id
+                        && existing.wanted_id == entry.wanted_id
+                        && existing.paint_id == entry.paint_id
+                }) {
+                    list.push(entry);
+                }
+            }
+        }
+    }
+
     let mut seen_swaps = std::collections::HashSet::new();
     let mut seen_spawns = std::collections::HashSet::new();
     let mut deduped = Vec::new();
@@ -3829,6 +3845,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(psynet::PsyNetState::default())
         .setup(|app| {
+            crate::proxy::set_app_handle(app.handle().clone());
             let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
             let dir = applog::init(app.handle());
             perform_startup_cache_maintenance(app.handle());
