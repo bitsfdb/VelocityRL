@@ -6974,21 +6974,9 @@ function initDropsTab() {
                                 <span style="font-weight: 700; font-size: 15px; color: #fff; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">${escHtml(d.name)}</span>
                             </div>
                             <div style="margin-top: 8px;">
-                                <button type="button" class="drop-view-contents-btn" data-drop-id="${d.id}" style="
-                                    background: rgba(255, 255, 255, 0.08);
-                                    border: 1px solid rgba(255, 255, 255, 0.16);
-                                    color: #cbd5e1;
-                                    font-size: 11px;
-                                    font-weight: 600;
-                                    padding: 3px 8px;
-                                    border-radius: 4px;
-                                    cursor: pointer;
-                                    display: inline-flex;
-                                    align-items: center;
-                                    gap: 5px;
-                                    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-                                ">
-                                    <span>🔍</span> Show Contents
+                                <button type="button" class="drop-view-contents-btn" data-drop-id="${d.id}">
+                                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                                    <span>Show Contents</span>
                                 </button>
                             </div>
                         </div>
@@ -7086,9 +7074,10 @@ function initDropsTab() {
                 `;
 
                 for (const drop of itemsInGroup) {
-                    const globalItem = allItems.find(x => x.id === drop.ProductID);
+                    const globalItem = (typeof items !== 'undefined' && Array.isArray(items) ? items : []).find(x => x.id === drop.ProductID);
                     const thumb = globalItem?.image_url || '';
                     const paintableBadge = drop.Paintable ? `<span style="font-size: 10px; color: #93c5fd; background: rgba(59, 130, 246, 0.2); padding: 1px 5px; border-radius: 3px; font-weight: 600;">Paintable</span>` : '';
+                    const fallbackBoxSvg = `<div style="display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; color: var(--muted);"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg></div>`;
 
                     html += `
                         <div style="
@@ -7101,7 +7090,7 @@ function initDropsTab() {
                             gap: 10px;
                         ">
                             <div style="width: 44px; height: 44px; flex-shrink: 0; background: rgba(0, 0, 0, 0.4); border-radius: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.05);">
-                                ${thumb ? `<img src="${escHtml(thumb)}" style="width: 100%; height: 100%; object-fit: contain;" onerror="this.outerHTML='<span style=\\'font-size:18px\\'>🎁</span>';">` : `<span style="font-size: 18px;">🎁</span>`}
+                                ${thumb ? `<img src="${escHtml(thumb)}" style="width: 100%; height: 100%; object-fit: contain;" onerror="this.outerHTML='${fallbackBoxSvg.replace(/'/g, "\\'")}';">` : fallbackBoxSvg}
                             </div>
                             <div style="flex: 1; min-width: 0;">
                                 <div style="font-size: 13px; font-weight: 600; color: #fff; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escHtml(drop.Name)}">${escHtml(drop.Name)}</div>
@@ -7158,26 +7147,37 @@ function initDropsTab() {
         }
 
         modal.style.display = 'flex';
+        modal.classList.add('active');
     }
 
     document.getElementById('drop-contents-close')?.addEventListener('click', () => {
         const modal = document.getElementById('drop-contents-modal');
-        if (modal) modal.style.display = 'none';
+        if (modal) {
+            modal.style.display = 'none';
+            modal.classList.remove('active');
+        }
     });
     document.getElementById('drop-modal-close-btn')?.addEventListener('click', () => {
         const modal = document.getElementById('drop-contents-modal');
-        if (modal) modal.style.display = 'none';
+        if (modal) {
+            modal.style.display = 'none';
+            modal.classList.remove('active');
+        }
     });
     document.getElementById('drop-contents-modal')?.addEventListener('click', (e) => {
         if (e.target.id === 'drop-contents-modal') {
             e.target.style.display = 'none';
+            e.target.classList.remove('active');
         }
     });
     document.getElementById('drop-modal-spawn-btn')?.addEventListener('click', async () => {
         if (!currentModalCrateId) return;
         const qty = parseInt(qtyInput?.value || '1', 10);
         const modal = document.getElementById('drop-contents-modal');
-        if (modal) modal.style.display = 'none';
+        if (modal) {
+            modal.style.display = 'none';
+            modal.classList.remove('active');
+        }
         showProgress(true, 30);
         updateStatus(`Spawning crate #${currentModalCrateId} (${qty}x)...`, false);
         try {
