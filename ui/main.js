@@ -7059,6 +7059,7 @@ function initDropsTab() {
                 </div>
             `;
 
+            const fallbackBoxSvg = `<div style="display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; color: var(--muted);"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg></div>`;
             for (const q of order) {
                 const itemsInGroup = groups[q];
                 if (!itemsInGroup || itemsInGroup.length === 0) continue;
@@ -7077,7 +7078,6 @@ function initDropsTab() {
                     const globalItem = (typeof items !== 'undefined' && Array.isArray(items) ? items : []).find(x => x.id === drop.ProductID);
                     const thumb = globalItem?.image_url || '';
                     const paintableBadge = drop.Paintable ? `<span style="font-size: 10px; color: #93c5fd; background: rgba(59, 130, 246, 0.2); padding: 1px 5px; border-radius: 3px; font-weight: 600;">Paintable</span>` : '';
-                    const fallbackBoxSvg = `<div style="display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; color: var(--muted);"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg></div>`;
 
                     html += `
                         <div style="
@@ -7090,7 +7090,7 @@ function initDropsTab() {
                             gap: 10px;
                         ">
                             <div style="width: 44px; height: 44px; flex-shrink: 0; background: rgba(0, 0, 0, 0.4); border-radius: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.05);">
-                                ${thumb ? `<img src="${escHtml(thumb)}" style="width: 100%; height: 100%; object-fit: contain;" onerror="this.outerHTML='${fallbackBoxSvg.replace(/'/g, "\\'")}';">` : fallbackBoxSvg}
+                                ${thumb ? `<img data-drop-thumb="1" src="${escHtml(thumb)}" style="width: 100%; height: 100%; object-fit: contain;">` : fallbackBoxSvg}
                             </div>
                             <div style="flex: 1; min-width: 0;">
                                 <div style="font-size: 13px; font-weight: 600; color: #fff; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escHtml(drop.Name)}">${escHtml(drop.Name)}</div>
@@ -7110,6 +7110,11 @@ function initDropsTab() {
             }
 
             bodyEl.innerHTML = html;
+            bodyEl.querySelectorAll('img[data-drop-thumb]').forEach((img) => {
+                img.addEventListener('error', () => {
+                    img.outerHTML = fallbackBoxSvg;
+                }, { once: true });
+            });
             if (infoEl) infoEl.textContent = `Total Items: ${specificDrops.length}`;
         } else {
             const minTier = crateItem.name?.toLowerCase().includes('uncommon') ? 'Uncommon' :
@@ -9462,11 +9467,16 @@ document.addEventListener('contextmenu', (e) => e.preventDefault());
 
 function installUiDiagnostics() {
     let lastTick = performance.now();
+    let heartbeatBusy = false;
     const log = message => invoke('append_launch_log', { message }).catch(() => {});
     setInterval(() => {
-        const elapsed = Math.round(performance.now() - lastTick);
-        lastTick = performance.now();
-        log(`ui heartbeat: elapsed=${elapsed}ms hidden=${document.hidden}`);
+        const now = performance.now();
+        const elapsed = Math.round(now - lastTick);
+        lastTick = now;
+        if (heartbeatBusy) return;
+        heartbeatBusy = true;
+        log(`ui heartbeat: elapsed=${elapsed}ms hidden=${document.hidden} focused=${document.hasFocus()}`)
+            .finally(() => { heartbeatBusy = false; });
     }, 5000);
     window.addEventListener('error', event => log(`ui error: ${event.message} at ${event.filename}:${event.lineno}`));
     window.addEventListener('unhandledrejection', event => log(`ui rejection: ${String(event.reason?.stack || event.reason).slice(0, 2000)}`));

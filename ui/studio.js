@@ -495,10 +495,33 @@
             ctx.fillRect(x, y, 14 + i % 4 * 7, 1);
         }
     }
-    frame = requestAnimationFrame(drawField);
-    document.addEventListener('visibilitychange', () => {
+    let wakeRaf = 0;
+    const kickCompositor = () => {
+        if (wakeRaf) cancelAnimationFrame(wakeRaf);
+        const target = document.getElementById('velocity-field');
+        if (!target) return;
+        target.style.opacity = '0.999';
+        wakeRaf = requestAnimationFrame(() => {
+            target.style.opacity = '';
+            wakeRaf = 0;
+        });
+    };
+
+    const syncFieldPlayback = ({ wake = false } = {}) => {
         cancelAnimationFrame(frame);
+        frame = 0;
         document.body.classList.toggle('motion-suspended', document.hidden);
-        if (!document.hidden) { previous = 0; frame = requestAnimationFrame(drawField); }
-    });
+        if (!document.hidden && document.hasFocus()) {
+            previous = 0;
+            frame = requestAnimationFrame(drawField);
+            if (wake) kickCompositor();
+        }
+    };
+
+    if (!document.hidden) {
+        frame = requestAnimationFrame(drawField);
+    }
+    document.addEventListener('visibilitychange', () => syncFieldPlayback({ wake: !document.hidden }));
+    window.addEventListener('focus', () => syncFieldPlayback({ wake: true }));
+    window.addEventListener('blur', () => syncFieldPlayback());
 })();

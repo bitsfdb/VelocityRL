@@ -2911,8 +2911,10 @@ pub fn clear_rocket_league_cache() -> Result<usize, String> {
 }
 
 #[tauri::command]
-pub fn is_rocket_league_running() -> bool {
-    rocket_league_running()
+pub async fn is_rocket_league_running() -> bool {
+    tauri::async_runtime::spawn_blocking(rocket_league_running)
+        .await
+        .unwrap_or(false)
 }
 
 #[tauri::command]

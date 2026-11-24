@@ -33,6 +33,7 @@ pub fn init(app: &AppHandle) -> Arc<Mutex<SessionTracker>> {
 pub fn create_overlay_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let url = tauri::WebviewUrl::App("tracker_overlay.html".into());
     match tauri::WebviewWindowBuilder::new(app, "tracker_overlay", url)
+        .additional_browser_args(&crate::webview2_browser_args())
         .title("VelocityRL Overlay")
         .inner_size(400.0, 270.0)
         .decorations(false)

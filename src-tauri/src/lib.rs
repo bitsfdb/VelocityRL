@@ -3655,6 +3655,7 @@ fn create_main_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>
     let mut last_err: Option<String> = None;
     for attempt in 1u32..=6 {
         match tauri::WebviewWindowBuilder::from_config(app.handle(), &cfg)?
+            .additional_browser_args(&webview2_browser_args())
             .focused(true)
             .on_download(workshop::bakkes_download_interceptor())
             .build()
@@ -3746,12 +3747,31 @@ async fn get_network_status() -> Result<serde_json::Value, String> {
 
 
 
-pub fn run() {
-    #[cfg(windows)]
+/// Shared Chromium/WebView2 arguments applied identically to every WebView sharing the User Data Folder.
+/// Disables occlusion/background throttling and Efficiency Mode so Alt-Tabbing from games never freezes the UI thread.
+pub(crate) fn webview2_browser_args() -> String {
+    let mut args = String::from(
+        "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,\
+         CalculateNativeWinOcclusion,IntensiveWakeUpThrottling,\
+         QuickIntensiveWakeUpThrottlingAfterLoading,UseEcoQoSForBackgroundProcess \
+         --disable-backgrounding-occluded-windows \
+         --disable-renderer-backgrounding \
+         --disable-background-timer-throttling",
+    );
     if std::env::args().any(|arg| arg == "--software-rendering") {
-        let current = std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS").unwrap_or_default();
-        std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", format!("{current} --disable-gpu"));
+        args.push_str(" --disable-gpu");
     }
+    if let Ok(extra) = std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") {
+        let extra = extra.trim();
+        if !extra.is_empty() {
+            args.push(' ');
+            args.push_str(extra);
+        }
+    }
+    args
+}
+
+pub fn run() {
     #[cfg(target_os = "linux")]
     {
         if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
