@@ -7697,18 +7697,15 @@ pub fn load_active_spawned_items(cfg: Option<&crate::psynet::SpoofPayload>) -> V
 fn find_server_address(val: &serde_json::Value) -> Option<String> {
     match val {
         serde_json::Value::Object(map) => {
-            // Priority 1: Match Game Server address (ServerAddress or GameURL)
+            // Match Game Server address (ServerAddress or GameURL).
+            // Never fall back to PingURL: PingURL is a QoS ping beacon, not the
+            // match server; overwriting target_server with PingURL causes first-queue
+            // connection timeouts.
             for key in &["ServerAddress", "GameURL"] {
                 if let Some(s) = map.get(*key).and_then(|v| v.as_str()) {
                     if !s.starts_with("127.0.0.1") && s.contains(':') {
                         return Some(s.to_string());
                     }
-                }
-            }
-            // Priority 2: Fallback to PingURL only if no direct match server address exists
-            if let Some(s) = map.get("PingURL").and_then(|v| v.as_str()) {
-                if !s.starts_with("127.0.0.1") && s.contains(':') {
-                    return Some(s.to_string());
                 }
             }
             for (_k, v) in map {

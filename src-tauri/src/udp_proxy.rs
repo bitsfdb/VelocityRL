@@ -383,9 +383,14 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                     // giving up, then mark the task dead so the next
                     // reservation rebinds a fresh proxy.
                     crate::applog::event(&format!("udp_proxy: client recv error: {e}"));
-                    if e.kind() == std::io::ErrorKind::WouldBlock
-                        || e.kind() == std::io::ErrorKind::TimedOut
-                    {
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::WouldBlock
+                            | std::io::ErrorKind::TimedOut
+                            | std::io::ErrorKind::Interrupted
+                            | std::io::ErrorKind::ConnectionReset
+                            | std::io::ErrorKind::ConnectionRefused
+                    ) {
                         continue;
                     }
                     state_c2s.c2s_alive.store(false, Ordering::SeqCst);
@@ -491,6 +496,16 @@ pub async fn ensure_udp_proxy() -> Result<u16, String> {
                 }
                 Err(e) => {
                     crate::applog::event(&format!("udp_proxy: upstream recv error: {e}"));
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::WouldBlock
+                            | std::io::ErrorKind::TimedOut
+                            | std::io::ErrorKind::Interrupted
+                            | std::io::ErrorKind::ConnectionReset
+                            | std::io::ErrorKind::ConnectionRefused
+                    ) {
+                        continue;
+                    }
                     state_s2c.s2c_alive.store(false, Ordering::SeqCst);
                     state_s2c.running.store(false, Ordering::SeqCst);
                     break;
@@ -547,11 +562,13 @@ pub async fn set_active_reservation_with_crypto(
         }
     };
 
-    {
+    let target_changed = {
         let mut target_lock = state.target_server.write().await;
+        let changed = *target_lock != Some(resolved);
         *target_lock = Some(resolved);
-    }
-    {
+        changed
+    };
+    if target_changed {
         let mut client_lock = state.client_endpoint.write().await;
         *client_lock = None;
     }
