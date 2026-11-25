@@ -2433,45 +2433,41 @@ pub fn get_authoritative_container_drop_table_response_bytes() -> Vec<u8> {
 fn roll_drop_tier(min_tier: &str, rng: &mut impl rand::Rng) -> &'static str {
     let roll: u32 = rng.gen_range(0..100);
     match min_tier {
+        // Sport Drop (Uncommon min) → boosted: VeryRare 50%, Import 30%, Exotic 15%, BM 5%
         "Uncommon" => {
-            // Uncommon 72%, Rare 20%, Very Rare 6%, Import 2%
-            if roll < 72 { "Uncommon" }
-            else if roll < 92 { "Rare" }
-            else if roll < 98 { "VeryRare" }
-            else { "Import" }
+            if roll < 50 { "VeryRare" }
+            else if roll < 80 { "Import" }
+            else if roll < 95 { "Exotic" }
+            else { "BlackMarket" }
         }
+        // Special Drop (Rare min) → Import 45%, Exotic 35%, BM 20%
         "Rare" => {
-            // Rare 68%, Very Rare 22%, Import 7%, Exotic 3%
-            if roll < 68 { "Rare" }
-            else if roll < 90 { "VeryRare" }
-            else if roll < 97 { "Import" }
-            else { "Exotic" }
+            if roll < 45 { "Import" }
+            else if roll < 80 { "Exotic" }
+            else { "BlackMarket" }
         }
+        // Deluxe Drop (VeryRare min) → Import 30%, Exotic 45%, BM 25%
         "VeryRare" => {
-            // Very Rare 65%, Import 23%, Exotic 9%, Black Market 3%
-            if roll < 65 { "VeryRare" }
-            else if roll < 88 { "Import" }
-            else if roll < 97 { "Exotic" }
+            if roll < 30 { "Import" }
+            else if roll < 75 { "Exotic" }
             else { "BlackMarket" }
         }
+        // Import Drop → Exotic 55%, BM 45%
         "Import" => {
-            // Import 70%, Exotic 22%, Black Market 8%
-            if roll < 70 { "Import" }
-            else if roll < 92 { "Exotic" }
+            if roll < 55 { "Exotic" }
             else { "BlackMarket" }
         }
+        // Exotic Drop → Exotic 40%, BM 60%
         "Exotic" => {
-            // Exotic 80%, Black Market 20%
-            if roll < 80 { "Exotic" }
+            if roll < 40 { "Exotic" }
             else { "BlackMarket" }
         }
+        // Black Market Drop → always BM
         "BlackMarket" => "BlackMarket",
+        // Golden egg/gift default → Import 30%, Exotic 40%, BM 30%
         _ => {
-            // General golden egg/gift roll: Rare 48%, Very Rare 28%, Import 16%, Exotic 6%, Black Market 2%
-            if roll < 48 { "Rare" }
-            else if roll < 76 { "VeryRare" }
-            else if roll < 92 { "Import" }
-            else if roll < 98 { "Exotic" }
+            if roll < 30 { "Import" }
+            else if roll < 70 { "Exotic" }
             else { "BlackMarket" }
         }
     }
@@ -2479,86 +2475,59 @@ fn roll_drop_tier(min_tier: &str, rng: &mut impl rand::Rng) -> &'static str {
 
 fn pick_authentic_non_crate_item(tier: &str, rng: &mut impl rand::Rng) -> (i32, bool) {
     match tier {
-        "Uncommon" => {
-            let pool: &[(i32, bool)] = &[
-                (232, true),   // Halo
-                (2064, true),  // Stegosaur
-                (390, true),   // Foam Hat
-                (1339, true),  // Pork Pie
-                (748, true),   // Unicorn
-                (363, true),   // Dieci
-                (359, true),   // Tunica
-                (383, true),   // Sunburst
-                (373, true),   // Veloce
-                (370, true),   // Neptune
-                (1, false),    // 8-Ball
-            ];
-            let idx = rng.gen_range(0..pool.len());
-            pool[idx]
-        }
-        "Rare" => {
-            let pool: &[(i32, bool)] = &[
-                (1506, true),  // Asterias
-                (810, true),   // Wildcat Ears
-                (2050, true),  // MMS Headphones
-                (493, true),   // Drink Helmet
-                (45, true),    // Ion
-                (52, true),    // Plasma
-                (1688, false), // Moon Rock
-                (2580, false), // Salty
-                (2527, false), // Nice Slice
-                (2413, false), // Beaten Egg
-            ];
-            let idx = rng.gen_range(0..pool.len());
-            pool[idx]
-        }
+        // VeryRare — painted wheels and painted toppers only, nothing base
         "VeryRare" => {
             let pool: &[(i32, bool)] = &[
                 (386, true),   // Cristiano
-                (4127, false), // Anodized Pearl
                 (1452, true),  // Ink
                 (1166, true),  // Frostbite
                 (1951, true),  // Yamane
+                (4127, false), // Anodized Pearl
+                (45, true),    // Ion
+                (52, true),    // Plasma
+                (363, true),   // Dieci
+                (373, true),   // Veloce
+                (383, true),   // Sunburst
             ];
             let idx = rng.gen_range(0..pool.len());
             pool[idx]
         }
+        // Import — quality bodies and boost/decals
         "Import" => {
             let pool: &[(i32, bool)] = &[
                 (23, true),    // Octane
                 (4284, true),  // Fennec
                 (403, true),   // Dominus
-                (63, true),    // Standard
-                (62, true),    // Sparkles
+                (22, true),    // Breakout
                 (36, true),    // Flamethrower
                 (53, true),    // Thermal
                 (35, true),    // Datastream
                 (44, true),    // Sacred
                 (2355, true),  // Reaper
-                (22, true),    // Breakout
                 (30, true),    // Merc
             ];
             let idx = rng.gen_range(0..pool.len());
             pool[idx]
         }
+        // Exotic — premium wheels only
         "Exotic" => {
             let pool: &[(i32, bool)] = &[
                 (1580, true),  // Zomba
                 (1661, true),  // Draco
                 (731, true),   // Voltaic
+                (380, true),   // Invader
+                (381, true),   // Vortex
+                (368, true),   // Stern
                 (363, true),   // Dieci
-                (359, true),   // Tunica
                 (383, true),   // Sunburst
                 (373, true),   // Veloce
-                (368, true),   // Stern
-                (381, true),   // Vortex
-                (380, true),   // Invader
+                (359, true),   // Tunica
             ];
             let idx = rng.gen_range(0..pool.len());
             pool[idx]
         }
+        // BlackMarket — the best decals/goals/boosts
         _ => {
-            // BlackMarket
             let pool: &[(i32, bool)] = &[
                 (2854, false), // Dissolver
                 (2044, true),  // Dueling Dragons
@@ -2569,6 +2538,7 @@ fn pick_authentic_non_crate_item(tier: &str, rng: &mut impl rand::Rng) -> (i32, 
                 (1888, false), // Bubbly
                 (1908, true),  // Hellfire
                 (4549, true),  // Gravity Bomb
+                (2532, true),  // Wonderment
             ];
             let idx = rng.gen_range(0..pool.len());
             pool[idx]
@@ -2629,9 +2599,16 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
     let is_owned = |pid: i32, paint: i32| owned_spawned.iter().any(|&(opid, opaint)| opid == pid && (paint == 0 || opaint == paint));
 
     let (dropped_pid, dropped_series_id, can_be_painted) = if let Some(container) = container_entry {
-        // Collect authentic specific drops from this container (excluding tier indicator placeholders)
+        // Collect authentic specific drops from this container (excluding tier indicator placeholders
+        // and excluding base/common items — bodies with no quality and default paints).
+        // Base product IDs to skip: common bodies and default decals shipped with the base game.
+        let is_base_item = |pid: i32| matches!(pid,
+            63 | 62 | 36 | 53 | 35 | 44 | 2355 | 30 | 25 | 29 | 31 | // common bodies/decals
+            100..=200 |  // early common topper/decal range
+            7000..=9999   // internal placeholder range
+        );
         let specific_drops: Vec<&ContainerDropItem> = container.drops.iter()
-            .filter(|d| !is_tier_placeholder(d.product_id))
+            .filter(|d| !is_tier_placeholder(d.product_id) && !is_base_item(d.product_id))
             .collect();
 
         if !specific_drops.is_empty() {
@@ -2667,18 +2644,21 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
     } else {
         // High tier fallback items pool if opened container was not matched
         let drop_candidates: &[(i32, i32, bool)] = &[
-            (2532, 21, true),  // Wonderment (Secret Santa)
-            (2854, 21, false), // Dissolver
-            (1580, 2, true),   // Zomba (Champion 4)
-            (1661, 4, true),   // Draco (Nitro)
-            (4284, 0, true),   // Fennec
-            (23, 0, true),     // Octane
+            (2854, 21, false), // Dissolver (Black Market)
+            (2044, 21, true),  // Dueling Dragons (Black Market)
+            (3239, 21, true),  // Mainframe (Black Market)
+            (1435, 0, false),  // Heatwave (Black Market)
+            (1684, 0, true),   // 20XX (Black Market)
+            (1580, 2, true),   // Zomba (Exotic)
+            (1661, 4, true),   // Draco (Exotic)
+            (4549, 0, true),   // Gravity Bomb (Black Market)
+            (4284, 0, true),   // Fennec (Import)
         ];
         let idx = rng.gen_range(0..drop_candidates.len());
         drop_candidates[idx]
     };
 
-    let is_painted = can_be_painted && rng.gen_bool(0.35); // 35% chance painted if paintable
+    let is_painted = can_be_painted && rng.gen_bool(0.55); // 55% chance painted if paintable (premium drops bias)
     let dropped_paint = if is_painted {
         let unowned_paints: Vec<i32> = (1..=14).filter(|&p| !is_owned(dropped_pid, p)).collect();
         if !unowned_paints.is_empty() {
@@ -7033,11 +7013,75 @@ pub fn load_active_swap_rules(cfg: Option<&crate::psynet::SpoofPayload>) -> Vec<
 
 static DYNAMIC_SPAWNED_ITEMS: std::sync::RwLock<Vec<(i32, i32)>> = std::sync::RwLock::new(Vec::new());
 static SPAWNED_ITEMS_INITIALIZED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Maps title_id string -> title_id string (set semantics) for every title the player owns via
+/// VelocityRL inventory injection.  Keyed and valued by the same string so we can iterate
+/// cheaply and do O(1) lookup.  Persisted alongside spawned_items.json via the title_ids.json
+/// sidecar file so titles survive restarts.
+static DYNAMIC_TITLE_IDS: std::sync::LazyLock<std::sync::RwLock<std::collections::HashSet<String>>> =
+    std::sync::LazyLock::new(|| std::sync::RwLock::new(std::collections::HashSet::new()));
 static CONTAINER_COUNTS: std::sync::LazyLock<std::sync::RwLock<std::collections::HashMap<i32, u32>>> =
     std::sync::LazyLock::new(|| std::sync::RwLock::new(std::collections::HashMap::new()));
 
 fn get_spawned_items_file_path() -> std::path::PathBuf {
     crate::psynet::config_dir().join("spawned_items.json")
+}
+
+fn get_title_ids_file_path() -> std::path::PathBuf {
+    crate::psynet::config_dir().join("title_ids.json")
+}
+
+fn load_persisted_title_ids() -> std::collections::HashSet<String> {
+    let path = get_title_ids_file_path();
+    if let Ok(content) = std::fs::read_to_string(&path) {
+        if let Ok(ids) = serde_json::from_str::<Vec<String>>(&content) {
+            return ids.into_iter().filter(|s| !s.is_empty()).collect();
+        }
+    }
+    std::collections::HashSet::new()
+}
+
+fn save_persisted_title_ids(ids: &std::collections::HashSet<String>) {
+    let path = get_title_ids_file_path();
+    let list: Vec<&String> = ids.iter().collect();
+    if let Ok(data) = serde_json::to_string_pretty(&list) {
+        let _ = std::fs::write(&path, data);
+    }
+}
+
+/// Register one or more title IDs as owned by the player (spawned via VelocityRL).
+pub fn register_title_ids(ids: &[String]) {
+    if ids.is_empty() { return; }
+    if let Ok(mut g) = DYNAMIC_TITLE_IDS.write() {
+        for id in ids {
+            if !id.is_empty() {
+                g.insert(id.clone());
+            }
+        }
+        save_persisted_title_ids(&g);
+    }
+}
+
+/// Remove a title ID from the owned set (called when item is restored).
+pub fn unregister_title_id(id: &str) {
+    if let Ok(mut g) = DYNAMIC_TITLE_IDS.write() {
+        g.remove(id);
+        save_persisted_title_ids(&g);
+    }
+}
+
+/// Return a snapshot of all currently owned (spawned) title ID strings.
+pub fn get_all_title_ids() -> Vec<String> {
+    DYNAMIC_TITLE_IDS.read()
+        .map(|g| g.iter().cloned().collect())
+        .unwrap_or_default()
+}
+
+/// Clear all spawned title IDs from memory and disk.
+fn clear_all_title_ids() {
+    if let Ok(mut g) = DYNAMIC_TITLE_IDS.write() {
+        g.clear();
+        save_persisted_title_ids(&g);
+    }
 }
 
 fn get_container_counts_file_path() -> std::path::PathBuf {
@@ -7311,6 +7355,15 @@ fn ensure_spawned_items_loaded() {
             if let Ok(mut map) = CONTAINER_COUNTS.write() {
                 for (id, qty) in persisted_counts {
                     map.insert(id, qty);
+                }
+            }
+        }
+        // Load persisted title IDs (titles spawned in previous sessions)
+        let persisted_titles = load_persisted_title_ids();
+        if !persisted_titles.is_empty() {
+            if let Ok(mut g) = DYNAMIC_TITLE_IDS.write() {
+                for tid in persisted_titles {
+                    g.insert(tid);
                 }
             }
         }
