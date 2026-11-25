@@ -1878,8 +1878,9 @@ async fn spawn_item(
             }
         }
     }
-    // Register item in broker memory for live session injection
-    crate::proxy::register_spawned_items(&[(wid, paint)]);
+    // Register item in broker memory for live session injection.
+    // Only inject a RewardResult drop animation if the item is actually new (not already owned).
+    let newly_added = crate::proxy::register_spawned_items(&[(wid, paint)]);
 
     // Pure network proxy mode: Save file on disk is not touched!
     // The proxy dynamically injects items into Products/GetPlayerProducts over WebSocket & HTTP broker.
@@ -1902,8 +1903,11 @@ async fn spawn_item(
         let _ = crate::psynet::write_spoof(&dir, &cfg);
     }
 
-    // Actively push downstream WebSocket RewardResult frame so the item pops up live in-game
-    let _ = crate::proxy::inject_reward_drop(&[(wid, paint)]).await;
+    // Only push a RewardResult drop animation for items that were genuinely new to the inventory.
+    // Skipping this for already-owned items prevents phantom "2x" count in garage.
+    if !newly_added.is_empty() {
+        let _ = crate::proxy::inject_reward_drop(&newly_added).await;
+    }
 
     applog::event(&format!("spawn_item: item {wid} (paint {paint}) registered in inventory and drop injected"));
     Ok(format!("Item {wid} spawned into inventory"))
@@ -1990,8 +1994,9 @@ async fn spawn_items_batch(
         }
     }
 
-    // Register into broker memory so getplayerproducts / checkownership inject them live into session
-    crate::proxy::register_spawned_items(&spawned_tuples);
+    // Register into broker memory so getplayerproducts / checkownership inject them live into session.
+    // Returns only items that were actually new (not already owned) — only those get a drop animation.
+    let newly_spawned = crate::proxy::register_spawned_items(&spawned_tuples);
 
     // Pure network proxy mode: Save file on disk is not touched!
     // The proxy dynamically injects items into Products/GetPlayerProducts over WebSocket & HTTP broker.
@@ -2021,8 +2026,11 @@ async fn spawn_items_batch(
         record_swap_history(&app, "spawn", &spawned_entries, "batch spawn");
     }
 
-    // Actively push downstream WebSocket RewardResult frame so batch spawned items pop up live in-game
-    let _ = crate::proxy::inject_reward_drop(&spawned_tuples).await;
+    // Only push RewardResult drop animations for items that were genuinely new to the inventory —
+    // avoids phantom "2x" count in garage when re-spawning already-owned items.
+    if !newly_spawned.is_empty() {
+        let _ = crate::proxy::inject_reward_drop(&newly_spawned).await;
+    }
 
     applog::event(&format!("spawn_items_batch: successfully spawned {count} items into online inventory"));
     Ok(count)

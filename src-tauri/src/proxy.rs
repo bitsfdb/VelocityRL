@@ -2690,7 +2690,7 @@ fn generate_simulated_unlock_container_payload(body: &[u8]) -> Option<serde_json
     if let Ok(mut set) = NOTIFIED_SPAWNED_ITEMS.write() {
         set.insert((dropped_pid, dropped_paint));
     }
-    register_spawned_items(&[(dropped_pid, dropped_paint)]);
+    let _ = register_spawned_items(&[(dropped_pid, dropped_paint)]);
     if let Some(crate_pid) = crate_pid_opt {
         decrement_container_quantity(crate_pid);
     }
@@ -7491,14 +7491,24 @@ pub async fn inject_reward_drop_with_series(items: &[(i32, i32, i32)]) -> Result
             "TradeHold": -1,
             "AddedTimestamp": now,
             "UpdatedTimestamp": now,
+            "bSkipRoulette": true,
+            "bUnlocked": true,
         });
+        // Always emit both top-level Paint fields AND Attributes array — the game reads both paths
+        // depending on context (RewardResult animation uses top-level Paint, inventory reads Attributes).
+        let mut attrs = serde_json::json!([
+            { "Key": "bSkipRoulette", "Value": "true" },
+            { "Key": "bUnlocked",     "Value": "true" }
+        ]);
         if paint > 0 {
             prod_obj["Paint"] = serde_json::json!(paint);
             prod_obj["PaintID"] = serde_json::json!(paint);
-            prod_obj["Attributes"] = serde_json::json!([
-                { "Key": "Painted", "Value": paint.to_string() }
-            ]);
+            if let Some(arr) = attrs.as_array_mut() {
+                arr.insert(0, serde_json::json!({ "Key": "Painted", "Value": paint.to_string() }));
+                arr.insert(1, serde_json::json!({ "Key": "Paint",   "Value": paint.to_string() }));
+            }
         }
+        prod_obj["Attributes"] = attrs;
         product_data.push(prod_obj);
     }
 
@@ -7507,12 +7517,15 @@ pub async fn inject_reward_drop_with_series(items: &[(i32, i32, i32)]) -> Result
     }
 
     let body_json = serde_json::json!({
-        "ProductData": product_data,
-        "RewardDrops": product_data.clone(),
-        "CurrencyDrops": [],
+        "Drops":           product_data,
+        "ProductData":     product_data,
+        "RewardDrops":     product_data,
+        "CurrencyDrops":   [],
         "ChallengeRewards": [],
-        "RocketPassInfo": {},
-        "bSuccess": true
+        "RocketPassInfo":  {},
+        "bSkipRoulette":   true,
+        "bUnlocked":       true,
+        "bSuccess":        true
     });
 
     let body_str = serde_json::to_string(&body_json).map_err(|e| e.to_string())?;
@@ -7555,22 +7568,26 @@ pub async fn inject_reward_drop(items: &[(i32, i32)]) -> Result<bool, String> {
     Ok(res)
 }
 
-pub fn register_spawned_items(items: &[(i32, i32)]) {
+/// Register items into the dynamic spawned inventory.
+/// Returns the subset of `items` that were **actually new** (not already present).
+/// Callers should only push a RewardResult WS frame for the returned new items to avoid
+/// duplicate drop animations and phantom "2x" counts in garage.
+pub fn register_spawned_items(items: &[(i32, i32)]) -> Vec<(i32, i32)> {
     ensure_spawned_items_loaded();
-    let mut updated = false;
+    let mut newly_added: Vec<(i32, i32)> = Vec::new();
     let mut current_items = Vec::new();
     if let Ok(mut g) = DYNAMIC_SPAWNED_ITEMS.write() {
         for &(id, paint) in items {
             if id > 0 && !g.contains(&(id, paint)) {
                 g.push((id, paint));
-                updated = true;
+                newly_added.push((id, paint));
             }
         }
         current_items = g.clone();
     }
-    if updated {
+    if !newly_added.is_empty() {
         save_persisted_spawned_items(&current_items);
-        sync_spawned_items_to_swaps(items);
+        sync_spawned_items_to_swaps(&newly_added);
         notify_inventory_updated();
         ensure_inventory_reconciliation_worker_started();
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
@@ -7579,6 +7596,7 @@ pub fn register_spawned_items(items: &[(i32, i32)]) {
             });
         }
     }
+    newly_added
 }
 
 pub fn unregister_spawned_items(product_ids: &[i32]) {
@@ -9806,7 +9824,7 @@ mod tests {
     #[test]
     fn test_emulate_unboxing_pipeline_and_garage_series_filter_safety() {
         // 1. Emulate spawning a Secret Santa Crate (2522) into active inventory
-        super::register_spawned_items(&[(2522, 0)]);
+        let _ = super::register_spawned_items(&[(2522, 0)]);
         {
             let spawned = super::load_active_spawned_items(None);
             assert!(spawned.iter().any(|&(id, _)| id == 2522), "Crate 2522 must be in spawned items");
