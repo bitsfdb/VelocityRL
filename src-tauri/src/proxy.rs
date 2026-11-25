@@ -6552,8 +6552,8 @@ pub fn patch_products_config(body: &[u8]) -> (Vec<u8>, bool) {
         ("LoadoutValidation_TA", "bEnableStrictLoadoutValidation", "False"),
         ("SaveGameManager_TA", "bEnableSaving", "True"),
         ("SaveGameManager_TA", "bDisableSaveOSS", "False"),
-        ("UIConfig_TA", "bCrateRouletteEnabled", "True"),
-        ("GameplaySettingsSave_TA", "bQuickDropOpening", "False"),
+        ("UIConfig_TA", "bCrateRouletteEnabled", "False"),
+        ("GameplaySettingsSave_TA", "bQuickDropOpening", "True"),
     ];
 
     for (cls, prop, val) in overrides {
@@ -6651,13 +6651,13 @@ pub fn patch_products_config(body: &[u8]) -> (Vec<u8>, bool) {
         let mut obj_changed = false;
 
         if let Some(pos) = obj_str.find("\"bCrateRouletteEnabled\"") {
-            if let Some(fpos) = obj_str[pos..].find("false") {
-                let abs_fpos = pos + fpos;
-                obj_str.replace_range(abs_fpos..abs_fpos + 5, "true");
+            if let Some(tpos) = obj_str[pos..].find("true") {
+                let abs_tpos = pos + tpos;
+                obj_str.replace_range(abs_tpos..abs_tpos + 4, "false");
                 obj_changed = true;
             }
         } else if let Some(last_brace) = obj_str.rfind('}') {
-            obj_str.insert_str(last_brace, ",\"bCrateRouletteEnabled\":true");
+            obj_str.insert_str(last_brace, ",\"bCrateRouletteEnabled\":false");
             obj_changed = true;
         }
 
@@ -9540,7 +9540,8 @@ mod tests {
         assert!(s.contains("\"bClearSyncTimestampOnMissingProduct\",\"Value\":\"False\""));
         assert!(s.contains("\"bEnableOfflineItemsDuplicationPrevention\",\"Value\":\"False\""));
         assert!(s.contains("\"bDisableSaveOSS\",\"Value\":\"False\""));
-        assert!(s.contains("\"bCrateRouletteEnabled\",\"Value\":\"True\""));
+        assert!(s.contains("\"bCrateRouletteEnabled\",\"Value\":\"False\""));
+        assert!(s.contains("\"bQuickDropOpening\",\"Value\":\"True\""));
         assert!(s.contains("\"ProductsConfig\":{"));
     }
 
