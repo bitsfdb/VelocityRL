@@ -1032,7 +1032,7 @@ mod tests {
 
     #[test]
     fn test_build_default_save_and_spawn() {
-        let tmp = PathBuf::from("/root/test_generated_unit.save");
+        let tmp = std::env::temp_dir().join("test_generated_unit.save");
         let default_env = build_default_save_envelope();
         save_envelope_to_file(&default_env, &tmp).expect("save default envelope");
 
@@ -1055,7 +1055,6 @@ mod tests {
         assert_eq!(count2, 0);
 
         let _ = fs::remove_file(&tmp);
-        let _ = fs::remove_dir_all("/root/VelocityRL Backups");
     }
 
     #[test]

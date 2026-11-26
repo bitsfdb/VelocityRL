@@ -9577,10 +9577,11 @@ mod tests {
         let payload_str = val["MessagePayload"].as_str().unwrap();
         let parsed_inner: serde_json::Value = serde_json::from_str(payload_str).unwrap();
 
+        let (expected_title_id, expected_title_text) = configured_title();
         let player = &parsed_inner["Players"][0];
-        assert_eq!(player["TitleID"], "VelocityRL_Developer");
-        assert_eq!(player["PlayerTitle"], "VelocityRL Developer");
-        assert_eq!(player["Title"], "VelocityRL Developer");
+        assert_eq!(player["TitleID"], expected_title_id);
+        assert_eq!(player["PlayerTitle"], expected_title_text);
+        assert_eq!(player["Title"], expected_title_text);
 
         let other = &parsed_inner["Players"][1];
         assert_eq!(other["TitleID"], "TeammateTitle");
