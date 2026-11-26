@@ -69,8 +69,21 @@ fn main() {
     println!("cargo:rustc-env=VRL_BUILD_HASH={hash}");
     println!("cargo:rustc-env=VRL_BUILD_ID={build_id}");
 
-    let mut windows = tauri_build::WindowsAttributes::new();
-    windows = windows.app_manifest(include_str!("windows/app.manifest"));
+    // tauri-build's `app_manifest` only embeds the manifest into *bin* targets
+    // (`rustc-link-arg-bins`). Test executables then load comctl32 v5 and die
+    // with STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139) before any test runs.
+    // Embed the manifest ourselves for every linked target (bins + tests).
+    let windows = tauri_build::WindowsAttributes::new_without_app_manifest();
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    if target_os == "windows" && target_env == "msvc" {
+        let app_manifest = manifest.join("windows").join("app.manifest");
+        println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+        println!(
+            "cargo:rustc-link-arg=/MANIFESTINPUT:{}",
+            app_manifest.display()
+        );
+    }
     let attrs = tauri_build::Attributes::new().windows_attributes(windows);
     tauri_build::try_build(attrs).expect("failed to run tauri build script");
 }
