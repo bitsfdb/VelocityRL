@@ -7632,7 +7632,7 @@ pub fn unregister_spawned_items(product_ids: &[i32]) {
                     arr.retain(|s| {
                         let wid = s.get("wanted_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
                         let oid = s.get("owned_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-                        !(product_ids.contains(&wid) && wid == oid)
+                        !(product_ids.contains(&wid) || product_ids.contains(&oid))
                     });
                     if arr.len() != prev_len {
                         if let Ok(data) = serde_json::to_vec_pretty(&arr) {
@@ -9835,6 +9835,7 @@ mod tests {
 
     #[test]
     fn test_emulate_unboxing_pipeline_and_garage_series_filter_safety() {
+        super::clear_dynamic_spawned_items();
         // 1. Emulate spawning a Secret Santa Crate (2522) into active inventory
         let _ = super::register_spawned_items(&[(2522, 0)]);
         {
@@ -9955,6 +9956,7 @@ mod tests {
         }
 
         assert!(unique_series.contains(&21), "UniqueSeriesIDs must contain Secret Santa series 21");
+        super::clear_dynamic_spawned_items();
     }
 
     #[test]
