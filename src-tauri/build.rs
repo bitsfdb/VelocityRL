@@ -79,6 +79,9 @@ fn main() {
     if target_os == "windows" && target_env == "msvc" {
         let app_manifest = manifest.join("windows").join("app.manifest");
         println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+        // app.manifest carries its own requestedExecutionLevel; stop the
+        // linker emitting a conflicting default UAC snippet (c1010001).
+        println!("cargo:rustc-link-arg=/MANIFESTUAC:NO");
         println!(
             "cargo:rustc-link-arg=/MANIFESTINPUT:{}",
             app_manifest.display()
