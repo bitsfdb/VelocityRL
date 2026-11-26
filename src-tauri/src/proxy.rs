@@ -9927,8 +9927,11 @@ mod tests {
             }
         });
         let base_bytes = serde_json::to_vec(&base_inventory).unwrap();
-        let spawned = super::load_active_spawned_items(None);
-        let (patched_bytes, changed) = super::patch_player_products_json(&base_bytes, &spawned);
+        let mut test_items = super::load_active_spawned_items(None);
+        if !test_items.iter().any(|&(id, _)| id == drop_pid) {
+            test_items.push((drop_pid, 0));
+        }
+        let (patched_bytes, changed) = super::patch_player_products_json(&base_bytes, &test_items);
         assert!(changed, "Inventory must be patched with dropped product");
 
         let patched_val: serde_json::Value = serde_json::from_slice(&patched_bytes).unwrap();
