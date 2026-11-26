@@ -6554,6 +6554,11 @@ pub fn patch_products_config(body: &[u8]) -> (Vec<u8>, bool) {
         ("SaveGameManager_TA", "bDisableSaveOSS", "False"),
         ("UIConfig_TA", "bCrateRouletteEnabled", "False"),
         ("GameplaySettingsSave_TA", "bQuickDropOpening", "True"),
+        ("GFxData_Playlist_TA", "MaximumRankDisparity", "100"),
+        ("GFxData_Playlist_TA", "bUndersizedPartyWithRankDisparity", "False"),
+        ("GFxData_Playlist_TA", "bShowRankDisparity", "False"),
+        ("RankedConfig_X", "bUsePsyNetRankedDisparity", "False"),
+        ("RankedConfig_X", "MaximumRankDisparity", "100"),
     ];
 
     for (cls, prop, val) in overrides {
@@ -8787,6 +8792,10 @@ pub fn response_denies_access(body: &[u8]) -> bool {
     let upper = body.to_ascii_uppercase();
     upper.windows(12).any(|w| w == b"ACCESSDENIED")
         || upper.windows(18).any(|w| w == b"INVENTORYOUTOFSYNC")
+        || upper.windows(18).any(|w| w == b"PARTYRANKDISPARITY")
+        || upper.windows(17).any(|w| w == b"TOURRANKDISPARITY")
+        || upper.windows(19).any(|w| w == b"RANKEDCRITERIAUNMET")
+        || upper.windows(13).any(|w| w == b"RANKDISPARITY")
 }
 
 /// Neutralize "InventoryOutOfSync" and "AccessDenied" error states from PsyNet JSON responses
@@ -8841,6 +8850,10 @@ fn neutralize_inventory_out_of_sync_value(val: &mut serde_json::Value, changed: 
                     if let Some(s) = v.as_str() {
                         if s.to_ascii_uppercase().contains("INVENTORYOUTOFSYNC")
                             || s.to_ascii_uppercase().contains("ACCESSDENIED")
+                            || s.to_ascii_uppercase().contains("PARTYRANKDISPARITY")
+                            || s.to_ascii_uppercase().contains("TOURRANKDISPARITY")
+                            || s.to_ascii_uppercase().contains("RANKEDCRITERIAUNMET")
+                            || s.to_ascii_uppercase().contains("RANKDISPARITY")
                         {
                             *v = if key.eq_ignore_ascii_case("status")
                                 || key.eq_ignore_ascii_case("result")

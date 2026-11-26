@@ -27,12 +27,12 @@ const MAX_CRYPTO_CANDIDATES: usize = 4;
 /// Analysis mode: decrypt datagrams for the monitor/dump, but forward the
 /// original wire bytes untouched. No name rewrite, no re-encryption. This
 /// keeps the relay transparent while we study the protocol.
-pub const UDP_ANALYSIS_ONLY: bool = true;
+pub const UDP_ANALYSIS_ONLY: bool = false;
 
 /// Hard passthrough: the match relay does nothing except copy raw datagrams
 /// between the game and the real server. No decrypt, no decode, no capture,
 /// no event recording, no rewrite. Enabled while diagnosing connection issues.
-pub const UDP_PURE_PASSTHROUGH: bool = true;
+pub const UDP_PURE_PASSTHROUGH: bool = false;
 
 /// Modern Rocket League UDP Match Security Session Keys
 #[derive(Clone, Debug)]
@@ -630,13 +630,14 @@ pub fn process_c2s_encrypted_datagram(
         None => return (packet.to_vec(), None, false),
     };
 
-    // Plaintext is bunch || HMAC-SHA256(32). Split them before patching.
-    let (bunch, _) = if payload.len() >= 32 {
-        payload.split_at(payload.len() - 32)
+    // Check if packet has an HMAC trailer (32 bytes)
+    let has_hmac = payload.len() >= 32 && verify_hmac(&payload, crypto);
+    let bunch_slice = if has_hmac {
+        &payload[..payload.len() - 32]
     } else {
-        (payload.as_slice(), payload.as_slice())
+        payload.as_slice()
     };
-    let mut bunch = bunch.to_vec();
+    let mut bunch = bunch_slice.to_vec();
 
     // Patch the bunch if name spoofing is active.
     let mut effective_len = bunch.len();
@@ -665,14 +666,19 @@ pub fn process_c2s_encrypted_datagram(
         return (packet.to_vec(), Some(payload), false);
     }
 
-    // Re-sign the rewritten bunch with the reservation HMAC key.
-    let Some(resigned) = resign_datagram(&bunch, crypto) else {
-        crate::applog::event("udp_proxy: could not re-sign bunch (bad HMAC key)");
-        return (packet.to_vec(), Some(payload), false);
+    let to_encrypt = if has_hmac {
+        let Some(resigned) = resign_datagram(&bunch, crypto) else {
+            crate::applog::event("udp_proxy: could not re-sign bunch (bad HMAC key)");
+            return (packet.to_vec(), Some(payload), false);
+        };
+        resigned
+    } else {
+        bunch
     };
-    match encrypt_datagram_payload(&resigned, crypto) {
-        (encrypted, true) => (encrypted, Some(resigned), true),
-        _ => (packet.to_vec(), Some(resigned), false),
+
+    match encrypt_datagram_payload(&to_encrypt, crypto) {
+        (encrypted, true) => (encrypted, Some(to_encrypt), true),
+        _ => (packet.to_vec(), Some(payload), false),
     }
 }
 
