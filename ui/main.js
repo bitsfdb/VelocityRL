@@ -2216,7 +2216,9 @@ function getFilteredCatalogItems() {
         const catalogTitles = (typeof titlesDb !== 'undefined' && titlesDb && Array.isArray(titlesDb.titles)) ? titlesDb.titles : [];
         if (catalogTitles.length > 0) {
             const mappedTitles = catalogTitles.map(t => (typeof getTitleAsItem === 'function' ? getTitleAsItem(t) : t)).filter(Boolean);
-            list = [...list.filter(i => (i?.slot || i?.Slot) !== 'Player Title'), ...mappedTitles];
+            const nameOf = (i) => String(i?.product || i?.Product || '').toLowerCase();
+            list = [...list.filter(i => (i?.slot || i?.Slot) !== 'Player Title'), ...mappedTitles]
+                .sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
         }
     }
 
