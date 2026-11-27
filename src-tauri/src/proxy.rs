@@ -5931,32 +5931,29 @@ fn upsert_title_entry(body: &[u8], title_id: &str, text: &str, category: &str) -
     (out, true)
 }
 
-/// The single title the in-game applicator should equip: the swap/equip title if
-/// one is set, otherwise the first spawned title (ownership-only titles still need
-/// to apply through the loadout wire). Empty when nothing is configured.
+/// The title the player is actually wearing (the swap/equip title). Empty when
+/// nothing is equipped — we do NOT substitute a spawned or default title, so a
+/// player wearing no title stays bare instead of being forced into one.
 fn equipped_title_id() -> String {
-    if let Some(cfg) = crate::psynet::load_active_spoof_from_disk() {
-        let id = if !cfg.equip_title_id.trim().is_empty() {
-            cfg.equip_title_id.trim()
-        } else {
-            cfg.display_title_id.trim()
-        };
-        if !id.is_empty() {
-            return id.to_string();
-        }
-    }
-    crate::psynet::load_spawned_titles().into_iter().next().unwrap_or_default()
+    let Some(cfg) = crate::psynet::load_active_spoof_from_disk() else {
+        return String::new();
+    };
+    let id = if !cfg.equip_title_id.trim().is_empty() {
+        cfg.equip_title_id.trim()
+    } else {
+        cfg.display_title_id.trim()
+    };
+    id.to_string()
 }
 
+/// (title_id, title_text) for the equipped title, or empty strings when none is
+/// worn. Callers must treat empty as "leave the player's real title alone".
 fn configured_title() -> (String, String) {
-    let fallback = ("VelocityRL_Developer".to_string(), "VelocityRL Developer".to_string());
-    let cfg = crate::psynet::load_active_spoof_from_disk();
     let id = equipped_title_id();
     if id.is_empty() {
-        return fallback;
+        return (String::new(), String::new());
     }
-    let text = cfg
-        .as_ref()
+    let text = crate::psynet::load_active_spoof_from_disk()
         .map(|c| {
             if !c.custom_text.trim().is_empty() {
                 c.custom_text.trim().to_string()
@@ -8174,7 +8171,7 @@ fn patch_reservation_value_sync(
                             let (title_id, title_text) = configured_title();
                             let curr_title = player.get("TitleID").and_then(|v| v.as_str()).unwrap_or_default();
                             let curr_pt = player.get("PlayerTitle").and_then(|v| v.as_str()).unwrap_or_default();
-                            if curr_title != title_id || curr_pt != title_text {
+                            if !title_id.is_empty() && (curr_title != title_id || curr_pt != title_text) {
                                 if let Some(p) = player.as_object_mut() {
                                     p.insert("TitleID".to_string(), serde_json::json!(title_id));
                                     p.insert("TitleId".to_string(), serde_json::json!(title_id));
