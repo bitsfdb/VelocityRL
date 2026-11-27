@@ -2042,7 +2042,7 @@ async fn handle_forward_intercepted_request(
                 && find_bytes(&final_body, b"\"InstanceID\"").is_some());
         if is_ecom_ownership {
             let spawned_items = load_active_spawned_items(spoof_cfg.as_ref());
-            if !spawned_items.is_empty() {
+            if !spawned_items.is_empty() || !spawned_title_ids().is_empty() {
                 let (new_body_prod, did_patch_prod) = patch_player_products_json(&final_body, &spawned_items);
                 if did_patch_prod {
                     final_body = new_body_prod;
@@ -3689,7 +3689,7 @@ async fn handle_broker_request(
                 && find_bytes(&out_body, b"\"InstanceID\"").is_some());
         if is_products_rpc {
             let spawned_items = load_active_spawned_items(cfg_opt.as_ref());
-            if !spawned_items.is_empty() {
+            if !spawned_items.is_empty() || !spawned_title_ids().is_empty() {
                 let (new_body, did_patch) = patch_player_products_json(&out_body, &spawned_items);
                 if did_patch {
                     out_body = new_body;
@@ -4387,7 +4387,7 @@ pub async fn patch_ws_frame_binary(frame: &[u8], from_server: bool) -> (Vec<u8>,
 
     if is_products {
         let spawned_items = load_active_spawned_items(cfg_opt.as_ref());
-        if !spawned_items.is_empty() {
+        if !spawned_items.is_empty() || !spawned_title_ids().is_empty() {
             let (new_body, changed) = patch_player_products_json(&current_body, &spawned_items);
             if changed {
                 current_body = new_body;
@@ -5962,6 +5962,49 @@ fn configured_title() -> (String, String) {
         }
         _ => fallback,
     }
+}
+
+const TITLE_PRODUCT_ID: i32 = 3036;
+
+fn spawned_title_ids() -> Vec<String> {
+    if cfg!(test) {
+        return Vec::new();
+    }
+    let mut ids: Vec<String> = Vec::new();
+    let mut push = |id: &str| {
+        let id = id.trim();
+        if !id.is_empty() && id != "custom" && !ids.iter().any(|x| x == id) {
+            ids.push(id.to_string());
+        }
+    };
+    if let Some(cfg) = crate::psynet::load_active_spoof_from_disk() {
+        if cfg.enabled {
+            push(&cfg.equip_title_id);
+            for sw in cfg.swaps.iter().flatten() {
+                push(if sw.equip_title_id.trim().is_empty() { &sw.display_title_id } else { &sw.equip_title_id });
+            }
+        }
+    }
+    for id in get_all_title_ids() {
+        push(&id);
+    }
+    ids
+}
+
+fn title_instance_id(title_id: &str) -> String {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in title_id.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    format!("{:08x}7469746c{:016x}", TITLE_PRODUCT_ID as u32, h)
+}
+
+fn item_title_id(item: &serde_json::Value) -> Option<&str> {
+    item.get("Attributes")?.as_array()?.iter().find_map(|a| {
+        let key = a.get("Key")?.as_str()?;
+        if key.eq_ignore_ascii_case("TitleId") { a.get("Value")?.as_str() } else { None }
+    })
 }
 
 pub fn patch_config(body: &[u8], cfg: &crate::psynet::SpoofPayload) -> (Vec<u8>, bool) {
@@ -8412,7 +8455,15 @@ pub fn patch_player_products_json(
     body: &[u8],
     items: &[(i32, i32)],
 ) -> (Vec<u8>, bool) {
-    if items.is_empty() {
+    patch_player_products_json_with_titles(body, items, &spawned_title_ids())
+}
+
+pub fn patch_player_products_json_with_titles(
+    body: &[u8],
+    items: &[(i32, i32)],
+    title_ids: &[String],
+) -> (Vec<u8>, bool) {
+    if items.is_empty() && title_ids.is_empty() {
         return (body.to_vec(), false);
     }
     let mut root: serde_json::Value = match serde_json::from_slice(body) {
@@ -8555,6 +8606,25 @@ pub fn patch_player_products_json(
             arr.push(prod_obj);
             changed = true;
         }
+    }
+
+    for tid in title_ids {
+        if arr.iter().any(|it| item_title_id(it) == Some(tid.as_str())) {
+            continue;
+        }
+        arr.push(serde_json::json!({
+            "ProductID": TITLE_PRODUCT_ID,
+            "InstanceID": title_instance_id(tid),
+            "SeriesID": lookup_series_id_for_product(TITLE_PRODUCT_ID),
+            "Amount": 1,
+            "ExpirationTime": -1,
+            "IsTradable": false,
+            "TradeHold": -1,
+            "AddedTimestamp": 1700000000i64,
+            "UpdatedTimestamp": 1700000000i64,
+            "Attributes": [{ "Key": "TitleId", "Value": tid }],
+        }));
+        changed = true;
     }
 
     // Pass 1: Ensure series ID and crate skip-roulette attributes on every item in array
@@ -10070,6 +10140,26 @@ mod tests {
             .filter(|i| i["ProductID"] == 3036)
             .collect();
         assert_eq!(titles.len(), 52, "50 instanced + NoInst_A + NoInst_B");
+    }
+
+    #[test]
+    fn test_spawned_titles_injected_with_title_id_attribute() {
+        let body = br#"{"ProductData":[{"ProductID":3036,"InstanceID":"owned0000000000000000000000000001","SeriesID":1,"Attributes":[{"Key":"TitleId","Value":"Owned_Title"}]}]}"#;
+        let ids: Vec<String> = ["Owned_Title", "RLCS_X_Champion", "CRL_Analyst"].iter().map(|s| s.to_string()).collect();
+        let (patched, changed) = super::patch_player_products_json_with_titles(body, &[], &ids);
+        assert!(changed);
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        let arr = val["ProductData"].as_array().unwrap();
+        let mut found: Vec<&str> = arr.iter().filter_map(super::item_title_id).collect();
+        found.sort();
+        assert_eq!(found, vec!["CRL_Analyst", "Owned_Title", "RLCS_X_Champion"]);
+        for it in arr {
+            assert_eq!(it["ProductID"], 3036);
+            let inst = it["InstanceID"].as_str().unwrap();
+            assert_eq!(inst.len(), 32);
+        }
+        let injected = arr.iter().find(|i| super::item_title_id(i) == Some("CRL_Analyst")).unwrap();
+        assert!(injected["InstanceID"].as_str().unwrap().chars().all(|c| c.is_ascii_hexdigit()));
     }
 }
 
