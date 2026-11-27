@@ -2702,31 +2702,13 @@ function initCatalogGrid() {
                 }
 
                 if (titleItemsToSpawn.length > 0) {
-                    ensureTitleSwapsLoaded();
-                    for (const tEntry of titleItemsToSpawn) {
-                        const tItem = tEntry.item;
-                        const tId = tItem.titleId || (tItem.id && String(tItem.id).startsWith('title_') ? String(tItem.id).slice(6) : tItem.id) || tItem.product || 'CustomTitle';
-                        const text = tItem.titleText || tItem.product || tItem.Product || tItem.name || 'Custom Title';
-                        const cat = tItem.titleCategory || tItem.category || tItem.group || 'Special Titles';
-                        const textColor = (typeof tItem.titleColor === 'string' && tItem.titleColor) ? tItem.titleColor : (tItem.color?.text_color || '');
-                        const glowColor = (typeof tItem.titleGlow === 'string' && tItem.titleGlow) ? tItem.titleGlow : (tItem.color?.glow_color || '');
-                        const swapObj = {
-                            equip_title_id: String(tId),
-                            display_title_id: String(tId),
-                            custom_text: text,
-                            category: cat,
-                            title_color: (textColor || glowColor) ? {
-                                text_color: textColor,
-                                glow_color: glowColor,
-                            } : undefined,
-                        };
-                        titleSwaps = titleSwaps.filter((s) => s.equip_title_id !== String(tId));
-                        titleSwaps.unshift(swapObj);
+                    const titleIds = titleItemsToSpawn.map((tEntry) => {
+                        const tItem = tEntry.item || {};
+                        return String(tItem.titleId || (tItem.id && String(tItem.id).startsWith('title_') ? String(tItem.id).slice(6) : '') || '');
+                    }).filter(Boolean);
+                    if (titleIds.length > 0) {
+                        spawnedCount += await invoke('spawn_titles', { titleIds });
                     }
-                    persistTitleSpoofLocal();
-                    await runToolSave(null, 'titles', titleSpoofPayload(), { enabled: true });
-                    renderTitleSwapList();
-                    spawnedCount += titleItemsToSpawn.length;
                 }
 
                 showProgress(true, 100);
@@ -2858,8 +2840,13 @@ function wirePresetsUI() {
 }
 
 let refreshBackupsInFlight = false;
+let refreshBackupsQueued = false;
 async function refreshBackups() {
-    if (!backupContainer || refreshBackupsInFlight) return;
+    if (!backupContainer) return;
+    if (refreshBackupsInFlight) {
+        refreshBackupsQueued = true;
+        return;
+    }
     refreshBackupsInFlight = true;
     wireReswapButton();
     const countLabel = document.getElementById('restore-count-label');
@@ -2980,6 +2967,10 @@ async function refreshBackups() {
         try { await invoke('append_launch_log', { message: `ui: get_backups failed: ${String(err)}` }); } catch {}
     } finally {
         refreshBackupsInFlight = false;
+        if (refreshBackupsQueued) {
+            refreshBackupsQueued = false;
+            refreshBackups();
+        }
     }
 }
 
@@ -2990,7 +2981,7 @@ async function restoreSingle(path) {
         const result = await invoke('restore_single_backup', { path });
         updateStatus('Removed; game restart required', false);
         showToast(result, 'success', 9000);
-        refreshBackups();
+        await refreshBackups();
         setTimeout(() => updateStatus('bitsfdb', false), 2000);
     } catch (err) {
         updateStatus('Error', true);

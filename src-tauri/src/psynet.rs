@@ -336,6 +336,8 @@ pub struct SpoofPayload {
     pub title_color: Option<TitleColorPayload>,
     #[serde(default)]
     pub swaps: Option<Vec<TitleSwapEntry>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spawned_titles: Option<Vec<String>>,
     #[serde(default = "default_method")]
     pub method: String,
 }
@@ -456,6 +458,7 @@ pub fn default_spoof_payload() -> SpoofPayload {
             category: "RLCS_Champion".into(),
             title_color: None,
         }]),
+        spawned_titles: None,
         method: "raw".into(),
     }
 }
@@ -708,6 +711,188 @@ fn resolve_swaps(payload: &SpoofPayload) -> Option<Vec<TitleSwapEntry>> {
     }])
 }
 
+/// Roaming-only locations VelocityRL keeps swaps.json. Both are %APPDATA% dirs
+/// (the proxy config dir and the Tauri identifier dir); LOCALAPPDATA and bare-parent
+/// copies are legacy and purged by cleanup_stale_state_files().
+pub fn canonical_swaps_paths() -> Vec<PathBuf> {
+    let mut paths = vec![config_dir().join("swaps.json")];
+    #[cfg(windows)]
+    if let Some(appdata) = std::env::var_os("APPDATA") {
+        paths.push(PathBuf::from(appdata).join("com.velocityrl.app").join("swaps.json"));
+    }
+    #[cfg(not(windows))]
+    if let Some(home) = std::env::var_os("HOME") {
+        paths.push(PathBuf::from(home).join(".config").join("com.velocityrl.app").join("swaps.json"));
+    }
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+fn read_swap_array(path: &Path) -> Vec<serde_json::Value> {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|c| serde_json::from_str::<Vec<serde_json::Value>>(&c).ok())
+        .unwrap_or_default()
+}
+
+fn swap_identity(v: &serde_json::Value) -> (i64, i64, i64, String) {
+    (
+        v.get("owned_id").and_then(|x| x.as_i64()).unwrap_or(0),
+        v.get("wanted_id").and_then(|x| x.as_i64()).unwrap_or(0),
+        v.get("paint_id").and_then(|x| x.as_i64()).unwrap_or(0),
+        v.get("custom_paint_hex").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+    )
+}
+
+/// One-time consolidation: fold any entries from legacy state-file copies into the
+/// canonical Roaming files, then delete the legacy copies so Restore can no longer
+/// resurrect items from LOCALAPPDATA or the bare %APPDATA%\VelocityRL folder.
+pub fn cleanup_stale_state_files() {
+    crate::proxy::migrate_legacy_title_ids();
+    let proxy_dir = config_dir();
+    let canonical_swaps = proxy_dir.join("swaps.json");
+
+    let mut stale_swaps: Vec<PathBuf> = Vec::new();
+    let mut stale_titles: Vec<PathBuf> = Vec::new();
+    if let Some(parent) = proxy_dir.parent() {
+        stale_swaps.push(parent.join("swaps.json"));
+        stale_titles.push(parent.join("title_ids.json"));
+    }
+    #[cfg(windows)]
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        let local = PathBuf::from(local);
+        for sub in ["com.velocityrl.app", "VelocityRL", r"VelocityRL\proxy"] {
+            stale_swaps.push(local.join(sub).join("swaps.json"));
+            stale_titles.push(local.join(sub).join("title_ids.json"));
+        }
+    }
+    stale_swaps.retain(|p| p != &canonical_swaps);
+
+    // Fold stale swap entries into the canonical proxy swaps.json (union, no data loss).
+    let mut merged = read_swap_array(&canonical_swaps);
+    let mut seen: std::collections::HashSet<(i64, i64, i64, String)> =
+        merged.iter().map(swap_identity).collect();
+    let mut changed = false;
+    for path in &stale_swaps {
+        for entry in read_swap_array(path) {
+            if seen.insert(swap_identity(&entry)) {
+                merged.push(entry);
+                changed = true;
+            }
+        }
+    }
+    if changed {
+        if let Ok(data) = serde_json::to_string_pretty(&merged) {
+            let _ = fs::write(&canonical_swaps, data);
+        }
+    }
+
+    // Fold stale title_ids.json into spawned_titles before deleting them.
+    let mut titles = load_spawned_titles();
+    let mut titles_changed = false;
+    for path in &stale_titles {
+        if let Ok(content) = fs::read_to_string(path) {
+            if let Ok(ids) = serde_json::from_str::<Vec<String>>(&content) {
+                for id in ids {
+                    if !id.trim().is_empty() {
+                        titles.push(id);
+                        titles_changed = true;
+                    }
+                }
+            }
+        }
+    }
+    if titles_changed {
+        let _ = write_spawned_titles(&titles);
+    }
+
+    let mut removed = 0usize;
+    for path in stale_swaps.iter().chain(stale_titles.iter()) {
+        if path.is_file() && fs::remove_file(path).is_ok() {
+            removed += 1;
+        }
+    }
+    if removed > 0 || changed || titles_changed {
+        crate::applog::event(&format!(
+            "psynet: consolidated state onto Roaming, removed {removed} stale file(s)"
+        ));
+    }
+}
+
+pub fn clean_title_ids(ids: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = ids
+        .iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty() && s != "custom")
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
+fn load_spoof_file() -> Option<SpoofPayload> {
+    let path = config_path(&config_dir());
+    let raw = fs::read_to_string(&path).ok()?;
+    serde_json::from_str(raw.trim_start_matches('\u{feff}')).ok()
+}
+
+pub fn load_spawned_titles() -> Vec<String> {
+    load_spoof_file()
+        .and_then(|c| c.spawned_titles)
+        .map(|t| clean_title_ids(&t))
+        .unwrap_or_default()
+}
+
+pub fn load_title_swap_equip_ids() -> Vec<String> {
+    let Some(cfg) = load_spoof_file().filter(|c| c.enabled) else {
+        return Vec::new();
+    };
+    let mut ids: Vec<String> = cfg
+        .swaps
+        .iter()
+        .flatten()
+        .map(|sw| if sw.equip_title_id.trim().is_empty() { sw.display_title_id.clone() } else { sw.equip_title_id.clone() })
+        .collect();
+    if cfg.swaps.is_none() {
+        ids.push(cfg.equip_title_id.clone());
+    }
+    clean_title_ids(&ids)
+}
+
+pub fn migrate_spawn_title_swaps() -> Result<usize, String> {
+    let Some(cfg) = load_spoof_file() else { return Ok(0) };
+    let Some(swaps) = cfg.swaps.clone() else { return Ok(0) };
+    let (spawned, kept): (Vec<TitleSwapEntry>, Vec<TitleSwapEntry>) = swaps.into_iter().partition(|sw| {
+        let id = sw.equip_title_id.trim();
+        !id.is_empty() && id == sw.display_title_id.trim()
+    });
+    if spawned.is_empty() {
+        return Ok(0);
+    }
+    let mut titles = cfg.spawned_titles.clone().unwrap_or_default();
+    titles.extend(spawned.iter().map(|sw| sw.equip_title_id.clone()));
+    let payload = SpoofPayload {
+        enabled: !kept.is_empty(),
+        swaps: Some(kept),
+        spawned_titles: Some(clean_title_ids(&titles)),
+        method: "raw".into(),
+        ..Default::default()
+    };
+    write_spoof(&config_dir(), &payload)?;
+    Ok(spawned.len())
+}
+
+pub fn write_spawned_titles(titles: &[String]) -> Result<SpoofPayload, String> {
+    let payload = SpoofPayload {
+        spawned_titles: Some(clean_title_ids(titles)),
+        method: "raw".into(),
+        ..Default::default()
+    };
+    write_spoof(&config_dir(), &payload)?;
+    load_active_spoof_from_disk().ok_or_else(|| "spoof config unreadable after write".to_string())
+}
+
 pub(crate) fn write_spoof(dir: &Path, payload: &SpoofPayload) -> Result<PathBuf, String> {
     let path = config_path(dir);
 
@@ -887,6 +1072,10 @@ pub(crate) fn write_spoof(dir: &Path, payload: &SpoofPayload) -> Result<PathBuf,
                 }
             }
             obj.insert("fake_ranks".into(), fr_obj);
+        }
+
+        if let Some(titles) = &payload.spawned_titles {
+            obj.insert("spawned_titles".into(), serde_json::json!(clean_title_ids(titles)));
         }
 
         if let Some(swaps) = resolve_swaps(payload) {
@@ -2505,6 +2694,7 @@ pub async fn ensure_psynet_hosts() -> Result<bool, String> {
 
 #[tauri::command]
 pub async fn get_psynet_spoof() -> Result<serde_json::Value, String> {
+    crate::proxy::migrate_legacy_title_ids();
     let dir = config_dir();
     let path = config_path(&dir);
     if !path.is_file() {

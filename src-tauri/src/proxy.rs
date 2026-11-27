@@ -5970,25 +5970,24 @@ fn spawned_title_ids() -> Vec<String> {
     if cfg!(test) {
         return Vec::new();
     }
-    let mut ids: Vec<String> = Vec::new();
-    let mut push = |id: &str| {
-        let id = id.trim();
-        if !id.is_empty() && id != "custom" && !ids.iter().any(|x| x == id) {
-            ids.push(id.to_string());
-        }
-    };
-    if let Some(cfg) = crate::psynet::load_active_spoof_from_disk() {
-        if cfg.enabled {
-            push(&cfg.equip_title_id);
-            for sw in cfg.swaps.iter().flatten() {
-                push(if sw.equip_title_id.trim().is_empty() { &sw.display_title_id } else { &sw.equip_title_id });
-            }
-        }
-    }
-    for id in get_all_title_ids() {
-        push(&id);
-    }
-    ids
+    let mut ids = get_all_title_ids();
+    ids.extend(crate::psynet::load_title_swap_equip_ids());
+    crate::psynet::clean_title_ids(&ids)
+}
+
+fn title_product_json(title_id: &str, timestamp: i64) -> serde_json::Value {
+    serde_json::json!({
+        "ProductID": TITLE_PRODUCT_ID,
+        "InstanceID": title_instance_id(title_id),
+        "SeriesID": lookup_series_id_for_product(TITLE_PRODUCT_ID),
+        "Amount": 1,
+        "ExpirationTime": -1,
+        "IsTradable": false,
+        "TradeHold": -1,
+        "AddedTimestamp": timestamp,
+        "UpdatedTimestamp": timestamp,
+        "Attributes": [{ "Key": "TitleId", "Value": title_id }],
+    })
 }
 
 fn title_instance_id(title_id: &str) -> String {
@@ -6973,33 +6972,7 @@ pub fn load_active_swap_rules(cfg: Option<&crate::psynet::SpoofPayload>) -> Vec<
     let mut rules = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
-    let mut candidate_paths = vec![
-        crate::psynet::config_dir().join("swaps.json"),
-    ];
-
-    if let Some(parent) = crate::psynet::config_dir().parent() {
-        candidate_paths.push(parent.join("swaps.json"));
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            candidate_paths.push(std::path::PathBuf::from(&appdata).join("com.velocityrl.app").join("swaps.json"));
-            candidate_paths.push(std::path::PathBuf::from(&appdata).join("VelocityRL").join("swaps.json"));
-        }
-        if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
-            candidate_paths.push(std::path::PathBuf::from(&localappdata).join("com.velocityrl.app").join("swaps.json"));
-            candidate_paths.push(std::path::PathBuf::from(&localappdata).join("VelocityRL").join("swaps.json"));
-        }
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        if let Ok(home) = std::env::var("HOME") {
-            candidate_paths.push(std::path::PathBuf::from(&home).join(".config").join("com.velocityrl.app").join("swaps.json"));
-            candidate_paths.push(std::path::PathBuf::from(&home).join(".config").join("VelocityRL").join("swaps.json"));
-        }
-    }
+    let candidate_paths = crate::psynet::canonical_swaps_paths();
 
     for entry in load_swap_entries_from_paths(&candidate_paths) {
         let wid = entry.get("wanted_id").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
@@ -7061,12 +7034,6 @@ pub fn load_active_swap_rules(cfg: Option<&crate::psynet::SpoofPayload>) -> Vec<
 
 static DYNAMIC_SPAWNED_ITEMS: std::sync::RwLock<Vec<(i32, i32)>> = std::sync::RwLock::new(Vec::new());
 static SPAWNED_ITEMS_INITIALIZED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-/// Maps title_id string -> title_id string (set semantics) for every title the player owns via
-/// VelocityRL inventory injection.  Keyed and valued by the same string so we can iterate
-/// cheaply and do O(1) lookup.  Persisted alongside spawned_items.json via the title_ids.json
-/// sidecar file so titles survive restarts.
-static DYNAMIC_TITLE_IDS: std::sync::LazyLock<std::sync::RwLock<std::collections::HashSet<String>>> =
-    std::sync::LazyLock::new(|| std::sync::RwLock::new(std::collections::HashSet::new()));
 static CONTAINER_COUNTS: std::sync::LazyLock<std::sync::RwLock<std::collections::HashMap<i32, u32>>> =
     std::sync::LazyLock::new(|| std::sync::RwLock::new(std::collections::HashMap::new()));
 
@@ -7074,62 +7041,84 @@ fn get_spawned_items_file_path() -> std::path::PathBuf {
     crate::psynet::config_dir().join("spawned_items.json")
 }
 
-fn get_title_ids_file_path() -> std::path::PathBuf {
+fn get_legacy_title_ids_file_path() -> std::path::PathBuf {
     crate::psynet::config_dir().join("title_ids.json")
 }
 
-fn load_persisted_title_ids() -> std::collections::HashSet<String> {
-    let path = get_title_ids_file_path();
-    if let Ok(content) = std::fs::read_to_string(&path) {
-        if let Ok(ids) = serde_json::from_str::<Vec<String>>(&content) {
-            return ids.into_iter().filter(|s| !s.is_empty()).collect();
+pub fn migrate_legacy_title_ids() {
+    static DONE: std::sync::Once = std::sync::Once::new();
+    DONE.call_once(|| {
+        if cfg!(test) {
+            return;
         }
-    }
-    std::collections::HashSet::new()
-}
-
-fn save_persisted_title_ids(ids: &std::collections::HashSet<String>) {
-    let path = get_title_ids_file_path();
-    let list: Vec<&String> = ids.iter().collect();
-    if let Ok(data) = serde_json::to_string_pretty(&list) {
-        let _ = std::fs::write(&path, data);
-    }
-}
-
-/// Register one or more title IDs as owned by the player (spawned via VelocityRL).
-pub fn register_title_ids(ids: &[String]) {
-    if ids.is_empty() { return; }
-    if let Ok(mut g) = DYNAMIC_TITLE_IDS.write() {
-        for id in ids {
-            if !id.is_empty() {
-                g.insert(id.clone());
+        let path = get_legacy_title_ids_file_path();
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            let legacy: Vec<String> = serde_json::from_str(&content).unwrap_or_default();
+            let mut ids = crate::psynet::load_spawned_titles();
+            ids.extend(legacy);
+            if crate::psynet::write_spawned_titles(&ids).is_ok() {
+                let _ = std::fs::remove_file(&path);
+                crate::applog::event("proxy: migrated title_ids.json into spoof config spawned_titles");
             }
         }
-        save_persisted_title_ids(&g);
-    }
+        match crate::psynet::migrate_spawn_title_swaps() {
+            Ok(0) => {}
+            Ok(n) => crate::applog::event(&format!("proxy: moved {n} spawned title swap(s) into spawned_titles")),
+            Err(e) => crate::applog::event(&format!("proxy: title swap migration failed: {e}")),
+        }
+    });
 }
 
-/// Remove a title ID from the owned set (called when item is restored).
-pub fn unregister_title_id(id: &str) {
-    if let Ok(mut g) = DYNAMIC_TITLE_IDS.write() {
-        g.remove(id);
-        save_persisted_title_ids(&g);
+fn store_spawned_titles(ids: &[String]) -> Result<(), String> {
+    let cfg = crate::psynet::write_spawned_titles(ids)?;
+    if tokio::runtime::Handle::try_current().is_ok() {
+        tauri::async_runtime::spawn(set_spoof_config(cfg));
+    } else {
+        tauri::async_runtime::block_on(set_spoof_config(cfg));
     }
+    notify_inventory_updated();
+    Ok(())
 }
 
-/// Return a snapshot of all currently owned (spawned) title ID strings.
+/// Adds titles to the spawned set and returns the ones that were not already owned.
+pub fn register_title_ids(ids: &[String]) -> Result<Vec<String>, String> {
+    migrate_legacy_title_ids();
+    let mut current = crate::psynet::load_spawned_titles();
+    let new_ids: Vec<String> = crate::psynet::clean_title_ids(ids)
+        .into_iter()
+        .filter(|id| !current.contains(id))
+        .collect();
+    if new_ids.is_empty() {
+        return Ok(new_ids);
+    }
+    current.extend(new_ids.iter().cloned());
+    store_spawned_titles(&current)?;
+    let push = new_ids.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = inject_title_reward_drop(&push).await {
+            crate::applog::event(&format!("proxy: live title push failed: {e}"));
+        }
+    });
+    Ok(new_ids)
+}
+
+pub fn unregister_title_id(id: &str) -> Result<(), String> {
+    migrate_legacy_title_ids();
+    let mut current = crate::psynet::load_spawned_titles();
+    current.retain(|t| t != id.trim());
+    store_spawned_titles(&current)
+}
+
 pub fn get_all_title_ids() -> Vec<String> {
-    DYNAMIC_TITLE_IDS.read()
-        .map(|g| g.iter().cloned().collect())
-        .unwrap_or_default()
+    migrate_legacy_title_ids();
+    crate::psynet::load_spawned_titles()
 }
 
-/// Clear all spawned title IDs from memory and disk.
-fn clear_all_title_ids() {
-    if let Ok(mut g) = DYNAMIC_TITLE_IDS.write() {
-        g.clear();
-        save_persisted_title_ids(&g);
-    }
+pub fn clear_all_title_ids() -> Result<usize, String> {
+    migrate_legacy_title_ids();
+    let count = crate::psynet::load_spawned_titles().len();
+    store_spawned_titles(&[])?;
+    Ok(count)
 }
 
 fn get_container_counts_file_path() -> std::path::PathBuf {
@@ -7275,31 +7264,7 @@ pub fn lookup_product_details(pid: i32) -> (String, String, String) {
 }
 
 pub fn candidate_swaps_paths() -> Vec<std::path::PathBuf> {
-    let mut candidate_paths = vec![
-        crate::psynet::config_dir().join("swaps.json"),
-    ];
-    if let Some(parent) = crate::psynet::config_dir().parent() {
-        candidate_paths.push(parent.join("swaps.json"));
-    }
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            candidate_paths.push(std::path::PathBuf::from(&appdata).join("com.velocityrl.app").join("swaps.json"));
-            candidate_paths.push(std::path::PathBuf::from(&appdata).join("VelocityRL").join("swaps.json"));
-        }
-        if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
-            candidate_paths.push(std::path::PathBuf::from(&localappdata).join("com.velocityrl.app").join("swaps.json"));
-            candidate_paths.push(std::path::PathBuf::from(&localappdata).join("VelocityRL").join("swaps.json"));
-        }
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        if let Ok(home) = std::env::var("HOME") {
-            candidate_paths.push(std::path::PathBuf::from(&home).join(".config").join("com.velocityrl.app").join("swaps.json"));
-            candidate_paths.push(std::path::PathBuf::from(&home).join(".config").join("VelocityRL").join("swaps.json"));
-        }
-    }
-    candidate_paths
+    crate::psynet::canonical_swaps_paths()
 }
 
 pub fn sync_spawned_items_to_swaps(items: &[(i32, i32)]) {
@@ -7406,15 +7371,6 @@ fn ensure_spawned_items_loaded() {
                 }
             }
         }
-        // Load persisted title IDs (titles spawned in previous sessions)
-        let persisted_titles = load_persisted_title_ids();
-        if !persisted_titles.is_empty() {
-            if let Ok(mut g) = DYNAMIC_TITLE_IDS.write() {
-                for tid in persisted_titles {
-                    g.insert(tid);
-                }
-            }
-        }
     }
 }
 
@@ -7505,18 +7461,6 @@ pub async fn inject_reward_drop_with_series(items: &[(i32, i32, i32)]) -> Result
     if items.is_empty() {
         return Ok(false);
     }
-    let sender_opt = {
-        if let Ok(g) = CLIENT_WS_SENDER.read() {
-            g.clone()
-        } else {
-            None
-        }
-    };
-    let Some(sender) = sender_opt else {
-        crate::applog::event("proxy: no active client WebSocket tunnel to push RewardResult frame");
-        return Ok(false);
-    };
-
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -7564,6 +7508,21 @@ pub async fn inject_reward_drop_with_series(items: &[(i32, i32, i32)]) -> Result
         return Ok(false);
     }
 
+    send_reward_result_frame(product_data).await
+}
+
+async fn send_reward_result_frame(product_data: Vec<serde_json::Value>) -> Result<bool, String> {
+    let sender_opt = CLIENT_WS_SENDER.read().ok().and_then(|g| g.clone());
+    let Some(sender) = sender_opt else {
+        crate::applog::event("proxy: no active client WebSocket tunnel to push RewardResult frame");
+        return Ok(false);
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let count = product_data.len();
+
     let body_json = serde_json::json!({
         "Drops":           product_data,
         "ProductData":     product_data,
@@ -7589,8 +7548,7 @@ pub async fn inject_reward_drop_with_series(items: &[(i32, i32, i32)]) -> Result
     );
 
     crate::applog::event(&format!(
-        "proxy: injecting live Reward/RewardResult frame for {} spawned items downstream over WebSocket",
-        items.len()
+        "proxy: injecting live Reward/RewardResult frame for {count} product(s) downstream over WebSocket"
     ));
 
     sender
@@ -7598,6 +7556,18 @@ pub async fn inject_reward_drop_with_series(items: &[(i32, i32, i32)]) -> Result
         .map_err(|e| format!("Failed to dispatch WebSocket frame to client: {e}"))?;
 
     Ok(true)
+}
+
+pub async fn inject_title_reward_drop(title_ids: &[String]) -> Result<bool, String> {
+    if title_ids.is_empty() {
+        return Ok(false);
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let product_data = title_ids.iter().map(|t| title_product_json(t, now)).collect();
+    send_reward_result_frame(product_data).await
 }
 
 pub async fn inject_reward_drop(items: &[(i32, i32)]) -> Result<bool, String> {
@@ -8621,18 +8591,7 @@ pub fn patch_player_products_json_with_titles(
         if arr.iter().any(|it| item_title_id(it) == Some(tid.as_str())) {
             continue;
         }
-        arr.push(serde_json::json!({
-            "ProductID": TITLE_PRODUCT_ID,
-            "InstanceID": title_instance_id(tid),
-            "SeriesID": lookup_series_id_for_product(TITLE_PRODUCT_ID),
-            "Amount": 1,
-            "ExpirationTime": -1,
-            "IsTradable": false,
-            "TradeHold": -1,
-            "AddedTimestamp": 1700000000i64,
-            "UpdatedTimestamp": 1700000000i64,
-            "Attributes": [{ "Key": "TitleId", "Value": tid }],
-        }));
+        arr.push(title_product_json(tid, 1700000000));
         changed = true;
     }
 

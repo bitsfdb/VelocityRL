@@ -1369,11 +1369,17 @@ async fn save_config(app: tauri::AppHandle, mut config: Config) -> Result<String
 #[tauri::command]
 async fn get_backups(app: tauri::AppHandle) -> Result<Vec<BackupFile>, String> {
     let config = get_config(app.clone()).await?;
-    if config.game_dir.is_empty() { return Ok(vec![]); }
+    let mut backups = Vec::new();
+    let title_ids = tauri::async_runtime::spawn_blocking(crate::proxy::get_all_title_ids)
+        .await
+        .unwrap_or_default();
+    if config.game_dir.is_empty() {
+        push_title_backups(&mut backups, title_ids);
+        return Ok(backups);
+    }
 
     let items = get_items(app.clone(), None).await.unwrap_or_default();
     let swaps = load_swaps(&app);
-    let mut backups = Vec::new();
     let mut seen_ids = std::collections::HashSet::<i32>::new();
 
     // Count how many paint variants exist for each spawned item
@@ -1440,7 +1446,25 @@ async fn get_backups(app: tauri::AppHandle) -> Result<Vec<BackupFile>, String> {
         });
     }
 
+    push_title_backups(&mut backups, title_ids);
     Ok(backups)
+}
+
+fn push_title_backups(backups: &mut Vec<BackupFile>, title_ids: Vec<String>) {
+    for tid in title_ids {
+        let label = tid.replace('_', " ");
+        backups.push(BackupFile {
+            name: label.clone(),
+            path: format!("title_{tid}"),
+            image_url: String::new(),
+            swap_from: label.clone(),
+            swap_from_paint: String::new(),
+            swap_to: label,
+            swap_to_image: String::new(),
+            slot: "Player Title".to_string(),
+            paint_name: String::new(),
+        });
+    }
 }
 
 fn integrity_state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -1947,6 +1971,19 @@ async fn clear_spawned_items(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn spawn_titles(title_ids: Vec<String>) -> Result<usize, String> {
+    let ids = crate::psynet::clean_title_ids(&title_ids);
+    if ids.is_empty() {
+        return Err("No titles selected".into());
+    }
+    let added = tauri::async_runtime::spawn_blocking(move || crate::proxy::register_title_ids(&ids))
+        .await
+        .map_err(|e| format!("Spawn task failed: {e}"))??;
+    applog::event(&format!("spawn_titles: registered {} new title(s)", added.len()));
+    Ok(added.len())
+}
+
+#[tauri::command]
 async fn spawn_items_batch(
     app: tauri::AppHandle,
     items: Vec<SpawnBatchItem>,
@@ -2091,6 +2128,15 @@ fn remove_proxy_inventory_items(ids: Option<&[i32]>) -> Result<(), String> {
 
 #[tauri::command]
 async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<String, String> {
+    if let Some(tid) = path.strip_prefix("title_").map(|t| t.trim().to_string()).filter(|t| !t.is_empty()) {
+        let removed = tid.clone();
+        tauri::async_runtime::spawn_blocking(move || crate::proxy::unregister_title_id(&removed))
+            .await
+            .map_err(|e| format!("Restore task failed: {e}"))??;
+        record_swap_history(&app, "restore", &[], &format!("restored title {tid}"));
+        applog::event(&format!("restore_single_backup: removed spawned title {tid}"));
+        return Ok("Title removed. Restart Rocket League to clear its current inventory cache.".to_string());
+    }
     let id = path.strip_prefix("item_").and_then(|s| s.parse::<i32>().ok())
         .filter(|id| *id > 0).ok_or("Invalid inventory entry; refresh the list and try again")?;
     tauri::async_runtime::spawn_blocking(move || {
@@ -2109,13 +2155,19 @@ async fn restore_single_backup(app: tauri::AppHandle, path: String) -> Result<St
 #[tauri::command]
 async fn restore_backups(app: tauri::AppHandle) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let titles = crate::proxy::clear_all_title_ids()?;
         let count = load_swaps(&app).len();
         save_swaps_checked(&app, &[])?;
         remove_proxy_inventory_items(None)?;
         crate::proxy::clear_all_swap_files();
         record_swap_history(&app, "restore_all", &[], "restored all active items");
-        applog::event(&format!("restore_backups: removed {count} entries and cleared loadout wire"));
-        Ok(format!("Removed {count} item(s). Restart Rocket League to clear its current inventory cache."))
+        applog::event(&format!("restore_backups: removed {count} entries and {titles} title(s), cleared loadout wire"));
+        let summary = match (count, titles) {
+            (_, 0) => format!("Removed {count} item(s)."),
+            (0, _) => format!("Removed {titles} title(s)."),
+            _ => format!("Removed {count} item(s) and {titles} title(s)."),
+        };
+        Ok(format!("{summary} Restart Rocket League to clear its current inventory cache."))
     }).await.map_err(|e| format!("Restore task failed: {e}"))?
 }
 
@@ -3899,6 +3951,7 @@ pub fn run() {
             let _ = tracker::create_overlay_window(app);
 
             psynet::load_proxy_dir_override(app.handle());
+            psynet::cleanup_stale_state_files();
             let app_handle = app.handle().clone();
 
             let _ = psynet::merge_palette_spoof(load_integrity(app.handle()).palette_active);
@@ -4113,6 +4166,7 @@ pub fn run() {
             apply_swap,
             spawn_item,
             spawn_items_batch,
+            spawn_titles,
             spawn_drops,
             make_savedata,
             reswap_all,
