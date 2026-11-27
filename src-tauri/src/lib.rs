@@ -2112,6 +2112,7 @@ async fn restore_backups(app: tauri::AppHandle) -> Result<String, String> {
         let count = load_swaps(&app).len();
         save_swaps_checked(&app, &[])?;
         remove_proxy_inventory_items(None)?;
+        crate::proxy::clear_all_swap_files();
         record_swap_history(&app, "restore_all", &[], "restored all active items");
         applog::event(&format!("restore_backups: removed {count} entries and cleared loadout wire"));
         Ok(format!("Removed {count} item(s). Restart Rocket League to clear its current inventory cache."))

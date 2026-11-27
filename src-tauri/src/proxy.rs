@@ -7689,6 +7689,15 @@ pub fn unregister_spawned_items(product_ids: &[i32]) {
     notify_inventory_updated();
 }
 
+pub fn clear_all_swap_files() {
+    for p in &candidate_swaps_paths() {
+        if p.is_file() {
+            let _ = std::fs::write(p, b"[]");
+        }
+    }
+    notify_inventory_updated();
+}
+
 pub fn clear_dynamic_spawned_items() {
     if let Ok(mut g) = DYNAMIC_SPAWNED_ITEMS.write() {
         g.clear();
