@@ -3149,15 +3149,7 @@ async fn handle_broker_request(
                     }
                 }
 
-                let title = crate::psynet::load_active_spoof_from_disk()
-                    .map(|c| {
-                        if !c.equip_title_id.trim().is_empty() {
-                            c.equip_title_id.trim().to_string()
-                        } else {
-                            c.display_title_id.trim().to_string()
-                        }
-                    })
-                    .unwrap_or_default();
+                let title = equipped_title_id();
                 if !title.is_empty() && !slots.is_empty() {
                     slots[0].1.push(("TitleId".to_string(), title));
                 }
@@ -5939,29 +5931,43 @@ fn upsert_title_entry(body: &[u8], title_id: &str, text: &str, category: &str) -
     (out, true)
 }
 
+/// The single title the in-game applicator should equip: the swap/equip title if
+/// one is set, otherwise the first spawned title (ownership-only titles still need
+/// to apply through the loadout wire). Empty when nothing is configured.
+fn equipped_title_id() -> String {
+    if let Some(cfg) = crate::psynet::load_active_spoof_from_disk() {
+        let id = if !cfg.equip_title_id.trim().is_empty() {
+            cfg.equip_title_id.trim()
+        } else {
+            cfg.display_title_id.trim()
+        };
+        if !id.is_empty() {
+            return id.to_string();
+        }
+    }
+    crate::psynet::load_spawned_titles().into_iter().next().unwrap_or_default()
+}
+
 fn configured_title() -> (String, String) {
     let fallback = ("VelocityRL_Developer".to_string(), "VelocityRL Developer".to_string());
-    match crate::psynet::load_active_spoof_from_disk() {
-        Some(cfg) => {
-            let id = if !cfg.equip_title_id.trim().is_empty() {
-                cfg.equip_title_id.trim()
-            } else {
-                cfg.display_title_id.trim()
-            };
-            if id.is_empty() {
-                return fallback;
-            }
-            let text = if !cfg.custom_text.trim().is_empty() {
-                cfg.custom_text.trim().to_string()
-            } else if !cfg.display_title_id.trim().is_empty() {
-                cfg.display_title_id.trim().to_string()
-            } else {
-                id.to_string()
-            };
-            (id.to_string(), text)
-        }
-        _ => fallback,
+    let cfg = crate::psynet::load_active_spoof_from_disk();
+    let id = equipped_title_id();
+    if id.is_empty() {
+        return fallback;
     }
+    let text = cfg
+        .as_ref()
+        .map(|c| {
+            if !c.custom_text.trim().is_empty() {
+                c.custom_text.trim().to_string()
+            } else if !c.display_title_id.trim().is_empty() {
+                c.display_title_id.trim().to_string()
+            } else {
+                id.clone()
+            }
+        })
+        .unwrap_or_else(|| id.clone());
+    (id, text)
 }
 
 const TITLE_PRODUCT_ID: i32 = 3036;
