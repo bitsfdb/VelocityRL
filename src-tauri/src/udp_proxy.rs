@@ -27,7 +27,7 @@ const MAX_CRYPTO_CANDIDATES: usize = 4;
 /// Analysis mode: decrypt datagrams for the monitor/dump, but forward the
 /// original wire bytes untouched. No name rewrite, no re-encryption. This
 /// keeps the relay transparent while we study the protocol.
-pub const UDP_ANALYSIS_ONLY: bool = false;
+pub const UDP_ANALYSIS_ONLY: bool = true;
 
 /// Hard passthrough: the match relay does nothing except copy raw datagrams
 /// between the game and the real server. No decrypt, no decode, no capture,
