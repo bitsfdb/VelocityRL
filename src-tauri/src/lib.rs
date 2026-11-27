@@ -3353,32 +3353,6 @@ async fn detect_game_dir() -> Result<Vec<DetectedInstall>, String> {
         }
     }
 
-    // 5. Standard drive scanning fallback (checks all drive letters and folder variants)
-    for drive in ["C", "D", "E", "F", "G", "H", "I", "J", "K", "X", "Z"] {
-        for folder in &["rocketleague", "Rocket League", "RocketLeague"] {
-            let candidates = [
-                format!(r"{drive}:\Program Files\Epic Games\{folder}"),
-                format!(r"{drive}:\Program Files (x86)\Epic Games\{folder}"),
-                format!(r"{drive}:\Epic Games\{folder}"),
-                format!(r"{drive}:\{folder}"),
-                format!(r"{drive}:\Games\{folder}"),
-                format!(r"{drive}:\games\{folder}"),
-                format!(r"{drive}:\Games\Epic Games\{folder}"),
-                format!(r"{drive}:\Program Files (x86)\Steam\steamapps\common\{folder}"),
-                format!(r"{drive}:\Program Files\Steam\steamapps\common\{folder}"),
-                format!(r"{drive}:\SteamLibrary\steamapps\common\{folder}"),
-                format!(r"{drive}:\Steam\steamapps\common\{folder}"),
-                format!(r"{drive}:\Games\Steam\steamapps\common\{folder}"),
-            ];
-            for path in candidates {
-                if let Ok(cooked) = upk::palette::resolve_cooked_dir(Path::new(&path)) {
-                    let label = if path.to_lowercase().contains("steam") { "Steam" } else { "Epic Games" };
-                    add_unique(&mut results, label, cooked.to_string_lossy().into_owned());
-                }
-            }
-        }
-    }
-
     #[cfg(target_os = "linux")]
     {
         // 1. Check currently running Rocket League process via /proc
