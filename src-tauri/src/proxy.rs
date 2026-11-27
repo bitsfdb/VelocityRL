@@ -7096,12 +7096,10 @@ pub fn register_title_ids(ids: &[String]) -> Result<Vec<String>, String> {
     }
     current.extend(new_ids.iter().cloned());
     store_spawned_titles(&current)?;
-    let push = new_ids.clone();
-    tauri::async_runtime::spawn(async move {
-        if let Err(e) = inject_title_reward_drop(&push).await {
-            crate::applog::event(&format!("proxy: live title push failed: {e}"));
-        }
-    });
+    // Deliver live through the reconciler so a missed frame (no WS yet, mid-game
+    // reconnect) retries instead of waiting for the next full product sync.
+    ensure_inventory_reconciliation_worker_started();
+    tauri::async_runtime::spawn(reconcile_spawned_titles());
     Ok(new_ids)
 }
 
@@ -7109,7 +7107,11 @@ pub fn unregister_title_id(id: &str) -> Result<(), String> {
     migrate_legacy_title_ids();
     let mut current = crate::psynet::load_spawned_titles();
     current.retain(|t| t != id.trim());
-    store_spawned_titles(&current)
+    store_spawned_titles(&current)?;
+    if let Ok(mut notified) = NOTIFIED_TITLE_IDS.write() {
+        notified.remove(id.trim());
+    }
+    Ok(())
 }
 
 pub fn get_all_title_ids() -> Vec<String> {
@@ -7121,6 +7123,9 @@ pub fn clear_all_title_ids() -> Result<usize, String> {
     migrate_legacy_title_ids();
     let count = crate::psynet::load_spawned_titles().len();
     store_spawned_titles(&[])?;
+    if let Ok(mut notified) = NOTIFIED_TITLE_IDS.write() {
+        notified.clear();
+    }
     Ok(count)
 }
 
@@ -7380,6 +7385,10 @@ fn ensure_spawned_items_loaded() {
 static CLIENT_WS_SENDER: std::sync::RwLock<Option<tokio::sync::mpsc::UnboundedSender<tokio_tungstenite::tungstenite::Message>>> = std::sync::RwLock::new(None);
 static NOTIFIED_SPAWNED_ITEMS: std::sync::LazyLock<std::sync::RwLock<std::collections::HashSet<(i32, i32)>>> =
     std::sync::LazyLock::new(|| std::sync::RwLock::new(std::collections::HashSet::new()));
+// Titles already delivered live over the active WebSocket, so reconnects and the
+// 2.5s reconciler don't re-push a RewardResult the game already applied.
+static NOTIFIED_TITLE_IDS: std::sync::LazyLock<std::sync::RwLock<std::collections::HashSet<String>>> =
+    std::sync::LazyLock::new(|| std::sync::RwLock::new(std::collections::HashSet::new()));
 
 pub fn register_client_ws_sender(sender: tokio::sync::mpsc::UnboundedSender<tokio_tungstenite::tungstenite::Message>) {
     if let Ok(mut g) = CLIENT_WS_SENDER.write() {
@@ -7391,6 +7400,7 @@ pub fn register_client_ws_sender(sender: tokio::sync::mpsc::UnboundedSender<toki
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
         handle.spawn(async {
             reconcile_spawned_inventory().await;
+            reconcile_spawned_titles().await;
         });
     }
 }
@@ -7443,6 +7453,34 @@ pub async fn reconcile_spawned_inventory() {
     }
 }
 
+/// Re-push owned titles the game has not acknowledged yet. Mirrors
+/// reconcile_spawned_inventory so titles appear live and survive WS reconnects
+/// instead of only after the next full product sync (i.e. after a match).
+pub async fn reconcile_spawned_titles() {
+    if !has_active_client_ws() {
+        return;
+    }
+    let owned = crate::psynet::load_spawned_titles();
+    if owned.is_empty() {
+        return;
+    }
+    let missing: Vec<String> = {
+        let notified = NOTIFIED_TITLE_IDS.read().unwrap_or_else(|e| e.into_inner());
+        owned.into_iter().filter(|t| !notified.contains(t)).collect()
+    };
+    if missing.is_empty() {
+        return;
+    }
+    crate::applog::event(&format!("proxy: title reconciler pushing {} owned title(s) live", missing.len()));
+    if let Ok(true) = inject_title_reward_drop(&missing).await {
+        if let Ok(mut notified) = NOTIFIED_TITLE_IDS.write() {
+            for t in missing {
+                notified.insert(t);
+            }
+        }
+    }
+}
+
 pub fn ensure_inventory_reconciliation_worker_started() {
     static STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     if !STARTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
@@ -7452,6 +7490,7 @@ pub fn ensure_inventory_reconciliation_worker_started() {
                 loop {
                     interval.tick().await;
                     reconcile_spawned_inventory().await;
+                    reconcile_spawned_titles().await;
                 }
             });
         }
