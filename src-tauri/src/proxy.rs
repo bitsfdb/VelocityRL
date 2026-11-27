@@ -10144,7 +10144,7 @@ mod tests {
 
     #[test]
     fn test_spawned_titles_injected_with_title_id_attribute() {
-        let body = br#"{"ProductData":[{"ProductID":3036,"InstanceID":"owned0000000000000000000000000001","SeriesID":1,"Attributes":[{"Key":"TitleId","Value":"Owned_Title"}]}]}"#;
+        let body = br#"{"ProductData":[{"ProductID":3036,"InstanceID":"0000000000000000000000000000beef","SeriesID":1,"Attributes":[{"Key":"TitleId","Value":"Owned_Title"}]}]}"#;
         let ids: Vec<String> = ["Owned_Title", "RLCS_X_Champion", "CRL_Analyst"].iter().map(|s| s.to_string()).collect();
         let (patched, changed) = super::patch_player_products_json_with_titles(body, &[], &ids);
         assert!(changed);
