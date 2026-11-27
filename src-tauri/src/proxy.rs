@@ -8646,7 +8646,23 @@ pub fn patch_player_products_json(
                     .and_then(|v| v.as_i64().map(|n| n as i32).or_else(|| v.as_str().and_then(|s| s.parse().ok())))
             }).unwrap_or(0);
 
-            if seen_items.insert((pid, paint)) {
+            // Titles share one ProductID; key on InstanceID or full attributes.
+            let instance = item.get("InstanceID")
+                .or_else(|| item.get("InstanceId"))
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty());
+            let key = match instance {
+                Some(inst) => format!("i:{inst}"),
+                None => {
+                    let mut attrs: Vec<String> = item.get("Attributes")
+                        .and_then(|v| v.as_array())
+                        .map(|a| a.iter().map(|x| x.to_string()).collect())
+                        .unwrap_or_default();
+                    attrs.sort();
+                    format!("a:{pid}:{paint}:{}", attrs.join(","))
+                }
+            };
+            if seen_items.insert(key) {
                 deduped_arr.push(item);
             } else {
                 changed = true;
@@ -10028,6 +10044,32 @@ mod tests {
         let rem = super::decrement_container_quantity(5301);
         assert_eq!(rem, 4);
         assert_eq!(super::get_container_quantity(5301), 4);
+    }
+
+    #[test]
+    fn test_dedup_keeps_distinct_titles_with_same_product_id() {
+        let mut data: Vec<serde_json::Value> = (0..50)
+            .map(|n| serde_json::json!({
+                "ProductID": 3036,
+                "InstanceID": format!("t{n:031}"),
+                "SeriesID": 1,
+                "Attributes": [{ "Key": "TitleId", "Value": format!("Title_{n}") }]
+            }))
+            .collect();
+        data.push(data[0].clone());
+        for t in ["NoInst_A", "NoInst_A", "NoInst_B"] {
+            data.push(serde_json::json!({
+                "ProductID": 3036, "SeriesID": 1,
+                "Attributes": [{ "Key": "TitleId", "Value": t }]
+            }));
+        }
+        let body = serde_json::to_vec(&serde_json::json!({ "ProductData": data })).unwrap();
+        let (patched, _) = super::patch_player_products_json(&body, &[(4284, 0)]);
+        let val: serde_json::Value = serde_json::from_slice(&patched).unwrap();
+        let titles: Vec<_> = val["ProductData"].as_array().unwrap().iter()
+            .filter(|i| i["ProductID"] == 3036)
+            .collect();
+        assert_eq!(titles.len(), 52, "50 instanced + NoInst_A + NoInst_B");
     }
 }
 

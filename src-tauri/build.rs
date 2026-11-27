@@ -1,3 +1,11 @@
+/*
+ * velocityrl
+ * Copyright (c) 2026 bits (https://github.com/bitsfdb/velocityrl)
+ * 
+ * Licensed under the GNU General Public License v3.0.
+ * unauthorized rebranding or stripping of this copyright notice is strictly prohibited.
+ */
+
 use std::path::Path;
 use std::process::Command;
 
@@ -69,18 +77,13 @@ fn main() {
     println!("cargo:rustc-env=VRL_BUILD_HASH={hash}");
     println!("cargo:rustc-env=VRL_BUILD_ID={build_id}");
 
-    // tauri-build's `app_manifest` only embeds the manifest into *bin* targets
-    // (`rustc-link-arg-bins`). Test executables then load comctl32 v5 and die
-    // with STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139) before any test runs.
-    // Embed the manifest ourselves for every linked target (bins + tests).
+    // Embed the manifest for tests too; tauri-build only links it into bins.
     let windows = tauri_build::WindowsAttributes::new_without_app_manifest();
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     let target_env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
     if target_os == "windows" && target_env == "msvc" {
         let app_manifest = manifest.join("windows").join("app.manifest");
         println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
-        // app.manifest carries its own requestedExecutionLevel; stop the
-        // linker emitting a conflicting default UAC snippet (c1010001).
         println!("cargo:rustc-link-arg=/MANIFESTUAC:NO");
         println!(
             "cargo:rustc-link-arg=/MANIFESTINPUT:{}",
